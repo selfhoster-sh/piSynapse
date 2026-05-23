@@ -89,6 +89,20 @@ curl -X POST http://localhost:8000/chat/ \
 
 ---
 
+---
+
+## Roadmap
+
+piSynapse is a living, evolving ecosystem. Here is what I am working on to bring more privacy and functionality to your edge hardware:
+
+- [ ] **Proton Mail Integration:** Secure and private email management via `proton-bridge`.
+- [ ] **Mobile App (Android):** A native, privacy-focused companion app to access PiSynapse on the go.
+- [ ] **Mobile Skills:** Location-aware intelligence and context-aware mobile commands.
+- [ ] **Advanced Tool-Calling:** Enhancing the custom text-parsing loop for better accuracy with complex multi-step queries.
+- [ ] **Local Dashboard:** A simple UI to monitor memory usage, active sessions, and history.
+
+---
+
 ## License
 
 GNU General Public License v3. See `LICENSE` for details.
