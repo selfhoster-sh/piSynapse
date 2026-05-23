@@ -1,7 +1,7 @@
 # piSynapse 🚀
 ### Privacy-First, Self-Hosted AI Assistant on Edge Hardware
 
-piSynapse (Private-Intelligence Synapse) is an open-source personal assistant framework built to run entirely on your own hardware — optimized for **Raspberry Pi 5**. It integrates with **Nextcloud CalDAV** and **Gmail IMAP/SMTP** without sending your data to any external cloud.
+"piSynapse (Private-Intelligence Synapse) is an open-source personal assistant framework built to run entirely on your own local hardware. It is optimized for edge computing devices, ensuring your data never leaves your control."
 
 ---
 
