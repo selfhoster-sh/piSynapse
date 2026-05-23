@@ -66,7 +66,7 @@ pip install -r requirements.txt
 
 ### 3. Configure environment
 ```bash
-cp .env.example .env
+cp example.env .env
 nano .env
 ```
 
