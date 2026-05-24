@@ -54,7 +54,7 @@ piSynapse/
 
 ### 1. Install Ollama and pull the model
 ```bash
-ollama run gemma4:e2b
+ollama pull gemma4:e2b
 ```
 
 ### 2. Clone and install dependencies
@@ -66,6 +66,8 @@ pip install -r requirements.txt
 
 ### 3. Configure environment
 ```bash
+mkdir routers
+mv chat.py routers/
 cp example.env .env
 nano .env
 ```
