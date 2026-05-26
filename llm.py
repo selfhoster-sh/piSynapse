@@ -6,9 +6,8 @@ import re
 from datetime import datetime, timedelta
 from nextcloud_auth import get_nextcloud_client
 from gmail import get_mail_client
-from memory import save_memory  # EKSİK OLAN IMPORT EKLENDİ!
+from memory import save_memory  
 
-# TIER 1 FIX: .env değişkenleri ile birebir eşleşme sağlandı
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 LLM_MODEL = os.getenv("LLM_MODEL", "gemma4:e2b")
 
@@ -142,7 +141,11 @@ async def _run_mail_tool(name: str, params: dict) -> str:
                 lines.append(f"{i}. 📧 From: {msg.get('from', 'Unknown')}")
                 lines.append(f"   📝 Subject: {msg.get('subject', '(no subject)')}")
                 lines.append(f"   📅 Date: {msg.get('date', 'Unknown date')}")
-                lines.append(f"   🆔 ID: {msg.get('id')}\n")
+                lines.append(f"   🆔 ID: {msg.get('id')}")
+                body_preview = msg.get('body', '(no content)')
+                if body_preview:
+                    lines.append(f"   📄 Preview: {body_preview[:200]}...")
+                lines.append("")
             return "\n".join(lines)
 
         elif name == "read_email":
@@ -181,7 +184,11 @@ async def _run_mail_tool(name: str, params: dict) -> str:
                 return f"No results found for '{query}'."
             lines = [f"🔍 Search Results for '{query}':\n"]
             for i, msg in enumerate(results, 1):
-                lines.append(f"{i}. {msg.get('from', 'Unknown')} — {msg.get('subject', '(no subject)')}")
+                lines.append(f"{i}. 📧 {msg.get('from', 'Unknown')} — {msg.get('subject', '(no subject)')}")
+                body_preview = msg.get('body', '')
+                if body_preview:
+                    lines.append(f"   📄 {body_preview[:150]}...")
+                lines.append("")
             return "\n".join(lines)
 
     except Exception as e:
