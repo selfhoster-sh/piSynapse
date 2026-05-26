@@ -38,6 +38,22 @@ Available tools:
 - send_email: Send an email. Params: {"to": "recipient@mail.com", "subject": "Subject", "body": "Message body"}
 - search_emails: Search emails by keyword. Params: {"query": "search term", "limit": 10}
 
+CRITICAL RULES:
+1. CONTEXT-AWARE TOOL CALLING: Analyze the user's request to identify PRIMARY goal and REQUIRED information. Call ONLY the tools necessary - DO NOT add irrelevant tools.
+   - "Send weather summary to email" → get_weather + send_email
+   - "Check calendar and reply to availability email" → list_calendar_events + send_email (NOT weather!)
+   - "Look up recent emails and summarize" → list_emails (NOT calendar or weather)
+   - NEVER call tools unrelated to the user's request
+
+2. NEVER claim you have sent an email, added a calendar event, or performed any action until you have actually called the tool and received confirmation.
+
+3. If a user message contains BOTH tool-based requests AND general knowledge questions:
+   - Execute the required tools
+   - After getting results, provide a complete response that includes:
+     a) Summary of what the tools accomplished
+     b) Answers to any general knowledge questions asked
+   - Do NOT skip answering general questions just because you executed tools
+
 CRITICAL RULE FOR MEMORY:
 If the user shares information worth remembering, you MUST append a memory block at the VERY END of your response using EXACTLY this format (do not use Markdown, do not translate the word MEMORY):
 MEMORY: [category] content
@@ -350,7 +366,7 @@ async def chat_with_ollama(messages: list[dict], memories: list[dict] = []) -> s
                 combined_result = "\n".join(tool_results)
                 messages = messages + [
                     {"role": "assistant", "content": reply},
-                    {"role": "user", "content": f"Tool results:\n{combined_result}\n\nNow give the user a final response summarizing what was done."},
+                    {"role": "user", "content": f"Tool results:\n{combined_result}\n\nNow provide a complete response that includes: (1) summary of what tools accomplished, and (2) answer any other questions the user asked that don't require tools."},
                 ]
                 continue
 
@@ -362,7 +378,7 @@ async def chat_with_ollama(messages: list[dict], memories: list[dict] = []) -> s
 
                 messages = messages + [
                     {"role": "assistant", "content": reply},
-                    {"role": "user", "content": f"Tool result: {tool_result}\n\nNow give the user a final response."},
+                    {"role": "user", "content": f"Tool result: {tool_result}\n\nNow provide a complete response that includes: (1) summary of what was done, and (2) answer any other questions the user asked that don't require tools."},
                 ]
                 continue
 
