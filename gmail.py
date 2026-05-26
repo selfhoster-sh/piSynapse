@@ -2,6 +2,7 @@ import imaplib
 import smtplib
 import email
 import os
+import re  # Regex temizliği için eklendi
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.header import decode_header
@@ -33,19 +34,37 @@ def _decode_str(value) -> str:
     return "".join(result)
 
 
-def _get_body(msg) -> str:
-    """Extract plain text body from email."""
+def _clean_body_text(text: str) -> str:
+    """Ardışık boşlukları ve satır başlarını temizleyerek LLM için yer kazandırır."""
+    if not text:
+        return ""
+    # Birden fazla boşluk veya newline karakterini tek boşluğa düşür
+    text = re.sub(self_space := r'\s+', ' ', text)
+    return text.strip()
+
+
+def _get_body(msg, max_chars: Optional[int] = None) -> str:
+    """Extract plain text body from email with optional character limit to save memory."""
+    body_str = ""
+    
     if msg.is_multipart():
         for part in msg.walk():
             if part.get_content_type() == "text/plain":
                 payload = part.get_payload(decode=True)
                 if payload:
-                    return payload.decode(part.get_content_charset() or "utf-8", errors="replace")
+                    # Eğer limit varsa, byte seviyesinde kabaca kırparak devasa maillerin ram şişirmesini önle
+                    if max_chars and len(payload) > max_chars * 2:
+                        payload = payload[:max_chars * 2]
+                    body_str = payload.decode(part.get_content_charset() or "utf-8", errors="replace")
+                    break
     else:
         payload = msg.get_payload(decode=True)
         if payload:
-            return payload.decode(msg.get_content_charset() or "utf-8", errors="replace")
-    return ""
+            if max_chars and len(payload) > max_chars * 2:
+                payload = payload[:max_chars * 2]
+            body_str = payload.decode(msg.get_content_charset() or "utf-8", errors="replace")
+
+    return _clean_body_text(body_str)
 
 
 def _sync_list_emails(limit: int = 10) -> List[Dict]:
@@ -59,14 +78,16 @@ def _sync_list_emails(limit: int = 10) -> List[Dict]:
 
         messages = []
         for uid in recent_ids:
-            _, msg_data = imap.fetch(uid, "(RFC822.HEADER)")
+            _, msg_data = imap.fetch(uid, "(RFC822)")
             raw = msg_data[0][1]
             msg = email.message_from_bytes(raw)
+            # 500 karakter preview için limiti _get_body'ye paslıyoruz
             messages.append({
                 "id": uid.decode(),
                 "from": _decode_str(msg.get("From", "")),
                 "subject": _decode_str(msg.get("Subject", "(no subject)")),
                 "date": msg.get("Date", ""),
+                "body": _get_body(msg, max_chars=500)[:500],
             })
         return messages
 
@@ -86,7 +107,7 @@ def _sync_read_email(uid: str) -> Optional[Dict]:
             "from": _decode_str(msg.get("From", "")),
             "subject": _decode_str(msg.get("Subject", "(no subject)")),
             "date": msg.get("Date", ""),
-            "body": _get_body(msg)[:2000],
+            "body": _get_body(msg, max_chars=2000)[:2000],
         }
 
 
@@ -95,20 +116,22 @@ def _sync_search_emails(query: str, limit: int = 10) -> List[Dict]:
     with imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT) as imap:
         imap.login(GMAIL_USER, GMAIL_APP_PASSWORD)
         imap.select("INBOX")
-        _, data = imap.search(None, f'(OR SUBJECT "{query}" FROM "{query}")')
+        # IMAP OR syntax hatası fixlendi: Operatör öne alındı
+        _, data = imap.search(None, f'OR SUBJECT "{query}" FROM "{query}"')
         ids = data[0].split()
         recent_ids = ids[-limit:][::-1]
 
         messages = []
         for uid in recent_ids:
-            _, msg_data = imap.fetch(uid, "(RFC822.HEADER)")
+            _, msg_data = imap.fetch(uid, "(RFC822)")
             raw = msg_data[0][1]
             msg = email.message_from_bytes(raw)
             messages.append({
-                "id": uid.decode(),
+                "id": uid.decode(),  # .decode() eklendi, byte kalması önlendi
                 "from": _decode_str(msg.get("From", "")),
                 "subject": _decode_str(msg.get("Subject", "(no subject)")),
                 "date": msg.get("Date", ""),
+                "body": _get_body(msg, max_chars=1500)[:1500],
             })
         return messages
 
@@ -159,7 +182,7 @@ class GmailClient:
 
     async def search_messages(self, account_id: int, query: str, limit: int = 10) -> List[Dict]:
         try:
-            return await asyncio.to_thread(_sync_search_emails, query, limit)
+            return await asyncio.to_thread(_sync_search_messages, query, limit)
         except Exception as e:
             print(f"[Gmail] Search failed: {e}")
             return []
