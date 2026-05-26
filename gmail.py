@@ -182,7 +182,7 @@ class GmailClient:
 
     async def search_messages(self, account_id: int, query: str, limit: int = 10) -> List[Dict]:
         try:
-            return await asyncio.to_thread(_sync_search_messages, query, limit)
+            return await asyncio.to_thread(_sync_search_emails, query, limit)
         except Exception as e:
             print(f"[Gmail] Search failed: {e}")
             return []
