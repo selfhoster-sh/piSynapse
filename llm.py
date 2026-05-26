@@ -3,10 +3,13 @@ import json
 import os
 import asyncio
 import re
+import logging
 from datetime import datetime, timedelta
 from nextcloud_auth import get_nextcloud_client
 from gmail import get_mail_client
-from memory import save_memory  
+from memory import save_memory
+
+logger = logging.getLogger("piSynapse")
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 LLM_MODEL = os.getenv("LLM_MODEL", "gemma4:e2b")
@@ -364,15 +367,17 @@ async def chat_with_ollama(messages: list[dict], memories: list[dict] = []) -> s
                 continue
 
             # Check for MEMORY
-           # memory_match = re.search(r"MEMORY:\s*\[(.*?)\]\s*(.*)", reply, re.DOTALL)
-            #if memory_match:
-             #   category = memory_match.group(1).strip()
-              #  content = memory_match.group(2).strip()
-                # User_id göndermiyoruz, memory.py onu ASSISTANT_USER'dan otomatik çekiyor!
-               # await save_memory(content=content, category=category)
-                #reply = reply[:memory_match.start()].strip()  # Remove memory part from final reply
+            # memory_match = re.search(r"MEMORY:\s*\[(.*?)\]\s*(.*)", reply, re.DOTALL)
+            # if memory_match:
+            #     category = memory_match.group(1).strip()
+            #     content = memory_match.group(2).strip()
+            #     await save_memory(content=content, category=category)
+            #     reply = reply[:memory_match.start()].strip()  # Remove memory part from final reply
             
-            # No tools found, return the reply
+            # No tools found, return the reply immediately (prevents hallucination loops)
+            if iteration >= 4:
+                logger.warning(f"Max iterations ({iteration + 1}) reached, returning reply to prevent hallucination loop")
+            
             return reply
 
     return "I've reached the processing limit. Could you rephrase your request?"
