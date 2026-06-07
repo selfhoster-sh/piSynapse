@@ -13,7 +13,7 @@ import shutil
 import getpass
 import re
 
-# ── Colour helpers ────────────────────────────────────────────────────────────
+# Terminal color helpers
 IS_WIN = sys.platform == "win32"
 
 def _c(code: str, text: str) -> str:
@@ -43,7 +43,7 @@ def ask_secret(prompt: str) -> str:
     except Exception:
         return input(f"     {prompt} (visible): ").strip()
 
-# ── venv paths ────────────────────────────────────────────────────────────────
+# Virtual environment paths
 VENV_DIR = ".venv"
 
 def venv_bin(name: str) -> str:
@@ -52,7 +52,7 @@ def venv_bin(name: str) -> str:
         return os.path.join(VENV_DIR, "Scripts", f"{name}.exe")
     return os.path.join(VENV_DIR, "bin", name)
 
-# ── Shell detection ───────────────────────────────────────────────────────────
+# Shell detection and activation command generation
 def detect_shell() -> str:
     """Returns a short shell identifier: bash, zsh, fish, powershell, cmd, unknown."""
     if IS_WIN:
@@ -81,9 +81,9 @@ def activation_command(shell: str) -> str:
     }
     return cmds.get(shell, f"source {VENV_DIR}/bin/activate")
 
-# ── Step 1: Python version ────────────────────────────────────────────────────
+# Step 1: Python version check
 def check_python():
-    header("1 / 7  Python version")
+    header("1 / 8  Python version")
     major, minor = sys.version_info[:2]
     info(f"Python {major}.{minor} detected")
     if (major, minor) < (3, 10):
@@ -91,9 +91,9 @@ def check_python():
         sys.exit(1)
     ok("Python version OK")
 
-# ── Step 2: Ollama ────────────────────────────────────────────────────────────
+# Step 2: Ollama installation check
 def check_ollama():
-    header("2 / 7  Ollama")
+    header("2 / 8  Ollama")
     if shutil.which("ollama"):
         ok("Ollama is already installed.")
         return
@@ -116,9 +116,9 @@ def check_ollama():
         error("Ollama is required. Exiting.")
         sys.exit(1)
 
-# ── Step 3: Model selection ───────────────────────────────────────────────────
+# Step 3: LLM model selection with RAM detection
 def select_model() -> str:
-    header("3 / 7  Model selection")
+    header("3 / 8  Model selection")
 
     try:
         mem_bytes = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
@@ -171,9 +171,9 @@ def select_model() -> str:
 
     return selected
 
-# ── Step 4: Project structure ─────────────────────────────────────────────────
+# Step 4: Project structure setup
 def setup_structure():
-    header("4 / 7  Project structure")
+    header("4 / 8  Project structure")
 
     os.makedirs("routers", exist_ok=True)
     ok("routers/ directory ready")
@@ -202,9 +202,9 @@ def setup_structure():
     else:
         ok(".env already exists")
 
-# ── Step 5: Virtual environment ───────────────────────────────────────────────
+# Step 5: Virtual environment creation
 def create_venv():
-    header("5 / 7  Virtual environment")
+    header("5 / 8  Virtual environment")
 
     if os.path.exists(VENV_DIR):
         ok(f"{VENV_DIR}/ already exists, skipping creation.")
@@ -217,9 +217,9 @@ def create_venv():
         sys.exit(1)
     ok(f"{VENV_DIR}/ created.")
 
-# ── Step 6: Python dependencies ───────────────────────────────────────────────
+# Step 6: Python dependencies installation
 def install_deps():
-    header("6 / 7  Python dependencies")
+    header("6 / 8  Python dependencies")
 
     if not os.path.exists("requirements.txt"):
         error("requirements.txt not found.")
@@ -237,9 +237,9 @@ def install_deps():
         sys.exit(1)
     ok(f"All dependencies installed into {VENV_DIR}/")
 
-# ── Step 7: Credentials ───────────────────────────────────────────────────────
+# Step 7: Environment configuration
 def configure_env(selected_model: str):
-    header("7 / 7  Configuration")
+    header("7 / 8  Configuration")
     print("     (press Enter to skip any field)\n")
 
     fields = {
@@ -248,7 +248,8 @@ def configure_env(selected_model: str):
         "NEXTCLOUD_PASSWORD": ask_secret("Nextcloud app password"),
         "GMAIL_USER":         ask("Gmail address"),
         "GMAIL_APP_PASSWORD": ask_secret("Gmail app password (xxxx-xxxx-xxxx-xxxx)").replace("-", ""),
-        "ASSISTANT_USER":     ask("Your name (for personalisation)", "default"),
+        "ASSISTANT_USER":     ask("Your name (for personalization)", "default"),
+        "DEFAULT_CITY":       ask("Default city for weather", "Istanbul"),
         "LLM_MODEL":          selected_model,
     }
 
@@ -270,7 +271,7 @@ def configure_env(selected_model: str):
 
     ok(".env updated.")
 
-# ── Summary ───────────────────────────────────────────────────────────────────
+# Step 8: Installation summary
 def print_summary(selected_model: str):
     shell = detect_shell()
     activate_cmd = activation_command(shell)
@@ -297,10 +298,10 @@ def print_summary(selected_model: str):
     print(f"  Test chat:")
     print(f"    curl -X POST http://localhost:8000/chat \\")
     print(f'      -H "Content-Type: application/json" \\')
-    print(f"      -d '{{\"message\": \"Merhaba!\", \"session_id\": \"s1\"}}'")
+    print(f"      -d '{{\"message\": \"Hello!\", \"session_id\": \"s1\"}}'")
     print()
 
-# ── Entry point ───────────────────────────────────────────────────────────────
+# Entry point
 if __name__ == "__main__":
     print(blue("\n🚀 piSynapse Installer\n"))
 

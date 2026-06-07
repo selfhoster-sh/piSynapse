@@ -9,6 +9,7 @@ from gmail import get_mail_client
 
 logger = logging.getLogger("piSynapse")
 
+# LLM and tool configuration
 OLLAMA_BASE_URL   = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 LLM_MODEL         = os.getenv("LLM_MODEL", "gemma4:e2b")
 LLM_TEMPERATURE   = float(os.getenv("LLM_TEMPERATURE", "0.3"))
@@ -62,8 +63,9 @@ KNOWN_TOOLS = {
     "get_emails", "read_email", "send_email", "search_emails",
 }
 
-# --- CalDAV helpers (blocking — run in thread pool) ---
+# Nextcloud CalDAV helper functions (blocking operations, run in thread pool)
 def _nc_create_event(client, summary: str, start_time_str: str, duration_minutes: int) -> str:
+    """Create calendar event on Nextcloud."""
     import vobject
     calendars = client.principal().calendars()
     if not calendars:
@@ -78,6 +80,7 @@ def _nc_create_event(client, summary: str, start_time_str: str, duration_minutes
     return f"✅ '{summary}' added to calendar at {start_time_str}."
 
 def _nc_list_events(client, days_ahead: int) -> str:
+    """Retrieve upcoming calendar events."""
     calendars = client.principal().calendars()
     if not calendars:
         return "No calendar found on Nextcloud."
@@ -94,6 +97,7 @@ def _nc_list_events(client, days_ahead: int) -> str:
     return "📅 Upcoming Events:\n" + "\n".join(lines)
 
 def _nc_delete_event(client, summary: str) -> str:
+    """Delete calendar event by title match."""
     calendars = client.principal().calendars()
     if not calendars:
         return "No calendar found on Nextcloud."
@@ -109,8 +113,9 @@ def _nc_delete_event(client, summary: str) -> str:
             return f"✅ '{ev_summary}' deleted from calendar."
     return f"No event found matching '{summary}'."
 
-# --- Tool runner ---
+# Tool execution dispatcher
 async def run_tool(name: str, params: dict) -> str:
+    """Execute requested tool with parameters and return result."""
     try:
         if name == "get_datetime":
             return datetime.now().strftime("%d %B %Y, %A, %H:%M")
@@ -118,6 +123,7 @@ async def run_tool(name: str, params: dict) -> str:
         elif name == "get_weather":
             city = params.get("city", DEFAULT_CITY)
             async with httpx.AsyncClient(timeout=WEATHER_TIMEOUT) as http:
+                # Geocode city name to coordinates
                 geo_resp = await http.get(
                     "https://nominatim.openstreetmap.org/search",
                     params={"q": city, "format": "json", "limit": 1},
@@ -127,6 +133,7 @@ async def run_tool(name: str, params: dict) -> str:
                 if not geo:
                     return f"City not found: {city}"
                 lat, lon = geo[0]["lat"], geo[0]["lon"]
+                # Fetch weather from Open-Meteo
                 w_resp = await http.get(
                     "https://api.open-meteo.com/v1/forecast",
                     params={
@@ -221,10 +228,15 @@ async def run_tool(name: str, params: dict) -> str:
         return f"Tool error: {str(e)}"
 
 
-# --- Ollama Bridge ---
+# Main LLM bridge with agentic tool-calling loop
 async def chat_with_ollama(history: list[dict], core_memories: list[dict], user_id: str = "default") -> tuple[str, int]:
+    """
+    Execute multi-turn conversation with Ollama LLM, handle XML tool calls,
+    execute tools, and inject results back into conversation.
+    """
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
 
+    # Inject long-term memories if available
     if core_memories:
         memory_block = "Remembered facts about the user:\n" + "\n".join(
             f"- {m['content']}" for m in core_memories
@@ -251,7 +263,7 @@ async def chat_with_ollama(history: list[dict], core_memories: list[dict], user_
                 logger.error(f"Ollama connection error: {e}")
                 return f"Could not reach Ollama: {str(e)}", 0
 
-            # --- XML tool call parsing ---
+            # Parse XML tool calls from response
             tool_calls = []
             for match in re.finditer(r"<tool_call>(.*?)</tool_call>", reply, re.DOTALL):
                 block = match.group(1)
@@ -266,7 +278,7 @@ async def chat_with_ollama(history: list[dict], core_memories: list[dict], user_
                         t_params[tag.strip()] = val.strip()
                 tool_calls.append((t_name, t_params))
 
-            # Malformed XML guard
+            # Malformed XML guard: request correction if tools detected but not parsed
             if "<tool_call>" in reply and not tool_calls:
                 logger.warning(f"Malformed <tool_call> on iteration {iteration}, requesting correction.")
                 messages.append({"role": "assistant", "content": reply})
@@ -280,6 +292,7 @@ async def chat_with_ollama(history: list[dict], core_memories: list[dict], user_
                 })
                 continue
 
+            # Execute tools and collect results
             if tool_calls:
                 results = []
                 for t_name, t_params in tool_calls:
@@ -289,6 +302,7 @@ async def chat_with_ollama(history: list[dict], core_memories: list[dict], user_
                     else:
                         results.append(f"❌ Unknown tool: {t_name}")
 
+                # Inject tool results back into conversation
                 tool_results_text = "\n".join(results)
                 messages.append({"role": "assistant", "content": reply})
                 messages.append({
@@ -301,6 +315,7 @@ async def chat_with_ollama(history: list[dict], core_memories: list[dict], user_
                 })
                 continue
 
+            # No tools called: return final response
             return reply, 0
 
     return "Processing limit reached. Please rephrase your request.", 0
