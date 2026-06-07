@@ -2,7 +2,8 @@ import imaplib
 import smtplib
 import email
 import os
-import re  # Regex temizliği için eklendi
+import re
+import logging
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.header import decode_header
@@ -11,6 +12,8 @@ import asyncio
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger("piSynapse")
 
 GMAIL_USER = os.getenv("GMAIL_USER")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
@@ -21,7 +24,7 @@ SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
 
 
 def _decode_str(value) -> str:
-    """Decode email headers properly."""
+    """E-posta başlıklarını güvenle decode eder."""
     if value is None:
         return ""
     parts = decode_header(value)
@@ -35,24 +38,22 @@ def _decode_str(value) -> str:
 
 
 def _clean_body_text(text: str) -> str:
-    """Ardışık boşlukları ve satır başlarını temizleyerek LLM için yer kazandırır."""
+    """Gereksiz boşlukları kırparak LLM token kullanımını optimize eder."""
     if not text:
         return ""
-    # Birden fazla boşluk veya newline karakterini tek boşluğa düşür
-    text = re.sub(self_space := r'\s+', ' ', text)
+    text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
 
 def _get_body(msg, max_chars: Optional[int] = None) -> str:
-    """Extract plain text body from email with optional character limit to save memory."""
+    """E-posta gövdesinden düz metin içeriğini çeker."""
     body_str = ""
-    
+
     if msg.is_multipart():
         for part in msg.walk():
             if part.get_content_type() == "text/plain":
                 payload = part.get_payload(decode=True)
                 if payload:
-                    # Eğer limit varsa, byte seviyesinde kabaca kırparak devasa maillerin ram şişirmesini önle
                     if max_chars and len(payload) > max_chars * 2:
                         payload = payload[:max_chars * 2]
                     body_str = payload.decode(part.get_content_charset() or "utf-8", errors="replace")
@@ -67,8 +68,13 @@ def _get_body(msg, max_chars: Optional[int] = None) -> str:
     return _clean_body_text(body_str)
 
 
+def _sanitize_imap_query(query: str) -> str:
+    """IMAP komut enjeksiyonunu önlemek için tehlikeli karakterleri temizler."""
+    return query.replace('"', '').replace('\\', '').strip()
+
+
 def _sync_list_emails(limit: int = 10) -> List[Dict]:
-    """List recent emails via IMAP (sync)."""
+    """Gelen kutusundaki son e-postaları senkron listeler."""
     with imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT) as imap:
         imap.login(GMAIL_USER, GMAIL_APP_PASSWORD)
         imap.select("INBOX")
@@ -78,22 +84,25 @@ def _sync_list_emails(limit: int = 10) -> List[Dict]:
 
         messages = []
         for uid in recent_ids:
-            _, msg_data = imap.fetch(uid, "(RFC822)")
-            raw = msg_data[0][1]
-            msg = email.message_from_bytes(raw)
-            # 500 karakter preview için limiti _get_body'ye paslıyoruz
-            messages.append({
-                "id": uid.decode(),
-                "from": _decode_str(msg.get("From", "")),
-                "subject": _decode_str(msg.get("Subject", "(no subject)")),
-                "date": msg.get("Date", ""),
-                "body": _get_body(msg, max_chars=500)[:500],
-            })
+            try:
+                _, msg_data = imap.fetch(uid, "(RFC822)")
+                raw = msg_data[0][1]
+                msg = email.message_from_bytes(raw)
+                messages.append({
+                    "id": uid.decode(),
+                    "from": _decode_str(msg.get("From", "")),
+                    "subject": _decode_str(msg.get("Subject", "(no subject)")),
+                    "date": msg.get("Date", ""),
+                    "body": _get_body(msg, max_chars=500)[:500],
+                })
+            except Exception as e:
+                logger.error(f"[Gmail] Failed reading UID {uid}: {e}")
+                continue
         return messages
 
 
 def _sync_read_email(uid: str) -> Optional[Dict]:
-    """Read a specific email via IMAP (sync)."""
+    """Belirli bir e-postayı UID üzerinden senkron okur."""
     with imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT) as imap:
         imap.login(GMAIL_USER, GMAIL_APP_PASSWORD)
         imap.select("INBOX")
@@ -112,32 +121,36 @@ def _sync_read_email(uid: str) -> Optional[Dict]:
 
 
 def _sync_search_emails(query: str, limit: int = 10) -> List[Dict]:
-    """Search emails via IMAP (sync)."""
+    """Konu veya göndericiye göre e-postaları arar."""
+    safe_query = _sanitize_imap_query(query)
     with imaplib.IMAP4_SSL(IMAP_HOST, IMAP_PORT) as imap:
         imap.login(GMAIL_USER, GMAIL_APP_PASSWORD)
         imap.select("INBOX")
-        # IMAP OR syntax hatası fixlendi: Operatör öne alındı
-        _, data = imap.search(None, f'OR SUBJECT "{query}" FROM "{query}"')
+        _, data = imap.search(None, f'OR SUBJECT "{safe_query}" FROM "{safe_query}"')
         ids = data[0].split()
         recent_ids = ids[-limit:][::-1]
 
         messages = []
         for uid in recent_ids:
-            _, msg_data = imap.fetch(uid, "(RFC822)")
-            raw = msg_data[0][1]
-            msg = email.message_from_bytes(raw)
-            messages.append({
-                "id": uid.decode(),  # .decode() eklendi, byte kalması önlendi
-                "from": _decode_str(msg.get("From", "")),
-                "subject": _decode_str(msg.get("Subject", "(no subject)")),
-                "date": msg.get("Date", ""),
-                "body": _get_body(msg, max_chars=1500)[:1500],
-            })
+            try:
+                _, msg_data = imap.fetch(uid, "(RFC822)")
+                raw = msg_data[0][1]
+                msg = email.message_from_bytes(raw)
+                messages.append({
+                    "id": uid.decode(),
+                    "from": _decode_str(msg.get("From", "")),
+                    "subject": _decode_str(msg.get("Subject", "(no subject)")),
+                    "date": msg.get("Date", ""),
+                    "body": _get_body(msg, max_chars=1500)[:1500],
+                })
+            except Exception as e:
+                logger.error(f"[Gmail] Failed reading UID {uid} during search: {e}")
+                continue
         return messages
 
 
 def _sync_send_email(to: str, subject: str, body: str) -> bool:
-    """Send an email via SMTP (sync)."""
+    """E-posta gönderir."""
     msg = MIMEMultipart()
     msg["From"] = GMAIL_USER
     msg["To"] = to
@@ -151,7 +164,7 @@ def _sync_send_email(to: str, subject: str, body: str) -> bool:
 
 
 class GmailClient:
-    """Gmail IMAP/SMTP client."""
+    """FastAPI asenkron döngüsünü kilitlemeden thread havuzunda IMAP/SMTP yöneten istemci."""
 
     async def get_accounts(self) -> List[Dict]:
         return [{"id": 1, "emailAddress": GMAIL_USER}]
@@ -163,33 +176,33 @@ class GmailClient:
         try:
             return await asyncio.to_thread(_sync_list_emails, limit)
         except Exception as e:
-            print(f"[Gmail] Failed to fetch messages: {e}")
+            logger.error(f"[Gmail] Failed to fetch messages: {e}")
             return []
 
     async def get_message(self, account_id: int, mailbox_id, message_id) -> Optional[Dict]:
         try:
             return await asyncio.to_thread(_sync_read_email, str(message_id))
         except Exception as e:
-            print(f"[Gmail] Failed to read message: {e}")
+            logger.error(f"[Gmail] Failed to read message {message_id}: {e}")
             return None
 
     async def send_message(self, account_id: int, to: str, subject: str, body: str, cc="", bcc="") -> bool:
         try:
             return await asyncio.to_thread(_sync_send_email, to, subject, body)
         except Exception as e:
-            print(f"[Gmail] Failed to send: {e}")
+            logger.error(f"[Gmail] Failed to send to {to}: {e}")
             return False
 
     async def search_messages(self, account_id: int, query: str, limit: int = 10) -> List[Dict]:
         try:
             return await asyncio.to_thread(_sync_search_emails, query, limit)
         except Exception as e:
-            print(f"[Gmail] Search failed: {e}")
+            logger.error(f"[Gmail] Search failed for query '{query}': {e}")
             return []
 
 
 def get_mail_client() -> Optional[GmailClient]:
     if not GMAIL_USER or not GMAIL_APP_PASSWORD:
-        print("[Gmail] GMAIL_USER or GMAIL_APP_PASSWORD missing from .env")
+        logger.warning("[Gmail] GMAIL_USER or GMAIL_APP_PASSWORD missing from .env")
         return None
     return GmailClient()
