@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routers import chat
 from memory import init_db
+from embedding import get_model as _warm_up_embedding
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 import logging
@@ -14,13 +15,9 @@ load_dotenv()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Automatically initialize the database schema on startup
     await init_db()
-    
-    # Warm up the FastEmbed model in a thread pool to avoid lag on the first user request
     logger.info("⏳ Initializing system, warming up semantic memory engine...")
-    await asyncio.to_thread(lambda: __import__("embedding").get_model())
-    
+    await asyncio.to_thread(_warm_up_embedding)
     yield
     logger.info("🛑 piSynapse shutting down...")
 
