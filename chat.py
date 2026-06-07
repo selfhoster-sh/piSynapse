@@ -1,19 +1,18 @@
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import re
 import logging
 
 from llm import chat_with_ollama
-from memory import get_history, save_message, get_memories, save_memory, clear_history, get_all_memories # get_all_memories import edildiğinden emin ol
+from memory import get_history, save_message, get_memories, save_memory, clear_history, get_all_memories
 
-# Loglama ayarı
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("piSynapse")
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 class ChatRequest(BaseModel):
-    message: str
+    message: str = Field(..., min_length=1)
     session_id: str = "default_session"
     user_id: str = "default"
 
@@ -24,10 +23,11 @@ class ChatResponse(BaseModel):
     memories_saved: int
 
 def extract_and_clean_memory(reply_text: str) -> tuple[str, list]:
+    """Model cevabından belleğe kaydedilecek MEMORY satırlarını regex ile ayıklar."""
     memories_to_save = []
     cleaned_lines = []
     pattern = re.compile(r"MEMORY:\s*\[(.*?)\]\s*(.*)", re.IGNORECASE)
-    
+
     for line in reply_text.splitlines():
         match = pattern.search(line.strip())
         if match:
@@ -42,18 +42,26 @@ def extract_and_clean_memory(reply_text: str) -> tuple[str, list]:
 async def chat_endpoint(req: ChatRequest):
     if not req.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty")
-        
+
+    
     await save_message(req.session_id, "user", req.message)
-    history = await get_history(req.session_id, limit=100)
-    core_memories = await get_memories(user_id=req.user_id, limit=5)
+
+    history = await get_history(req.session_id, limit=20)
     
-    raw_reply = await chat_with_ollama(history, core_memories)
+    core_memories = await get_memories(user_id=req.user_id, limit=10)
+
+    raw_reply, _ = await chat_with_ollama(history, core_memories, user_id=req.user_id)
+
     final_reply, memories_to_save = extract_and_clean_memory(raw_reply)
-    
+
     await save_message(req.session_id, "assistant", final_reply)
+
     for category, content in memories_to_save:
-        await save_memory(content=content, category=category, user_id=req.user_id)
-        
+        try:
+            await save_memory(content=content, category=category, user_id=req.user_id)
+        except Exception as e:
+            logger.error(f"Failed to save memory: {e}")
+
     return ChatResponse(
         reply=final_reply,
         session_id=req.session_id,
@@ -61,7 +69,6 @@ async def chat_endpoint(req: ChatRequest):
         memories_saved=len(memories_to_save)
     )
 
-# DİKKAT: Bu rota "/chat/memories" adresine denk gelir
 @router.get("/memories")
 async def list_memories(user_id: str = Query("default")):
     try:
@@ -72,5 +79,8 @@ async def list_memories(user_id: str = Query("default")):
 
 @router.delete("/history")
 async def clear_chat_history(session_id: str = Query(...)):
-    await clear_history(session_id)
-    return {"status": "success", "message": f"Oturum '{session_id}' temizlendi."}
+    try:
+        await clear_history(session_id)
+        return {"status": "success", "message": f"Oturum '{session_id}' temizlendi."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
