@@ -3,6 +3,7 @@ from fastembed import TextEmbedding
 import pickle
 import logging
 import os
+import asyncio
 
 logger = logging.getLogger("piSynapse")
 
@@ -28,6 +29,12 @@ def embed(text: str) -> bytes:
     model = get_model()
     vec = list(model.embed([text]))[0]
     return pickle.dumps(vec.astype("float32"))
+
+
+async def embed_async(text: str) -> bytes:
+    """Async wrapper around embed() — offloads the blocking ONNX inference to a thread
+    so it doesn't stall the FastAPI event loop."""
+    return await asyncio.to_thread(embed, text)
 
 
 def cosine_similarity(blob_a: bytes, blob_b: bytes) -> float:
