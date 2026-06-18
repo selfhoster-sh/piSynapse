@@ -184,9 +184,11 @@ class GmailClient:
     """Wraps sync IMAP/SMTP calls in asyncio.to_thread to avoid blocking the FastAPI event loop."""
 
     async def get_mailboxes(self, account_id: int) -> List[Dict]:
+        # Only INBOX is exposed for now; extend here to support labels/folders
         return [{"id": "INBOX", "name": "INBOX"}]
 
     async def get_messages(self, account_id: int, mailbox_id, limit: int = 10) -> List[Dict]:
+        # Fetches the most recent `limit` messages from INBOX
         try:
             return await asyncio.to_thread(_sync_list_emails, limit)
         except Exception as e:
@@ -194,6 +196,7 @@ class GmailClient:
             return []
 
     async def get_message(self, account_id: int, mailbox_id, message_id) -> Optional[Dict]:
+        # Fetches a single message by its IMAP sequence number
         try:
             return await asyncio.to_thread(_sync_read_email, str(message_id))
         except Exception as e:
@@ -201,6 +204,7 @@ class GmailClient:
             return None
 
     async def send_message(self, account_id: int, to: str, subject: str, body: str, cc="", bcc="") -> bool:
+        # Sends via SMTP SSL; cc/bcc accepted in signature but not yet wired through
         try:
             return await asyncio.to_thread(_sync_send_email, to, subject, body)
         except Exception as e:
@@ -208,6 +212,7 @@ class GmailClient:
             return False
 
     async def search_messages(self, account_id: int, query: str, limit: int = 10) -> List[Dict]:
+        # Searches by subject OR sender using IMAP OR operator
         try:
             return await asyncio.to_thread(_sync_search_emails, query, limit)
         except Exception as e:
