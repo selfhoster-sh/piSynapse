@@ -1,136 +1,114 @@
-# piSynapse 🚀
-### Privacy-First, Self-Hosted AI Assistant on Edge Hardware
+# piSynapse
 
-**piSynapse** (Private-Intelligence Synapse) is an open-source personal assistant framework built to run entirely on your own local hardware. It is optimized for edge computing devices, ensuring your data stays private, secure, and under your control.
+**Privacy-first, self-hosted personal AI assistant.**
+
+piSynapse runs entirely on your own hardware — no subscriptions, no cloud, no data leaving your machine. It connects your calendar, email, and local LLM into a single conversational interface.
 
 ---
 
 ## Philosophy
 
-Most AI assistants today are locked behind subscriptions and centralized infrastructure. You either hand over your data or fall behind. piSynapse takes a different approach:
+Most AI assistants require handing your data to someone else's infrastructure. piSynapse doesn't. Your conversations, memories, calendar events, and emails stay on your device. The project is licensed under **GNU GPLv3**, so it can't be quietly closed or commercialized down the line.
 
-- **Your data stays yours.** Calendars, emails, and conversation history never leave your device.
-- **Edge-first.** Built to run within the resource constraints of a Raspberry Pi 5.
-- **Free forever.** Licensed under **GNU GPLv3** — can't be closed, repackaged, or commercialized.
+It runs well on a Raspberry Pi 5 — that's the primary hardware it's been developed and tested on — but there's nothing stopping you from running it on any Linux machine.
 
 ---
 
 ## Features
 
-- 📅 **Personal Calendar** — Connects to Nextcloud CalDAV for schedule management
-- 📧 **Email Management** — Native Gmail IMAP/SMTP integration (read, send, search)
-- 🌤️ **Local Weather** — Real-time forecasts via Open-Meteo (no tracking)
-- 🧠 **Long-Term Memory** — Semantic deduplication with embeddings
-- 🤖 **Self-Hosted LLM** — Ollama integration with local models
-- 💬 **Tool-Calling Loop** — Custom XML-based tool execution (LLM-agnostic)
+- 💬 **Web UI** — Clean chat interface with session management, memory panel, and think mode toggle
+- 📅 **Calendar** — Nextcloud CalDAV integration for schedule management
+- 📧 **Email** — Gmail IMAP/SMTP (read, send, search)
+- 🌤️ **Weather** — Real-time forecasts via Open-Meteo, no tracking
+- 🧠 **Long-Term Memory** — Semantic search and deduplication using local embeddings
+- 🤖 **Local LLM** — Ollama with native tool calling
 
 ---
 
 ## Tech Stack
 
-| Component | Technology | Purpose |
-|-----------|-----------|----------|
-| **API** | FastAPI (async Python) | REST endpoints, event loop |
-| **LLM** | Ollama + local models | Tool calling, conversation |
-| **Storage** | SQLite + aiosqlite | Conversation history & memories |
-| **Integrations** | Nextcloud CalDAV, Gmail IMAP/SMTP | Calendar & email |
-| **Embeddings** | FastEmbed | Semantic deduplication, memory search |
-| **Weather** | Open-Meteo API | Real-time forecasts |
+| Component | Technology |
+|-----------|-----------|
+| **API** | FastAPI (async Python) |
+| **LLM** | Ollama + local models |
+| **Tool Calling** | Ollama native tool calling (JSON schema) |
+| **Storage** | SQLite + aiosqlite |
+| **Embeddings** | FastEmbed (runs locally) |
+| **Integrations** | Nextcloud CalDAV, Gmail IMAP/SMTP |
+| **Weather** | Open-Meteo API |
 
 ---
 
 ## Project Structure
 
-```text
+```
 piSynapse/
-├── main.py                # FastAPI app, lifespan management
-├── llm.py                 # LLM bridge, tool runner, system prompt
-├── chat.py                # Chat endpoints (in routers/)
-├── gmail.py               # Gmail IMAP/SMTP async wrapper
-├── memory.py              # Session & long-term memory (SQLite)
-├── embedding.py           # Semantic embeddings (FastEmbed)
-├── nextcloud_auth.py      # CalDAV authentication
-├── install.py             # Interactive setup wizard
-├── debugtest.py           # Pipeline test suite
-├── requirements.txt       # Python dependencies
-├── example.env            # Configuration template
-├── LICENSE                # GNU GPLv3
+├── main.py              # FastAPI app, startup & lifespan
+├── llm.py               # Ollama bridge, tool runner, system prompt
+├── memory.py            # Conversation history & long-term memory
+├── embedding.py         # Semantic embeddings (FastEmbed)
+├── gmail.py             # Gmail async wrapper
+├── nextcloud_auth.py    # CalDAV client
+├── install.py           # Interactive setup wizard
+├── example.env          # Configuration template
+├── requirements.txt
+├── LICENSE
+├── static/
+│   └── index.html       # Web UI (single file, no build step)
 └── routers/
-    ├── __init__.py
-    └── chat.py            # Chat router (moved by install.py)
+    └── chat.py          # Chat API endpoints
 ```
 
 ---
 
 ## Getting Started
 
-### Quick Start (Automated)
+### Quick Start
 
 ```bash
-# Clone the repository
 git clone https://github.com/selfhoster-sh/piSynapse.git
 cd piSynapse
-
-# Run the interactive installer
 python install.py
 ```
 
-The installer will:
-- ✅ Check Python version (requires 3.10+)
-- ✅ Install Ollama (if needed)
-- ✅ Guide you through LLM model selection
-- ✅ Create virtual environment
-- ✅ Install dependencies
-- ✅ Configure .env with credentials
+The installer checks your Python version, installs Ollama if needed, creates a virtual environment, installs dependencies, and walks you through `.env` configuration.
 
 ### Manual Setup
 
-**1. Prerequisites**
 ```bash
-# Install Ollama
+# 1. Install Ollama and pull a model
 curl https://ollama.com/install.sh | sh
-
-# Pull a model
 ollama pull gemma4:e2b
-```
 
-**2. Clone & Install**
-```bash
+# 2. Clone and install dependencies
 git clone https://github.com/selfhoster-sh/piSynapse.git
 cd piSynapse
 python3 -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+source .venv/bin/activate
 pip install -r requirements.txt
-```
 
-**3. Configure**
-```bash
+# 3. Configure
 cp example.env .env
-nano .env  # Edit with your credentials
-```
+nano .env
 
-**4. Setup Project Structure**
-```bash
-mkdir routers
-mv chat.py routers/
-```
-
-**5. Run**
-```bash
+# 4. Run
 python -m uvicorn main:app --host 0.0.0.0 --port 8000
 ```
+
+Then open `http://localhost:8000` in your browser.
 
 ---
 
 ## Configuration
 
-Edit `.env` to configure:
+Key settings in `.env`:
 
 ```env
 # LLM
 OLLAMA_BASE_URL=http://localhost:11434
 LLM_MODEL=gemma4:e2b
 LLM_TEMPERATURE=0.3
+LLM_KEEP_ALIVE=24h
 
 # Gmail (optional)
 GMAIL_USER=your@gmail.com
@@ -146,111 +124,54 @@ ASSISTANT_USER=Your Name
 DEFAULT_CITY=Istanbul
 
 # Memory & History
-MEMORY_SIMILARITY_THRESHOLD=0.68
-HISTORY_LIMIT=20
+HISTORY_LIMIT=12
 MEMORY_LIMIT=10
+MEMORY_SIMILARITY_THRESHOLD=0.68
 ```
 
-> **Gmail Setup:** Enable 2FA, then generate an [App Password](https://myaccount.google.com/apppasswords).
-> 
-> **Nextcloud:** Create a dedicated [App Password](https://docs.nextcloud.com/server/latest/user_manual/en/session_management.html#app-passwords) in Security settings.
+**Gmail:** Enable 2FA and generate an [App Password](https://myaccount.google.com/apppasswords).  
+**Nextcloud:** Create a dedicated [App Password](https://docs.nextcloud.com/server/latest/user_manual/en/session_management.html#app-passwords) in Security settings.
 
 ---
 
-## API Usage
-
-### Chat Endpoint
+## API
 
 ```bash
+# Chat
 curl -X POST http://localhost:8000/chat \
   -H "Content-Type: application/json" \
-  -d '{
-    "message": "What\'s on my calendar this week?",
-    "session_id": "session_1",
-    "user_id": "default"
-  }'
-```
+  -d '{"message": "What'\''s on my calendar today?", "session_id": "main"}'
 
-**Response:**
-```json
-{
-  "reply": "You have 3 events this week...",
-  "session_id": "session_1",
-  "history_length": 2,
-  "memories_saved": 1
-}
-```
-
-### List Memories
-
-```bash
+# List memories
 curl http://localhost:8000/chat/memories?user_id=default
-```
 
-### Clear History
+# Clear a session
+curl -X DELETE "http://localhost:8000/chat/history?session_id=main"
 
-```bash
-curl -X DELETE http://localhost:8000/chat/history?session_id=session_1
-```
-
-### Health Check
-
-```bash
+# Health check
 curl http://localhost:8000/health
 ```
 
 ---
 
-## Testing
-
-Run the debug test suite:
-
-```bash
-python debugtest.py
-```
-
-This tests:
-- ✅ Memory extraction (MEMORY: lines)
-- ✅ Embeddings (FastEmbed loading)
-- ✅ Database operations (SQLite)
-- ✅ Semantic deduplication
-
----
-
-## Memory Syntax
-
-piSynapse can extract and store memories from model responses:
-
-```
-Hey John, I remember you're from Istanbul and you love Python!
-
-MEMORY: [personal] Name is John, from Istanbul
-MEMORY: [preference] Loves Python programming
-```
-
-The MEMORY lines are automatically removed from the displayed response and stored in the long-term memory database with semantic deduplication.
-
----
-
 ## Roadmap
 
-- [ ] **Proton Mail** — Secure email integration via proton-bridge
-- [ ] **Mobile App** — Native Android companion app
-- [ ] **Mobile Skills** — Location awareness & context-aware commands
-- [ ] **Advanced Tool-Calling** — Multi-step reasoning for complex queries
-- [ ] **Local Dashboard** — Web UI for sessions, memory, and analytics
+- [x] **Web UI** — Chat interface with sessions, memory panel, weather/calendar widgets
+- [ ] **Proton Mail** — Integration via proton-bridge
 - [ ] **Voice I/O** — Speech-to-text and text-to-speech
+- [ ] **Mobile App** — Android companion app
+- [ ] **Multi-user** — Separate memory and sessions per user
 
 ---
 
 ## License
 
-GNU General Public License v3.0 — See [LICENSE](LICENSE) for details.
+GNU General Public License v3.0 — see [LICENSE](LICENSE).
 
-piSynapse is **free, open-source, and will remain so** — guaranteed by GPLv3.
+piSynapse is free and open-source, and the license ensures it stays that way.
 
 ---
 
-## Support
+## Contributing & Support
 
-For issues, questions, or feature requests, open an issue on [GitHub](https://github.com/selfhoster-sh/piSynapse/issues).
+Issues and pull requests welcome on [GitHub](https://github.com/selfhoster-sh/piSynapse/issues).
