@@ -163,7 +163,12 @@ curl http://localhost:8000/health
 - [ ] **Multi-user** — Separate memory and sessions per user
 
 ---
+## Screenshots
 
+![Mobile UI](static/piSynapseui-mobile.jpeg)
+![Desktop UI](static/piSynapseui-1.png)
+![Desktop Chat](static/piSynapseui-2.png)
+---
 ## License
 
 GNU General Public License v3.0 — see [LICENSE](LICENSE).
