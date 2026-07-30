@@ -1,0 +1,64 @@
+"""Text embeddings via FastEmbed (ONNX). Used by intent classifier and memory search."""
+import numpy as np
+from fastembed import TextEmbedding
+import threading
+import logging
+import os
+import asyncio
+import warnings
+
+logger = logging.getLogger("piSynapse")
+
+MODEL_NAME = os.getenv(
+    "EMBED_MODEL",
+    "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+)
+
+_model: TextEmbedding | None = None
+_model_lock = threading.Lock()
+
+
+def get_model() -> TextEmbedding:
+    global _model
+    if _model is None:
+        with _model_lock:
+            if _model is None:
+                warnings.filterwarnings("ignore", message=".*now uses mean pooling.*")
+                logger.info(f"⚡ Loading FastEmbed model '{MODEL_NAME}' on ONNX Runtime...")
+                _model = TextEmbedding(model_name=MODEL_NAME)
+                logger.info("✅ FastEmbed model loaded.")
+    return _model
+
+
+def embed(text: str) -> bytes:
+    """Converts text to a float32 embedding vector, serialized as raw bytes for SQLite."""
+    model = get_model()
+    vec = list(model.embed([text]))[0]
+    return vec.astype("float32").tobytes()
+
+
+async def embed_async(text: str) -> bytes:
+    """Async wrapper around embed() — offloads the blocking ONNX inference to a thread
+    so it doesn't stall the FastAPI event loop."""
+    return await asyncio.to_thread(embed, text)
+
+
+def cosine_similarity(blob_a: bytes, blob_b: bytes) -> float:
+    """Computes cosine similarity between two embedding vectors (raw bytes or legacy pickle)."""
+    if not blob_a or not blob_b:
+        return 0.0
+    try:
+        a = _deserialize(blob_a)
+        b = _deserialize(blob_b)
+        denom = np.linalg.norm(a) * np.linalg.norm(b)
+        if denom == 0:
+            return 0.0
+        return float(np.dot(a, b) / denom)
+    except Exception as e:
+        logger.error(f"cosine_similarity error: {e}")
+        return 0.0
+
+
+def _deserialize(blob: bytes) -> np.ndarray:
+    """Deserialize an embedding vector from raw float32 bytes."""
+    return np.frombuffer(blob, dtype="float32")
