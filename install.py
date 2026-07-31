@@ -1,8 +1,17 @@
 #!/usr/bin/env python3
 """
-piSynapse Installer — offline-first personal AI assistant
-Platforms: Linux, macOS, Windows (experimental)
+piSynapse Installer — offline-first personal AI assistant.
+Platforms: Linux, macOS, Windows (experimental).
 Run with: python install.py
+
+Flow:
+  1. Python version check
+  2. System dependencies (ffmpeg, curl)
+  3. Virtual environment + pip packages
+  4. LLM backend (LiteRT-LM or Ollama) + model + server start
+  5. Piper TTS voices (optional)
+  6. Environment configuration (.env auto-generated)
+  7. systemd service (Linux only, optional)
 """
 
 import os, re, sys, shutil, secrets, getpass, platform, struct, subprocess
@@ -12,7 +21,12 @@ from typing import Dict, Optional
 # ── Defaults ──────────────────────────────────────────────────────────────────
 
 VENV_DIR = ".venv"
+LITERT_PORT = 9379
 IS_WIN = sys.platform == "win32"
+
+# Shared state passed between steps so no question is asked twice.
+STATE: dict = {}
+
 
 # ── Terminal helpers ──────────────────────────────────────────────────────────
 
@@ -51,6 +65,26 @@ def ask_yesno(prompt: str, default: bool = True) -> bool:
     if not val:
         return default
     return val.startswith("y")
+
+def menu(title: str, options: list[tuple[str, str]], default: int = 1) -> int:
+    """Numbered choice menu. options = [(label, description)]. Returns 1-based index."""
+    print(f"\n  {title}")
+    for i, (label, desc) in enumerate(options, 1):
+        line = f"    {i}) {label}"
+        if desc:
+            line += f"  —  {desc}"
+        print(line)
+    val = input(f"  Choose [1-{len(options)}] (default {default}): ").strip()
+    if not val:
+        return default
+    try:
+        idx = int(val)
+    except ValueError:
+        idx = 0
+    if not (1 <= idx <= len(options)):
+        warn(f"Invalid choice '{val}' — using option {default}.")
+        return default
+    return idx
 
 def venv_bin(name: str) -> str:
     return os.path.join(VENV_DIR, "Scripts" if IS_WIN else "bin", f"{name}.exe" if IS_WIN else name)
@@ -94,13 +128,14 @@ def step_system_deps() -> None:
     header("2 / 7  System dependencies")
     missing: list[str] = []
 
-    # ffmpeg — required for Whisper STT and audio conversion
     if shutil.which("ffmpeg"):
         ok("ffmpeg found")
     else:
         warn("ffmpeg not found (required for audio/voice)")
         if IS_WIN:
             info("Download from: https://ffmpeg.org/download.html")
+        elif sys.platform == "darwin":
+            info("Install with: brew install ffmpeg")
         else:
             if ask_yesno("Install ffmpeg now? (sudo apt install ffmpeg)"):
                 r = subprocess.run(["sudo", "apt-get", "install", "-y", "ffmpeg"])
@@ -110,7 +145,14 @@ def step_system_deps() -> None:
                     warn("ffmpeg install failed — install manually later")
         missing.append("ffmpeg")
 
-    # build tools — for pip packages with native extensions
+    if not shutil.which("curl"):
+        warn("curl not found (needed for model downloads and health checks)")
+        if not IS_WIN:
+            subprocess.run(["sudo", "apt-get", "install", "-y", "curl"])
+            if shutil.which("curl"):
+                ok("curl installed")
+        missing.append("curl")
+
     if not IS_WIN and not shutil.which("build-essential"):
         if ask_yesno("Install build-essential (recommended for pip packages)?"):
             subprocess.run(["sudo", "apt-get", "install", "-y", "build-essential"])
@@ -150,59 +192,94 @@ def step_venv() -> None:
 
 # ── Step 4: LLM backend ──────────────────────────────────────────────────────
 
-# HuggingFace repos for supported LiteRT-LM models
+# piSynapse model name → (HuggingFace repo, filename, size hint).
+# NOTE: litert-lm imports with the model ID the app will request. The app sends
+# LLM_MODEL with ':' replaced by '-', so the import ID MUST use dashes.
 _LITERT_MODEL_REGISTRY: dict[str, tuple[str, str, str]] = {
-    # model-id → (hf_repo, filename_in_repo, size_human)
     "gemma4:e2b": ("litert-community/gemma-4-E2B-it-litert-lm", "gemma-4-E2B-it.litertlm", "~2.4 GB"),
     "gemma4:e4b": ("litert-community/gemma-4-E4B-it-litert-lm", "gemma-4-E4B-it.litertlm", "~3.4 GB"),
 }
 
+_OLLAMA_MODELS = ["gemma4:e2b", "gemma4:e4b"]
+
+
+def _run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
+    """Run a subprocess with live output (for downloads/progress bars)."""
+    return subprocess.run(cmd, **kwargs)
+
 
 def _ensure_uv() -> str | None:
-    """Return path to uv binary, installing it if needed."""
+    """Return uv binary path, installing it if needed."""
     exe = shutil.which("uv")
     if exe:
         return exe
-    info("uv not found — installing via pip...")
+    info("uv not found — installing...")
     r = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "--user", "uv"],
+        [sys.executable, "-m", "pip", "install", "--user", "--quiet", "uv"],
         capture_output=True, text=True,
     )
-    if r.returncode == 0:
-        exe = shutil.which("uv")
-        if exe:
-            ok("uv installed")
-            return exe
-    warn("uv installation failed — will try pip inside venv instead")
+    exe = shutil.which("uv")
+    if r.returncode == 0 and exe:
+        ok("uv installed")
+        return exe
+    # uv tool may not be on PATH for this session (e.g. ~/.local/bin not in PATH).
+    for candidate in (
+        os.path.expanduser("~/.local/bin/uv"),
+        os.path.expanduser("~/Library/Python/*/bin/uv"),
+    ):
+        hits = sorted(Path(os.path.dirname(candidate)).glob("uv")) if "*" in candidate else [Path(candidate)]
+        for hit in hits:
+            if hit.is_file() and os.access(hit, os.X_OK):
+                ok(f"uv found at {hit}")
+                return str(hit)
+    warn("uv not found — will install litert-lm with pip instead")
     return None
 
 
-def _ensure_litertlm(uv_bin: str | None) -> str | None:
-    """Install litert-lm if not present, return path to binary."""
+def _find_litert_bin() -> str | None:
+    """Locate the litert-lm executable across platforms."""
     exe = shutil.which("litert-lm")
     if exe:
-        ok(f"litert-lm found at {exe}")
         return exe
+    candidates = [
+        os.path.expanduser("~/.local/bin/litert-lm"),
+        os.path.expanduser("~/Library/Python/3.*/bin/litert-lm"),
+        os.path.abspath(os.path.join(VENV_DIR, "Scripts" if IS_WIN else "bin", "litert-lm")),
+    ]
+    for pattern in candidates:
+        hits = sorted(Path(os.path.dirname(pattern)).glob(os.path.basename(pattern))) if "*" in pattern else [Path(pattern)]
+        for hit in hits:
+            if hit.is_file() and os.access(hit, os.X_OK):
+                return str(hit)
+    return None
 
-    info("Installing litert-lm via uv tool...")
-    installer = [uv_bin, "tool", "install", "litert-lm"] if uv_bin else [sys.executable, "-m", "pip", "install", "litert-lm"]
-    r = subprocess.run(installer, capture_output=True, text=True)
-    if r.returncode == 0:
-        exe = shutil.which("litert-lm")
-        if exe:
-            ok("litert-lm installed")
-            return exe
 
-    # Fallback: pip inside project venv
-    info("Trying pip inside project venv...")
+def _install_litertlm(uv_bin: str | None) -> str | None:
+    """Install litert-lm and return its binary path, or None on failure."""
+    existing = _find_litert_bin()
+    if existing:
+        ok(f"litert-lm found at {existing}")
+        return existing
+
+    info("Installing litert-lm (official LiteRT-LM CLI, ~64 kB)...")
+    if uv_bin:
+        r = subprocess.run([uv_bin, "tool", "install", "litert-lm"], capture_output=True, text=True)
+        if r.returncode == 0:
+            exe = _find_litert_bin()
+            if exe:
+                ok("litert-lm installed (uv)")
+                return exe
+        warn(f"uv tool install failed: {r.stderr.strip()[-300:]}")
+
+    info("Falling back to pip install litert-lm...")
     pip = venv_bin("pip")
-    r = subprocess.run([pip, "install", "litert-lm"], capture_output=True, text=True)
+    r = subprocess.run([pip, "install", "--quiet", "litert-lm"], capture_output=True, text=True)
     if r.returncode == 0:
-        exe = shutil.which("litert-lm")
+        exe = _find_litert_bin()
         if exe:
-            ok("litert-lm found after venv install")
+            ok("litert-lm installed (pip)")
             return exe
-        # litert-lm may not get a CLI entrypoint in venv — create shim
+        # No console entrypoint found — create a shim inside the venv.
         shim_path = os.path.abspath(os.path.join(VENV_DIR, "bin", "litert-lm"))
         venv_python = venv_bin("python3")
         with open(shim_path, "w") as f:
@@ -211,26 +288,24 @@ def _ensure_litertlm(uv_bin: str | None) -> str | None:
         ok(f"Created shim at {shim_path}")
         return shim_path
 
-    warn("litert-lm installation failed")
+    error(f"Could not install litert-lm: {r.stderr.strip()[-300:]}")
+    error("Install it manually with:  uv tool install litert-lm   (or: pip install litert-lm)")
     return None
 
 
-def _litert_model_imported(model_id: str) -> bool:
-    """Check if a model is already imported in litert-lm's local storage."""
-    r = subprocess.run(
-        ["litert-lm", "list"],
-        capture_output=True, text=True, timeout=15,
-    )
-    if r.returncode == 0:
-        return model_id in r.stdout
-    return False
+def _litert_model_imported(import_id: str) -> bool:
+    """Check whether a model is already in litert-lm's local registry."""
+    r = subprocess.run(["litert-lm", "list"], capture_output=True, text=True, timeout=15)
+    if r.returncode != 0:
+        return False
+    return any(line.strip().startswith(import_id) for line in r.stdout.splitlines())
 
 
 def _litert_is_running() -> bool:
     try:
         r = subprocess.run(
             ["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
-             "http://localhost:9379/v1/models"],
+             f"http://localhost:{LITERT_PORT}/v1/models"],
             capture_output=True, text=True, timeout=5,
         )
         return r.stdout.strip() == "200"
@@ -238,136 +313,64 @@ def _litert_is_running() -> bool:
         return False
 
 
-def step_llm_backend() -> None:
-    header("4 / 7  LLM backend")
+def _start_litert_server(litert_bin: str) -> bool:
+    """Start the LiteRT server and wait until it accepts requests."""
+    if _litert_is_running():
+        ok(f"LiteRT server already running on :{LITERT_PORT}")
+        return True
 
-    backend = ask("Choose LLM backend (litert / ollama)", "litert").strip().lower()
-    while backend not in ("litert", "ollama"):
-        backend = ask("Please enter 'litert' or 'ollama'", "litert").strip().lower()
+    # Linux with systemd → proper service (auto-start on boot).
+    if shutil.which("systemctl"):
+        if ask_yesno("Create & start LiteRT systemd service (auto-start on boot)?"):
+            if _create_litert_service():
+                return _wait_litert_ready()
+            return False
+    elif ask_yesno(f"Start LiteRT server now on port {LITERT_PORT}?"):
+        pass
+    else:
+        info("Skipping server start. Start it later with:")
+        info(f"  {litert_bin} serve --host 0.0.0.0 --port {LITERT_PORT}")
+        return False
 
-    # ── LiteRT path ─────────────────────────────────────────────────────
-    if backend == "litert":
-        ok("Selected LiteRT LM")
+    info(f"Starting LiteRT server on :{LITERT_PORT}...")
+    log_path = os.path.abspath("litert-server.log")
+    logf = open(log_path, "ab")
+    try:
+        subprocess.Popen(
+            [litert_bin, "serve", "--host", "0.0.0.0", "--port", str(LITERT_PORT)],
+            stdout=logf, stderr=logf, stdin=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except Exception as e:
+        error(f"Could not start LiteRT server: {e}")
+        return False
+    ok(f"Server starting — logs: {log_path}")
+    return _wait_litert_ready()
 
-        # 4a. Ensure curl (used for health checks)
-        if not shutil.which("curl"):
-            info("Installing curl...")
-            subprocess.run(["sudo", "apt-get", "install", "-y", "curl"])
-        ok("curl available")
 
-        # 4b. Install uv + litert-lm
-        uv_bin = _ensure_uv()
-        litert_bin = _ensure_litertlm(uv_bin)
-        if litert_bin is None:
-            error("Could not install litert-lm — aborting")
-            sys.exit(1)
-
-        # 4c. Pick model
-        model_id = ask("Model ID", "gemma4:e2b").strip()
-        if model_id not in _LITERT_MODEL_REGISTRY:
-            info(f"Unknown model {model_id!r}, will try direct import")
-            hf_repo = ask("HuggingFace repo (e.g. org/repo)")
-            hf_file = ask("Model filename in repo (e.g. model.litertlm)")
-            reg = (hf_repo, hf_file, "unknown size")
-        else:
-            reg = _LITERT_MODEL_REGISTRY[model_id]
-        hf_repo, hf_file, size_hint = reg
-
-        # 4d. Import model (download from HuggingFace)
-        if _litert_model_imported(model_id):
-            ok(f"Model {model_id} already imported")
-        else:
-            info(f"Importing {model_id} from HuggingFace ({size_hint})...")
-            info(f"  Repo: {hf_repo}")
-            info(f"  File: {hf_file}")
-            print()
-            if not ask_yesno("Download now? (requires ~3 GB free disk space)"):
-                info("Skipping model download — you can import later with:")
-                info(f"  litert-lm import --from-huggingface-repo {hf_repo} {hf_file} {model_id}")
-            else:
-                r = subprocess.run([
-                    "litert-lm", "import",
-                    "--from-huggingface-repo", hf_repo,
-                    hf_file, model_id,
-                ])
-                if r.returncode == 0:
-                    ok(f"{model_id} imported")
-                else:
-                    warn(f"Import failed — try manually: litert-lm import --from-huggingface-repo {hf_repo} {hf_file} {model_id}")
-
-        # 4e. Start LiteRT server if not running
+def _wait_litert_ready(timeout_s: int = 120) -> bool:
+    """Poll the LiteRT health endpoint until it responds or times out."""
+    import time
+    info(f"Waiting for LiteRT server on :{LITERT_PORT}...")
+    for _ in range(timeout_s // 2):
         if _litert_is_running():
-            ok("LiteRT server already running on :9379")
-        else:
-            info("Starting LiteRT server...")
-            if shutil.which("systemctl"):
-                if ask_yesno("Create & start LiteRT systemd service (auto-start on boot)?"):
-                    _create_litert_service()
-            else:
-                litert_bin = _get_litert_bin()
-                subprocess.Popen(
-                    [litert_bin, "serve", "--port", "9379"],
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                )
-                info("LiteRT started in background — will stop when you log out")
-
-        # 4f. Wait for server to be ready
-        info("Waiting for LiteRT server to accept requests...")
-        import time
-        for _ in range(30):
-            if _litert_is_running():
-                ok("LiteRT server ready")
-                break
-            time.sleep(2)
-        else:
-            warn("LiteRT server not responding after 60s — check: systemctl status litert")
-
-    # ── Ollama path ──────────────────────────────────────────────────────
-    elif backend == "ollama":
-        ok("Selected Ollama")
-        if not shutil.which("ollama"):
-            info("Ollama not found. Installing...")
-            r = subprocess.run([
-                "curl", "-fsSL", "https://ollama.com/install.sh"
-            ], capture_output=True, text=True)
-            if r.returncode == 0:
-                subprocess.run(["sh"], input=r.stdout, text=True)
-                ok("Ollama installed")
-            else:
-                warn("Automatic install failed — install manually: https://ollama.com")
-        else:
-            ok("Ollama already installed")
-
-        model = ask("Model name", "gemma4:e2b").strip()
-        info(f"Pulling {model}...")
-        r = subprocess.run(["ollama", "pull", model])
-        if r.returncode == 0:
-            ok(f"{model} ready")
-        else:
-            warn(f"Pull failed — try: ollama pull {model}")
+            ok("LiteRT server is ready")
+            return True
+        time.sleep(2)
+    warn(f"LiteRT server did not respond after {timeout_s}s.")
+    warn("Check the log: cat litert-server.log")
+    warn("Check the model: litert-lm list")
+    return False
 
 
-def _get_litert_bin() -> str:
-    """Return the litert-lm binary path, preferring system-wide install."""
-    exe = shutil.which("litert-lm")
-    if exe:
-        return exe
-    # Fallback to venv shim
-    shim = os.path.abspath(os.path.join(VENV_DIR, "bin", "litert-lm"))
-    if os.path.isfile(shim) and os.access(shim, os.X_OK):
-        return shim
-    return "litert-lm"
-
-
-def _create_litert_service() -> None:
+def _create_litert_service() -> bool:
     """Create a systemd unit for litert-lm serve."""
     if not shutil.which("systemctl"):
-        warn("systemctl not found — skipping LiteRT systemd service")
-        return
+        warn("systemctl not found — skipping systemd service")
+        return False
 
     user = os.environ.get("SUDO_USER") or os.environ.get("USER") or "pi"
-    litert_bin = _get_litert_bin()
-    # litert-lm stores models in the user's home
+    litert_bin = _find_litert_bin() or "litert-lm"
     user_home = os.path.expanduser(f"~{user}")
 
     unit = f"""[Unit]
@@ -379,7 +382,7 @@ Wants=network-online.target
 Type=simple
 User={user}
 Environment=HOME={user_home}
-ExecStart={litert_bin} serve --port 9379
+ExecStart={litert_bin} serve --host 0.0.0.0 --port {LITERT_PORT}
 Restart=on-failure
 RestartSec=5
 
@@ -394,65 +397,178 @@ WantedBy=multi-user.target
         subprocess.run(["sudo", "systemctl", "enable", "litert"], capture_output=True)
         subprocess.run(["sudo", "systemctl", "start", "litert"])
         ok("litert.service created and started")
+        return True
     except Exception as e:
         warn(f"Could not create litert systemd service: {e}")
-        info(f"Start manually: {litert_bin} serve --port 9379")
+        return False
+
+
+def step_llm_backend() -> None:
+    header("4 / 7  LLM backend")
+
+    backend_idx = menu("Choose LLM backend:", [
+        ("LiteRT-LM", "Recommended — faster and uses less RAM on ARM/Apple Silicon"),
+        ("Ollama", "x86 desktop favorite, needs more RAM"),
+    ])
+    backend = "litert" if backend_idx == 1 else "ollama"
+    STATE["backend"] = backend
+
+    # ── Model selection ───────────────────────────────────────────────────
+    if backend == "litert":
+        model_idx = menu("Choose model:", [
+            ("gemma4:e2b  (~2.4 GB)", "Recommended — fits in 8 GB RAM"),
+            ("gemma4:e4b  (~3.4 GB)", "Higher quality — needs 16 GB+ RAM"),
+        ])
+        model_id = "gemma4:e2b" if model_idx == 1 else "gemma4:e4b"
+    else:
+        model_idx = menu("Choose model:", [
+            ("gemma4:e2b  (~2.4 GB)", "Recommended — fits in 8 GB RAM"),
+            ("gemma4:e4b  (~3.4 GB)", "Higher quality — needs 16 GB+ RAM"),
+        ])
+        model_id = _OLLAMA_MODELS[model_idx - 1]
+    STATE["model"] = model_id
+    ok(f"Selected {backend} / {model_id}")
+
+    # ── LiteRT path ───────────────────────────────────────────────────────
+    if backend == "litert":
+        # Install litert-lm CLI (system-wide via uv, independent of the venv).
+        uv_bin = _ensure_uv()
+        litert_bin = _install_litertlm(uv_bin)
+        if litert_bin is None:
+            error("Aborting — litert-lm must be installed to continue.")
+            sys.exit(1)
+
+        # Import the model into the local registry if not present.
+        import_id = model_id.replace(":", "-")          # app requests gemma4-e2b
+        if _litert_model_imported(import_id):
+            ok(f"Model '{import_id}' already imported")
+        else:
+            hf_repo, hf_file, size_hint = _LITERT_MODEL_REGISTRY[model_id]
+            info(f"Downloading {model_id} from HuggingFace ({size_hint})...")
+            info(f"  repo: {hf_repo}")
+            print()
+            r = _run([
+                litert_bin, "import",
+                f"--from-huggingface-repo={hf_repo}",
+                hf_file, import_id,
+            ])
+            if r.returncode != 0:
+                warn("Import failed — retry later with:")
+                warn(f"  {litert_bin} import --from-huggingface-repo={hf_repo} {hf_file} {import_id}")
+            else:
+                ok(f"Model imported as '{import_id}'")
+
+        # Verify the registry, then start the server.
+        ok("Imported models:")
+        subprocess.run([litert_bin, "list"])
+        _start_litert_server(litert_bin)
+
+    # ── Ollama path ───────────────────────────────────────────────────────
+    else:
+        if not shutil.which("ollama"):
+            info("Ollama not found. Installing...")
+            if IS_WIN:
+                info("Download from: https://ollama.com/download")
+                info("Then run this installer again.")
+                sys.exit(1)
+            r = subprocess.run(["curl", "-fsSL", "https://ollama.com/install.sh"], capture_output=True, text=True)
+            if r.returncode == 0:
+                subprocess.run(["sh"], input=r.stdout, text=True)
+                ok("Ollama installed")
+            else:
+                warn("Automatic install failed — install manually: https://ollama.com")
+        else:
+            ok("Ollama already installed")
+
+        info(f"Pulling {model_id}...")
+        r = _run(["ollama", "pull", model_id])
+        if r.returncode == 0:
+            ok(f"{model_id} ready")
+        else:
+            warn(f"Pull failed — try: ollama pull {model_id}")
+
+        # Make sure Ollama server is running.
+        if not shutil.which("systemctl"):
+            if not _ollama_is_running():
+                info("Starting Ollama server...")
+                subprocess.Popen(["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        import time
+        for _ in range(15):
+            if _ollama_is_running():
+                ok("Ollama server is ready")
+                break
+            time.sleep(2)
+
+
+def _ollama_is_running() -> bool:
+    try:
+        r = subprocess.run(
+            ["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
+             "http://localhost:11434"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return r.stdout.strip() == "200"
+    except Exception:
+        return False
 
 
 # ── Step 5: Piper TTS voices ─────────────────────────────────────────────────
 
 PIPER_VOICES = {
-    "tr_TR-dfki-medium":   "rhasspy/piper-voices/resolve/main/tr/tr_TR/dfki/medium/tr_TR-dfki-medium",
-    "en_US-lessac-medium": "rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium",
-    "en_US-amy-medium":    "rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium",
+    "en_US-lessac-medium":   "rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium",
+    "tr_TR-dfki-medium":     "rhasspy/piper-voices/resolve/main/tr/tr_TR/dfki/medium/tr_TR-dfki-medium",
+    "en_US-amy-medium":      "rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium",
 }
 
+
+def _download_piper_voice(name: str, hf_path: str) -> bool:
+    """Download one Piper voice (.onnx + config). Returns True on success."""
+    base_url = "https://huggingface.co"
+    piper_dir = os.path.join("models", "piper")
+    os.makedirs(piper_dir, exist_ok=True)
+    ok_flag = True
+    for ext, label in [(".onnx", "model"), (".onnx.json", "config")]:
+        dest = os.path.join(piper_dir, f"{name}{ext}")
+        if os.path.exists(dest):
+            continue
+        url = f"{base_url}/{hf_path}{ext}"
+        info(f"  Downloading {name} {label}...")
+        r = subprocess.run(["curl", "-fSL", "-o", dest, url], capture_output=True)
+        if r.returncode != 0:
+            warn(f"  Failed: {name}{ext}")
+            ok_flag = False
+    return ok_flag
+
+
 def step_tts_voices() -> None:
-    header("5 / 7  Piper TTS voices")
+    header("5 / 7  Piper TTS voices (optional)")
 
     if not shutil.which("ffmpeg"):
         warn("ffmpeg not installed — TTS output may not play in browser")
 
-    base_url = "https://huggingface.co"
-    piper_dir = os.path.join("models", "piper")
-    os.makedirs(piper_dir, exist_ok=True)
+    names = list(PIPER_VOICES)
+    voice_idx = menu("Which TTS voice do you want?", [
+        ("en_US-lessac-medium  (~60 MB)", "English male"),
+        ("tr_TR-dfki-medium  (~60 MB)", "Turkish male"),
+        ("en_US-amy-medium  (~60 MB)", "English female"),
+        ("None — skip TTS", "You can download later"),
+    ])
+    if voice_idx == 4:
+        STATE["tts_voice"] = "en_US-lessac-medium"
+        STATE["tts_enabled"] = False
+        info("Skipping TTS voice download")
+        return
 
-    existing = [f for f in os.listdir(piper_dir) if f.endswith(".onnx")] if os.path.isdir(piper_dir) else []
-    if existing:
-        ok(f"Found {len(existing)} voice(s) in models/piper/")
-
-    for name, hf_path in PIPER_VOICES.items():
-        onnx_dest = os.path.join(piper_dir, f"{name}.onnx")
-        json_dest = os.path.join(piper_dir, f"{name}.onnx.json")
-
-        if os.path.exists(onnx_dest) and os.path.exists(json_dest):
-            ok(f"{name} ready")
-            continue
-
-        dl = ask_yesno(f"Download Piper voice '{name}'? (~60 MB)", default=False)
-        if not dl:
-            info(f"Skipping {name}")
-            continue
-
-        for ext, label in [(".onnx", "model"), (".onnx.json", "config")]:
-            dest = onnx_dest if ext == ".onnx" else json_dest
-            url = f"{base_url}/{hf_path}{ext}"
-            info(f"  Downloading {label} ({ext})...")
-            r = subprocess.run(["curl", "-fSL", "-o", dest, url], capture_output=True)
-            if r.returncode == 0:
-                ok(f"  {name}{ext}")
-            else:
-                warn(f"  Failed to download {name}{ext}")
-
-    # Confirm at least one voice is available
-    voices_found = [f for f in os.listdir(piper_dir) if f.endswith(".onnx")] if os.path.isdir(piper_dir) else []
-    if voices_found:
-        ok(f"TTS voices available: {', '.join(v.replace('.onnx', '') for v in voices_found)}")
+    chosen = names[voice_idx - 1]
+    STATE["tts_voice"] = chosen
+    STATE["tts_enabled"] = True
+    if _download_piper_voice(chosen, PIPER_VOICES[chosen]):
+        ok(f"Voice ready: {chosen}")
     else:
-        warn("No voices downloaded — TTS will not work (you can download later)")
+        warn("Some voice files failed to download — TTS may not work")
 
 
-# ── Step 6: Environment configuration ─────────────────────────────────────────
+# ── Step 6: Environment configuration ────────────────────────────────────────
 
 _ENV_TEMPLATE = """# ============================================================
 # piSynapse — Environment Configuration
@@ -466,7 +582,7 @@ LLM_BACKEND={LLM_BACKEND}
 
 # --- LLM URLs ---
 OLLAMA_BASE_URL=http://localhost:11434
-LITERT_BASE_URL=http://localhost:9379
+LITERT_BASE_URL=http://localhost:{LITERT_PORT}
 
 # --- Model ---
 LLM_MODEL={LLM_MODEL}
@@ -508,7 +624,7 @@ NEXTCLOUD_TIMEOUT=30
 # Leave empty to disable email
 MAIL_PROVIDER={MAIL_PROVIDER}
 
-# --- Gmail (optional — only if MAIL_PROVIDER=gmail) ---
+# --- Gmail (only if MAIL_PROVIDER=gmail) ---
 GMAIL_USER={GMAIL_USER}
 GMAIL_APP_PASSWORD={GMAIL_APP_PASSWORD}
 IMAP_HOST=imap.gmail.com
@@ -516,7 +632,7 @@ IMAP_PORT=993
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=465
 
-# --- ProtonMail / ProtonBridge (optional — only if MAIL_PROVIDER=proton) ---
+# --- ProtonMail / ProtonBridge (only if MAIL_PROVIDER=proton) ---
 PROTON_USER={PROTON_USER}
 PROTON_PASSWORD={PROTON_PASSWORD}
 PROTON_IMAP_HOST=localhost
@@ -575,63 +691,81 @@ def step_env() -> None:
 
     info("You will now be asked a few questions. Press Enter to accept the default.\n")
 
-    # Auto-generate API key
-    existing_key = current.get("API_KEY", "")
-    if not existing_key:
-        existing_key = secrets.token_urlsafe(32)
-        info(f"Generated API key: {existing_key}")
-
-    # Backend + model
-    llm_backend = ask("LLM backend (litert / ollama)", current.get("LLM_BACKEND", "litert"))
-    llm_model = ask("Model name", current.get("LLM_MODEL", "gemma4:e2b"))
+    # Auto-generate API key (reuse existing if present).
+    api_key = current.get("API_KEY", "")
+    if not api_key:
+        api_key = secrets.token_urlsafe(32)
+        info(f"Generated API key: {api_key}")
 
     # Personalization
     assistant_user = ask("Your name", current.get("ASSISTANT_USER", "default"))
-    default_city = ask("Default city for weather", current.get("DEFAULT_CITY", "Istanbul"))
+    default_city = ask("Default city for weather", current.get("DEFAULT_CITY", ""))
 
-    # Mail provider with guided prompts
-    mail_provider = ask("Mail provider (gmail / proton / none)", current.get("MAIL_PROVIDER", "none")).lower()
-    if mail_provider not in ("gmail", "proton", "none"):
-        mail_provider = "none"
-
+    # ── Email ────────────────────────────────────────────────────────────
+    email_idx = menu("Email integration:", [
+        ("Gmail", "Read/send via Gmail App Password"),
+        ("ProtonMail", "Read/send via ProtonBridge (must run locally)"),
+        ("Skip — no email", "Recommended to start"),
+    ])
     gmail_user = current.get("GMAIL_USER", "")
     gmail_pass = current.get("GMAIL_APP_PASSWORD", "")
     proton_user = current.get("PROTON_USER", "")
     proton_pass = current.get("PROTON_PASSWORD", "")
 
-    if mail_provider == "gmail":
-        info("Gmail requires an App Password. Generate one at:")
+    if email_idx == 1:
+        mail_provider = "gmail"
+        info("Gmail needs an App Password. Generate one at:")
         info("  https://myaccount.google.com/apppasswords")
         gmail_user = ask("Gmail address", gmail_user)
         raw = ask_secret("Gmail App Password (16 chars, no spaces)")
-        gmail_pass = raw.replace(" ", "").replace("-", "") if raw else gmail_pass
-    elif mail_provider == "proton":
-        info("ProtonMail requires ProtonBridge running locally.")
+        if raw:
+            gmail_pass = raw.replace(" ", "").replace("-", "")
+    elif email_idx == 2:
+        mail_provider = "proton"
+        info("ProtonMail needs ProtonBridge running locally.")
         info("Install from: https://proton.me/mail/bridge")
         proton_user = ask("ProtonMail address", proton_user)
-        proton_pass = ask_secret("ProtonBridge password", proton_pass)
+        raw = ask_secret("ProtonBridge password")
+        if raw:
+            proton_pass = raw
+    else:
+        mail_provider = ""
 
-    # Nextcloud
-    nc_url = ask("Nextcloud URL (e.g. https://cloud.example.com)", current.get("NEXTCLOUD_URL", ""))
-    nc_user = ask("Nextcloud username", current.get("NEXTCLOUD_USER", ""))
-    nc_pass = ask_secret("Nextcloud app password") if nc_url else current.get("NEXTCLOUD_PASSWORD", "")
+    # ── Nextcloud ────────────────────────────────────────────────────────
+    nc_url = current.get("NEXTCLOUD_URL", "")
+    nc_user = current.get("NEXTCLOUD_USER", "")
+    nc_pass = current.get("NEXTCLOUD_PASSWORD", "")
+    if not nc_url and ask_yesno("Set up Nextcloud (calendar/notes/tasks)?", default=False):
+        nc_url = ask("Nextcloud URL (e.g. https://cloud.example.com)")
+        nc_user = ask("Nextcloud username")
+        nc_pass = ask_secret("Nextcloud app password")
 
-    # Voice
-    stt = ask("STT engine (whisper / gemma4)", current.get("STT_ENGINE", "whisper"))
-    tts_engine = ask("TTS engine (piper / browser)", current.get("TTS_ENGINE", "piper"))
-    tts_voice = ask("TTS voice (en_US-lessac-medium / tr_TR-dfki-medium / en_US-amy-medium)",
-                    current.get("TTS_VOICE", "en_US-lessac-medium"))
+    # ── Voice ────────────────────────────────────────────────────────────
+    stt_idx = menu("Speech-to-text engine:", [
+        ("whisper", "Fast, accurate, lightweight (~75 MB)"),
+        ("gemma4", "Uses the LLM directly (slower but captures tone)"),
+        ("browser", "Web Speech API in the browser"),
+    ])
+    stt = "whisper" if stt_idx == 1 else ("gemma4" if stt_idx == 2 else "browser")
+
+    tts_idx = menu("Text-to-speech engine:", [
+        ("piper", "Local, fully offline"),
+        ("browser", "Web Speech API (more voices, needs internet)"),
+    ])
+    tts_engine = "piper" if tts_idx == 1 else "browser"
+    tts_voice = STATE.get("tts_voice", current.get("TTS_VOICE", "en_US-lessac-medium"))
+
     auto_send = ask("Auto-send after voice transcription? (on/off)", current.get("AUTO_SEND_ON_VOICE", "off"))
     auto_tts = ask("Auto-speak response when input was voice? (on/off)", current.get("AUTO_TTS_ON_VOICE", "off"))
 
-    # Build values dict
     values = {
-        "LLM_BACKEND":        llm_backend,
-        "LLM_MODEL":          llm_model,
-        "DEFAULT_CITY":       default_city or "",
+        "LLM_BACKEND":        STATE["backend"],
+        "LLM_MODEL":          STATE["model"],
+        "LITERT_PORT":        str(LITERT_PORT),
+        "DEFAULT_CITY":       default_city,
         "ASSISTANT_USER":     assistant_user,
-        "API_KEY":            existing_key,
-        "MAIL_PROVIDER":      mail_provider if mail_provider != "none" else "",
+        "API_KEY":            api_key,
+        "MAIL_PROVIDER":      mail_provider,
         "GMAIL_USER":         gmail_user,
         "GMAIL_APP_PASSWORD": gmail_pass,
         "PROTON_USER":        proton_user,
@@ -646,7 +780,7 @@ def step_env() -> None:
         "AUTO_TTS_ON_VOICE":  auto_tts if auto_tts in ("on", "off") else "off",
     }
 
-    # Preserve any existing values not asked above
+    # Preserve any existing values not re-asked above.
     preserved_keys = {
         "OLLAMA_BASE_URL", "LITERT_BASE_URL", "LLM_NUM_CTX", "LLM_NUM_BATCH",
         "LLM_TEMPERATURE", "LLM_TOP_P", "LLM_TOP_K", "LLM_KEEP_ALIVE", "LLM_TIMEOUT",
@@ -663,7 +797,6 @@ def step_env() -> None:
         if v:
             values[k] = v
 
-    # Render template, then apply preserved values
     content = _ENV_TEMPLATE.format(**values)
     for k, v in values.items():
         pattern = rf"^{re.escape(k)}=.*$"
@@ -675,10 +808,11 @@ def step_env() -> None:
     ok(".env created / updated")
 
 
-# ── Step 7: systemd service (Linux only) ──────────────────────────────────────
+# ── Step 7: systemd service (Linux only) ─────────────────────────────────────
 
 def step_systemd() -> None:
     if IS_WIN or sys.platform == "darwin":
+        info("systemd is Linux-only — to auto-start on boot on this OS, see README.md")
         return
 
     header("7 / 7  Systemd service (optional)")
@@ -693,7 +827,7 @@ def step_systemd() -> None:
         project_dir = os.path.abspath(".")
         python_path = os.path.join(project_dir, VENV_DIR, "bin", "python3")
         uvicorn_path = os.path.join(project_dir, VENV_DIR, "bin", "uvicorn")
-        wants_litert = os.path.exists("/etc/systemd/system/litert.service")
+        wants_litert = STATE.get("backend") == "litert" and os.path.exists("/etc/systemd/system/litert.service")
 
         unit = f"""[Unit]
 Description=piSynapse AI Assistant
@@ -712,9 +846,8 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 """
-        service_path = Path(f"/etc/systemd/system/pisynapse.service")
+        service_path = Path("/etc/systemd/system/pisynapse.service")
         try:
-            # Write via temp file to avoid permission issues
             tmp = Path("/tmp/pisynapse.service")
             tmp.write_text(unit, encoding="utf-8")
             subprocess.run(["sudo", "cp", str(tmp), str(service_path)], check=True)
@@ -748,27 +881,35 @@ def print_summary() -> None:
     except Exception:
         pass
 
+    backend = STATE.get("backend", "litert")
+    model = STATE.get("model", "gemma4:e2b")
+
     print(f"\n{green(LINE * 56)}")
     print(green(f"  {OK_SYM} Installation complete!"))
     print(green(LINE * 56))
-    print(f"\n  {'Shell':12s}: {shell}")
-    print(f"  {'Model':12s}: {os.environ.get('LLM_MODEL', 'gemma4:e2b')}")
-    litert_service = os.path.exists("/etc/systemd/system/litert.service")
-    pisynapse_service = os.path.exists("/etc/systemd/system/pisynapse.service")
-    if litert_service:
-        print(f"  {'LiteRT':12s}: systemd (active)")
-    if pisynapse_service:
+    print(f"\n  {'Backend':12s}: {backend}")
+    print(f"  {'Model':12s}: {model}")
+    if backend == "litert":
+        print(f"  {'LiteRT':12s}: {'systemd (active)' if os.path.exists('/etc/systemd/system/litert.service') else 'background process on :%d' % LITERT_PORT}")
+    if os.path.exists("/etc/systemd/system/pisynapse.service"):
         print(f"  {'piSynapse':12s}: systemd (active)")
     if api_key:
         print(f"  {'API Key':12s}: {api_key}")
-    print(f"\n  Activate:")
-    print(f"    {activate}")
+
     print(f"\n  Start piSynapse:")
+    print(f"    {activate}")
     print(f"    {run_cmd}")
+    if backend == "litert" and not _litert_is_running():
+        litert_bin = _find_litert_bin() or "litert-lm"
+        print(f"\n  LiteRT is not running — start it first in another terminal:")
+        print(f"    {litert_bin} serve --host 0.0.0.0 --port {LITERT_PORT}")
+    if backend == "ollama" and not _ollama_is_running():
+        print(f"\n  Ollama is not running — start it first:")
+        print(f"    ollama serve")
     print(f"\n  Open http://localhost:8000 in your browser.")
     if api_key:
         print(f"  Enter your API key when prompted.\n")
-    if litert_service or pisynapse_service:
+    if os.path.exists("/etc/systemd/system/litert.service") or os.path.exists("/etc/systemd/system/pisynapse.service"):
         print(f"  {'Manage':12s}: systemctl status litert pisynapse\n")
 
 
@@ -777,7 +918,6 @@ def print_summary() -> None:
 def main() -> None:
     print(blue("\n  piSynapse Installer\n"))
 
-    # Verify we're in the project root
     if not os.path.isfile("main.py"):
         error("main.py not found — run this script from the piSynapse project directory.")
         sys.exit(1)
