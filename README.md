@@ -1,5 +1,7 @@
 # piSynapse
 
+[![CI](https://github.com/selfhoster-sh/piSynapse/actions/workflows/ci.yml/badge.svg)](https://github.com/selfhoster-sh/piSynapse/actions)
+
 **Privacy-first, self-hosted personal AI assistant.**
 
 piSynapse runs entirely on your own hardware — no subscriptions, no cloud, no data leaving your machine. It connects your calendar, email, notes, tasks, and local LLM into a single conversational interface.
