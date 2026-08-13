@@ -59,6 +59,13 @@ def _get_whisper():
     return None
 
 
+def _transcribe_faster(model, path: str, kwargs: dict) -> tuple[str, str]:
+    """Run faster-whisper transcription (incl. lazy segment iteration) in a thread."""
+    segments, info = model.transcribe(path, **kwargs)
+    text = " ".join(seg.text.strip() for seg in segments).strip()
+    return text, info.language
+
+
 _ffmpeg_available = None
 
 def _check_ffmpeg() -> bool:
@@ -72,6 +79,15 @@ def _check_ffmpeg() -> bool:
 
 
 _MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+
+
+def _convert_to_wav(src: str, dst: str, pcm_f32le: bool = False) -> subprocess.CompletedProcess:
+    """Run ffmpeg conversion off the event loop (caller wraps in to_thread)."""
+    cmd = ["ffmpeg", "-y", "-i", src, "-ar", "16000", "-ac", "1"]
+    if pcm_f32le:
+        cmd += ["-acodec", "pcm_f32le"]
+    cmd += ["-f", "wav", dst]
+    return subprocess.run(cmd, capture_output=True, timeout=30)
 
 _GEMMA4_ASR_PROMPT = (
     "Transcribe the following speech segment in {lang} into {lang} text.\n\n"
@@ -120,10 +136,7 @@ async def transcribe_audio(
         logger.info(f"Whisper input: {audio_size} bytes, suffix={suffix}, lang={whisper_lang}")
 
         wav_path = tmp_path + ".wav"
-        conv = subprocess.run(
-            ["ffmpeg", "-y", "-i", tmp_path, "-ar", "16000", "-ac", "1", "-f", "wav", wav_path],
-            capture_output=True, timeout=30,
-        )
+        conv = await asyncio.to_thread(_convert_to_wav, tmp_path, wav_path)
         if conv.returncode == 0 and os.path.exists(wav_path):
             wav_size = os.path.getsize(wav_path)
             logger.info(f"WAV conversion: {audio_size}b webm → {wav_size}b wav (16kHz mono)")
@@ -152,9 +165,9 @@ async def transcribe_audio(
                 }
                 if whisper_lang:
                     kwargs["language"] = whisper_lang
-                segments, info = model.transcribe(transcribe_path, **kwargs)
-                text = " ".join(seg.text.strip() for seg in segments).strip()
-                lang_out = info.language
+                text, lang_out = await asyncio.to_thread(
+                    _transcribe_faster, model, transcribe_path, kwargs
+                )
         finally:
             if os.path.exists(wav_path):
                 os.unlink(wav_path)
@@ -190,10 +203,7 @@ async def transcribe_gemma4(
 
     wav_path = tmp_path + ".wav"
     try:
-        conv = subprocess.run(
-            ["ffmpeg", "-y", "-i", tmp_path, "-ar", "16000", "-ac", "1", "-acodec", "pcm_f32le", "-f", "wav", wav_path],
-            capture_output=True, timeout=30,
-        )
+        conv = await asyncio.to_thread(_convert_to_wav, tmp_path, wav_path, True)
         if conv.returncode != 0:
             logger.error(f"ffmpeg conversion failed: {conv.stderr.decode()[:200]}")
             raise HTTPException(status_code=500, detail="Audio conversion failed")
