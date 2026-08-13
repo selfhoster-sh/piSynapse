@@ -143,7 +143,9 @@ def step_system_deps() -> None:
                     ok("ffmpeg installed")
                 else:
                     warn("ffmpeg install failed — install manually later")
-        missing.append("ffmpeg")
+                    missing.append("ffmpeg")
+            else:
+                missing.append("ffmpeg")
 
     if not shutil.which("curl"):
         warn("curl not found (needed for model downloads and health checks)")
@@ -151,7 +153,10 @@ def step_system_deps() -> None:
             subprocess.run(["sudo", "apt-get", "install", "-y", "curl"])
             if shutil.which("curl"):
                 ok("curl installed")
-        missing.append("curl")
+            else:
+                missing.append("curl")
+        else:
+            missing.append("curl")
 
     if not IS_WIN and not shutil.which("build-essential"):
         if ask_yesno("Install build-essential (recommended for pip packages)?"):
