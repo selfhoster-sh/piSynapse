@@ -38,6 +38,19 @@ Durum: **Faz 1 (A1-A10) + Faz 2 (B1-B4) tamamlandı**, Faz 3 (mimari) başlıyor
 
 Durum: **Faz 3 (C1-C8) tamamlandı** — 22 madde işlendi, 27/27 test, smoke OK (/health 200, / 200, /chat/sessions 401). Sıradaki: Faz 4 (D1-D6, arayüz + README) + LiteRT systemd unit'i.
 
+## Faz 4 (Arayüz + Dokümantasyon) — 13-08-2026
+
+| # | Değişiklik | Detay |
+|---|-----------|-------|
+| **23** | **D3** | `a0c10d3` — `static/manifest.json`'dan `orientation: portrait` kaldırıldı (PWA tablet/landscape'te dönebilsin). |
+| **24** | **D4** | `52765c3` — `relTime()`: SQLite UTC damgası `"YYYY-MM-DD HH:MM:SS"` boşluk ayraçlı; JS `new Date()` buna her tarayıcıda güvenilmiyor. `ts.replace(' ','T')` ile ISO-8601 normalizasyonu. Prompt'taki "Current date and time"a "(local time)" etiketi (DB UTC, prompt local — tutarsızlık işaretlendi). |
+| **25** | **D5** | `52765c3` içinde — Sistem prompt'unun "Under ~{LLM_NUM_CTX} tokens" kuralı yanıltıcıydı (LLM_NUM_CTX context penceresi, yanıt limiti değil) → genel "concise ol" ifadesiyle değiştirildi, import kaldırıldı. |
+| **26** | **D1** | `52765c3` içinde — Onay modali salt-okunurdu (`<div class="val">`); send_email alanları (to/subject/body + cc/bcc) artık düzenlenebilir input/textarea (`mInput()` + `data-p`, `confirmAction` değerleri params'a yazıyor). CSS `.val-input` eklendi. |
+| **27** | **D2** | `39dca60` — `send_email` cc/bcc desteklenmiyordu (imza vardı, kullanılmıyordu). `_send_email(to, subject, body, cc, bcc)` header + envelope (sendmail recipients'a virgülle ayrılmış tüm alıcılar), dispatcher params passthrough, tool tanımına cc/bcc. |
+| **28** | **D6** | `028d7de` — README: LiteRT import hedefi `gemma4:e2b`→`gemma4-e2b` (kolonlu ID ile piSynapse `-` normalize ettiğinden eşleşmiyordu); port `8000`→`8765` (gerçek hizmet + curl örnekleri); `MAIL_PROVIDER` varsayılanı `gmail`→`— (disabled)` (A9 ile boş=devre dışı). |
+
+Durum: **Faz 4 (D1-D6) tamamlandı** — toplam 28 madde, smoke OK. Sıradaki: LiteRT systemd unit'i (`litert-lm.service`) + pisynapse.service sıralama bağımlılığı.
+
 ## Son Değişiklikler — 31-07-2026
 
 | # | Değişiklik | Detay |
