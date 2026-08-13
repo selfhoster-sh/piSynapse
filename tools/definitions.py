@@ -137,9 +137,11 @@ TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "to": {"type": "string", "description": "Recipient email address."},
+                    "to": {"type": "string", "description": "Recipient email address (comma-separated for multiple)."},
                     "subject": {"type": "string", "description": "Email subject."},
                     "body": {"type": "string", "description": "Email body text."},
+                    "cc": {"type": "string", "description": "Cc recipients, comma-separated. Optional."},
+                    "bcc": {"type": "string", "description": "Bcc recipients, comma-separated. Optional."},
                 },
                 "required": ["to", "subject", "body"],
             },
