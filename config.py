@@ -257,7 +257,7 @@ SETTINGS_SCHEMA: dict = {
 }
 
 # Settings that require a server restart to take effect
-RESTART_REQUIRED_KEYS = {"LLM_NUM_CTX", "LLM_NUM_BATCH", "INTENT_LLM_FALLBACK"}
+RESTART_REQUIRED_KEYS = {"LLM_NUM_CTX", "LLM_NUM_BATCH"}
 
 # Settings that must NEVER be changed via the API (security-sensitive)
 PROTECTED_SETTINGS = {"OLLAMA_BASE_URL", "LITERT_BASE_URL", "LLM_BACKEND", "API_KEY", "CORS_ORIGINS", "TRUSTED_HOSTS", "MEDIA_MAX_MB"}
@@ -293,8 +293,21 @@ def sync_config():
             except (ValueError, TypeError):
                 logger.warning(f"sync_config: invalid {key}={raw!r}, keeping current value")
 
-    # Sync string settings that can change at runtime
-    for key in ("LLM_BACKEND", "LLM_MODEL", "STT_ENGINE", "TTS_ENGINE", "TTS_VOICE", "AUTO_SEND_ON_VOICE", "AUTO_TTS_ON_VOICE", "INTENT_LLM_FALLBACK"):
-        raw = os.getenv(key)
+    # Sync string settings that can change at runtime (config var -> env key)
+    for var, env_key in (
+        ("LLM_BACKEND", "LLM_BACKEND"),
+        ("LLM_MODEL", "LLM_MODEL"),
+        ("LLM_KEEP_ALIVE", "LLM_KEEP_ALIVE"),
+        ("STT_ENGINE", "STT_ENGINE"),
+        ("TTS_ENGINE", "TTS_ENGINE"),
+        ("TTS_VOICE", "TTS_VOICE"),
+        ("AUTO_SEND_ON_VOICE", "AUTO_SEND_ON_VOICE"),
+        ("AUTO_TTS_ON_VOICE", "AUTO_TTS_ON_VOICE"),
+        ("INTENT_LLM_FALLBACK", "INTENT_LLM_FALLBACK"),
+        ("DEFAULT_CITY", "DEFAULT_CITY"),
+        ("DEFAULT_USER", "ASSISTANT_USER"),
+        ("MAIL_PROVIDER", "MAIL_PROVIDER"),
+    ):
+        raw = os.getenv(env_key)
         if raw is not None:
-            setattr(_cfg, key, raw)
+            setattr(_cfg, var, raw)

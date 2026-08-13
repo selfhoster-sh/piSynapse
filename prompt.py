@@ -4,15 +4,16 @@ Builds the system prompt and per-request context injection.
 """
 
 from datetime import datetime
-from config import DEFAULT_CITY
+import config
 
 
 def build_system_prompt() -> str:
     from config import LLM_NUM_CTX
+    default_city = config.DEFAULT_CITY
     city_line = (
-        f"\nDefault city for weather: {DEFAULT_CITY}. "
+        f"\nDefault city for weather: {default_city}. "
         "Use this city when the user asks about weather without specifying one."
-        if DEFAULT_CITY else ""
+        if default_city else ""
     )
 
     from tools import TOOL_NAMES
@@ -100,10 +101,11 @@ def get_tool_system_prompt(group: str) -> str:
     """Return a system prompt listing only the tools for a specific group.
     Used when tool_group is active (small models with filtered tool schemas)."""
     from config import LLM_NUM_CTX
+    default_city = config.DEFAULT_CITY
     city_line = (
-        f"\nDefault city for weather: {DEFAULT_CITY}. "
+        f"\nDefault city for weather: {default_city}. "
         "Use this city when the user asks about weather without specifying one."
-        if DEFAULT_CITY else ""
+        if default_city else ""
     )
     names, instructions = _GROUP_TOOLS.get(group, ("", ""))
 
