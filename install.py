@@ -50,6 +50,9 @@ def info(m: str) -> None:               print(blue(f"  {INFO_SYM}  {m}"))
 def ok(m: str) -> None:                 print(green(f"  {OK_SYM} {m}"))
 def warn(m: str) -> None:               print(yellow(f"  {WARN_SYM}  {m}"))
 def error(m: str) -> None:              print(red(f"  {ERR_SYM} {m}"))
+def _mask(s: str) -> str:
+    """Mask a secret for display, keeping a short prefix for verification."""
+    return s[:4] + "\u2026" if s else ""
 def header(m: str) -> None:             print(f"\n{blue(LINE * 56)}\n  {m}\n{blue(LINE * 56)}")
 
 def ask(prompt: str, default: str = "") -> str:
@@ -722,7 +725,7 @@ def step_env() -> None:
     api_key = current.get("API_KEY", "")
     if not api_key:
         api_key = secrets.token_urlsafe(32)
-        info(f"Generated API key: {api_key}")
+        info(f"Generated API key: {_mask(api_key)}")
 
     # Personalization
     assistant_user = ask("Your name", current.get("ASSISTANT_USER", "default"))
@@ -833,6 +836,10 @@ def step_env() -> None:
             content = re.sub(pattern, replacement, content, flags=re.MULTILINE)
 
     env_path.write_text(content.strip() + "\n", encoding="utf-8")
+    try:
+        os.chmod(env_path, 0o600)
+    except OSError:
+        pass
     ok(".env created / updated")
 
 
@@ -920,7 +927,7 @@ def print_summary() -> None:
     if os.path.exists("/etc/systemd/system/pisynapse.service"):
         print(f"  {'piSynapse':12s}: systemd (active)")
     if api_key:
-        print(f"  {'API Key':12s}: {api_key}")
+        print(f"  {'API Key':12s}: {_mask(api_key)}")
 
     print("\n  Start piSynapse:")
     print(f"    {activate}")
