@@ -25,7 +25,7 @@ async def get_config():
         "username": os.getenv("ASSISTANT_USER", "User"),
         "default_city": os.getenv("DEFAULT_CITY", ""),
         "model": os.getenv("LLM_MODEL", "gemma4:e2b"),
-        "llm_backend": os.getenv("LLM_BACKEND", "ollama"),
+        "llm_backend": os.getenv("LLM_BACKEND", "litert"),
         "stt_engine": os.getenv("STT_ENGINE", "whisper"),
         "tts_engine": os.getenv("TTS_ENGINE", "piper"),
         "auto_send_on_voice": os.getenv("AUTO_SEND_ON_VOICE", "off"),
@@ -41,7 +41,7 @@ async def get_settings():
         if key == "LLM_MODEL":
             entry["options"] = await get_llm_model_options()
             # Normalize value to match backend format so dropdown shows correct selection
-            backend = (os.getenv("LLM_BACKEND") or "ollama").strip().lower()
+            backend = (os.getenv("LLM_BACKEND") or "litert").strip().lower()
             current = entry["value"]
             normalized = current.replace(":", "-") if backend == "litert" else current
             if normalized != current:

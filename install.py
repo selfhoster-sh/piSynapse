@@ -846,7 +846,7 @@ Type=simple
 User={user}
 WorkingDirectory={project_dir}
 Environment=PATH={os.path.join(project_dir, VENV_DIR, "bin")}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ExecStart={uvicorn_path} main:app --host 0.0.0.0 --port 8000
+ExecStart={uvicorn_path} main:app --host 0.0.0.0 --port 8765
 Restart=on-failure
 RestartSec=5
 
@@ -877,7 +877,7 @@ WantedBy=multi-user.target
 def print_summary() -> None:
     shell = detect_shell()
     activate = activation_cmd(shell)
-    run_cmd = f"{venv_bin('uvicorn')} main:app --host 0.0.0.0 --port 8000"
+    run_cmd = f"{venv_bin('uvicorn')} main:app --host 0.0.0.0 --port 8765"
 
     api_key = ""
     try:
@@ -913,7 +913,7 @@ def print_summary() -> None:
     if backend == "ollama" and not _ollama_is_running():
         print("\n  Ollama is not running — start it first:")
         print("    ollama serve")
-    print("\n  Open http://localhost:8000 in your browser.")
+    print("\n  Open http://localhost:8765 in your browser.")
     if api_key:
         print("  Enter your API key when prompted.\n")
     if os.path.exists("/etc/systemd/system/litert.service") or os.path.exists("/etc/systemd/system/pisynapse.service"):

@@ -44,10 +44,10 @@ DB_PATH = os.getenv("DB_PATH", "assistant.db")
 # -- LLM Backend --
 # "ollama" — Ollama server (default, http://localhost:11434)
 # "litert" — LiteRT-LM server (http://localhost:9379, OpenAI-compatible)
-LLM_BACKEND = os.getenv("LLM_BACKEND", "ollama").lower()
+LLM_BACKEND = os.getenv("LLM_BACKEND", "litert").lower()
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 LITERT_BASE_URL = os.getenv("LITERT_BASE_URL", "http://localhost:9379")
-LLM_MODEL = os.getenv("LLM_MODEL", "gemma4:e2b")
+LLM_MODEL = os.getenv("LLM_MODEL", "gemma4-e2b")
 LLM_NUM_CTX = _safe_int("LLM_NUM_CTX", 8192)
 LLM_NUM_BATCH = _safe_int("LLM_NUM_BATCH", 256)
 LLM_TEMPERATURE = _safe_float("LLM_TEMPERATURE", 0.6)
@@ -170,7 +170,7 @@ async def get_llm_model_options() -> dict:
 def _query_model_options_sync() -> dict:
     """Blocking backend query — always call via get_llm_model_options()."""
     import time as _time
-    backend = os.getenv("LLM_BACKEND", "ollama").strip().lower()
+    backend = os.getenv("LLM_BACKEND", "litert").strip().lower()
     now = _time.time()
     if _MODEL_OPTIONS_CACHE["backend"] == backend and (now - _MODEL_OPTIONS_CACHE["ts"]) < 30:
         return _MODEL_OPTIONS_CACHE["data"]
@@ -235,7 +235,7 @@ SETTINGS_SCHEMA: dict = {
     "CONVERSATION_RETENTION_DAYS": {"type": "int", "default": "0", "label": {"tr": "Sohbet Saklama (Gun, 0=kapali)", "en": "Chat Retention (days, 0=off)"}, "min": 0, "max": 3650, "step": 1},
     "MEMORY_RETENTION_DAYS":       {"type": "int", "default": "0", "label": {"tr": "Bellek Saklama (Gun, 0=kapali)", "en": "Memory Retention (days, 0=off)"}, "min": 0, "max": 3650, "step": 1},
     "SUMMARY_BATCH_SIZE": {"type": "int",   "default": "5",    "label": {"tr": "Ozetleme Batch Boyutu",       "en": "Summary Batch Size"},     "min": 2, "max": 20, "step": 1},
-    "LLM_MODEL":          {"type": "select", "default": "gemma4:e2b", "label": {"tr": "LLM Model",              "en": "LLM Model"}},
+    "LLM_MODEL":          {"type": "select", "default": "gemma4-e2b", "label": {"tr": "LLM Model",              "en": "LLM Model"}},
     "LLM_KEEP_ALIVE":     {"type": "str",   "default": "4h",   "label": {"tr": "Model Saklama Suresi",       "en": "Model Keep Alive"}},
     "ASSISTANT_USER":     {"type": "str",   "default": "",     "label": {"tr": "Kullanici Adi",              "en": "Username"}},
     "MAIL_PROVIDER":      {"type": "select", "default": "gmail", "label": {"tr": "E-posta Saglayici",        "en": "Mail Provider"}, "options": [
