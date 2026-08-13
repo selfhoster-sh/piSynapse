@@ -17,3 +17,6 @@ backups/
 dist/
 build/
 .DS_Store
+
+# Agent/dev notes — kept local only
+NOTES.md
