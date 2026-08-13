@@ -72,7 +72,7 @@ Durum: **Faz 4 (D1-D6) tamamlandı** — toplam 28 madde, smoke OK. Sıradaki: L
 | **5** | **INTENT_LLM_FALLBACK** | `config.py` → `SETTINGS_SCHEMA`'da select kutusu. Varsayılan `off` (embedding+keywords yeterli). `on` olursa LLM fallback çağrısı (~+15s). `RESTART_REQUIRED_KEYS` + `sync_config()` string listesinde. |
 | **6** | **get_llm_model_options() cache** | `_MODEL_OPTIONS_CACHE` (30s TTL, backend bazlı). LiteRT `/v1/models` ve `ollama list` tekrar çağrılmaz. |
 | **7** | **Tüm dosyalara yorum satırları** | Her `.py` dosyasına kısa docstring + section/inline yorumlar eklendi. `embedding.py`, `llm/utils.py`, `llm/stream.py`, `llm/intent.py`, `llm/payload.py`, `llm/chat.py`, `tools/__init__.py`, `routers/config.py`. |
-| **8** | **Avahi fix** | `/etc/avahi/avahi-daemon.conf` → `allow-interfaces=eth0`. `.local` çözümlemesi Docker bridge (`172.17.0.1`) yerine gerçek IP (`192.168.1.X`) döndürüyor. |
+| **8** | **Avahi fix** | `/etc/avahi/avahi-daemon.conf` → `allow-interfaces=eth0`. `.local` çözümlemesi Docker bridge (`<docker-bridge-ip>`) yerine gerçek IP (`<lan-ip>`) döndürüyor. |
 | **9** | **TTFT regresyonu — gürültü** | Ardışık 3 ölçüm: 14.5s / 13.3s / 13.6s. Önceki 18-21s değerleri LiteRT soğukken alınmış. Embedding+keywords intent ~50-100ms, gerisi LiteRT warmup. |
 | **10** | **README baştan yazıldı** | Vision bölümü kaldırıldı. Hardware Requirements, Privacy & External Services tablosu, dual email (Proton/Gmail) kılavuzu eklendi. 52 env değişkeni senkronize edildi. |
 | **11** | **install.py self-contained .env** | `step_env()` artık `example.env`'e ihtiyaç duymaz — tüm 52 değişkeni sıfırdan oluşturur. Email kurulumunda Proton/Gmail/none seçeneği sunar. |
@@ -234,14 +234,14 @@ CPU-only ~2-5 token/sn (E2B). Ollama+gemma4:e2b ile token/sn, bellek, tool-call 
 
 ### LAN HTTPS / Mikrofon Erişimi
 
-**Sorun:** LAN üzerinden (`http://10.X.Y.Z:8765`) erişildiğinde tarayıcı `getUserMedia` API'sini bloke eder çünkü HTTP + non-localhost origin "güvenli olmayan bağlam" (insecure context) sayılır. Sonuç: sesli konuşma (mikrofon) çalışmaz. `localhost` veya `127.0.0.1`'den erişimde sorun yok.
+**Sorun:** LAN üzerinden (`http://<vpn-ip>:8765`) erişildiğinde tarayıcı `getUserMedia` API'sini bloke eder çünkü HTTP + non-localhost origin "güvenli olmayan bağlam" (insecure context) sayılır. Sonuç: sesli konuşma (mikrofon) çalışmaz. `localhost` veya `127.0.0.1`'den erişimde sorun yok.
 
 **Çözüm A — VPS üzerinden NPM proxy (önerilen):**
 Mevcut Nginx Proxy Manager'a (VPS'te, Docker `npm-app-1`) yeni bir proxy host eklenir:
-- Domain: `pi.example.com`
-- Forward: `10.X.Y.Z:8765` (Pi5'in AWG IP'si)
-- SSL: Mevcut Let's Encrypt sertifikası (`*.example.com` wildcard veya yeni cert)
-- Telefon `https://pi.example.com` ile erişir → VPS 443 → AWG tunnel → Pi5:8765
+- Domain: `<your-domain>`
+- Forward: `<vpn-ip>:8765` (Pi5'in VPN IP'si)
+- SSL: Mevcut Let's Encrypt sertifikası (`*.<your-domain>` wildcard veya yeni cert)
+- Telefon `https://<your-domain>` ile erişir → VPS 443 → AWG tunnel → Pi5:8765
 - **Artı:** Sıfır ek yapılandırma, mevcut cert geçerli, her yerden erişim
 - **Eksi:** Tüm trafik VPS üzerinden geçer (ek gecikme ~5-10ms AWG üzerinden)
 - **Kurulum:** NPM admin panel → Add Proxy Host → domain + forward IP/port → SSL sekmesinden cert seç → Save
@@ -249,7 +249,7 @@ Mevcut Nginx Proxy Manager'a (VPS'te, Docker `npm-app-1`) yeni bir proxy host ek
 **Çözüm B — Pi5'te Caddy ile otomatik HTTPS:**
 - Pi5'e Caddy kurulur (`apt install caddy`)
 - DNS provider API (Cloudflare, etc.) ile DNS-01 challenge kullanılır
-- `pi.example.com` DNS kaydı Pi5 LAN IP'sini (veya AWG IP'sini) gösterecek şekilde ayarlanır
+- `<your-domain>` DNS kaydı Pi5 LAN IP'sini (veya AWG IP'sini) gösterecek şekilde ayarlanır
 - **Artı:** Tam otomatik Let's Encrypt, yerel HTTPS
 - **Eksi:** DNS zone'da A kaydı LAN IP'sini göstermeli (public erişim yok, sadece LAN/WG için)
 - Cloudflare proxied mode (orange cloud) ile kullanılamaz — DNS-only (gri cloud) gerekir
@@ -257,7 +257,7 @@ Mevcut Nginx Proxy Manager'a (VPS'te, Docker `npm-app-1`) yeni bir proxy host ek
 **Çözüm C — Self-signed cert + mkcert (tam yerel):**
 - Pi5'te `mkcert` kurulur (`apt install mkcert` veya `go install filippo.io/mkcert`)
 - Yerel CA oluşturulur (`mkcert -install`)
-- `mkcert 10.X.Y.Z 192.168.x.x localhost` ile cert imzalanır
+- `mkcert <vpn-ip> <lan-ip> localhost` ile cert imzalanır
 - Telefona/laptop'a yerel CA'nın public key'i yüklenir (iOS: profile, Android: CA cert)
 - Caddy/nginx ile cert+key kullanılarak Pi5'te HTTPS sunulur
 - **Artı:** Tamamen LAN'a bağımlı, internet gerekmez

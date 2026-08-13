@@ -2,10 +2,10 @@
 set -euo pipefail
 # release.sh — piSynapse release klasörünü sıfırdan oluştur.
 # Kullanım:  ./release.sh [/path/to/release-dir]
-# Varsayılan: /home/salih/piSynapse-release
+# Varsayılan: $HOME/piSynapse-release
 
 SRC="$(cd "$(dirname "$0")" && pwd)"
-DST="${1:-/home/salih/piSynapse-release}"
+DST="${1:-$HOME/piSynapse-release}"
 
 echo "Source: $SRC"
 echo "Target: $DST"
