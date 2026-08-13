@@ -1,13 +1,14 @@
-"""
-piSynapse Nextcloud Tasks
+"""piSynapse Nextcloud Tasks
 CalDAV integration for Nextcloud Tasks (VTODO).
 """
 
-import logging
 import asyncio
+import logging
 import uuid
-from datetime import datetime, date
+from datetime import date, datetime
+
 from icalendar import Todo
+
 from utils import retry
 
 logger = logging.getLogger("piSynapse")
@@ -22,7 +23,7 @@ _todos_cache_ts: float = 0
 def _get_dav_client():
     """Return cached CalDAV client."""
     global _client
-    from config import NEXTCLOUD_URL, NEXTCLOUD_USER, NEXTCLOUD_PASSWORD, NEXTCLOUD_TIMEOUT
+    from config import NEXTCLOUD_PASSWORD, NEXTCLOUD_TIMEOUT, NEXTCLOUD_URL, NEXTCLOUD_USER
     if not NEXTCLOUD_URL or not NEXTCLOUD_PASSWORD:
         return None
     if _client is None:

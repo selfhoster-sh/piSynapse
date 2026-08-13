@@ -357,12 +357,6 @@ TOOL_GROUPS: dict[str, list[str]] = {
     "memory":   ["save_memory", "get_datetime"],
 }
 
-# Reverse lookup: tool name → group name
-_TOOL_TO_GROUP: dict[str, str] = {}
-for _grp, _names in TOOL_GROUPS.items():
-    for _n in _names:
-        _TOOL_TO_GROUP.setdefault(_n, _grp)
-
 
 def get_tools_for_group(group: str | None) -> list[dict]:
     """Return the full tool definitions for a group, or all tools if group is None."""

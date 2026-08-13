@@ -1,5 +1,4 @@
-"""
-piSynapse Weather
+"""piSynapse Weather
 Open-Meteo weather with Nominatim geocoding.
 """
 

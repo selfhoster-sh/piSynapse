@@ -4,6 +4,7 @@ import logging
 import os
 
 from config import LITERT_BASE_URL, LLM_KEEP_ALIVE, LLM_MODEL, OLLAMA_BASE_URL
+
 from .utils import _get_client
 
 logger = logging.getLogger("piSynapse")

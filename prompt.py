@@ -1,9 +1,9 @@
-"""
-piSynapse System Prompt
+"""piSynapse System Prompt
 Builds the system prompt and per-request context injection.
 """
 
 from datetime import datetime
+
 import config
 
 
@@ -46,7 +46,8 @@ CRITICAL — Email IDs, Note IDs, Task UIDs: Never ask the user for them. If you
 
 def get_system_prompt() -> str:
     """Return the current system prompt. Called per-request so runtime
-    changes (e.g. DEFAULT_CITY) are reflected immediately."""
+    changes (e.g. DEFAULT_CITY) are reflected immediately.
+    """
     return build_system_prompt()
 
 
@@ -99,8 +100,8 @@ _GROUP_TOOLS: dict[str, tuple[str, str]] = {
 
 def get_tool_system_prompt(group: str) -> str:
     """Return a system prompt listing only the tools for a specific group.
-    Used when tool_group is active (small models with filtered tool schemas)."""
-    from config import LLM_NUM_CTX
+    Used when tool_group is active (small models with filtered tool schemas).
+    """
     default_city = config.DEFAULT_CITY
     city_line = (
         f"\nDefault city for weather: {default_city}. "
@@ -183,7 +184,7 @@ def build_context(
                 mem_lines.append(line)
                 used_tokens += line_tokens
         if mem_lines:
-            parts.append(f"\n\nCore Memories:\n" + "\n".join(mem_lines))
+            parts.append("\n\nCore Memories:\n" + "\n".join(mem_lines))
 
     return "".join(parts)
 
