@@ -4,6 +4,7 @@ Nextcloud CalDAV integration for calendar operations.
 
 import logging
 from datetime import datetime, timedelta
+
 from utils import retry
 
 logger = logging.getLogger("piSynapse")
@@ -14,7 +15,7 @@ _dav_calendar = None
 
 def _get_nextcloud_client():
     global _dav_client
-    from config import NEXTCLOUD_URL, NEXTCLOUD_USER, NEXTCLOUD_PASSWORD, NEXTCLOUD_TIMEOUT
+    from config import NEXTCLOUD_PASSWORD, NEXTCLOUD_TIMEOUT, NEXTCLOUD_URL, NEXTCLOUD_USER
     if not NEXTCLOUD_URL or not NEXTCLOUD_PASSWORD:
         return None
     if _dav_client is not None:

@@ -1,11 +1,12 @@
 """Text embeddings via FastEmbed (ONNX). Used by intent classifier and memory search."""
-import numpy as np
-from fastembed import TextEmbedding
-import threading
+import asyncio
 import logging
 import os
-import asyncio
+import threading
 import warnings
+
+import numpy as np
+from fastembed import TextEmbedding
 
 logger = logging.getLogger("piSynapse")
 
@@ -39,7 +40,8 @@ def embed(text: str) -> bytes:
 
 async def embed_async(text: str) -> bytes:
     """Async wrapper around embed() — offloads the blocking ONNX inference to a thread
-    so it doesn't stall the FastAPI event loop."""
+    so it doesn't stall the FastAPI event loop.
+    """
     return await asyncio.to_thread(embed, text)
 
 
