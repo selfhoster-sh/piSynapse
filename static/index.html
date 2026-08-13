@@ -441,6 +441,49 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
   .sess-item{padding:8px 8px}
   .settings-box{max-width:100%;max-height:85vh;padding:20px;margin:10px}
 }
+
+/* ── Frosted glass mode (toggleable from Settings) ────────────────────────── */
+body.glass-mode{
+  --surface:rgba(18,18,26,.52); --surface2:rgba(28,28,38,.42);
+  --surface3:rgba(44,44,58,.38); --border:rgba(255,255,255,.1);
+  --user-bg:rgba(30,30,42,.45);
+  background:
+    radial-gradient(1100px 750px at 8% -12%, rgba(240,148,58,.22), transparent 60%),
+    radial-gradient(900px 700px at 108% 8%, rgba(77,159,245,.16), transparent 60%),
+    radial-gradient(1000px 900px at 45% 118%, rgba(149,120,245,.2), transparent 62%),
+    radial-gradient(700px 500px at 85% 60%, rgba(61,191,101,.08), transparent 55%),
+    #0a0a0f;
+  background-attachment:fixed;
+}
+body.glass-mode #sidebar,
+body.glass-mode #input-container,
+body.glass-mode .modal-box,
+body.glass-mode .settings-box,
+body.glass-mode .msg-group.user .bubble,
+body.glass-mode .mem-card,
+body.glass-mode .code-wrapper,
+body.glass-mode .w-icon,
+body.glass-mode .preview-item{
+  backdrop-filter:blur(18px) saturate(150%);
+  -webkit-backdrop-filter:blur(18px) saturate(150%);
+}
+body.glass-mode .msg-group.user .bubble,
+body.glass-mode .mem-card,
+body.glass-mode .code-wrapper{box-shadow:0 8px 32px rgba(0,0,0,.35)}
+
+body.glass-mode #sidebar{background:var(--surface)}
+body.glass-mode #topbar{background:rgba(10,10,15,.45);border-bottom-color:var(--border)}
+
+/* ── Toggle switch ────────────────────────────────────────────────────────── */
+.switch-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.switch{position:relative;width:40px;height:22px;flex-shrink:0;cursor:pointer}
+.switch input{opacity:0;width:0;height:0}
+.switch .track{position:absolute;inset:0;background:var(--surface3);border:1px solid var(--border);
+  border-radius:22px;transition:background .2s}
+.switch .track::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;
+  border-radius:50%;background:var(--text2);transition:transform .2s,background .2s}
+.switch input:checked + .track{background:var(--accent-d)}
+.switch input:checked + .track::after{transform:translateX(18px);background:var(--accent)}
 </style>
 <base target="_blank">
 </head>
@@ -572,6 +615,16 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
           <option value="en">English</option>
         </select>
       </div>
+      <div class="appearance-group">
+        <label id="lbl-glass-label"></label>
+        <div class="switch-row">
+          <span id="lbl-glass-hint" style="font-size:12.5px;color:var(--text3)"></span>
+          <label class="switch">
+            <input type="checkbox" id="glass-toggle" onchange="applyGlass(this.checked)">
+            <span class="track"></span>
+          </label>
+        </div>
+      </div>
     </div>
     <div id="settings-form"></div>
     <div class="settings-actions">
@@ -606,6 +659,7 @@ const STRINGS = {
     settingsRestart:'Bazı ayarlar (bağlam penceresi) yalnızca sunucu yeniden başlatıldığında geçerli olur.',
     settingsCancel:'İptal', settingsSave:'Kaydet',
     themeLabel:'Tema Rengi', langLabel:'Dil',
+    glassLabel:'Buzlu Cam Görünüm', glassHint:'Açık',
     micDenied:'Mikrofon izni reddedildi', transcribeErr:'Ses tanıma başarısız oldu',
     micHttps:'Mikrofon HTTPS gerektirir. HTTPS ile erişin veya localhost kullanın.',
     micTryingWhisper:'Whisper deneniyor…',
@@ -638,6 +692,7 @@ const STRINGS = {
     settingsRestart:'Some settings (context window) only take effect after server restart.',
     settingsCancel:'Cancel', settingsSave:'Save',
     themeLabel:'Theme Color', langLabel:'Language',
+    glassLabel:'Frosted glass', glassHint:'On',
     micDenied:'Microphone permission denied', transcribeErr:'Transcription failed',
     micHttps:'Microphone requires HTTPS. Use HTTPS or localhost.',
     micTryingWhisper:'Trying Whisper…',
@@ -654,6 +709,7 @@ const STRINGS = {
 
 let lang  = localStorage.getItem('ps_lang')  || 'en';
 let theme = localStorage.getItem('ps_theme') || 'orange';
+let glass = localStorage.getItem('ps_glass') === '1';
 function t(k){ return STRINGS[lang][k] || k; }
 
 let currentSid = null; let sessionList = []; let loading = false; let memOpen = false;
@@ -824,11 +880,26 @@ const THEMES = [
 
 function applyTheme(name){
   theme = name;
-  document.body.className = name === 'orange' ? '' : 'theme-' + name;
+  document.body.classList.toggle('theme-orange', name === 'orange');
+  document.body.classList.toggle('theme-blue', name === 'blue');
+  document.body.classList.toggle('theme-green', name === 'green');
+  document.body.classList.toggle('theme-purple', name === 'purple');
+  document.body.classList.toggle('theme-red', name === 'red');
   localStorage.setItem('ps_theme', name);
   document.querySelectorAll('.theme-swatch').forEach(el => {
     el.classList.toggle('active', el.dataset.theme === name);
   });
+}
+
+function applyGlass(on){
+  glass = !!on;
+  document.body.classList.toggle('glass-mode', glass);
+  localStorage.setItem('ps_glass', glass ? '1' : '');
+  const toggle = document.getElementById('glass-toggle');
+  if(toggle){
+    toggle.checked = glass;
+    toggle.parentElement.parentElement.querySelector('span').textContent = glass ? t('glassHint') : '';
+  }
 }
 
 function renderThemeGrid(){
@@ -858,6 +929,10 @@ function applyLang(l){
   document.getElementById('settings-restart-notice').textContent = t('settingsRestart');
   document.getElementById('lbl-theme-select').textContent = t('themeLabel');
   document.getElementById('lbl-lang-select').textContent = t('langLabel');
+  const glassLabel = document.getElementById('lbl-glass-label');
+  if(glassLabel) glassLabel.textContent = t('glassLabel');
+  const glassToggle = document.getElementById('glass-toggle');
+  if(glassToggle){ glassToggle.checked = glass; glassToggle.parentElement.parentElement.querySelector('span').textContent = glass ? t('glassHint') : ''; }
 
   const searchInput = document.getElementById('sess-search');
   if(searchInput) searchInput.placeholder = t('searchPlaceholder');
@@ -1318,7 +1393,7 @@ let config = {username:'', default_city:'', model:'', stt_engine:'whisper', tts_
 let lastInputWasVoice = false;
 
 document.addEventListener('DOMContentLoaded', async ()=>{
-  applyTheme(theme); applyLang(lang); setupInput(); setupMobileKeyboard(); setupHoldToRecord();
+  applyTheme(theme); applyGlass(glass); applyLang(lang); setupInput(); setupMobileKeyboard(); setupHoldToRecord();
   // Check if API key is needed
   try {
     config = await api('GET','/config');
@@ -1668,6 +1743,10 @@ async function openSettings(){
   // Sync appearance controls
   document.getElementById('lbl-theme-select').textContent = t('themeLabel');
   document.getElementById('lbl-lang-select').textContent = t('langLabel');
+  const glassLabel = document.getElementById('lbl-glass-label');
+  if(glassLabel) glassLabel.textContent = t('glassLabel');
+  const glassToggle = document.getElementById('glass-toggle');
+  if(glassToggle){ glassToggle.checked = glass; glassToggle.parentElement.parentElement.querySelector('span').textContent = glass ? t('glassHint') : ''; }
   document.getElementById('lang-select').value = lang;
   renderThemeGrid();
 
