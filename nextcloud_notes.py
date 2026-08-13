@@ -1,12 +1,12 @@
-"""
-piSynapse Nextcloud Notes
+"""piSynapse Nextcloud Notes
 REST API integration for Nextcloud Notes (v1).
 """
 
-import logging
-import json
 import asyncio
+import json
+import logging
 from typing import Any
+
 from utils import retry
 
 logger = logging.getLogger("piSynapse")
@@ -19,7 +19,7 @@ class NextcloudNotesClient:
     """Nextcloud Notes REST API client."""
 
     def __init__(self):
-        from config import NEXTCLOUD_URL, NEXTCLOUD_USER, NEXTCLOUD_PASSWORD, NEXTCLOUD_TIMEOUT
+        from config import NEXTCLOUD_PASSWORD, NEXTCLOUD_TIMEOUT, NEXTCLOUD_URL, NEXTCLOUD_USER
         self._base = NEXTCLOUD_URL.rstrip("/")
         self._user = NEXTCLOUD_USER
         self._password = NEXTCLOUD_PASSWORD
@@ -29,9 +29,9 @@ class NextcloudNotesClient:
 
     def _request(self, method: str, path: str, data: dict | None = None) -> Any:
         """Make an authenticated request to Nextcloud Notes API."""
-        import urllib.request
-        import urllib.error
         import base64
+        import urllib.error
+        import urllib.request
 
         url = f"{self._base}/index.php/apps/notes/api/v1/{path.lstrip('/')}"
         headers = {
@@ -110,7 +110,7 @@ class NextcloudNotesClient:
 def _get_client() -> NextcloudNotesClient | None:
     """Return singleton client, create if needed."""
     global _notes_client
-    from config import NEXTCLOUD_URL, NEXTCLOUD_PASSWORD
+    from config import NEXTCLOUD_PASSWORD, NEXTCLOUD_URL
     if not NEXTCLOUD_URL or not NEXTCLOUD_PASSWORD:
         return None
     if _notes_client is None:
