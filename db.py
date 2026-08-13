@@ -15,6 +15,25 @@ logger = logging.getLogger("piSynapse")
 _db: aiosqlite.Connection | None = None
 _db_lock = asyncio.Lock()
 
+_LOCKED_RETRIES = 3
+
+
+async def _write_with_retry(db: aiosqlite.Connection, sql: str, params: tuple = ()) -> aiosqlite.Cursor:
+    """Execute a write, retrying briefly on 'database is locked' / 'busy'."""
+    import sqlite3
+    for attempt in range(_LOCKED_RETRIES + 1):
+        try:
+            cur = await db.execute(sql, params)
+            await db.commit()
+            return cur
+        except sqlite3.OperationalError as e:
+            if "locked" not in str(e).lower() and "busy" not in str(e).lower():
+                raise
+            if attempt >= _LOCKED_RETRIES:
+                raise
+            logger.warning(f"SQLite busy, retrying ({attempt + 1}/{_LOCKED_RETRIES})...")
+            await asyncio.sleep(0.25 * (attempt + 1))
+
 
 async def get_db() -> aiosqlite.Connection:
     global _db
@@ -35,6 +54,7 @@ async def get_db() -> aiosqlite.Connection:
         await conn.execute("PRAGMA cache_size=10000")
         await conn.execute("PRAGMA temp_store=MEMORY")
         await conn.execute("PRAGMA foreign_keys=ON")
+        await conn.execute("PRAGMA busy_timeout=10000")
         _db = conn
         return _db
 
@@ -68,12 +88,13 @@ async def _apply_migrations(db: aiosqlite.Connection):
     for i in range(version, len(MIGRATIONS)):
         table, column, definition = MIGRATIONS[i]
         try:
-            await db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")  # noqa: E501
+            await _write_with_retry(db, f"ALTER TABLE {table} ADD COLUMN {column} {definition}")  # noqa: E501
         except Exception as e:
             if "duplicate column" not in str(e).lower():
                 logger.warning(f"Migration {table}.{column} failed: {e}")
                 break
         await db.execute(f"PRAGMA user_version = {i + 1}")
+    await db.commit()
 
 
 async def init_db():
@@ -135,16 +156,19 @@ async def cleanup_expired_data() -> tuple[int, int]:
     db = await get_db()
     removed_conv = removed_mem = 0
     if CONVERSATION_RETENTION_DAYS > 0:
-        cur = await db.execute(
+        cur = await _write_with_retry(
+            db,
             "DELETE FROM conversations WHERE timestamp < datetime('now', ?)",
             (f"-{CONVERSATION_RETENTION_DAYS} days",),
         )
         removed_conv = cur.rowcount if cur.rowcount else 0
-        await db.execute(
+        await _write_with_retry(
+            db,
             "DELETE FROM sessions WHERE id NOT IN (SELECT DISTINCT session_id FROM conversations)"
         )
     if MEMORY_RETENTION_DAYS > 0:
-        cur = await db.execute(
+        cur = await _write_with_retry(
+            db,
             "DELETE FROM memories WHERE created_at < datetime('now', ?)",
             (f"-{MEMORY_RETENTION_DAYS} days",),
         )
