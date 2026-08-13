@@ -220,6 +220,7 @@ SETTINGS_SCHEMA: dict = {
     "LLM_NUM_CTX":        {"type": "int",   "default": "8192", "label": {"tr": "Baglam Penceresi (Tokens)",  "en": "Context Window (Tokens)"},"min": 2048, "max": 32768, "step": 1024},
     "HISTORY_LIMIT":      {"type": "int",   "default": "12",   "label": {"tr": "Gecmis Mesaj Sayisi",        "en": "History Message Limit"},  "min": 4, "max": 50, "step": 1},
     "MEMORY_LIMIT":       {"type": "int",   "default": "10",   "label": {"tr": "Hafiza Karti Sayisi",        "en": "Memory Card Limit"},      "min": 1, "max": 30, "step": 1},
+    "MEMORY_SIMILARITY_THRESHOLD": {"type": "float", "default": "0.68", "label": {"tr": "Bellek Benzerlik Esigi", "en": "Memory Similarity Threshold"}, "min": 0.1, "max": 0.99, "step": 0.01},
     "SUMMARY_BATCH_SIZE": {"type": "int",   "default": "5",    "label": {"tr": "Ozetleme Batch Boyutu",       "en": "Summary Batch Size"},     "min": 2, "max": 20, "step": 1},
     "LLM_MODEL":          {"type": "select", "default": "gemma4:e2b", "label": {"tr": "LLM Model",              "en": "LLM Model"}},
     "LLM_KEEP_ALIVE":     {"type": "str",   "default": "4h",   "label": {"tr": "Model Saklama Suresi",       "en": "Model Keep Alive"}},
