@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: Tests (Python 3.11)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio
+
+      - name: Syntax check
+        run: python -m compileall -q main.py config.py install.py utils.py prompt.py db.py embedding.py mail.py calendar_ops.py nextcloud_notes.py nextcloud_tasks.py weather.py llm routers tools
+
+      - name: Run tests
+        run: python -m pytest -q
