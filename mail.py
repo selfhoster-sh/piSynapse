@@ -305,7 +305,11 @@ def get_active_mail_client() -> MailClient | None:
 
     from config import GMAIL_APP_PASSWORD, GMAIL_USER, PROTON_PASSWORD, PROTON_USER
 
-    provider = os.environ.get("MAIL_PROVIDER", "gmail").lower()
+    provider = os.environ.get("MAIL_PROVIDER", "").strip().lower()
+
+    if not provider:
+        logger.info("[Mail] MAIL_PROVIDER not set — email integration disabled")
+        return None
 
     if provider == "proton":
         if PROTON_USER and PROTON_PASSWORD:
