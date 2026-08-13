@@ -51,6 +51,16 @@ Durum: **Faz 3 (C1-C8) tamamlandı** — 22 madde işlendi, 27/27 test, smoke OK
 
 Durum: **Faz 4 (D1-D6) tamamlandı** — toplam 28 madde, smoke OK. Sıradaki: LiteRT systemd unit'i (`litert-lm.service`) + pisynapse.service sıralama bağımlılığı.
 
+## Kapanış — 13-08-2026 (LiteRT systemd + dev-rules)
+
+| # | Değişiklik | Detay |
+|---|-----------|-------|
+| **29** | **LiteRT systemd unit'i** | LiteRT manuel süreçti (PID 3482251, unit yok → reboot'ta ölüyordu). `/etc/systemd/system/litert.service` oluşturuldu (User=salih, `uv` python + `litert-lm serve --host 127.0.0.1 --port 9379`, Restart=on-failure). Manuel süreç durduruldu → `enable --now`. Port 9379 model sorgusuyla doğrulandı (gemma4-e2b, gemma4-e4b). |
+| **30** | **pisynapse.service sıralama** | `After=network.target ollama.service` → `After=network.target litert.service`. `pisynapse` de **disabled**'dı → `enable` edildi (reboot-safe). `systemd-analyze verify` temiz. |
+| **31** | **dev-rules güncellemesi** | `piSynapse-dev-rules.md`: git repo durumu, `llm/` ve `tools/` paket yapısı (llm.py/tools.py yerine), LiteRT primary + gemma4-e2b (kolonlu değil), pytest 27 test + ruff/mypy komutları, port 8765, MAIL_PROVIDER boş=devre dışı, XFF/rate-limit notu, yanlış "SSRF prevention" satırı düzeltildi, systemd birimleri. |
+
+**Toplam denetim sonucu:** A1-A10 ✓, B1-B5 ✓ (B5=C5 atlandı, not), C1-C8 ✓, D1-D6 ✓ — **31 madde**, 20+ commit, 27/27 test, smoke OK. Tüm değişiklikler git'te (`main`).
+
 ## Son Değişiklikler — 31-07-2026
 
 | # | Değişiklik | Detay |
