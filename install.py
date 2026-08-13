@@ -322,6 +322,18 @@ def _litert_is_running() -> bool:
         return False
 
 
+def _litert_model_served(model_id: str) -> bool:
+    """Check whether a specific model id appears in the running server's registry."""
+    try:
+        r = subprocess.run(
+            ["curl", "-s", "--max-time", "5", f"http://localhost:{LITERT_PORT}/v1/models"],
+            capture_output=True, text=True, timeout=8,
+        )
+        return r.returncode == 0 and model_id in r.stdout
+    except Exception:
+        return False
+
+
 def _start_litert_server(litert_bin: str) -> bool:
     """Start the LiteRT server and wait until it accepts requests."""
     if _litert_is_running():
@@ -464,6 +476,8 @@ def step_llm_backend() -> None:
             if r.returncode != 0:
                 warn("Import failed — retry later with:")
                 warn(f"  {litert_bin} import --from-huggingface-repo={hf_repo} {hf_file} {import_id}")
+            elif not _litert_model_imported(import_id):
+                warn(f"Import reported success but '{import_id}' not found in registry — check: {litert_bin} list")
             else:
                 ok(f"Model imported as '{import_id}'")
 
@@ -471,6 +485,8 @@ def step_llm_backend() -> None:
         ok("Imported models:")
         subprocess.run([litert_bin, "list"])
         _start_litert_server(litert_bin)
+        if not _litert_model_served(import_id):
+            warn(f"Model '{import_id}' is not served yet — start the server and check: {litert_bin} list")
 
     # ── Ollama path ───────────────────────────────────────────────────────
     else:
@@ -497,10 +513,12 @@ def step_llm_backend() -> None:
             warn(f"Pull failed — try: ollama pull {model_id}")
 
         # Make sure Ollama server is running.
-        if not shutil.which("systemctl"):
-            if not _ollama_is_running():
+        if not _ollama_is_running():
+            if ask_yesno("Ollama server isn't running — start it now?"):
                 info("Starting Ollama server...")
                 subprocess.Popen(["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+            else:
+                info("Skipping — start it later with: ollama serve")
         import time
         for _ in range(15):
             if _ollama_is_running():
@@ -769,7 +787,8 @@ def step_env() -> None:
 
     values = {
         "LLM_BACKEND":        STATE["backend"],
-        "LLM_MODEL":          STATE["model"],
+        # LiteRT model IDs use dashes (gemma4-e2b); Ollama uses colons (gemma4:e2b).
+        "LLM_MODEL":          STATE["model"].replace(":", "-") if STATE["backend"] == "litert" else STATE["model"],
         "LITERT_PORT":        str(LITERT_PORT),
         "DEFAULT_CITY":       default_city,
         "ASSISTANT_USER":     assistant_user,

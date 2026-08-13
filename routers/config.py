@@ -24,7 +24,7 @@ async def get_config():
     return {
         "username": os.getenv("ASSISTANT_USER", "User"),
         "default_city": os.getenv("DEFAULT_CITY", ""),
-        "model": os.getenv("LLM_MODEL", "gemma4:e2b"),
+        "model": os.getenv("LLM_MODEL", "gemma4-e2b"),
         "llm_backend": os.getenv("LLM_BACKEND", "litert"),
         "stt_engine": os.getenv("STT_ENGINE", "whisper"),
         "tts_engine": os.getenv("TTS_ENGINE", "piper"),
