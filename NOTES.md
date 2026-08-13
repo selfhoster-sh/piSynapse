@@ -1,5 +1,26 @@
 # piSynapse — Architecture Notes
 
+## Son Değişiklikler — 13-08-2026
+
+Denetim (A1-A10/B1-B5/C1-C8/D1-D6) + Faz 1 düzeltmeleri. Süreç: analiz → plan → uygulama, her madde ayrı commit + `py_compile` + `pytest` (27/27).
+
+| # | Değişiklik | Detay |
+|---|-----------|-------|
+| **1** | **git init + baseline commit** | Proje artık git repo (`bcc7379`). Öncesinde tar yedeği: `backups/piSynapse-20260813-1917.tar.gz` (venv/db/.env/modeller hariç). |
+| **2** | **.gitignore tamamlandı** | Eklendi: `venv/` (gerçek venv noktasız, önceden commit'lenebilirdi!), `*.db-wal`, `*.db-shm`, `*.db-journal`, `.pytest_cache/`, `.ruff_cache/`, `.mypy_cache/`, `*.egg-info/`, `dist/`, `build/`, `*.pyc`. |
+| **3** | **A1** | `pyproject.toml` build-backend `setuptools.backends._legacy` (geçersiz) → `setuptools.build_meta`. `[project].dependencies`'e eksik `faster-whisper` eklendi. `[tool.setuptools]` paket/`py-modules` layout tanımı — `pip install -e .` artık çalışıyor. |
+| **4** | **A2** | `llm/stream.py` — LiteRT stream'de tool_calls delta'ları üzerine yazılıyordu (id/name/arguments kayboluyor, çoklu tool call yok oluyordu). `_merge_tool_calls()` ile index'e göre birleştirme. Ollama tam-listeleri ayrıca ele alınıyor. |
+| **5** | **A3** | `routers/media.py` — faster-whisper `transcribe` + 2× `subprocess.run(ffmpeg)` senkrondu (event loop blok). Hepsi `asyncio.to_thread`; lazy segment iterasyonu thread içinde. |
+| **6** | **A4** | `llm/intent.py` — `model.embed()` senkron. `embed_async()` + yeni `embed_batch_async()` (embedding.py) kullanılıyor. |
+| **7** | **A5** | `config.sync_config()` string listesi eksikti (DEFAULT_CITY, ASSISTANT_USER→DEFAULT_USER, MAIL_PROVIDER, LLM_KEEP_ALIVE yok). Dict eşlemesine çevrildi. `INTENT_LLM_FALLBACK` `RESTART_REQUIRED_KEYS`'ten çıkarıldı (çelişki). prompt.py/widgets.py/weather.py `DEFAULT_CITY`'yi çağrı anında okuyor (import-time binding kaldırıldı). |
+| **8** | **A6** | `MEMORY_SIMILARITY_THRESHOLD` (0.68) ölü config'ti — db.py 0.85 hardcoded. Artık db.py dedup eşiğinde kullanılıyor + `SETTINGS_SCHEMA`'ya eklendi (UI'da ayarlanabilir). |
+| **9** | **A7** | `routers/chat.py` — asistan yanıtı yalnızca `done` event'inde kaydediliyordu; disconnect/error'da kullanıcı mesajı sahipsiz kalıyordu. `finally` bloğu ile kısmi yanıt da kaydediliyor (`reply_saved` bayrağı). |
+| **10** | **A8** | `calendar_ops.update_event` — ham iCal string `.replace()` (all-day VALUE=DATE eşleşmiyor, folded SUMMARY kırılıyor, yanlış damga değişebiliyordu) → vobject property manipülasyonu. All-day + timed test edildi. |
+| **11** | **A9** | `mail.py` — boş MAIL_PROVIDER gmail'e düşüyordu (docs "empty = disable" diyor). Artık boş ise email devre dışı. |
+| **12** | **A10** | `install.py` — `missing.append("ffmpeg"/"curl")` kurulum başarılı olsa da çalışıyordu; yalnızca gerçekten eksikse ekleniyor. |
+
+Durum: **Faz 1 (A1-A10) tamamlandı**, Faz 2 (güvenlik) başlıyor.
+
 ## Son Değişiklikler — 31-07-2026
 
 | # | Değişiklik | Detay |
@@ -20,10 +41,10 @@
 
 ## ZORUNLU — HER SESSION/COMPACTION SONRASI ÖNCE BUNU OKU
 
-- Proje git repo DEĞİL. Değişiklik öncesi elle tar yedeği alınıyor
-  (~/pisynapse-backup-*.tar.gz). Riskli bir değişiklik yapmadan önce
-  KULLANICIYA yedek alıp almadığını sor, kendiliğinden "yedek aldım"
-  diye varsayma.
+- Proje ARTIK git repo (13 Ağustos 2026). Değişiklikler tek tek commit'lenir
+  (kural: her madde tek commit + py_compile + pytest). Riskli mimari değişiklik
+  öncesi yedek: `backups/piSynapse-*.tar.gz` (gitignore'da). Yedek alıp
+  almadığını KULLANICIYA sor, kendiliğinden "yedek aldım" diye varsayma.
 - Kullanıcının onayı olmadan mimari değişiklik yapma (yeni klasör/
   paket ekleme, Docker/WebSocket gibi yeni altyapı ekleme, framework
   değiştirme). Kapsamı kendi inisiyatifinle genişletme.
