@@ -18,8 +18,11 @@ Denetim (A1-A10/B1-B5/C1-C8/D1-D6) + Faz 1 düzeltmeleri. Süreç: analiz → pl
 | **10** | **A8** | `calendar_ops.update_event` — ham iCal string `.replace()` (all-day VALUE=DATE eşleşmiyor, folded SUMMARY kırılıyor, yanlış damga değişebiliyordu) → vobject property manipülasyonu. All-day + timed test edildi. |
 | **11** | **A9** | `mail.py` — boş MAIL_PROVIDER gmail'e düşüyordu (docs "empty = disable" diyor). Artık boş ise email devre dışı. |
 | **12** | **A10** | `install.py` — `missing.append("ffmpeg"/"curl")` kurulum başarılı olsa da çalışıyordu; yalnızca gerçekten eksikse ekleniyor. |
+| **13** | **B1** | `.gitignore` baseline'a girdi (satır 2). Kritik eksikler kapatıldı: `venv/`, `*.db-wal/shm/journal`, cache'ler, `dist/`/`build`/`*.egg-info`. |
+| **14** | **B3** | `main.py` rate-limit IP'si `x-forwarded-for`'a koşulsuz güveniyordu (spoof ile bypass). Artık `request.client.host`; proxy arkasında çalışanlar `TRUST_X_FORWARDED_FOR=1` (PROTECTED_SETTINGS'e eklendi). |
+| **15** | **B2/B4** | README'den yanlış "SSRF protection" iddiası kaldırıldı. "Security Notes" bölümü eklendi (TLS reverse-proxy, `.env` chmod 600, XFF). |
 
-Durum: **Faz 1 (A1-A10) tamamlandı**, Faz 2 (güvenlik) başlıyor.
+Durum: **Faz 1 (A1-A10) + Faz 2 (B1-B4) tamamlandı**, Faz 3 (mimari) başlıyor.
 
 ## Son Değişiklikler — 31-07-2026
 
