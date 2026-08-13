@@ -84,16 +84,19 @@ class MailClient(ABC):
         finally:
             _safe_logout(mail)
 
-    def _send_email(self, to: str, subject: str, body: str) -> bool:
+    def _send_email(self, to: str, subject: str, body: str, cc: str = "", bcc: str = "") -> bool:
         msg = MIMEMultipart()
         msg["From"] = self._get_sender_email()
         msg["To"] = to
+        if cc:
+            msg["Cc"] = cc
         msg["Subject"] = subject
         msg.attach(MIMEText(body, "plain", "utf-8"))
+        recipients = [a.strip() for field in (to, cc, bcc) if field for a in field.split(",") if a.strip()]
         smtp = self._connect_smtp()
         try:
             self._login_smtp(smtp)
-            smtp.sendmail(self._get_sender_email(), [to], msg.as_string())
+            smtp.sendmail(self._get_sender_email(), recipients, msg.as_string())
             return True
         except Exception as e:
             logger.error(f"Failed to send email to {to}: {e}")
@@ -140,7 +143,7 @@ class MailClient(ABC):
         return await asyncio.to_thread(self._read_email, str(message_id))
 
     async def send_message(self, account_id: int, to: str, subject: str, body: str, cc="", bcc="") -> bool:
-        return await asyncio.to_thread(self._send_email, to, subject, body)
+        return await asyncio.to_thread(self._send_email, to, subject, body, cc, bcc)
 
     async def search_messages(self, account_id: int, query: str, limit: int = 10) -> list[dict]:
         return await asyncio.to_thread(self._search_emails, query, limit)
