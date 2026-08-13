@@ -120,7 +120,38 @@ async def init_db():
 
     await _apply_migrations(db)
 
+    await cleanup_expired_data()
+
     await db.commit()
+
+
+async def cleanup_expired_data() -> tuple[int, int]:
+    """Delete data older than the configured retention (0 = keep forever).
+
+    Returns (deleted_conversation_rows, deleted_memory_rows).
+    """
+    from config import CONVERSATION_RETENTION_DAYS, MEMORY_RETENTION_DAYS
+
+    db = await get_db()
+    removed_conv = removed_mem = 0
+    if CONVERSATION_RETENTION_DAYS > 0:
+        cur = await db.execute(
+            "DELETE FROM conversations WHERE timestamp < datetime('now', ?)",
+            (f"-{CONVERSATION_RETENTION_DAYS} days",),
+        )
+        removed_conv = cur.rowcount if cur.rowcount else 0
+        await db.execute(
+            "DELETE FROM sessions WHERE id NOT IN (SELECT DISTINCT session_id FROM conversations)"
+        )
+    if MEMORY_RETENTION_DAYS > 0:
+        cur = await db.execute(
+            "DELETE FROM memories WHERE created_at < datetime('now', ?)",
+            (f"-{MEMORY_RETENTION_DAYS} days",),
+        )
+        removed_mem = cur.rowcount if cur.rowcount else 0
+    if removed_conv or removed_mem:
+        logger.info(f"Retention cleanup: {removed_conv} conversations, {removed_mem} memories deleted")
+    return removed_conv, removed_mem
 
 
 # -- Conversations --
