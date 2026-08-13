@@ -155,8 +155,10 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=500, detail="Internal error")
 
     reply_parts: list[str] = []
+    reply_saved = False
 
     async def generate():
+        nonlocal reply_saved
         try:
             async for event in chat_with_ollama_stream(
                 history, memories=memories, think=req.think_mode,
@@ -175,10 +177,19 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
                 elif event.get("done"):
                     full = strip_prefix("".join(reply_parts))
                     await save_message(req.session_id, "assistant", full)
+                    reply_saved = True
                     yield f"data: {json.dumps({'done': True, 'session_id': req.session_id, 'memories_saved': event.get('memories_saved', 0)})}\n\n"
         except Exception as e:
             logger.error(f"Chat stream generate error: {e}")
             yield f"data: {json.dumps({'error': 'Stream error'})}\n\n"
+        finally:
+            if not reply_saved and reply_parts:
+                try:
+                    await save_message(req.session_id, "assistant", strip_prefix("".join(reply_parts)))
+                    reply_saved = True
+                    logger.info("Saved partial assistant reply after stream interruption")
+                except Exception as e:
+                    logger.error(f"Failed to save partial reply: {e}")
 
     summary_bg = BackgroundTasks()
     summary_bg.add_task(_update_summary, req.session_id)

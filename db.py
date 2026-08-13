@@ -15,6 +15,25 @@ logger = logging.getLogger("piSynapse")
 _db: aiosqlite.Connection | None = None
 _db_lock = asyncio.Lock()
 
+_LOCKED_RETRIES = 3
+
+
+async def _write_with_retry(db: aiosqlite.Connection, sql: str, params: tuple = ()) -> aiosqlite.Cursor:
+    """Execute a write, retrying briefly on 'database is locked' / 'busy'."""
+    import sqlite3
+    for attempt in range(_LOCKED_RETRIES + 1):
+        try:
+            cur = await db.execute(sql, params)
+            await db.commit()
+            return cur
+        except sqlite3.OperationalError as e:
+            if "locked" not in str(e).lower() and "busy" not in str(e).lower():
+                raise
+            if attempt >= _LOCKED_RETRIES:
+                raise
+            logger.warning(f"SQLite busy, retrying ({attempt + 1}/{_LOCKED_RETRIES})...")
+            await asyncio.sleep(0.25 * (attempt + 1))
+
 
 async def get_db() -> aiosqlite.Connection:
     global _db
@@ -35,6 +54,7 @@ async def get_db() -> aiosqlite.Connection:
         await conn.execute("PRAGMA cache_size=10000")
         await conn.execute("PRAGMA temp_store=MEMORY")
         await conn.execute("PRAGMA foreign_keys=ON")
+        await conn.execute("PRAGMA busy_timeout=10000")
         _db = conn
         return _db
 
@@ -47,6 +67,35 @@ async def close_db():
 
 
 # -- Schema --
+
+# Ordered schema migrations. `user_version` tracks how many are applied.
+MIGRATIONS: list[tuple[str, str, str]] = [
+    ("conversations", "images", "TEXT"),
+    ("sessions", "name", "TEXT"),
+    ("sessions", "summarized_until", "INTEGER DEFAULT 0"),
+    ("memories", "embedding", "BLOB"),
+]
+
+
+async def _get_schema_version(db: aiosqlite.Connection) -> int:
+    cur = await db.execute("PRAGMA user_version")
+    row = await cur.fetchone()
+    return int(row[0]) if row else 0
+
+
+async def _apply_migrations(db: aiosqlite.Connection):
+    version = await _get_schema_version(db)
+    for i in range(version, len(MIGRATIONS)):
+        table, column, definition = MIGRATIONS[i]
+        try:
+            await _write_with_retry(db, f"ALTER TABLE {table} ADD COLUMN {column} {definition}")  # noqa: E501
+        except Exception as e:
+            if "duplicate column" not in str(e).lower():
+                logger.warning(f"Migration {table}.{column} failed: {e}")
+                break
+        await db.execute(f"PRAGMA user_version = {i + 1}")
+    await db.commit()
+
 
 async def init_db():
     db = await get_db()
@@ -61,12 +110,6 @@ async def init_db():
             timestamp  DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
-
-    # Migration: add images column if missing (for existing databases)
-    try:
-        await db.execute("SELECT images FROM conversations LIMIT 1")
-    except Exception:
-        await db.execute("ALTER TABLE conversations ADD COLUMN images TEXT")
 
     await db.execute("""
         CREATE TABLE IF NOT EXISTS sessions (
@@ -96,19 +139,43 @@ async def init_db():
     await db.execute("CREATE INDEX IF NOT EXISTS idx_conversations_session ON conversations(session_id, timestamp)")
     await db.execute("CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id, importance DESC)")
 
-    # Migrations from older DB versions (safe: table/column/definition are hardcoded)
-    for table, column, definition in [
-        ("sessions", "name", "TEXT"),
-        ("sessions", "summarized_until", "INTEGER DEFAULT 0"),
-        ("memories", "embedding", "BLOB"),
-    ]:
-        try:
-            await db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")  # noqa: E501
-        except Exception as e:
-            if "duplicate column" not in str(e).lower():
-                logger.warning(f"Migration {table}.{column} failed: {e}")
+    await _apply_migrations(db)
+
+    await cleanup_expired_data()
 
     await db.commit()
+
+
+async def cleanup_expired_data() -> tuple[int, int]:
+    """Delete data older than the configured retention (0 = keep forever).
+
+    Returns (deleted_conversation_rows, deleted_memory_rows).
+    """
+    from config import CONVERSATION_RETENTION_DAYS, MEMORY_RETENTION_DAYS
+
+    db = await get_db()
+    removed_conv = removed_mem = 0
+    if CONVERSATION_RETENTION_DAYS > 0:
+        cur = await _write_with_retry(
+            db,
+            "DELETE FROM conversations WHERE timestamp < datetime('now', ?)",
+            (f"-{CONVERSATION_RETENTION_DAYS} days",),
+        )
+        removed_conv = cur.rowcount if cur.rowcount else 0
+        await _write_with_retry(
+            db,
+            "DELETE FROM sessions WHERE id NOT IN (SELECT DISTINCT session_id FROM conversations)"
+        )
+    if MEMORY_RETENTION_DAYS > 0:
+        cur = await _write_with_retry(
+            db,
+            "DELETE FROM memories WHERE created_at < datetime('now', ?)",
+            (f"-{MEMORY_RETENTION_DAYS} days",),
+        )
+        removed_mem = cur.rowcount if cur.rowcount else 0
+    if removed_conv or removed_mem:
+        logger.info(f"Retention cleanup: {removed_conv} conversations, {removed_mem} memories deleted")
+    return removed_conv, removed_mem
 
 
 # -- Conversations --
@@ -267,7 +334,7 @@ async def update_session_summary(session_id: str, summary: str, summarized_until
 
 async def save_memory(content: str, category: str = "general",
                       importance: int = 5, user_id: str | None = None):
-    from config import DEFAULT_USER
+    from config import DEFAULT_USER, MEMORY_SIMILARITY_THRESHOLD
     from embedding import cosine_similarity, embed_async
 
     user_id = user_id or DEFAULT_USER
@@ -288,7 +355,7 @@ async def save_memory(content: str, category: str = "general",
             existing = await cur.fetchall()
 
         for mem_id, existing_embedding in existing:
-            if cosine_similarity(new_embedding, existing_embedding) >= 0.85:
+            if cosine_similarity(new_embedding, existing_embedding) >= MEMORY_SIMILARITY_THRESHOLD:
                 await db.execute(
                     """UPDATE memories SET last_accessed = CURRENT_TIMESTAMP,
                        access_count = access_count + 1 WHERE id = ?""",

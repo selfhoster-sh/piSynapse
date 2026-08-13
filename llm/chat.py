@@ -163,7 +163,7 @@ async def chat_with_ollama(
             think_msgs = _build_full_messages(messages, memories or [], summary, session_id, think=True, tool_group=tool_group)
             think_msgs = _normalize_messages_for_backend(think_msgs + current_msgs, backend=LLM_BACKEND)
             resp2, msg2, err2 = await _llm_request(think_msgs, use_think=True, use_tools=use_tools, tool_list=filtered_tools)
-            if not err2:
+            if not err2 and msg2:
                 tc2 = msg2.get("tool_calls") or []
                 if tc2:
                     logger.info("Recovered tool calls via think-mode retry")

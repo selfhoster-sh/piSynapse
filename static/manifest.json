@@ -4,7 +4,6 @@
   "description": "Personal AI assistant — fully local, fully private",
   "start_url": "/",
   "display": "standalone",
-  "orientation": "portrait",
   "background_color": "#0a0a0f",
   "theme_color": "#f0943a",
   "icons": [

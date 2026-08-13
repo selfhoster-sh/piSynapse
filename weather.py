@@ -1,11 +1,12 @@
-"""
-piSynapse Weather
+"""piSynapse Weather
 Open-Meteo weather with Nominatim geocoding.
 """
 
-import httpx
 import logging
-from config import DEFAULT_CITY, WEATHER_TIMEOUT
+
+import httpx
+
+import config
 
 logger = logging.getLogger("piSynapse")
 
@@ -16,12 +17,12 @@ _client: httpx.AsyncClient | None = None
 def _get_client() -> httpx.AsyncClient:
     global _client
     if _client is None or _client.is_closed:
-        _client = httpx.AsyncClient(timeout=WEATHER_TIMEOUT)
+        _client = httpx.AsyncClient(timeout=config.WEATHER_TIMEOUT)
     return _client
 
 
 async def get_weather(city: str = "") -> str:
-    city = city or DEFAULT_CITY or "London"
+    city = city or config.DEFAULT_CITY or "London"
     client = _get_client()
     try:
         if city not in _geo_cache:

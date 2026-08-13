@@ -1,18 +1,18 @@
-"""
-piSynapse System Prompt
+"""piSynapse System Prompt
 Builds the system prompt and per-request context injection.
 """
 
 from datetime import datetime
-from config import DEFAULT_CITY
+
+import config
 
 
 def build_system_prompt() -> str:
-    from config import LLM_NUM_CTX
+    default_city = config.DEFAULT_CITY
     city_line = (
-        f"\nDefault city for weather: {DEFAULT_CITY}. "
+        f"\nDefault city for weather: {default_city}. "
         "Use this city when the user asks about weather without specifying one."
-        if DEFAULT_CITY else ""
+        if default_city else ""
     )
 
     from tools import TOOL_NAMES
@@ -35,7 +35,7 @@ RULES (follow these exactly):
 6. save_memory is for durable user facts only (preferences, habits, personal info). Never save greetings or facts already shown in Core Memories.
 7. For relative dates (tomorrow, next week, in X hours, next Monday): call get_datetime first, then call the real tool with the absolute date.
 8. Always convert dates to ISO 8601 when calling tool parameters.
-9. Keep responses concise. Under ~{LLM_NUM_CTX} tokens total for your reply.
+9. Keep responses concise — a few sentences to a short paragraph, unless the task genuinely needs more detail.
 10. Be natural and conversational. Use a warm, friendly tone. It's okay to say "Sure!" or "Of course!".
 
 Always use the "Current date and time" value below — never guess or assume.
@@ -45,7 +45,8 @@ CRITICAL — Email IDs, Note IDs, Task UIDs: Never ask the user for them. If you
 
 def get_system_prompt() -> str:
     """Return the current system prompt. Called per-request so runtime
-    changes (e.g. DEFAULT_CITY) are reflected immediately."""
+    changes (e.g. DEFAULT_CITY) are reflected immediately.
+    """
     return build_system_prompt()
 
 
@@ -98,12 +99,13 @@ _GROUP_TOOLS: dict[str, tuple[str, str]] = {
 
 def get_tool_system_prompt(group: str) -> str:
     """Return a system prompt listing only the tools for a specific group.
-    Used when tool_group is active (small models with filtered tool schemas)."""
-    from config import LLM_NUM_CTX
+    Used when tool_group is active (small models with filtered tool schemas).
+    """
+    default_city = config.DEFAULT_CITY
     city_line = (
-        f"\nDefault city for weather: {DEFAULT_CITY}. "
+        f"\nDefault city for weather: {default_city}. "
         "Use this city when the user asks about weather without specifying one."
-        if DEFAULT_CITY else ""
+        if default_city else ""
     )
     names, instructions = _GROUP_TOOLS.get(group, ("", ""))
 
@@ -140,7 +142,7 @@ def build_context(
     """
     from config import LLM_NUM_CTX
     now = datetime.now()
-    parts = [f'\n\nCurrent date and time: {now.strftime("%Y-%m-%d %H:%M")} ({now.strftime("%A")}).']
+    parts = [f'\n\nCurrent date and time: {now.strftime("%Y-%m-%d %H:%M")} ({now.strftime("%A")}) — local time.']
 
     # Soft budget: 40% of context for system+context, leaving 60% for history+response
     token_budget = int(LLM_NUM_CTX * 0.40)
@@ -181,7 +183,7 @@ def build_context(
                 mem_lines.append(line)
                 used_tokens += line_tokens
         if mem_lines:
-            parts.append(f"\n\nCore Memories:\n" + "\n".join(mem_lines))
+            parts.append("\n\nCore Memories:\n" + "\n".join(mem_lines))
 
     return "".join(parts)
 
