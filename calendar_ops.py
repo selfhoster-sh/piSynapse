@@ -77,7 +77,7 @@ def _find_events(search_window_days_back: int = 30, search_window_days_ahead: in
 
 def _match_event(events, summary: str, event_uid: str = "") -> tuple:
     """Find an event by UID (exact) or summary (substring).
-    
+
     Returns (event, matched_summary) or (None, None).
     UID match takes priority when event_uid is provided.
     """

@@ -359,13 +359,13 @@ async def tts_head():
 
 @router.post("/tts")
 async def text_to_speech(request: Request):
-    from config import TTS_VOICE as default_voice
+    from config import TTS_VOICE
     try:
         body = await request.json()
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON body")
     text = (body.get("text") or "")[:2000]
-    voice_name = (body.get("voice") or default_voice)
+    voice_name = (body.get("voice") or TTS_VOICE)
     if not text:
         raise HTTPException(status_code=400, detail="Text is required")
     text = _strip_markdown(text)
