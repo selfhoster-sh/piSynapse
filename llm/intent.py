@@ -96,10 +96,9 @@ async def _get_tool_embeddings() -> list[tuple[str | None, str, bytes]]:
         if _tool_embed_cache is not None:
             return _tool_embed_cache
         try:
-            from embedding import get_model
-            model = get_model()
+            from embedding import embed_batch_async
             descriptions = [desc for _, desc in _TOOL_EMBED_CORPUS]
-            vecs = list(model.embed(descriptions))
+            vecs = await embed_batch_async(descriptions)
             _tool_embed_cache = [
                 (group, desc, vec.astype("float32").tobytes())
                 for (group, desc), vec in zip(_TOOL_EMBED_CORPUS, vecs)
@@ -113,10 +112,10 @@ async def _get_tool_embeddings() -> list[tuple[str | None, str, bytes]]:
 
 async def _classify_intent(message: str) -> tuple[str, str | None]:
     try:
-        from embedding import cosine_similarity, embed
+        from embedding import cosine_similarity, embed_async
         corpus = await _get_tool_embeddings()
         if corpus:
-            msg_vec = embed(message)
+            msg_vec = await embed_async(message)
             best_sim = 0.0
             second_sim = 0.0
             best_group = None
