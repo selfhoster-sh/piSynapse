@@ -131,7 +131,8 @@ IMAP_TIMEOUT = _safe_int("IMAP_TIMEOUT", 30)
 SMTP_TIMEOUT = _safe_int("SMTP_TIMEOUT", 30)
 
 # -- ProtonMail --
-MAIL_PROVIDER = os.getenv("MAIL_PROVIDER", "gmail")
+# Empty = disabled (opt-in, matching the "privacy by default" philosophy).
+MAIL_PROVIDER = os.getenv("MAIL_PROVIDER", "")
 PROTON_USER = os.getenv("PROTON_USER", "")
 PROTON_PASSWORD = os.getenv("PROTON_PASSWORD", "")
 PROTON_IMAP_HOST = os.getenv("PROTON_IMAP_HOST", "localhost")
@@ -238,7 +239,8 @@ SETTINGS_SCHEMA: dict = {
     "LLM_MODEL":          {"type": "select", "default": "gemma4-e2b", "label": {"tr": "LLM Model",              "en": "LLM Model"}},
     "LLM_KEEP_ALIVE":     {"type": "str",   "default": "4h",   "label": {"tr": "Model Saklama Suresi",       "en": "Model Keep Alive"}},
     "ASSISTANT_USER":     {"type": "str",   "default": "",     "label": {"tr": "Kullanici Adi",              "en": "Username"}},
-    "MAIL_PROVIDER":      {"type": "select", "default": "gmail", "label": {"tr": "E-posta Saglayici",        "en": "Mail Provider"}, "options": [
+    "MAIL_PROVIDER":      {"type": "select", "default": "", "label": {"tr": "E-posta Saglayici", "en": "Mail Provider"}, "options": [
+        {"value": "", "label": {"tr": "Kapal\u0131 (e-posta yok)", "en": "Off (no email)"}},
         {"value": "gmail", "label": {"tr": "Gmail", "en": "Gmail"}},
         {"value": "proton", "label": {"tr": "ProtonMail (ProtonBridge)", "en": "ProtonMail (ProtonBridge)"}},
         {"value": "auto", "label": {"tr": "Otomatik (Proton varsa onu kullan)", "en": "Auto (Proton if available)"}},
