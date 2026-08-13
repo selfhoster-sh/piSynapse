@@ -105,6 +105,9 @@ INTENT_LLM_FALLBACK = os.getenv("INTENT_LLM_FALLBACK", "off")
 # -- Memory --
 DEFAULT_USER = os.getenv("ASSISTANT_USER", "default")
 MEMORY_SIMILARITY_THRESHOLD = _safe_float("MEMORY_SIMILARITY_THRESHOLD", 0.68)
+# Data retention (days). 0 = disabled (keep forever).
+CONVERSATION_RETENTION_DAYS = _safe_int("CONVERSATION_RETENTION_DAYS", 0)
+MEMORY_RETENTION_DAYS = _safe_int("MEMORY_RETENTION_DAYS", 0)
 EMBED_MODEL = os.getenv("EMBED_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
 
 # -- Weather --
@@ -229,6 +232,8 @@ SETTINGS_SCHEMA: dict = {
     "HISTORY_LIMIT":      {"type": "int",   "default": "12",   "label": {"tr": "Gecmis Mesaj Sayisi",        "en": "History Message Limit"},  "min": 4, "max": 50, "step": 1},
     "MEMORY_LIMIT":       {"type": "int",   "default": "10",   "label": {"tr": "Hafiza Karti Sayisi",        "en": "Memory Card Limit"},      "min": 1, "max": 30, "step": 1},
     "MEMORY_SIMILARITY_THRESHOLD": {"type": "float", "default": "0.68", "label": {"tr": "Bellek Benzerlik Esigi", "en": "Memory Similarity Threshold"}, "min": 0.1, "max": 0.99, "step": 0.01},
+    "CONVERSATION_RETENTION_DAYS": {"type": "int", "default": "0", "label": {"tr": "Sohbet Saklama (Gun, 0=kapali)", "en": "Chat Retention (days, 0=off)"}, "min": 0, "max": 3650, "step": 1},
+    "MEMORY_RETENTION_DAYS":       {"type": "int", "default": "0", "label": {"tr": "Bellek Saklama (Gun, 0=kapali)", "en": "Memory Retention (days, 0=off)"}, "min": 0, "max": 3650, "step": 1},
     "SUMMARY_BATCH_SIZE": {"type": "int",   "default": "5",    "label": {"tr": "Ozetleme Batch Boyutu",       "en": "Summary Batch Size"},     "min": 2, "max": 20, "step": 1},
     "LLM_MODEL":          {"type": "select", "default": "gemma4:e2b", "label": {"tr": "LLM Model",              "en": "LLM Model"}},
     "LLM_KEEP_ALIVE":     {"type": "str",   "default": "4h",   "label": {"tr": "Model Saklama Suresi",       "en": "Model Keep Alive"}},
@@ -283,6 +288,8 @@ _NUMERIC_KEYS = {
     "IMAP_TIMEOUT": (int, 30), "SMTP_TIMEOUT": (int, 30),
     "PROTON_IMAP_PORT": (int, 1143), "PROTON_SMTP_PORT": (int, 1025),
     "MEMORY_SIMILARITY_THRESHOLD": (float, 0.68),
+    "CONVERSATION_RETENTION_DAYS": (int, 0),
+    "MEMORY_RETENTION_DAYS": (int, 0),
     "MEDIA_MAX_MB": (int, 100),
 }
 
