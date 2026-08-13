@@ -7,7 +7,7 @@ import logging
 
 from fastapi import APIRouter
 
-from config import DEFAULT_CITY
+import config
 
 logger = logging.getLogger("piSynapse")
 
@@ -16,15 +16,16 @@ router = APIRouter(tags=["widgets"])
 
 @router.get("/widget/weather")
 async def widget_weather():
-    if not DEFAULT_CITY:
+    city = config.DEFAULT_CITY
+    if not city:
         return {"error": "DEFAULT_CITY is not set", "city": "", "summary": ""}
     try:
         from weather import get_weather
-        summary = await get_weather(DEFAULT_CITY)
-        return {"city": DEFAULT_CITY, "summary": summary}
+        summary = await get_weather(city)
+        return {"city": city, "summary": summary}
     except Exception as e:
         logger.error(f"Weather widget error: {e}")
-        return {"error": "Widget error", "city": DEFAULT_CITY, "summary": ""}
+        return {"error": "Widget error", "city": city, "summary": ""}
 
 
 @router.get("/widget/calendar")
