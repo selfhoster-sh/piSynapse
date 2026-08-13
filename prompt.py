@@ -8,7 +8,6 @@ import config
 
 
 def build_system_prompt() -> str:
-    from config import LLM_NUM_CTX
     default_city = config.DEFAULT_CITY
     city_line = (
         f"\nDefault city for weather: {default_city}. "
@@ -36,7 +35,7 @@ RULES (follow these exactly):
 6. save_memory is for durable user facts only (preferences, habits, personal info). Never save greetings or facts already shown in Core Memories.
 7. For relative dates (tomorrow, next week, in X hours, next Monday): call get_datetime first, then call the real tool with the absolute date.
 8. Always convert dates to ISO 8601 when calling tool parameters.
-9. Keep responses concise. Under ~{LLM_NUM_CTX} tokens total for your reply.
+9. Keep responses concise — a few sentences to a short paragraph, unless the task genuinely needs more detail.
 10. Be natural and conversational. Use a warm, friendly tone. It's okay to say "Sure!" or "Of course!".
 
 Always use the "Current date and time" value below — never guess or assume.
@@ -143,7 +142,7 @@ def build_context(
     """
     from config import LLM_NUM_CTX
     now = datetime.now()
-    parts = [f'\n\nCurrent date and time: {now.strftime("%Y-%m-%d %H:%M")} ({now.strftime("%A")}).']
+    parts = [f'\n\nCurrent date and time: {now.strftime("%Y-%m-%d %H:%M")} ({now.strftime("%A")}) — local time.']
 
     # Soft budget: 40% of context for system+context, leaving 60% for history+response
     token_budget = int(LLM_NUM_CTX * 0.40)
