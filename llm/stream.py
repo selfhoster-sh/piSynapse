@@ -26,6 +26,39 @@ logger = logging.getLogger("piSynapse")
 EARLY_BUFFER_CHARS = 8
 
 
+def _merge_tool_calls(acc: list, tc: list) -> list:
+    """Merge streaming tool-call deltas by index.
+
+    OpenAI-style (LiteRT) streams send tool calls as incremental deltas:
+    the first chunk carries the id/name, later chunks carry fragments of
+    the arguments JSON. Overwriting the accumulator each chunk would lose
+    the id/name and truncate arguments, so merge by ``index``. Ollama-style
+    streams send complete tool-call lists, which replace the accumulator.
+    """
+    if not tc:
+        return acc
+    if any(c.get("index") is None for c in tc):
+        return tc
+    for call in tc:
+        idx = call.get("index", 0)
+        while len(acc) <= idx:
+            acc.append({})
+        target = acc[idx]
+        for k, v in call.items():
+            if k == "index":
+                continue
+            if k == "function" and isinstance(v, dict):
+                fn = target.setdefault("function", {})
+                for fk, fv in v.items():
+                    if fk == "arguments" and isinstance(fv, str):
+                        fn["arguments"] = fn.get("arguments", "") + fv
+                    else:
+                        fn[fk] = fv
+            elif v is not None:
+                target[k] = v
+    return acc
+
+
 async def chat_with_ollama_stream(
     messages: list[dict],
     *,
@@ -116,7 +149,7 @@ async def chat_with_ollama_stream(
                             done_reason = data.get("done_reason")
 
                     if tc:
-                        tool_calls_acc = tc
+                        tool_calls_acc = _merge_tool_calls(tool_calls_acc, tc)
 
                     if token:
                         full_text += token
