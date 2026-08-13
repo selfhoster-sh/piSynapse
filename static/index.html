@@ -442,37 +442,140 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
   .settings-box{max-width:100%;max-height:85vh;padding:20px;margin:10px}
 }
 
-/* ── Frosted glass mode (toggleable from Settings) ────────────────────────── */
+/* ── Frosted glass mode (toggleable from Settings) ──────────────────────────
+   Glassmorphism: theme-aware translucent surfaces + backdrop blur.
+   All tints derive from --accent, so glass follows the chosen theme color. */
 body.glass-mode{
-  --surface:rgba(18,18,26,.52); --surface2:rgba(28,28,38,.42);
-  --surface3:rgba(44,44,58,.38); --border:rgba(255,255,255,.1);
-  --user-bg:rgba(30,30,42,.45);
-  background:
-    radial-gradient(1100px 750px at 8% -12%, rgba(240,148,58,.22), transparent 60%),
-    radial-gradient(900px 700px at 108% 8%, rgba(77,159,245,.16), transparent 60%),
-    radial-gradient(1000px 900px at 45% 118%, rgba(149,120,245,.2), transparent 62%),
-    radial-gradient(700px 500px at 85% 60%, rgba(61,191,101,.08), transparent 55%),
-    #0a0a0f;
-  background-attachment:fixed;
+  --surface:color-mix(in srgb, var(--accent) 9%, rgba(16,16,24,.5));
+  --surface2:color-mix(in srgb, var(--accent) 7%, rgba(26,26,36,.44));
+  --surface3:color-mix(in srgb, var(--accent) 5%, rgba(38,38,48,.42));
+  --border:color-mix(in srgb, var(--accent) 22%, rgba(255,255,255,.13));
+  --user-bg:color-mix(in srgb, var(--accent) 10%, rgba(28,28,40,.5));
 }
+@supports not (color-mix(in srgb, red, blue)){
+  body.glass-mode{
+    --surface:rgba(18,18,26,.55); --surface2:rgba(28,28,38,.45);
+    --surface3:rgba(44,44,58,.42); --border:rgba(255,255,255,.13);
+    --user-bg:rgba(30,30,42,.48);
+  }
+  body.glass-mode::before{
+    background:
+      radial-gradient(1150px 780px at 6% -14%, rgba(240,148,58,.2), transparent 62%),
+      radial-gradient(950px 720px at 108% 4%, rgba(77,159,245,.14), transparent 60%),
+      radial-gradient(1050px 950px at 42% 118%, rgba(149,120,245,.16), transparent 62%),
+      radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.28) 100%);
+  }
+}
+
+/* Fixed ambient backdrop: aurora blobs + vignette + film grain */
+body.glass-mode{position:relative;isolation:isolate}
+body.glass-mode::before{
+  content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background:
+    radial-gradient(1150px 780px at 6% -14%, color-mix(in srgb, var(--accent) 30%, transparent), transparent 62%),
+    radial-gradient(950px 720px at 108% 4%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 60%),
+    radial-gradient(1050px 950px at 42% 118%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 62%),
+    radial-gradient(720px 540px at 84% 52%, color-mix(in srgb, var(--accent) 13%, transparent), transparent 56%),
+    radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.28) 100%);
+}
+body.glass-mode::after{
+  content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.07;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size:140px 140px;
+}
+
+/* Glass recipe for surfaces & panels */
 body.glass-mode #sidebar,
+body.glass-mode #topbar,
 body.glass-mode #input-container,
 body.glass-mode .modal-box,
 body.glass-mode .settings-box,
+body.glass-mode .settings-appearance,
 body.glass-mode .msg-group.user .bubble,
 body.glass-mode .mem-card,
 body.glass-mode .code-wrapper,
 body.glass-mode .w-icon,
-body.glass-mode .preview-item{
-  backdrop-filter:blur(18px) saturate(150%);
-  -webkit-backdrop-filter:blur(18px) saturate(150%);
+body.glass-mode .preview-item,
+body.glass-mode #toast{
+  background-image:linear-gradient(135deg, rgba(255,255,255,.06), rgba(255,255,255,.015) 45%, transparent 68%);
+  backdrop-filter:blur(22px) saturate(160%);
+  -webkit-backdrop-filter:blur(22px) saturate(160%);
 }
+body.glass-mode #sidebar{background-color:var(--surface)}
+body.glass-mode #topbar{background-color:color-mix(in srgb, var(--accent) 7%, rgba(12,12,18,.38));border-bottom-color:var(--border)}
+body.glass-mode .modal-box,
+body.glass-mode .settings-box,
+body.glass-mode #input-container{box-shadow:0 20px 60px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.09)}
+body.glass-mode #input-container:focus-within{box-shadow:0 20px 60px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.09), 0 0 0 3px var(--accent-d)}
 body.glass-mode .msg-group.user .bubble,
 body.glass-mode .mem-card,
-body.glass-mode .code-wrapper{box-shadow:0 8px 32px rgba(0,0,0,.35)}
+body.glass-mode .code-wrapper{box-shadow:0 8px 32px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,.06)}
 
-body.glass-mode #sidebar{background:var(--surface)}
-body.glass-mode #topbar{background:rgba(10,10,15,.45);border-bottom-color:var(--border)}
+/* Glass chips: ticker, search, selects, setting inputs */
+body.glass-mode #ticker,
+body.glass-mode #top-ticker,
+body.glass-mode .sb-search input,
+body.glass-mode .lang-select,
+body.glass-mode .setting-input{backdrop-filter:blur(14px) saturate(150%);-webkit-backdrop-filter:blur(14px) saturate(150%)}
+body.glass-mode #ticker,
+body.glass-mode #top-ticker,
+body.glass-mode .lang-select,
+body.glass-mode .setting-input{background-color:color-mix(in srgb, var(--accent) 5%, rgba(20,20,28,.3))}
+body.glass-mode .sb-search input{background-color:color-mix(in srgb, var(--accent) 5%, rgba(255,255,255,.05))}
+body.glass-mode .sess-item.active{border-color:color-mix(in srgb, var(--accent) 40%, transparent);box-shadow:inset 3px 0 0 var(--accent),0 0 22px var(--accent-d)}
+
+/* Glass buttons */
+body.glass-mode .icon-btn,
+body.glass-mode .mem-btn,
+body.glass-mode .settings-btn,
+body.glass-mode .inline-think-btn,
+body.glass-mode .tts-btn,
+body.glass-mode .sb-compact-toggle,
+body.glass-mode .copy-btn,
+body.glass-mode .modal-cancel,
+body.glass-mode .sess-del,
+body.glass-mode .mem-del-btn,
+body.glass-mode .preview-remove{backdrop-filter:blur(12px) saturate(150%);-webkit-backdrop-filter:blur(12px) saturate(150%)}
+body.glass-mode .icon-btn:hover,
+body.glass-mode .inline-think-btn:hover,
+body.glass-mode .tts-btn:hover,
+body.glass-mode .mem-btn:hover,
+body.glass-mode .settings-btn:hover,
+body.glass-mode .sb-compact-toggle:hover{background:color-mix(in srgb, var(--accent) 15%, rgba(255,255,255,.06));color:var(--text)}
+
+/* Primary CTAs become accent-tinted glass */
+body.glass-mode .new-btn,
+body.glass-mode .top-new-btn,
+body.glass-mode .w-start,
+body.glass-mode .modal-confirm:not(.danger){
+  background:linear-gradient(135deg, color-mix(in srgb, var(--accent) 30%, transparent), color-mix(in srgb, var(--accent) 10%, transparent));
+  color:var(--text);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.14), 0 4px 16px color-mix(in srgb, var(--accent) 20%, transparent);
+  backdrop-filter:blur(14px) saturate(150%);
+  -webkit-backdrop-filter:blur(14px) saturate(150%);
+}
+body.glass-mode .new-btn:hover,
+body.glass-mode .top-new-btn:hover,
+body.glass-mode .w-start:hover,
+body.glass-mode .modal-confirm:not(.danger):hover{
+  background:linear-gradient(135deg, color-mix(in srgb, var(--accent) 40%, transparent), color-mix(in srgb, var(--accent) 16%, transparent));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.18), 0 6px 22px color-mix(in srgb, var(--accent) 30%, transparent);
+  transform:translateY(-1px);
+}
+
+/* Send button: glossy accent */
+body.glass-mode #send-btn:not(:disabled){
+  background:linear-gradient(135deg, color-mix(in srgb, var(--accent) 85%, #ffffff 15%), var(--accent));
+  box-shadow:0 4px 18px color-mix(in srgb, var(--accent) 45%, transparent), inset 0 1px 0 rgba(255,255,255,.3);
+}
+body.glass-mode #send-btn:hover:not(:disabled){box-shadow:0 6px 26px color-mix(in srgb, var(--accent) 60%, transparent), inset 0 1px 0 rgba(255,255,255,.35)}
+
+/* Modal backdrop gets deeper frost */
+body.glass-mode .modal-backdrop{background:rgba(5,5,9,.55);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+
+/* Theme-tinted scrollbar & selection */
+body.glass-mode ::-webkit-scrollbar-thumb{background:color-mix(in srgb, var(--accent) 28%, rgba(255,255,255,.14))}
+body.glass-mode ::selection{background:color-mix(in srgb, var(--accent) 35%, transparent)}
 
 /* ── Toggle switch ────────────────────────────────────────────────────────── */
 .switch-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
@@ -603,7 +706,7 @@ body.glass-mode #topbar{background:rgba(10,10,15,.45);border-bottom-color:var(--
       <span id="lbl-settings-title"></span>
     </div>
     <div class="settings-restart-notice" id="settings-restart-notice"></div>
-    <div id="settings-appearance">
+    <div id="settings-appearance" class="settings-appearance">
       <div class="appearance-group">
         <label id="lbl-theme-select"></label>
         <div class="theme-grid" id="theme-grid"></div>
@@ -659,7 +762,7 @@ const STRINGS = {
     settingsRestart:'Bazı ayarlar (bağlam penceresi) yalnızca sunucu yeniden başlatıldığında geçerli olur.',
     settingsCancel:'İptal', settingsSave:'Kaydet',
     themeLabel:'Tema Rengi', langLabel:'Dil',
-    glassLabel:'Buzlu Cam Görünüm', glassHint:'Açık',
+    glassLabel:'Buzlu Cam Görünüm', glassHint:'Açık', glassHintOff:'Kapalı',
     micDenied:'Mikrofon izni reddedildi', transcribeErr:'Ses tanıma başarısız oldu',
     micHttps:'Mikrofon HTTPS gerektirir. HTTPS ile erişin veya localhost kullanın.',
     micTryingWhisper:'Whisper deneniyor…',
@@ -692,7 +795,7 @@ const STRINGS = {
     settingsRestart:'Some settings (context window) only take effect after server restart.',
     settingsCancel:'Cancel', settingsSave:'Save',
     themeLabel:'Theme Color', langLabel:'Language',
-    glassLabel:'Frosted glass', glassHint:'On',
+    glassLabel:'Frosted glass', glassHint:'On', glassHintOff:'Off',
     micDenied:'Microphone permission denied', transcribeErr:'Transcription failed',
     micHttps:'Microphone requires HTTPS. Use HTTPS or localhost.',
     micTryingWhisper:'Trying Whisper…',
@@ -898,7 +1001,7 @@ function applyGlass(on){
   const toggle = document.getElementById('glass-toggle');
   if(toggle){
     toggle.checked = glass;
-    toggle.parentElement.parentElement.querySelector('span').textContent = glass ? t('glassHint') : '';
+    toggle.parentElement.parentElement.querySelector('span').textContent = glass ? t('glassHint') : t('glassHintOff');
   }
 }
 
@@ -932,7 +1035,7 @@ function applyLang(l){
   const glassLabel = document.getElementById('lbl-glass-label');
   if(glassLabel) glassLabel.textContent = t('glassLabel');
   const glassToggle = document.getElementById('glass-toggle');
-  if(glassToggle){ glassToggle.checked = glass; glassToggle.parentElement.parentElement.querySelector('span').textContent = glass ? t('glassHint') : ''; }
+  if(glassToggle){ glassToggle.checked = glass; glassToggle.parentElement.parentElement.querySelector('span').textContent = glass ? t('glassHint') : t('glassHintOff'); }
 
   const searchInput = document.getElementById('sess-search');
   if(searchInput) searchInput.placeholder = t('searchPlaceholder');
@@ -1746,7 +1849,7 @@ async function openSettings(){
   const glassLabel = document.getElementById('lbl-glass-label');
   if(glassLabel) glassLabel.textContent = t('glassLabel');
   const glassToggle = document.getElementById('glass-toggle');
-  if(glassToggle){ glassToggle.checked = glass; glassToggle.parentElement.parentElement.querySelector('span').textContent = glass ? t('glassHint') : ''; }
+  if(glassToggle){ glassToggle.checked = glass; glassToggle.parentElement.parentElement.querySelector('span').textContent = glass ? t('glassHint') : t('glassHintOff'); }
   document.getElementById('lang-select').value = lang;
   renderThemeGrid();
 
