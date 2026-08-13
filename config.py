@@ -91,6 +91,9 @@ API_KEY = os.getenv("API_KEY", "")
 CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
 TRUSTED_HOSTS = {h.strip() for h in os.getenv("TRUSTED_HOSTS", "*").split(",") if h.strip()}
 MEDIA_MAX_MB = _safe_int("MEDIA_MAX_MB", 100)
+# Only trust X-Forwarded-For when running behind a trusted reverse proxy.
+# Enabled by default: LAN users must not be able to spoof their IP to bypass rate limits.
+TRUST_X_FORWARDED_FOR = os.getenv("TRUST_X_FORWARDED_FOR", "").strip().lower() in ("1", "true", "yes", "on")
 
 # -- Chat --
 HISTORY_LIMIT = _safe_int("HISTORY_LIMIT", 12)
@@ -261,7 +264,7 @@ SETTINGS_SCHEMA: dict = {
 RESTART_REQUIRED_KEYS = {"LLM_NUM_CTX", "LLM_NUM_BATCH"}
 
 # Settings that must NEVER be changed via the API (security-sensitive)
-PROTECTED_SETTINGS = {"OLLAMA_BASE_URL", "LITERT_BASE_URL", "LLM_BACKEND", "API_KEY", "CORS_ORIGINS", "TRUSTED_HOSTS", "MEDIA_MAX_MB"}
+PROTECTED_SETTINGS = {"OLLAMA_BASE_URL", "LITERT_BASE_URL", "LLM_BACKEND", "API_KEY", "CORS_ORIGINS", "TRUSTED_HOSTS", "TRUST_X_FORWARDED_FOR", "MEDIA_MAX_MB"}
 
 # All integer/float config keys that should be re-synced after .env updates
 _NUMERIC_KEYS = {

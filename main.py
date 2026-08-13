@@ -27,6 +27,7 @@ from config import (
     MEDIA_MAX_MB,
     OLLAMA_BASE_URL,
     TRUSTED_HOSTS,
+    TRUST_X_FORWARDED_FOR,
 )
 from db import close_db, init_db
 
@@ -245,9 +246,13 @@ async def security_middleware(request: Request, call_next):
 
     # --- Rate limiting ---
     if not is_exempt:
-        client_ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-        if not client_ip or client_ip == "":
+        if TRUST_X_FORWARDED_FOR:
+            client_ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+        else:
+            # Default: never trust the spoofable X-Forwarded-For header.
             client_ip = request.client.host if request.client else "unknown"
+        if not client_ip:
+            client_ip = "unknown"
         if not _rate_limiter.allow(client_ip):
             return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded. Try again later."})
 
