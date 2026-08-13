@@ -53,13 +53,32 @@ class NextcloudNotesClient:
 
     @retry(attempts=2, delay=1.0)
     def list_notes(self) -> list[dict]:
-        """Fetch all notes from Nextcloud. Results are cached for 30s."""
+        """Fetch all notes from Nextcloud (paginated, cached 30s)."""
         import time
         now = time.time()
         if self._list_cache and now - self._list_cache_ts < 30:
             return self._list_cache
-        result = self._request("GET", "notes")
-        self._list_cache = result or []
+        notes: list[dict] = []
+        page = 1
+        per_page = 100
+        while page <= 200:
+            result = self._request("GET", f"notes?page={page}&itemsPerPage={per_page}")
+            if isinstance(result, dict):
+                data = result.get("data", [])
+                batch = data if isinstance(data, list) else (data.get("notes", []) if isinstance(data, dict) else [])
+            else:
+                batch = result or []
+            if not batch:
+                break
+            notes.extend(batch)
+            if len(batch) < per_page:
+                break
+            seen_ids = {n.get("id") for n in notes[:-len(batch)]}
+            new_ids = {n.get("id") for n in batch}
+            if new_ids.issubset(seen_ids):
+                break  # server ignores pagination params — stop to avoid infinite loop
+            page += 1
+        self._list_cache = notes
         self._list_cache_ts = now
         return self._list_cache
 
