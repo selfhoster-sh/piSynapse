@@ -24,6 +24,20 @@ Denetim (A1-A10/B1-B5/C1-C8/D1-D6) + Faz 1 düzeltmeleri. Süreç: analiz → pl
 
 Durum: **Faz 1 (A1-A10) + Faz 2 (B1-B4) tamamlandı**, Faz 3 (mimari) başlıyor.
 
+## Faz 3 (Mimari) — 13-08-2026
+
+| # | Değişiklik | Detay |
+|---|-----------|-------|
+| **16** | **C8** | `f0179b1` — Ölü kod temizliği: `_AUTH_EXEMPT` (main.py), `_TOOL_TO_GROUP` (tools/definitions.py), `llm/__init__.py` re-export'ları (yalnızca `__all__`'dakiler kaldı), install.py `home`/`python_path` F841, `llm/payload.py` `tool_name`, f-string'ler + 42 otomatik F-hatası. Tüm F401/F841/F541 temiz (kalan 144 hata: E501/D-docstring stil, önceden vardı). |
+| **17** | **C6** | `7780496` — `get_llm_model_options()` senkron subprocess(curl/ollama) çalıştırıyordu → async sarmalayıcı + `asyncio.to_thread`; bloklama event loop'tan çıktı. LiteRT canlı sorgu test edildi (gemma4-e2b, gemma4-e4b). |
+| **18** | **C7** | `f224513` — `nextcloud_notes.list_notes()` tek istekle tüm notları çekiyordu → `page`/`itemsPerPage=100` sayfalama. Sunucu sayfalama parametresini yok sayarsa sonsuz döngü koruması (id dedupe). |
+| **19** | **C3** | `0c3691e` — DB şema migrasyonu ad-hoc try/except → `PRAGMA user_version` tabanlı sıralı MIGRATIONS (images, name, summarized_until, embedding). Mevcut DB `user_version=4` doğrulandı. |
+| **20** | **C2** | `807866c` — Opsiyonel veri saklama: `CONVERSATION_RETENTION_DAYS` / `MEMORY_RETENTION_DAYS` (varsayılan 0 = kapalı). `db.cleanup_expired_data()` başlangıçta çalışır. UI'da ayarlanabilir + `.env` PATCH ile canlı sync (restart gerekmez). |
+| **21** | **C1** | `d13bd82` — SQLite `database is locked` hataları: `busy_timeout=10000` + `_write_with_retry()` (3 deneme, migrasyon/cleanup yazımlarında). Retry'ı simülasyonla test edildi. |
+| **22** | **C4** | `b9e72d3` — `[project.optional-dependencies].dev` (pytest, pytest-asyncio, ruff, mypy). mypy gerçek bug'ı düzeltildi: `llm/chat.py` `msg2`/`message` None narrowing (188→154 hata; kalanlar eksik stub/generic, baseline). |
+
+Durum: **Faz 3 (C1-C8) tamamlandı** — 22 madde işlendi, 27/27 test, smoke OK (/health 200, / 200, /chat/sessions 401). Sıradaki: Faz 4 (D1-D6, arayüz + README) + LiteRT systemd unit'i.
+
 ## Son Değişiklikler — 31-07-2026
 
 | # | Değişiklik | Detay |
