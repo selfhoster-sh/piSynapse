@@ -1553,7 +1553,7 @@ function renderSessions(list){
   applyStagger();
 }
 
-function newSid(){ return 'session_'+Date.now()+'_'+Math.random().toString(36).slice(2,6); }
+function newSid(){ return 'session_'+Date.now()+'_'+crypto.getRandomValues(new Uint32Array(1))[0].toString(36); }
 function newChat(){
   currentSid=null; document.querySelectorAll('.sess-item').forEach(el=>el.classList.remove('active'));
   document.getElementById('sess-title').textContent='piSynapse';
