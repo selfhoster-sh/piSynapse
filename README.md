@@ -41,7 +41,7 @@ When you disable all external integrations, **zero data leaves your device**. No
 - 🔊 **Voice Output** — Piper TTS (local/offline) or browser Web Speech API
 - 🖼️ **Image Upload** — Drag-and-drop, paste, or attach images to send to the model
 - 🎨 **Themes** — 5 accent colors on a dark UI
-- 🔐 **API Key Auth** — Token-based access with rate limiting and SSRF protection
+- 🔐 **API Key Auth** — Token-based access with rate limiting
 - 📱 **PWA** — Installable on mobile and desktop with offline caching
 - 🤖 **Local LLM** — LiteRT or Ollama backend with intent classification and tool calling
 
@@ -264,6 +264,17 @@ curl -X DELETE "http://localhost:8000/chat/memories?user_id=default" \
 curl http://localhost:8000/health
 ```
 
+## Security Notes
+
+- The server is intended for **trusted home LAN use**. API key auth protects the
+  endpoints, but traffic is plain HTTP — do **not** expose the server to the
+  public internet without a TLS reverse proxy (e.g. Caddy/nginx) in front.
+- Keep `.env` permissions locked down (`chmod 600 .env`) — it contains mail,
+  Nextcloud and API secrets.
+- Rate limiting keys on the client IP. Behind a reverse proxy, set
+  `TRUST_X_FORWARDED_FOR=1` so proxy-forwarded IPs are used; leave it unset
+  (default) for direct access so clients cannot spoof their IP.
+
 ---
 
 ## Current Roadmap
@@ -273,7 +284,7 @@ curl http://localhost:8000/health
 - [x] **Voice I/O** — Whisper/Gemma4 transcription, Piper TTS, Web Speech API
 - [x] **Image Upload** — Drag-drop, paste, attach images
 - [x] **PWA** — Installable on mobile and desktop
-- [x] **Security** — API key auth, CORS, rate limiting, SSRF protection
+- [x] **Security** — API key auth, CORS, rate limiting, trusted-host enforcement
 - [x] **Nextcloud Notes** — Create/read/update/delete/search
 - [x] **Nextcloud Tasks** — CalDAV VTODO create/list/complete/delete/search
 - [x] **Intent Classification** — LLM + embedding-based tool/no-tool routing
