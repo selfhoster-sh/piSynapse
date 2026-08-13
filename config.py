@@ -151,16 +151,21 @@ OLLAMA_MODEL_OPTIONS = [
 
 
 # Cache for get_llm_model_options — 30s TTL to avoid hammering the backend on every settings load.
-_MODEL_OPTIONS_CACHE: dict = {"data": None, "ts": 0.0, "backend": ""}
+_MODEL_OPTIONS_CACHE: dict = {"data": [], "ts": 0.0, "backend": ""}
 
 
-def get_llm_model_options() -> dict:
-    """Return LLM_MODEL options dict keyed by backend.
+async def get_llm_model_options() -> dict:
+    """Return LLM_MODEL options dict keyed by backend (async).
 
-    Tries live query from the running backend server first (litert /v1/models
-    or ollama list).  Falls back to static lists on failure.
-    Results are cached for 30 seconds.
+    Queries the live backend (curl/ollama list) off the event loop via
+    to_thread; results cached 30s. Falls back to static lists on failure.
     """
+    import asyncio
+    return await asyncio.to_thread(_query_model_options_sync)
+
+
+def _query_model_options_sync() -> dict:
+    """Blocking backend query — always call via get_llm_model_options()."""
     import time as _time
     backend = os.getenv("LLM_BACKEND", "ollama").strip().lower()
     now = _time.time()
