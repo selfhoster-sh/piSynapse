@@ -48,6 +48,34 @@ async def close_db():
 
 # -- Schema --
 
+# Ordered schema migrations. `user_version` tracks how many are applied.
+MIGRATIONS: list[tuple[str, str, str]] = [
+    ("conversations", "images", "TEXT"),
+    ("sessions", "name", "TEXT"),
+    ("sessions", "summarized_until", "INTEGER DEFAULT 0"),
+    ("memories", "embedding", "BLOB"),
+]
+
+
+async def _get_schema_version(db: aiosqlite.Connection) -> int:
+    cur = await db.execute("PRAGMA user_version")
+    row = await cur.fetchone()
+    return int(row[0]) if row else 0
+
+
+async def _apply_migrations(db: aiosqlite.Connection):
+    version = await _get_schema_version(db)
+    for i in range(version, len(MIGRATIONS)):
+        table, column, definition = MIGRATIONS[i]
+        try:
+            await db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")  # noqa: E501
+        except Exception as e:
+            if "duplicate column" not in str(e).lower():
+                logger.warning(f"Migration {table}.{column} failed: {e}")
+                break
+        await db.execute(f"PRAGMA user_version = {i + 1}")
+
+
 async def init_db():
     db = await get_db()
 
@@ -61,12 +89,6 @@ async def init_db():
             timestamp  DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
-
-    # Migration: add images column if missing (for existing databases)
-    try:
-        await db.execute("SELECT images FROM conversations LIMIT 1")
-    except Exception:
-        await db.execute("ALTER TABLE conversations ADD COLUMN images TEXT")
 
     await db.execute("""
         CREATE TABLE IF NOT EXISTS sessions (
@@ -96,17 +118,7 @@ async def init_db():
     await db.execute("CREATE INDEX IF NOT EXISTS idx_conversations_session ON conversations(session_id, timestamp)")
     await db.execute("CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id, importance DESC)")
 
-    # Migrations from older DB versions (safe: table/column/definition are hardcoded)
-    for table, column, definition in [
-        ("sessions", "name", "TEXT"),
-        ("sessions", "summarized_until", "INTEGER DEFAULT 0"),
-        ("memories", "embedding", "BLOB"),
-    ]:
-        try:
-            await db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")  # noqa: E501
-        except Exception as e:
-            if "duplicate column" not in str(e).lower():
-                logger.warning(f"Migration {table}.{column} failed: {e}")
+    await _apply_migrations(db)
 
     await db.commit()
 
