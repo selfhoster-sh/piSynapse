@@ -329,6 +329,10 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 .modal-field .val{font-size:14px;color:var(--text);background:var(--surface2);
   border:1px solid var(--border);border-radius:10px;padding:12px;
   white-space:pre-wrap;word-break:break-word;max-height:120px;overflow-y:auto;line-height:1.5}
+.modal-field .val-input{font:inherit;font-size:14px;color:var(--text);background:var(--surface2);
+  border:1px solid var(--border);border-radius:10px;padding:12px;width:100%;box-sizing:border-box;
+  line-height:1.5;resize:vertical}
+.modal-field .val-input:focus{outline:none;border-color:var(--accent)}
 .modal-warn{font-size:13px;color:var(--text2);margin-bottom:24px;padding:12px 14px;
   background:rgba(224,85,85,.08);border:1px solid rgba(224,85,85,.2);border-radius:10px;
   display:flex;gap:8px;align-items:flex-start}
@@ -592,7 +596,7 @@ const STRINGS = {
     connErr:'Sunucuya ulaşılamadı', delErr:'Sohbet silinemedi', thinkOn:'Think modu açık',
     thinkOff:'Think modu kapalı', copy:'Kopyala', copied:'Kopyalandı', emailConfirm:'E-posta Gönder',
     delConfirm:'Etkinliği Sil', chatDelConfirm:'Sohbeti Sil', memDelConfirm:'Hafızayı Sil',
-    emailTo:'Kime', emailSubj:'Konu', emailBody:'İçerik', delEventName:'Etkinlik',
+    emailTo:'Kime', emailSubj:'Konu', emailBody:'İçerik', emailCc:'Cc', emailBcc:'Bcc', delEventName:'Etkinlik',
     chatDelName:'Silinecek Sohbet', memDelContent:'Silinecek Bilgi', warnEmail:'Bu işlem geri alınamaz.',
     warnDel:'Silme işlemi geri alınamaz.', warnChatDel:'Bu sohbetin geçmişi veritabanından kalıcı olarak temizlenecektir.',
     warnMemDel:'Bu kayıt modelin uzun vadeli hafızasından kalıcı olarak silinecektir.', cancel:'İptal',
@@ -624,7 +628,7 @@ const STRINGS = {
     connErr:'Could not reach server', delErr:'Could not delete chat', thinkOn:'Think mode on',
     thinkOff:'Think mode off', copy:'Copy', copied:'Copied', emailConfirm:'Send Email',
     delConfirm:'Delete Event', chatDelConfirm:'Delete Chat', memDelConfirm:'Delete Memory',
-    emailTo:'To', emailSubj:'Subject', emailBody:'Content', delEventName:'Event',
+    emailTo:'To', emailSubj:'Subject', emailBody:'Content', emailCc:'Cc', emailBcc:'Bcc', delEventName:'Event',
     chatDelName:'Chat to Delete', memDelContent:'Record to Delete', warnEmail:'This action cannot be undone.',
     warnDel:'Deletion cannot be undone.', warnChatDel:'This chat history will be permanently wiped from the database.',
     warnMemDel:'This record will be permanently erased from long-term memory.', cancel:'Cancel',
@@ -1544,7 +1548,9 @@ function showConfirmModal(action){
 
   if(action.tool==='send_email'){
     iconBox.innerHTML=mailSvg; document.getElementById('m-title').textContent=t('emailConfirm');
-    fields.innerHTML=mField(t('emailTo'), action.params.to||'') + mField(t('emailSubj'), action.params.subject||'') + mField(t('emailBody'), action.params.body||'');
+    fields.innerHTML=mInput(t('emailTo'), action.params.to||'', 'to') + mInput(t('emailSubj'), action.params.subject||'', 'subject') + mInput(t('emailBody'), action.params.body||'', 'body', true)
+      + (action.params.cc ? mInput(t('emailCc'), action.params.cc||'', 'cc') : '')
+      + (action.params.bcc ? mInput(t('emailBcc'), action.params.bcc||'', 'bcc') : '');
     warn.style.display='flex'; warn.innerHTML=`${alertSvg} <span>${t('warnEmail')}</span>`; btn.textContent=t('confirm'); btn.className='modal-confirm';
   } else if(action.tool==='delete_calendar_event'){
     iconBox.innerHTML=trashSvg; document.getElementById('m-title').textContent=t('delConfirm');
@@ -1560,11 +1566,17 @@ function showConfirmModal(action){
 }
 
 function mField(label, value){ return `<div class="modal-field"><label>${esc(label)}</label><div class="val">${esc(value)}</div></div>`; }
+function mInput(label, value, pkey, multiline){
+  if(multiline) return `<div class="modal-field"><label>${esc(label)}</label><textarea class="val-input" data-p="${esc(pkey)}" rows="3">${esc(value)}</textarea></div>`;
+  return `<div class="modal-field"><label>${esc(label)}</label><input class="val-input" data-p="${esc(pkey)}" value="${esc(value)}"></div>`;
+}
 function cancelAction(){ document.getElementById('confirm-modal').classList.remove('open'); pendingAction=null; }
 
 async function confirmAction(){
   if(!pendingAction) return; document.getElementById('confirm-modal').classList.remove('open');
-  const tool = pendingAction.tool, params = pendingAction.params; pendingAction=null;
+  const tool = pendingAction.tool, params = pendingAction.params;
+  document.querySelectorAll('#m-fields .val-input').forEach(inp=>{ params[inp.dataset.p]=inp.value; });
+  pendingAction=null;
   if(tool === 'delete_session') {
     try { await api('DELETE','/chat/history?session_id='+encodeURIComponent(params.sid));
       sessionList=sessionList.filter(s=>s.session_id!==params.sid);
@@ -1812,8 +1824,9 @@ function scrollEnd(force = false){ const e = document.getElementById('messages')
 function timeNow(){ return new Date().toLocaleTimeString(lang==='tr' ? 'tr-TR' : 'en-GB', {hour:'2-digit', minute:'2-digit'}); }
 function relTime(ts){
   if(!ts) return '';
-  // Ensure UTC parsing: SQLite CURRENT_TIMESTAMP returns UTC without Z
-  const d=Date.now()-new Date(ts.endsWith('Z') ? ts : ts+'Z').getTime();
+  // SQLite CURRENT_TIMESTAMP is UTC and may use a space separator — normalize to ISO-8601
+  const iso = ts.endsWith('Z') ? ts : ts.replace(' ','T')+'Z';
+  const d=Date.now()-new Date(iso).getTime();
   if(lang==='en'){ if(d<60000) return 'just now'; if(d<3600000) return Math.floor(d/60000)+'m'; if(d<86400000) return Math.floor(d/3600000)+'h'; return Math.floor(d/86400000)+'d'; }
   if(d<60000) return 'az \u00F6nce'; if(d<3600000) return Math.floor(d/60000)+'dk'; if(d<86400000) return Math.floor(d/3600000)+'sa'; return Math.floor(d/86400000)+'g';
 }
