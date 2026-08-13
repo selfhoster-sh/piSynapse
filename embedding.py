@@ -43,6 +43,14 @@ async def embed_async(text: str) -> bytes:
     return await asyncio.to_thread(embed, text)
 
 
+async def embed_batch_async(texts: list[str]) -> list[bytes]:
+    """Embed a batch of texts off the event loop (used by the intent classifier)."""
+    def _run():
+        model = get_model()
+        return [vec.astype("float32").tobytes() for vec in model.embed(texts)]
+    return await asyncio.to_thread(_run)
+
+
 def cosine_similarity(blob_a: bytes, blob_b: bytes) -> float:
     """Computes cosine similarity between two embedding vectors (raw bytes or legacy pickle)."""
     if not blob_a or not blob_b:
