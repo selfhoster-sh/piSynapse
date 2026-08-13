@@ -267,7 +267,7 @@ async def update_session_summary(session_id: str, summary: str, summarized_until
 
 async def save_memory(content: str, category: str = "general",
                       importance: int = 5, user_id: str | None = None):
-    from config import DEFAULT_USER
+    from config import DEFAULT_USER, MEMORY_SIMILARITY_THRESHOLD
     from embedding import cosine_similarity, embed_async
 
     user_id = user_id or DEFAULT_USER
@@ -288,7 +288,7 @@ async def save_memory(content: str, category: str = "general",
             existing = await cur.fetchall()
 
         for mem_id, existing_embedding in existing:
-            if cosine_similarity(new_embedding, existing_embedding) >= 0.85:
+            if cosine_similarity(new_embedding, existing_embedding) >= MEMORY_SIMILARITY_THRESHOLD:
                 await db.execute(
                     """UPDATE memories SET last_accessed = CURRENT_TIMESTAMP,
                        access_count = access_count + 1 WHERE id = ?""",
