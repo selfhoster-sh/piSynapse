@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-piSynapse Installer — offline-first personal AI assistant.
+"""piSynapse Installer — offline-first personal AI assistant.
 Platforms: Linux, macOS, Windows (experimental).
 Run with: python install.py
 
@@ -14,9 +13,14 @@ Flow:
   7. systemd service (Linux only, optional)
 """
 
-import os, re, sys, shutil, secrets, getpass, platform, struct, subprocess
+import getpass
+import os
+import re
+import secrets
+import shutil
+import subprocess
+import sys
 from pathlib import Path
-from typing import Dict, Optional
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
 
@@ -143,7 +147,9 @@ def step_system_deps() -> None:
                     ok("ffmpeg installed")
                 else:
                     warn("ffmpeg install failed — install manually later")
-        missing.append("ffmpeg")
+                    missing.append("ffmpeg")
+            else:
+                missing.append("ffmpeg")
 
     if not shutil.which("curl"):
         warn("curl not found (needed for model downloads and health checks)")
@@ -151,7 +157,10 @@ def step_system_deps() -> None:
             subprocess.run(["sudo", "apt-get", "install", "-y", "curl"])
             if shutil.which("curl"):
                 ok("curl installed")
-        missing.append("curl")
+            else:
+                missing.append("curl")
+        else:
+            missing.append("curl")
 
     if not IS_WIN and not shutil.which("build-essential"):
         if ask_yesno("Install build-essential (recommended for pip packages)?"):
@@ -823,9 +832,7 @@ def step_systemd() -> None:
 
     if ask_yesno("Create a systemd service to start piSynapse on boot?"):
         user = os.environ.get("SUDO_USER") or os.environ.get("USER") or "pi"
-        home = os.path.expanduser(f"~{user}")
         project_dir = os.path.abspath(".")
-        python_path = os.path.join(project_dir, VENV_DIR, "bin", "python3")
         uvicorn_path = os.path.join(project_dir, VENV_DIR, "bin", "uvicorn")
         wants_litert = STATE.get("backend") == "litert" and os.path.exists("/etc/systemd/system/litert.service")
 
@@ -839,7 +846,7 @@ Type=simple
 User={user}
 WorkingDirectory={project_dir}
 Environment=PATH={os.path.join(project_dir, VENV_DIR, "bin")}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ExecStart={uvicorn_path} main:app --host 0.0.0.0 --port 8000
+ExecStart={uvicorn_path} main:app --host 0.0.0.0 --port 8765
 Restart=on-failure
 RestartSec=5
 
@@ -870,7 +877,7 @@ WantedBy=multi-user.target
 def print_summary() -> None:
     shell = detect_shell()
     activate = activation_cmd(shell)
-    run_cmd = f"{venv_bin('uvicorn')} main:app --host 0.0.0.0 --port 8000"
+    run_cmd = f"{venv_bin('uvicorn')} main:app --host 0.0.0.0 --port 8765"
 
     api_key = ""
     try:
@@ -896,19 +903,19 @@ def print_summary() -> None:
     if api_key:
         print(f"  {'API Key':12s}: {api_key}")
 
-    print(f"\n  Start piSynapse:")
+    print("\n  Start piSynapse:")
     print(f"    {activate}")
     print(f"    {run_cmd}")
     if backend == "litert" and not _litert_is_running():
         litert_bin = _find_litert_bin() or "litert-lm"
-        print(f"\n  LiteRT is not running — start it first in another terminal:")
+        print("\n  LiteRT is not running — start it first in another terminal:")
         print(f"    {litert_bin} serve --host 0.0.0.0 --port {LITERT_PORT}")
     if backend == "ollama" and not _ollama_is_running():
-        print(f"\n  Ollama is not running — start it first:")
-        print(f"    ollama serve")
-    print(f"\n  Open http://localhost:8000 in your browser.")
+        print("\n  Ollama is not running — start it first:")
+        print("    ollama serve")
+    print("\n  Open http://localhost:8765 in your browser.")
     if api_key:
-        print(f"  Enter your API key when prompted.\n")
+        print("  Enter your API key when prompted.\n")
     if os.path.exists("/etc/systemd/system/litert.service") or os.path.exists("/etc/systemd/system/pisynapse.service"):
         print(f"  {'Manage':12s}: systemctl status litert pisynapse\n")
 

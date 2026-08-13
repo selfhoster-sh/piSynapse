@@ -137,9 +137,11 @@ TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "to": {"type": "string", "description": "Recipient email address."},
+                    "to": {"type": "string", "description": "Recipient email address (comma-separated for multiple)."},
                     "subject": {"type": "string", "description": "Email subject."},
                     "body": {"type": "string", "description": "Email body text."},
+                    "cc": {"type": "string", "description": "Cc recipients, comma-separated. Optional."},
+                    "bcc": {"type": "string", "description": "Bcc recipients, comma-separated. Optional."},
                 },
                 "required": ["to", "subject", "body"],
             },
@@ -356,12 +358,6 @@ TOOL_GROUPS: dict[str, list[str]] = {
     "notes":    ["create_note", "list_notes", "read_note", "update_note", "delete_note", "search_notes", "get_datetime"],
     "memory":   ["save_memory", "get_datetime"],
 }
-
-# Reverse lookup: tool name → group name
-_TOOL_TO_GROUP: dict[str, str] = {}
-for _grp, _names in TOOL_GROUPS.items():
-    for _n in _names:
-        _TOOL_TO_GROUP.setdefault(_n, _grp)
 
 
 def get_tools_for_group(group: str | None) -> list[dict]:

@@ -25,7 +25,7 @@ async def get_config():
         "username": os.getenv("ASSISTANT_USER", "User"),
         "default_city": os.getenv("DEFAULT_CITY", ""),
         "model": os.getenv("LLM_MODEL", "gemma4:e2b"),
-        "llm_backend": os.getenv("LLM_BACKEND", "ollama"),
+        "llm_backend": os.getenv("LLM_BACKEND", "litert"),
         "stt_engine": os.getenv("STT_ENGINE", "whisper"),
         "tts_engine": os.getenv("TTS_ENGINE", "piper"),
         "auto_send_on_voice": os.getenv("AUTO_SEND_ON_VOICE", "off"),
@@ -39,9 +39,9 @@ async def get_settings():
     for key, schema in SETTINGS_SCHEMA.items():
         entry = {"value": os.getenv(key, schema["default"]), "type": schema["type"], "label": schema.get("label", {})}
         if key == "LLM_MODEL":
-            entry["options"] = get_llm_model_options()
+            entry["options"] = await get_llm_model_options()
             # Normalize value to match backend format so dropdown shows correct selection
-            backend = (os.getenv("LLM_BACKEND") or "ollama").strip().lower()
+            backend = (os.getenv("LLM_BACKEND") or "litert").strip().lower()
             current = entry["value"]
             normalized = current.replace(":", "-") if backend == "litert" else current
             if normalized != current:
@@ -83,7 +83,7 @@ async def update_settings(body: SettingsUpdate):
             elif schema["type"] == "select":
                 allowed = [o["value"] for o in schema.get("options", [])]
                 if key == "LLM_MODEL":
-                    allowed = [o["value"] for o in get_llm_model_options()]
+                    allowed = [o["value"] for o in await get_llm_model_options()]
                 if allowed and value not in allowed:
                     raise HTTPException(status_code=400, detail=f"Invalid option for {key}: {value}. Allowed: {allowed}")
         except (ValueError, TypeError):

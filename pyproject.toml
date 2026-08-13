@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=64.0", "wheel"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "piSynapse"
@@ -19,9 +19,22 @@ dependencies = [
     "vobject>=0.9.6.1",
     "fastembed>=0.3.0",
     "numpy>=1.24.0",
+    "faster-whisper>=1.0.0",
     "piper-tts>=1.2.0",
     "icalendar>=5.0.0",
 ]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.4.0",
+    "mypy>=1.8.0",
+]
+
+[tool.setuptools]
+py-modules = ["main", "config", "db", "embedding", "mail", "calendar_ops", "nextcloud_notes", "nextcloud_tasks", "weather", "prompt", "utils", "install"]
+packages = ["llm", "routers", "tools"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

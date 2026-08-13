@@ -97,7 +97,6 @@ def _normalize_messages_for_backend(messages: list[dict], backend: str = "ollama
         role = msg.get("role", "")
         content = msg.get("content", "")
         images = msg.get("images")
-        tool_name = msg.get("tool_name")
 
         new_msg: dict = {"role": role}
 
