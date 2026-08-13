@@ -6,6 +6,8 @@
 
 piSynapse runs entirely on your own hardware — no subscriptions, no cloud, no data leaving your machine. It connects your calendar, email, notes, tasks, and local LLM into a single conversational interface.
 
+> **Why the name?** *pi* stands for **p**rivate **i**ntelligence — and a *synapse* is where neurons connect. Your data, your memory, and your tools all meet in one private place: your own machine.
+
 ---
 
 ## Philosophy
