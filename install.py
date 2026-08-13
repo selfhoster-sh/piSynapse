@@ -920,7 +920,7 @@ def print_summary() -> None:
     print(f"\n  {'Backend':12s}: {backend}")
     print(f"  {'Model':12s}: {model}")
     if backend == "litert":
-        print(f"  {'LiteRT':12s}: {'systemd (active)' if os.path.exists('/etc/systemd/system/litert.service') else 'background process on :%d' % LITERT_PORT}")
+        print(f"  {'LiteRT':12s}: {'systemd (active)' if os.path.exists('/etc/systemd/system/litert.service') else f'background process on :{LITERT_PORT}'}")
     if os.path.exists("/etc/systemd/system/pisynapse.service"):
         print(f"  {'piSynapse':12s}: systemd (active)")
     if api_key:

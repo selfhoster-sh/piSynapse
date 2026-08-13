@@ -197,13 +197,13 @@ async def _run_mail_tool(name: str, params: dict, session_id: str = "") -> str:
     if not mc:
         return "ERROR: Mail connection failed. Check .env configuration."
 
-    ACCOUNT_ID = 1
-    MAILBOX_ID = "INBOX"
+    account_id = 1
+    mailbox_id = "INBOX"
 
     try:
         if name == "list_emails":
             limit = _safe_int(params.get("limit", 10), 10, "limit")
-            msgs = await mc.get_messages(ACCOUNT_ID, MAILBOX_ID, limit)
+            msgs = await mc.get_messages(account_id, mailbox_id, limit)
             if not msgs:
                 return "Inbox is empty."
             if session_id:
@@ -224,7 +224,7 @@ async def _run_mail_tool(name: str, params: dict, session_id: str = "") -> str:
             mid = params.get("message_id")
             if not mid:
                 return "ERROR: message_id required."
-            m = await mc.get_message(ACCOUNT_ID, MAILBOX_ID, mid)
+            m = await mc.get_message(account_id, mailbox_id, mid)
             if not m:
                 return "Email not found."
             return (f"Email Details\n\nFrom: {m.get('from', '?')}\n"
@@ -235,7 +235,7 @@ async def _run_mail_tool(name: str, params: dict, session_id: str = "") -> str:
             to, subj, body = params.get("to"), params.get("subject"), params.get("body")
             if not all([to, subj, body]):
                 return "ERROR: 'to', 'subject' and 'body' are required."
-            ok = await mc.send_message(ACCOUNT_ID, to, subj, body, params.get("cc", ""), params.get("bcc", ""))
+            ok = await mc.send_message(account_id, to, subj, body, params.get("cc", ""), params.get("bcc", ""))
             detail = f"To: {to}"
             if params.get("cc"):
                 detail += f"\nCc: {params['cc']}"
@@ -246,7 +246,7 @@ async def _run_mail_tool(name: str, params: dict, session_id: str = "") -> str:
             if not q:
                 return "ERROR: 'query' required."
             limit = _safe_int(params.get("limit", 10), 10, "limit")
-            results = await mc.search_messages(ACCOUNT_ID, q, limit)
+            results = await mc.search_messages(account_id, q, limit)
             if not results:
                 return f"'{q}' no results found."
             if session_id:
