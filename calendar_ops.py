@@ -4,6 +4,7 @@ Nextcloud CalDAV integration for calendar operations.
 
 import logging
 from datetime import datetime, timedelta
+
 from utils import retry
 
 logger = logging.getLogger("piSynapse")
@@ -14,7 +15,7 @@ _dav_calendar = None
 
 def _get_nextcloud_client():
     global _dav_client
-    from config import NEXTCLOUD_URL, NEXTCLOUD_USER, NEXTCLOUD_PASSWORD, NEXTCLOUD_TIMEOUT
+    from config import NEXTCLOUD_PASSWORD, NEXTCLOUD_TIMEOUT, NEXTCLOUD_URL, NEXTCLOUD_USER
     if not NEXTCLOUD_URL or not NEXTCLOUD_PASSWORD:
         return None
     if _dav_client is not None:
@@ -241,38 +242,45 @@ def update_event(summary: str, new_summary: str = "", new_start_time: str = "", 
         if ev is None:
             return f"'{summary}' not found."
         d = ev.vobject_instance.vevent
-        data = ev.data
+
+        def _is_date(v) -> bool:
+            return isinstance(v, datetime.date) and not isinstance(v, datetime)
+
         if new_summary:
-            old_tag_line = f"SUMMARY:{s}"
-            new_tag_line = f"SUMMARY:{new_summary}"
-            data = data.replace(old_tag_line, new_tag_line)
+            d.summary.value = new_summary
+
         if new_start_time:
-            old_dt = d.dtstart.value
-            old_dt_str = old_dt.strftime('%Y%m%dT%H%M%S') if hasattr(old_dt, 'strftime') else str(old_dt)
             new_dt = datetime.fromisoformat(new_start_time)
-            new_dt_str = new_dt.strftime('%Y%m%dT%H%M%S')
-            data = data.replace(old_dt_str, new_dt_str)
+            old_dt = d.dtstart.value
+            all_day = _is_date(old_dt)
+            if all_day:
+                d.dtstart.value = new_dt.date()
+            else:
+                d.dtstart.value = new_dt
+
             if new_duration_minutes and new_duration_minutes > 0:
-                old_end = d.dtend.value if hasattr(d, 'dtend') else old_dt
-                old_end_str = old_end.strftime('%Y%m%dT%H%M%S') if hasattr(old_end, 'strftime') else str(old_end)
                 new_end = new_dt + timedelta(minutes=new_duration_minutes)
-                new_end_str = new_end.strftime('%Y%m%dT%H%M%S')
-                data = data.replace(old_end_str, new_end_str)
-            elif new_start_time:
-                old_end = d.dtend.value if hasattr(d, 'dtend') else old_dt
-                old_end_str = old_end.strftime('%Y%m%dT%H%M%S') if hasattr(old_end, 'strftime') else str(old_end)
-                duration = old_end - old_dt if hasattr(old_end, '-') else timedelta(hours=1)
+            else:
+                old_end = d.dtend.value if hasattr(d, "dtend") else old_dt
+                try:
+                    duration = old_end - old_dt
+                except TypeError:
+                    duration = timedelta(hours=1)
                 new_end = new_dt + duration
-                new_end_str = new_end.strftime('%Y%m%dT%H%M%S')
-                data = data.replace(old_end_str, new_end_str)
+            if all_day:
+                d.dtend.value = new_end.date()
+            else:
+                d.dtend.value = new_end
         elif new_duration_minutes > 0:
             old_dt = d.dtstart.value
-            old_end = d.dtend.value if hasattr(d, 'dtend') else old_dt + timedelta(hours=1)
-            old_end_str = old_end.strftime('%Y%m%dT%H%M%S') if hasattr(old_end, 'strftime') else str(old_end)
+            old_end = d.dtend.value if hasattr(d, "dtend") else old_dt + timedelta(hours=1)
             new_end = old_dt + timedelta(minutes=new_duration_minutes)
-            new_end_str = new_end.strftime('%Y%m%dT%H%M%S')
-            data = data.replace(old_end_str, new_end_str)
-        ev.data = data
+            if _is_date(old_dt) and _is_date(old_end):
+                d.dtend.value = new_end.date()
+            else:
+                d.dtend.value = new_end
+
+        ev.data = ev.vobject_instance.serialize()
         ev.save()
         parts = []
         if new_summary:

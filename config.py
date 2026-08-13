@@ -44,10 +44,10 @@ DB_PATH = os.getenv("DB_PATH", "assistant.db")
 # -- LLM Backend --
 # "ollama" — Ollama server (default, http://localhost:11434)
 # "litert" — LiteRT-LM server (http://localhost:9379, OpenAI-compatible)
-LLM_BACKEND = os.getenv("LLM_BACKEND", "ollama").lower()
+LLM_BACKEND = os.getenv("LLM_BACKEND", "litert").lower()
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 LITERT_BASE_URL = os.getenv("LITERT_BASE_URL", "http://localhost:9379")
-LLM_MODEL = os.getenv("LLM_MODEL", "gemma4:e2b")
+LLM_MODEL = os.getenv("LLM_MODEL", "gemma4-e2b")
 LLM_NUM_CTX = _safe_int("LLM_NUM_CTX", 8192)
 LLM_NUM_BATCH = _safe_int("LLM_NUM_BATCH", 256)
 LLM_TEMPERATURE = _safe_float("LLM_TEMPERATURE", 0.6)
@@ -91,6 +91,9 @@ API_KEY = os.getenv("API_KEY", "")
 CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
 TRUSTED_HOSTS = {h.strip() for h in os.getenv("TRUSTED_HOSTS", "*").split(",") if h.strip()}
 MEDIA_MAX_MB = _safe_int("MEDIA_MAX_MB", 100)
+# Only trust X-Forwarded-For when running behind a trusted reverse proxy.
+# Enabled by default: LAN users must not be able to spoof their IP to bypass rate limits.
+TRUST_X_FORWARDED_FOR = os.getenv("TRUST_X_FORWARDED_FOR", "").strip().lower() in ("1", "true", "yes", "on")
 
 # -- Chat --
 HISTORY_LIMIT = _safe_int("HISTORY_LIMIT", 12)
@@ -102,6 +105,9 @@ INTENT_LLM_FALLBACK = os.getenv("INTENT_LLM_FALLBACK", "off")
 # -- Memory --
 DEFAULT_USER = os.getenv("ASSISTANT_USER", "default")
 MEMORY_SIMILARITY_THRESHOLD = _safe_float("MEMORY_SIMILARITY_THRESHOLD", 0.68)
+# Data retention (days). 0 = disabled (keep forever).
+CONVERSATION_RETENTION_DAYS = _safe_int("CONVERSATION_RETENTION_DAYS", 0)
+MEMORY_RETENTION_DAYS = _safe_int("MEMORY_RETENTION_DAYS", 0)
 EMBED_MODEL = os.getenv("EMBED_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
 
 # -- Weather --
@@ -148,18 +154,23 @@ OLLAMA_MODEL_OPTIONS = [
 
 
 # Cache for get_llm_model_options — 30s TTL to avoid hammering the backend on every settings load.
-_MODEL_OPTIONS_CACHE: dict = {"data": None, "ts": 0.0, "backend": ""}
+_MODEL_OPTIONS_CACHE: dict = {"data": [], "ts": 0.0, "backend": ""}
 
 
-def get_llm_model_options() -> dict:
-    """Return LLM_MODEL options dict keyed by backend.
+async def get_llm_model_options() -> dict:
+    """Return LLM_MODEL options dict keyed by backend (async).
 
-    Tries live query from the running backend server first (litert /v1/models
-    or ollama list).  Falls back to static lists on failure.
-    Results are cached for 30 seconds.
+    Queries the live backend (curl/ollama list) off the event loop via
+    to_thread; results cached 30s. Falls back to static lists on failure.
     """
+    import asyncio
+    return await asyncio.to_thread(_query_model_options_sync)
+
+
+def _query_model_options_sync() -> dict:
+    """Blocking backend query — always call via get_llm_model_options()."""
     import time as _time
-    backend = os.getenv("LLM_BACKEND", "ollama").strip().lower()
+    backend = os.getenv("LLM_BACKEND", "litert").strip().lower()
     now = _time.time()
     if _MODEL_OPTIONS_CACHE["backend"] == backend and (now - _MODEL_OPTIONS_CACHE["ts"]) < 30:
         return _MODEL_OPTIONS_CACHE["data"]
@@ -220,8 +231,11 @@ SETTINGS_SCHEMA: dict = {
     "LLM_NUM_CTX":        {"type": "int",   "default": "8192", "label": {"tr": "Baglam Penceresi (Tokens)",  "en": "Context Window (Tokens)"},"min": 2048, "max": 32768, "step": 1024},
     "HISTORY_LIMIT":      {"type": "int",   "default": "12",   "label": {"tr": "Gecmis Mesaj Sayisi",        "en": "History Message Limit"},  "min": 4, "max": 50, "step": 1},
     "MEMORY_LIMIT":       {"type": "int",   "default": "10",   "label": {"tr": "Hafiza Karti Sayisi",        "en": "Memory Card Limit"},      "min": 1, "max": 30, "step": 1},
+    "MEMORY_SIMILARITY_THRESHOLD": {"type": "float", "default": "0.68", "label": {"tr": "Bellek Benzerlik Esigi", "en": "Memory Similarity Threshold"}, "min": 0.1, "max": 0.99, "step": 0.01},
+    "CONVERSATION_RETENTION_DAYS": {"type": "int", "default": "0", "label": {"tr": "Sohbet Saklama (Gun, 0=kapali)", "en": "Chat Retention (days, 0=off)"}, "min": 0, "max": 3650, "step": 1},
+    "MEMORY_RETENTION_DAYS":       {"type": "int", "default": "0", "label": {"tr": "Bellek Saklama (Gun, 0=kapali)", "en": "Memory Retention (days, 0=off)"}, "min": 0, "max": 3650, "step": 1},
     "SUMMARY_BATCH_SIZE": {"type": "int",   "default": "5",    "label": {"tr": "Ozetleme Batch Boyutu",       "en": "Summary Batch Size"},     "min": 2, "max": 20, "step": 1},
-    "LLM_MODEL":          {"type": "select", "default": "gemma4:e2b", "label": {"tr": "LLM Model",              "en": "LLM Model"}},
+    "LLM_MODEL":          {"type": "select", "default": "gemma4-e2b", "label": {"tr": "LLM Model",              "en": "LLM Model"}},
     "LLM_KEEP_ALIVE":     {"type": "str",   "default": "4h",   "label": {"tr": "Model Saklama Suresi",       "en": "Model Keep Alive"}},
     "ASSISTANT_USER":     {"type": "str",   "default": "",     "label": {"tr": "Kullanici Adi",              "en": "Username"}},
     "MAIL_PROVIDER":      {"type": "select", "default": "gmail", "label": {"tr": "E-posta Saglayici",        "en": "Mail Provider"}, "options": [
@@ -257,10 +271,10 @@ SETTINGS_SCHEMA: dict = {
 }
 
 # Settings that require a server restart to take effect
-RESTART_REQUIRED_KEYS = {"LLM_NUM_CTX", "LLM_NUM_BATCH", "INTENT_LLM_FALLBACK"}
+RESTART_REQUIRED_KEYS = {"LLM_NUM_CTX", "LLM_NUM_BATCH"}
 
 # Settings that must NEVER be changed via the API (security-sensitive)
-PROTECTED_SETTINGS = {"OLLAMA_BASE_URL", "LITERT_BASE_URL", "LLM_BACKEND", "API_KEY", "CORS_ORIGINS", "TRUSTED_HOSTS", "MEDIA_MAX_MB"}
+PROTECTED_SETTINGS = {"OLLAMA_BASE_URL", "LITERT_BASE_URL", "LLM_BACKEND", "API_KEY", "CORS_ORIGINS", "TRUSTED_HOSTS", "TRUST_X_FORWARDED_FOR", "MEDIA_MAX_MB"}
 
 # All integer/float config keys that should be re-synced after .env updates
 _NUMERIC_KEYS = {
@@ -274,6 +288,8 @@ _NUMERIC_KEYS = {
     "IMAP_TIMEOUT": (int, 30), "SMTP_TIMEOUT": (int, 30),
     "PROTON_IMAP_PORT": (int, 1143), "PROTON_SMTP_PORT": (int, 1025),
     "MEMORY_SIMILARITY_THRESHOLD": (float, 0.68),
+    "CONVERSATION_RETENTION_DAYS": (int, 0),
+    "MEMORY_RETENTION_DAYS": (int, 0),
     "MEDIA_MAX_MB": (int, 100),
 }
 
@@ -293,8 +309,21 @@ def sync_config():
             except (ValueError, TypeError):
                 logger.warning(f"sync_config: invalid {key}={raw!r}, keeping current value")
 
-    # Sync string settings that can change at runtime
-    for key in ("LLM_BACKEND", "LLM_MODEL", "STT_ENGINE", "TTS_ENGINE", "TTS_VOICE", "AUTO_SEND_ON_VOICE", "AUTO_TTS_ON_VOICE", "INTENT_LLM_FALLBACK"):
-        raw = os.getenv(key)
+    # Sync string settings that can change at runtime (config var -> env key)
+    for var, env_key in (
+        ("LLM_BACKEND", "LLM_BACKEND"),
+        ("LLM_MODEL", "LLM_MODEL"),
+        ("LLM_KEEP_ALIVE", "LLM_KEEP_ALIVE"),
+        ("STT_ENGINE", "STT_ENGINE"),
+        ("TTS_ENGINE", "TTS_ENGINE"),
+        ("TTS_VOICE", "TTS_VOICE"),
+        ("AUTO_SEND_ON_VOICE", "AUTO_SEND_ON_VOICE"),
+        ("AUTO_TTS_ON_VOICE", "AUTO_TTS_ON_VOICE"),
+        ("INTENT_LLM_FALLBACK", "INTENT_LLM_FALLBACK"),
+        ("DEFAULT_CITY", "DEFAULT_CITY"),
+        ("DEFAULT_USER", "ASSISTANT_USER"),
+        ("MAIL_PROVIDER", "MAIL_PROVIDER"),
+    ):
+        raw = os.getenv(env_key)
         if raw is not None:
-            setattr(_cfg, key, raw)
+            setattr(_cfg, var, raw)

@@ -329,6 +329,10 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 .modal-field .val{font-size:14px;color:var(--text);background:var(--surface2);
   border:1px solid var(--border);border-radius:10px;padding:12px;
   white-space:pre-wrap;word-break:break-word;max-height:120px;overflow-y:auto;line-height:1.5}
+.modal-field .val-input{font:inherit;font-size:14px;color:var(--text);background:var(--surface2);
+  border:1px solid var(--border);border-radius:10px;padding:12px;width:100%;box-sizing:border-box;
+  line-height:1.5;resize:vertical}
+.modal-field .val-input:focus{outline:none;border-color:var(--accent)}
 .modal-warn{font-size:13px;color:var(--text2);margin-bottom:24px;padding:12px 14px;
   background:rgba(224,85,85,.08);border:1px solid rgba(224,85,85,.2);border-radius:10px;
   display:flex;gap:8px;align-items:flex-start}
@@ -437,6 +441,152 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
   .sess-item{padding:8px 8px}
   .settings-box{max-width:100%;max-height:85vh;padding:20px;margin:10px}
 }
+
+/* ── Frosted glass mode (toggleable from Settings) ──────────────────────────
+   Glassmorphism: theme-aware translucent surfaces + backdrop blur.
+   All tints derive from --accent, so glass follows the chosen theme color. */
+body.glass-mode{
+  --surface:color-mix(in srgb, var(--accent) 9%, rgba(16,16,24,.5));
+  --surface2:color-mix(in srgb, var(--accent) 7%, rgba(26,26,36,.44));
+  --surface3:color-mix(in srgb, var(--accent) 5%, rgba(38,38,48,.42));
+  --border:color-mix(in srgb, var(--accent) 22%, rgba(255,255,255,.13));
+  --user-bg:color-mix(in srgb, var(--accent) 10%, rgba(28,28,40,.5));
+}
+@supports not (color-mix(in srgb, red, blue)){
+  body.glass-mode{
+    --surface:rgba(18,18,26,.55); --surface2:rgba(28,28,38,.45);
+    --surface3:rgba(44,44,58,.42); --border:rgba(255,255,255,.13);
+    --user-bg:rgba(30,30,42,.48);
+  }
+  body.glass-mode::before{
+    background:
+      radial-gradient(1150px 780px at 6% -14%, rgba(240,148,58,.2), transparent 62%),
+      radial-gradient(950px 720px at 108% 4%, rgba(77,159,245,.14), transparent 60%),
+      radial-gradient(1050px 950px at 42% 118%, rgba(149,120,245,.16), transparent 62%),
+      radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.28) 100%);
+  }
+}
+
+/* Fixed ambient backdrop: aurora blobs + vignette + film grain */
+body.glass-mode{position:relative;isolation:isolate}
+body.glass-mode::before{
+  content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background:
+    radial-gradient(1150px 780px at 6% -14%, color-mix(in srgb, var(--accent) 30%, transparent), transparent 62%),
+    radial-gradient(950px 720px at 108% 4%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 60%),
+    radial-gradient(1050px 950px at 42% 118%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 62%),
+    radial-gradient(720px 540px at 84% 52%, color-mix(in srgb, var(--accent) 13%, transparent), transparent 56%),
+    radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.28) 100%);
+}
+body.glass-mode::after{
+  content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.07;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size:140px 140px;
+}
+
+/* Glass recipe for surfaces & panels */
+body.glass-mode #sidebar,
+body.glass-mode #topbar,
+body.glass-mode #input-container,
+body.glass-mode .modal-box,
+body.glass-mode .settings-box,
+body.glass-mode .settings-appearance,
+body.glass-mode .msg-group.user .bubble,
+body.glass-mode .mem-card,
+body.glass-mode .code-wrapper,
+body.glass-mode .w-icon,
+body.glass-mode .preview-item,
+body.glass-mode #toast{
+  background-image:linear-gradient(135deg, rgba(255,255,255,.06), rgba(255,255,255,.015) 45%, transparent 68%);
+  backdrop-filter:blur(22px) saturate(160%);
+  -webkit-backdrop-filter:blur(22px) saturate(160%);
+}
+body.glass-mode #sidebar{background-color:var(--surface)}
+body.glass-mode #topbar{background-color:color-mix(in srgb, var(--accent) 7%, rgba(12,12,18,.38));border-bottom-color:var(--border)}
+body.glass-mode .modal-box,
+body.glass-mode .settings-box,
+body.glass-mode #input-container{box-shadow:0 20px 60px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.09)}
+body.glass-mode #input-container:focus-within{box-shadow:0 20px 60px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.09), 0 0 0 3px var(--accent-d)}
+body.glass-mode .msg-group.user .bubble,
+body.glass-mode .mem-card,
+body.glass-mode .code-wrapper{box-shadow:0 8px 32px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,.06)}
+
+/* Glass chips: ticker, search, selects, setting inputs */
+body.glass-mode #ticker,
+body.glass-mode #top-ticker,
+body.glass-mode .sb-search input,
+body.glass-mode .lang-select,
+body.glass-mode .setting-input{backdrop-filter:blur(14px) saturate(150%);-webkit-backdrop-filter:blur(14px) saturate(150%)}
+body.glass-mode #ticker,
+body.glass-mode #top-ticker,
+body.glass-mode .lang-select,
+body.glass-mode .setting-input{background-color:color-mix(in srgb, var(--accent) 5%, rgba(20,20,28,.3))}
+body.glass-mode .sb-search input{background-color:color-mix(in srgb, var(--accent) 5%, rgba(255,255,255,.05))}
+body.glass-mode .sess-item.active{border-color:color-mix(in srgb, var(--accent) 40%, transparent);box-shadow:inset 3px 0 0 var(--accent),0 0 22px var(--accent-d)}
+
+/* Glass buttons */
+body.glass-mode .icon-btn,
+body.glass-mode .mem-btn,
+body.glass-mode .settings-btn,
+body.glass-mode .inline-think-btn,
+body.glass-mode .tts-btn,
+body.glass-mode .sb-compact-toggle,
+body.glass-mode .copy-btn,
+body.glass-mode .modal-cancel,
+body.glass-mode .sess-del,
+body.glass-mode .mem-del-btn,
+body.glass-mode .preview-remove{backdrop-filter:blur(12px) saturate(150%);-webkit-backdrop-filter:blur(12px) saturate(150%)}
+body.glass-mode .icon-btn:hover,
+body.glass-mode .inline-think-btn:hover,
+body.glass-mode .tts-btn:hover,
+body.glass-mode .mem-btn:hover,
+body.glass-mode .settings-btn:hover,
+body.glass-mode .sb-compact-toggle:hover{background:color-mix(in srgb, var(--accent) 15%, rgba(255,255,255,.06));color:var(--text)}
+
+/* Primary CTAs become accent-tinted glass */
+body.glass-mode .new-btn,
+body.glass-mode .top-new-btn,
+body.glass-mode .w-start,
+body.glass-mode .modal-confirm:not(.danger){
+  background:linear-gradient(135deg, color-mix(in srgb, var(--accent) 30%, transparent), color-mix(in srgb, var(--accent) 10%, transparent));
+  color:var(--text);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.14), 0 4px 16px color-mix(in srgb, var(--accent) 20%, transparent);
+  backdrop-filter:blur(14px) saturate(150%);
+  -webkit-backdrop-filter:blur(14px) saturate(150%);
+}
+body.glass-mode .new-btn:hover,
+body.glass-mode .top-new-btn:hover,
+body.glass-mode .w-start:hover,
+body.glass-mode .modal-confirm:not(.danger):hover{
+  background:linear-gradient(135deg, color-mix(in srgb, var(--accent) 40%, transparent), color-mix(in srgb, var(--accent) 16%, transparent));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.18), 0 6px 22px color-mix(in srgb, var(--accent) 30%, transparent);
+  transform:translateY(-1px);
+}
+
+/* Send button: glossy accent */
+body.glass-mode #send-btn:not(:disabled){
+  background:linear-gradient(135deg, color-mix(in srgb, var(--accent) 85%, #ffffff 15%), var(--accent));
+  box-shadow:0 4px 18px color-mix(in srgb, var(--accent) 45%, transparent), inset 0 1px 0 rgba(255,255,255,.3);
+}
+body.glass-mode #send-btn:hover:not(:disabled){box-shadow:0 6px 26px color-mix(in srgb, var(--accent) 60%, transparent), inset 0 1px 0 rgba(255,255,255,.35)}
+
+/* Modal backdrop gets deeper frost */
+body.glass-mode .modal-backdrop{background:rgba(5,5,9,.55);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+
+/* Theme-tinted scrollbar & selection */
+body.glass-mode ::-webkit-scrollbar-thumb{background:color-mix(in srgb, var(--accent) 28%, rgba(255,255,255,.14))}
+body.glass-mode ::selection{background:color-mix(in srgb, var(--accent) 35%, transparent)}
+
+/* ── Toggle switch ────────────────────────────────────────────────────────── */
+.switch-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.switch{position:relative;width:40px;height:22px;flex-shrink:0;cursor:pointer}
+.switch input{opacity:0;width:0;height:0}
+.switch .track{position:absolute;inset:0;background:var(--surface3);border:1px solid var(--border);
+  border-radius:22px;transition:background .2s}
+.switch .track::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;
+  border-radius:50%;background:var(--text2);transition:transform .2s,background .2s}
+.switch input:checked + .track{background:var(--accent-d)}
+.switch input:checked + .track::after{transform:translateX(18px);background:var(--accent)}
 </style>
 <base target="_blank">
 </head>
@@ -556,7 +706,7 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
       <span id="lbl-settings-title"></span>
     </div>
     <div class="settings-restart-notice" id="settings-restart-notice"></div>
-    <div id="settings-appearance">
+    <div id="settings-appearance" class="settings-appearance">
       <div class="appearance-group">
         <label id="lbl-theme-select"></label>
         <div class="theme-grid" id="theme-grid"></div>
@@ -567,6 +717,16 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
           <option value="tr">Türkçe</option>
           <option value="en">English</option>
         </select>
+      </div>
+      <div class="appearance-group">
+        <label id="lbl-glass-label"></label>
+        <div class="switch-row">
+          <span id="lbl-glass-hint" style="font-size:12.5px;color:var(--text3)"></span>
+          <label class="switch">
+            <input type="checkbox" id="glass-toggle" onchange="applyGlass(this.checked)">
+            <span class="track"></span>
+          </label>
+        </div>
       </div>
     </div>
     <div id="settings-form"></div>
@@ -592,7 +752,7 @@ const STRINGS = {
     connErr:'Sunucuya ulaşılamadı', delErr:'Sohbet silinemedi', thinkOn:'Think modu açık',
     thinkOff:'Think modu kapalı', copy:'Kopyala', copied:'Kopyalandı', emailConfirm:'E-posta Gönder',
     delConfirm:'Etkinliği Sil', chatDelConfirm:'Sohbeti Sil', memDelConfirm:'Hafızayı Sil',
-    emailTo:'Kime', emailSubj:'Konu', emailBody:'İçerik', delEventName:'Etkinlik',
+    emailTo:'Kime', emailSubj:'Konu', emailBody:'İçerik', emailCc:'Cc', emailBcc:'Bcc', delEventName:'Etkinlik',
     chatDelName:'Silinecek Sohbet', memDelContent:'Silinecek Bilgi', warnEmail:'Bu işlem geri alınamaz.',
     warnDel:'Silme işlemi geri alınamaz.', warnChatDel:'Bu sohbetin geçmişi veritabanından kalıcı olarak temizlenecektir.',
     warnMemDel:'Bu kayıt modelin uzun vadeli hafızasından kalıcı olarak silinecektir.', cancel:'İptal',
@@ -602,6 +762,7 @@ const STRINGS = {
     settingsRestart:'Bazı ayarlar (bağlam penceresi) yalnızca sunucu yeniden başlatıldığında geçerli olur.',
     settingsCancel:'İptal', settingsSave:'Kaydet',
     themeLabel:'Tema Rengi', langLabel:'Dil',
+    glassLabel:'Buzlu Cam Görünüm', glassHint:'Açık', glassHintOff:'Kapalı',
     micDenied:'Mikrofon izni reddedildi', transcribeErr:'Ses tanıma başarısız oldu',
     micHttps:'Mikrofon HTTPS gerektirir. HTTPS ile erişin veya localhost kullanın.',
     micTryingWhisper:'Whisper deneniyor…',
@@ -624,7 +785,7 @@ const STRINGS = {
     connErr:'Could not reach server', delErr:'Could not delete chat', thinkOn:'Think mode on',
     thinkOff:'Think mode off', copy:'Copy', copied:'Copied', emailConfirm:'Send Email',
     delConfirm:'Delete Event', chatDelConfirm:'Delete Chat', memDelConfirm:'Delete Memory',
-    emailTo:'To', emailSubj:'Subject', emailBody:'Content', delEventName:'Event',
+    emailTo:'To', emailSubj:'Subject', emailBody:'Content', emailCc:'Cc', emailBcc:'Bcc', delEventName:'Event',
     chatDelName:'Chat to Delete', memDelContent:'Record to Delete', warnEmail:'This action cannot be undone.',
     warnDel:'Deletion cannot be undone.', warnChatDel:'This chat history will be permanently wiped from the database.',
     warnMemDel:'This record will be permanently erased from long-term memory.', cancel:'Cancel',
@@ -634,6 +795,7 @@ const STRINGS = {
     settingsRestart:'Some settings (context window) only take effect after server restart.',
     settingsCancel:'Cancel', settingsSave:'Save',
     themeLabel:'Theme Color', langLabel:'Language',
+    glassLabel:'Frosted glass', glassHint:'On', glassHintOff:'Off',
     micDenied:'Microphone permission denied', transcribeErr:'Transcription failed',
     micHttps:'Microphone requires HTTPS. Use HTTPS or localhost.',
     micTryingWhisper:'Trying Whisper…',
@@ -650,6 +812,7 @@ const STRINGS = {
 
 let lang  = localStorage.getItem('ps_lang')  || 'en';
 let theme = localStorage.getItem('ps_theme') || 'orange';
+let glass = localStorage.getItem('ps_glass') === '1';
 function t(k){ return STRINGS[lang][k] || k; }
 
 let currentSid = null; let sessionList = []; let loading = false; let memOpen = false;
@@ -820,11 +983,26 @@ const THEMES = [
 
 function applyTheme(name){
   theme = name;
-  document.body.className = name === 'orange' ? '' : 'theme-' + name;
+  document.body.classList.toggle('theme-orange', name === 'orange');
+  document.body.classList.toggle('theme-blue', name === 'blue');
+  document.body.classList.toggle('theme-green', name === 'green');
+  document.body.classList.toggle('theme-purple', name === 'purple');
+  document.body.classList.toggle('theme-red', name === 'red');
   localStorage.setItem('ps_theme', name);
   document.querySelectorAll('.theme-swatch').forEach(el => {
     el.classList.toggle('active', el.dataset.theme === name);
   });
+}
+
+function applyGlass(on){
+  glass = !!on;
+  document.body.classList.toggle('glass-mode', glass);
+  localStorage.setItem('ps_glass', glass ? '1' : '');
+  const toggle = document.getElementById('glass-toggle');
+  if(toggle){
+    toggle.checked = glass;
+    toggle.parentElement.parentElement.querySelector('span').textContent = glass ? t('glassHint') : t('glassHintOff');
+  }
 }
 
 function renderThemeGrid(){
@@ -854,6 +1032,10 @@ function applyLang(l){
   document.getElementById('settings-restart-notice').textContent = t('settingsRestart');
   document.getElementById('lbl-theme-select').textContent = t('themeLabel');
   document.getElementById('lbl-lang-select').textContent = t('langLabel');
+  const glassLabel = document.getElementById('lbl-glass-label');
+  if(glassLabel) glassLabel.textContent = t('glassLabel');
+  const glassToggle = document.getElementById('glass-toggle');
+  if(glassToggle){ glassToggle.checked = glass; glassToggle.parentElement.parentElement.querySelector('span').textContent = glass ? t('glassHint') : t('glassHintOff'); }
 
   const searchInput = document.getElementById('sess-search');
   if(searchInput) searchInput.placeholder = t('searchPlaceholder');
@@ -1314,7 +1496,7 @@ let config = {username:'', default_city:'', model:'', stt_engine:'whisper', tts_
 let lastInputWasVoice = false;
 
 document.addEventListener('DOMContentLoaded', async ()=>{
-  applyTheme(theme); applyLang(lang); setupInput(); setupMobileKeyboard(); setupHoldToRecord();
+  applyTheme(theme); applyGlass(glass); applyLang(lang); setupInput(); setupMobileKeyboard(); setupHoldToRecord();
   // Check if API key is needed
   try {
     config = await api('GET','/config');
@@ -1544,7 +1726,9 @@ function showConfirmModal(action){
 
   if(action.tool==='send_email'){
     iconBox.innerHTML=mailSvg; document.getElementById('m-title').textContent=t('emailConfirm');
-    fields.innerHTML=mField(t('emailTo'), action.params.to||'') + mField(t('emailSubj'), action.params.subject||'') + mField(t('emailBody'), action.params.body||'');
+    fields.innerHTML=mInput(t('emailTo'), action.params.to||'', 'to') + mInput(t('emailSubj'), action.params.subject||'', 'subject') + mInput(t('emailBody'), action.params.body||'', 'body', true)
+      + (action.params.cc ? mInput(t('emailCc'), action.params.cc||'', 'cc') : '')
+      + (action.params.bcc ? mInput(t('emailBcc'), action.params.bcc||'', 'bcc') : '');
     warn.style.display='flex'; warn.innerHTML=`${alertSvg} <span>${t('warnEmail')}</span>`; btn.textContent=t('confirm'); btn.className='modal-confirm';
   } else if(action.tool==='delete_calendar_event'){
     iconBox.innerHTML=trashSvg; document.getElementById('m-title').textContent=t('delConfirm');
@@ -1560,11 +1744,17 @@ function showConfirmModal(action){
 }
 
 function mField(label, value){ return `<div class="modal-field"><label>${esc(label)}</label><div class="val">${esc(value)}</div></div>`; }
+function mInput(label, value, pkey, multiline){
+  if(multiline) return `<div class="modal-field"><label>${esc(label)}</label><textarea class="val-input" data-p="${esc(pkey)}" rows="3">${esc(value)}</textarea></div>`;
+  return `<div class="modal-field"><label>${esc(label)}</label><input class="val-input" data-p="${esc(pkey)}" value="${esc(value)}"></div>`;
+}
 function cancelAction(){ document.getElementById('confirm-modal').classList.remove('open'); pendingAction=null; }
 
 async function confirmAction(){
   if(!pendingAction) return; document.getElementById('confirm-modal').classList.remove('open');
-  const tool = pendingAction.tool, params = pendingAction.params; pendingAction=null;
+  const tool = pendingAction.tool, params = pendingAction.params;
+  document.querySelectorAll('#m-fields .val-input').forEach(inp=>{ params[inp.dataset.p]=inp.value; });
+  pendingAction=null;
   if(tool === 'delete_session') {
     try { await api('DELETE','/chat/history?session_id='+encodeURIComponent(params.sid));
       sessionList=sessionList.filter(s=>s.session_id!==params.sid);
@@ -1656,6 +1846,10 @@ async function openSettings(){
   // Sync appearance controls
   document.getElementById('lbl-theme-select').textContent = t('themeLabel');
   document.getElementById('lbl-lang-select').textContent = t('langLabel');
+  const glassLabel = document.getElementById('lbl-glass-label');
+  if(glassLabel) glassLabel.textContent = t('glassLabel');
+  const glassToggle = document.getElementById('glass-toggle');
+  if(glassToggle){ glassToggle.checked = glass; glassToggle.parentElement.parentElement.querySelector('span').textContent = glass ? t('glassHint') : t('glassHintOff'); }
   document.getElementById('lang-select').value = lang;
   renderThemeGrid();
 
@@ -1812,8 +2006,9 @@ function scrollEnd(force = false){ const e = document.getElementById('messages')
 function timeNow(){ return new Date().toLocaleTimeString(lang==='tr' ? 'tr-TR' : 'en-GB', {hour:'2-digit', minute:'2-digit'}); }
 function relTime(ts){
   if(!ts) return '';
-  // Ensure UTC parsing: SQLite CURRENT_TIMESTAMP returns UTC without Z
-  const d=Date.now()-new Date(ts.endsWith('Z') ? ts : ts+'Z').getTime();
+  // SQLite CURRENT_TIMESTAMP is UTC and may use a space separator — normalize to ISO-8601
+  const iso = ts.endsWith('Z') ? ts : ts.replace(' ','T')+'Z';
+  const d=Date.now()-new Date(iso).getTime();
   if(lang==='en'){ if(d<60000) return 'just now'; if(d<3600000) return Math.floor(d/60000)+'m'; if(d<86400000) return Math.floor(d/3600000)+'h'; return Math.floor(d/86400000)+'d'; }
   if(d<60000) return 'az \u00F6nce'; if(d<3600000) return Math.floor(d/60000)+'dk'; if(d<86400000) return Math.floor(d/3600000)+'sa'; return Math.floor(d/86400000)+'g';
 }

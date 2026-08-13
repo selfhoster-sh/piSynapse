@@ -1,12 +1,12 @@
-"""
-piSynapse Nextcloud Notes
+"""piSynapse Nextcloud Notes
 REST API integration for Nextcloud Notes (v1).
 """
 
-import logging
-import json
 import asyncio
+import json
+import logging
 from typing import Any
+
 from utils import retry
 
 logger = logging.getLogger("piSynapse")
@@ -19,7 +19,7 @@ class NextcloudNotesClient:
     """Nextcloud Notes REST API client."""
 
     def __init__(self):
-        from config import NEXTCLOUD_URL, NEXTCLOUD_USER, NEXTCLOUD_PASSWORD, NEXTCLOUD_TIMEOUT
+        from config import NEXTCLOUD_PASSWORD, NEXTCLOUD_TIMEOUT, NEXTCLOUD_URL, NEXTCLOUD_USER
         self._base = NEXTCLOUD_URL.rstrip("/")
         self._user = NEXTCLOUD_USER
         self._password = NEXTCLOUD_PASSWORD
@@ -29,9 +29,9 @@ class NextcloudNotesClient:
 
     def _request(self, method: str, path: str, data: dict | None = None) -> Any:
         """Make an authenticated request to Nextcloud Notes API."""
-        import urllib.request
-        import urllib.error
         import base64
+        import urllib.error
+        import urllib.request
 
         url = f"{self._base}/index.php/apps/notes/api/v1/{path.lstrip('/')}"
         headers = {
@@ -53,13 +53,32 @@ class NextcloudNotesClient:
 
     @retry(attempts=2, delay=1.0)
     def list_notes(self) -> list[dict]:
-        """Fetch all notes from Nextcloud. Results are cached for 30s."""
+        """Fetch all notes from Nextcloud (paginated, cached 30s)."""
         import time
         now = time.time()
         if self._list_cache and now - self._list_cache_ts < 30:
             return self._list_cache
-        result = self._request("GET", "notes")
-        self._list_cache = result or []
+        notes: list[dict] = []
+        page = 1
+        per_page = 100
+        while page <= 200:
+            result = self._request("GET", f"notes?page={page}&itemsPerPage={per_page}")
+            if isinstance(result, dict):
+                data = result.get("data", [])
+                batch = data if isinstance(data, list) else (data.get("notes", []) if isinstance(data, dict) else [])
+            else:
+                batch = result or []
+            if not batch:
+                break
+            notes.extend(batch)
+            if len(batch) < per_page:
+                break
+            seen_ids = {n.get("id") for n in notes[:-len(batch)]}
+            new_ids = {n.get("id") for n in batch}
+            if new_ids.issubset(seen_ids):
+                break  # server ignores pagination params — stop to avoid infinite loop
+            page += 1
+        self._list_cache = notes
         self._list_cache_ts = now
         return self._list_cache
 
@@ -110,7 +129,7 @@ class NextcloudNotesClient:
 def _get_client() -> NextcloudNotesClient | None:
     """Return singleton client, create if needed."""
     global _notes_client
-    from config import NEXTCLOUD_URL, NEXTCLOUD_PASSWORD
+    from config import NEXTCLOUD_PASSWORD, NEXTCLOUD_URL
     if not NEXTCLOUD_URL or not NEXTCLOUD_PASSWORD:
         return None
     if _notes_client is None:

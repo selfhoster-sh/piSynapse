@@ -21,11 +21,8 @@ from config import (
     API_KEY,
     CORS_ORIGINS,
     LLM_MODEL,
-    LLM_NUM_BATCH,
-    LLM_NUM_CTX,
-    LLM_TOP_P,
     MEDIA_MAX_MB,
-    OLLAMA_BASE_URL,
+    TRUST_X_FORWARDED_FOR,
     TRUSTED_HOSTS,
 )
 from db import close_db, init_db
@@ -96,8 +93,9 @@ async def lifespan(app: FastAPI):
     # Warm up active LLM model in background
     async def _warmup():
         try:
-            from config import LLM_BACKEND, OLLAMA_BASE_URL, LITERT_BASE_URL, LLM_NUM_CTX, LLM_TOP_P, LLM_NUM_BATCH
             import httpx
+
+            from config import LITERT_BASE_URL, LLM_BACKEND, LLM_NUM_BATCH, LLM_NUM_CTX, LLM_TOP_P, OLLAMA_BASE_URL
             client = httpx.AsyncClient(timeout=120)
             if LLM_BACKEND == "litert":
                 logger.info(f"Warming up LiteRT model '{LLM_MODEL}'...")
@@ -221,8 +219,6 @@ async def trusted_host_middleware(request: Request, call_next):
 
 # ── Middleware: API Key auth + Rate limiting + Body size ───────────────────────
 
-# Paths that skip authentication
-_AUTH_EXEMPT = {"/health", "/static"}
 _MAX_BODY_BYTES = 4 * 1024 * 1024  # 4 MB
 
 
@@ -245,9 +241,13 @@ async def security_middleware(request: Request, call_next):
 
     # --- Rate limiting ---
     if not is_exempt:
-        client_ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-        if not client_ip or client_ip == "":
+        if TRUST_X_FORWARDED_FOR:
+            client_ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+        else:
+            # Default: never trust the spoofable X-Forwarded-For header.
             client_ip = request.client.host if request.client else "unknown"
+        if not client_ip:
+            client_ip = "unknown"
         if not _rate_limiter.allow(client_ip):
             return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded. Try again later."})
 
