@@ -253,7 +253,7 @@ async def security_middleware(request: Request, call_next):
 
     # --- Body size limit ---
     # Paths that accept larger payloads (audio recordings, image uploads)
-    _LARGE_BODY_PATHS = ("/chat", "/chat/transcribe", "/chat/transcribe-gemma4", "/chat/tts")
+    _large_body_paths = ("/chat", "/chat/transcribe", "/chat/transcribe-gemma4", "/chat/tts")
     if request.method in ("POST", "PATCH"):
         te = request.headers.get("transfer-encoding", "")
         if "chunked" in te.lower():
@@ -264,7 +264,7 @@ async def security_middleware(request: Request, call_next):
                 body_size = int(cl)
             except (ValueError, TypeError):
                 return JSONResponse(status_code=400, content={"detail": "Invalid Content-Length header"})
-            limit = MEDIA_MAX_MB * 1024 * 1024 if request.url.path.startswith(_LARGE_BODY_PATHS) else _MAX_BODY_BYTES
+            limit = MEDIA_MAX_MB * 1024 * 1024 if request.url.path.startswith(_large_body_paths) else _MAX_BODY_BYTES
             if body_size > limit:
                 return JSONResponse(status_code=413, content={"detail": f"Request body too large (max {limit // (1024*1024)} MB)"})
 
