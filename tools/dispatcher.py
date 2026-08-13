@@ -235,8 +235,11 @@ async def _run_mail_tool(name: str, params: dict, session_id: str = "") -> str:
             to, subj, body = params.get("to"), params.get("subject"), params.get("body")
             if not all([to, subj, body]):
                 return "ERROR: 'to', 'subject' and 'body' are required."
-            ok = await mc.send_message(ACCOUNT_ID, to, subj, body)
-            return f"Email sent!\nTo: {to}\nSubject: {subj}" if ok else "Failed to send."
+            ok = await mc.send_message(ACCOUNT_ID, to, subj, body, params.get("cc", ""), params.get("bcc", ""))
+            detail = f"To: {to}"
+            if params.get("cc"):
+                detail += f"\nCc: {params['cc']}"
+            return f"Email sent!\n{detail}\nSubject: {subj}" if ok else "Failed to send."
 
         elif name == "search_emails":
             q = params.get("query")
