@@ -19,7 +19,7 @@ from tools import (
 )
 
 from .payload import _build_full_messages, _build_payload, _normalize_messages_for_backend
-from .utils import _THINKING_STRIP_RE, _check_tool_leak, _get_client, strip_prefix
+from .utils import _THINKING_STRIP_RE, _check_tool_leak, _get_client, clean_reasoning, strip_prefix
 
 logger = logging.getLogger("piSynapse")
 
@@ -27,13 +27,14 @@ logger = logging.getLogger("piSynapse")
 async def _llm_request(
     msgs: list[dict], *, use_think: bool = False, use_tools: bool = True,
     tool_list: list[dict] | None = None,
+    reasoning_effort: str | None = None,
 ) -> tuple[dict | None, dict | None, str | None]:
     client = _get_client()
     backend = LLM_BACKEND
     normalized = _normalize_messages_for_backend(msgs, backend=backend)
 
     if backend == "litert":
-        payload = _build_payload(normalized, stream=False, think=use_think, use_tools=use_tools, tool_list=tool_list, backend="litert")
+        payload = _build_payload(normalized, stream=False, think=use_think, use_tools=use_tools, tool_list=tool_list, backend="litert", reasoning_effort=reasoning_effort)
         try:
             resp = await client.post(f"{LITERT_BASE_URL}/v1/chat/completions", json=payload)
             resp.raise_for_status()
@@ -120,11 +121,13 @@ async def chat_with_ollama(
     session_id: str = "",
     intent: str = "action",
     tool_group: str | None = None,
+    reasoning_effort: str = "",
 ) -> dict:
     full_msgs = _build_full_messages(messages, memories or [], summary, session_id, tool_group=tool_group)
     context = {"user_id": user_id, "session_id": session_id}
     current_msgs: list[dict] = []
     memories_saved = 0
+    thinking = ""
     from tools import get_combined_tools
     if intent == "question" and tool_group is None:
         use_tools = False
@@ -143,19 +146,23 @@ async def chat_with_ollama(
 
     for iteration in range(LLM_MAX_TOOL_ITERATIONS):
         iter_msgs = _normalize_messages_for_backend(full_msgs + current_msgs, backend=LLM_BACKEND)
-        resp_json, message, err = await _llm_request(iter_msgs, use_think=think, use_tools=use_tools, tool_list=filtered_tools)
+        resp_json, message, err = await _llm_request(
+            iter_msgs, use_think=think, use_tools=use_tools,
+            tool_list=filtered_tools, reasoning_effort=reasoning_effort,
+        )
         if err:
             logger.error(f"Ollama request failed: {err}")
-            return {"reply": "Engine Error: could not reach the language model.", "pending_action": None, "memories_saved": memories_saved}
+            return {"reply": "Engine Error: could not reach the language model.", "pending_action": None, "memories_saved": memories_saved, "thinking": None}
         if not resp_json or not message:
             logger.error(f"Ollama returned empty response (resp_json={resp_json}, message={message})")
-            return {"reply": "Engine Error: empty response from language model.", "pending_action": None, "memories_saved": memories_saved}
+            return {"reply": "Engine Error: empty response from language model.", "pending_action": None, "memories_saved": memories_saved, "thinking": None}
 
         if resp_json.get("done_reason") == "length":
             logger.warning(f"Ollama stopped early (done_reason='length'). Consider raising LLM_NUM_CTX (currently {LLM_NUM_CTX}).")
 
         tool_calls = message.get("tool_calls") or []
         raw_content = _THINKING_STRIP_RE.sub('', message.get("content", "") or "").strip()
+        thinking = clean_reasoning(message.get("reasoning_content") or "")
 
         if not tool_calls and not think and use_tools and iteration == 0:
             reason = "tool leak" if _check_tool_leak(raw_content) else "empty tool_calls"
@@ -168,9 +175,10 @@ async def chat_with_ollama(
                 if tc2:
                     logger.info("Recovered tool calls via think-mode retry")
                     tool_calls, message, resp_json = tc2, msg2, resp2
+                    thinking = clean_reasoning(message.get("reasoning_content") or "")
 
         if not tool_calls:
-            return {"reply": strip_prefix(raw_content), "pending_action": None, "memories_saved": memories_saved}
+            return {"reply": strip_prefix(raw_content), "pending_action": None, "memories_saved": memories_saved, "thinking": thinking}
 
         non_confirm_calls = [c for c in tool_calls if c.get("function", {}).get("name", "") not in CONFIRM_TOOLS]
         confirm_calls = [c for c in tool_calls if c.get("function", {}).get("name", "") in CONFIRM_TOOLS]
@@ -181,7 +189,7 @@ async def chat_with_ollama(
         }
         if current_sigs and current_sigs.issubset(executed_tool_sigs):
             logger.info(f"All {len(tool_calls)} tool call(s) already executed previously — returning accumulated text as final answer")
-            return {"reply": strip_prefix(raw_content), "pending_action": None, "memories_saved": memories_saved}
+            return {"reply": strip_prefix(raw_content), "pending_action": None, "memories_saved": memories_saved, "thinking": thinking}
 
         if non_confirm_calls:
             current_msgs.append({"role": "assistant", "content": message.get("content", ""), "tool_calls": non_confirm_calls})
@@ -213,7 +221,7 @@ async def chat_with_ollama(
             err = validate_confirm_params(tn, params)
             if err:
                 logger.warning(f"Confirm tool {tn} missing params: {err}")
-                return {"reply": err, "pending_action": None, "memories_saved": memories_saved}
+                return {"reply": err, "pending_action": None, "memories_saved": memories_saved, "thinking": thinking}
 
             preview = None
             if tn == "update_calendar_event":
@@ -244,4 +252,4 @@ async def chat_with_ollama(
 
     logger.warning(f"Max tool iterations ({LLM_MAX_TOOL_ITERATIONS}) exceeded")
     return {"reply": "I made several tool calls but couldn't reach a final answer -- please try rephrasing.",
-            "pending_action": None, "memories_saved": memories_saved}
+            "pending_action": None, "memories_saved": memories_saved, "thinking": thinking}
