@@ -5,6 +5,7 @@ FastAPI app with lifespan, CORS, API-key auth, rate limiting, static files, and 
 import asyncio
 import contextvars
 import hmac
+import json
 import logging
 import os
 import time
@@ -227,7 +228,7 @@ async def security_middleware(request: Request, call_next):
     path = request.url.path
 
     # --- Skip auth for exempt paths ---
-    is_exempt = path == "/health" or path == "/" or path == "/favicon.ico" or path.startswith("/static")
+    is_exempt = path == "/health" or path == "/" or path == "/favicon.ico" or path.startswith("/static") or path == "/debug"
 
     # --- Skip auth for CORS preflight (HEAD/OPTIONS never carry API key) ---
     if request.method in ("HEAD", "OPTIONS"):
@@ -300,3 +301,13 @@ async def favicon():
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "model": LLM_MODEL}
+
+
+@app.post("/debug")
+async def debug_ingest(request: Request):
+    try:
+        body = await request.json()
+        print(f"DBG|{json.dumps(body, ensure_ascii=False)[:2000]}")
+    except Exception as e:
+        print(f"DBG|bad payload: {e}")
+    return {"ok": True}

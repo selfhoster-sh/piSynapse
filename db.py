@@ -74,6 +74,7 @@ MIGRATIONS: list[tuple[str, str, str]] = [
     ("sessions", "name", "TEXT"),
     ("sessions", "summarized_until", "INTEGER DEFAULT 0"),
     ("memories", "embedding", "BLOB"),
+    ("conversations", "reasoning", "TEXT"),
 ]
 
 
@@ -107,6 +108,7 @@ async def init_db():
             role       TEXT NOT NULL,
             content    TEXT NOT NULL,
             images     TEXT,
+            reasoning  TEXT,
             timestamp  DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -180,13 +182,13 @@ async def cleanup_expired_data() -> tuple[int, int]:
 
 # -- Conversations --
 
-async def save_message(session_id: str, role: str, content: str, images: list[str] | None = None):
+async def save_message(session_id: str, role: str, content: str, images: list[str] | None = None, reasoning: str | None = None):
     import json
     images_json = json.dumps(images) if images else None
     db = await get_db()
     await db.execute(
-        "INSERT INTO conversations (session_id, role, content, images) VALUES (?, ?, ?, ?)",
-        (session_id, role, content, images_json),
+        "INSERT INTO conversations (session_id, role, content, images, reasoning) VALUES (?, ?, ?, ?, ?)",
+        (session_id, role, content, images_json, reasoning),
     )
     await db.execute(
         """INSERT INTO sessions (id) VALUES (?)
@@ -205,11 +207,11 @@ async def save_message(session_id: str, role: str, content: str, images: list[st
     await db.commit()
 
 
-async def get_history(session_id: str, limit: int = 20) -> list[dict]:
+async def get_history(session_id: str, limit: int = 20, include_reasoning: bool = False) -> list[dict]:
     import json
     db = await get_db()
     async with db.execute(
-        """SELECT role, content, images, timestamp FROM conversations
+        """SELECT role, content, images, timestamp, reasoning FROM conversations
            WHERE session_id = ? ORDER BY timestamp DESC LIMIT ?""",
         (session_id, limit),
     ) as cur:
@@ -222,6 +224,8 @@ async def get_history(session_id: str, limit: int = 20) -> list[dict]:
                 item["images"] = json.loads(r[2])
             except Exception:
                 pass
+        if include_reasoning and r[4]:
+            item["reasoning"] = r[4]
         result.append(item)
     return result
 

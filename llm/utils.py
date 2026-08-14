@@ -23,6 +23,9 @@ _THINKING_STRIP_RE = re.compile(r'<think>.*?</think>|<\|channel>thought\n.*?<cha
 # Strip "piSynapse:" prefix the model may prepend to responses
 _PREFIX_RE = re.compile(r'^(?:piSynapse|PiSynapse|pisynapse|PISYNAPSE)\s*:\s*', re.IGNORECASE)
 
+# Reasoning-channel wrapper tags that may surround thinking text
+_REASONING_WRAP_RE = re.compile(r'<\|channel>.*?\n|<channel\|>|</?think>', re.DOTALL)
+
 
 def _get_client() -> httpx.AsyncClient:
     global _http_client
@@ -37,6 +40,18 @@ def _check_tool_leak(text: str) -> bool:
     if "{" not in text and "(" not in text:
         return False
     return bool(_TOOL_LEAK_RE.search(text))
+
+
+def clean_reasoning(text: str) -> str:
+    """Normalize raw thinking-channel text for display.
+
+    Strips channel/tag wrappers and collapses excessive blank lines.
+    """
+    if not text:
+        return ""
+    cleaned = _REASONING_WRAP_RE.sub("", text)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
 
 
 def strip_prefix(text: str) -> str:
