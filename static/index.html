@@ -252,18 +252,73 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 .preview-item .preview-remove{position:absolute;top:2px;right:2px;width:18px;height:18px;
   background:rgba(0,0,0,.7);border:none;border-radius:50%;color:#fff;cursor:pointer;
   display:flex;align-items:center;justify-content:center;font-size:11px;line-height:1}
-#input-container{width:100%;max-width:800px;display:flex;align-items:center;gap:10px;
+#input-container{width:100%;max-width:800px;display:flex;align-items:flex-end;gap:8px;
   background:var(--surface);border:1px solid var(--border);border-radius:24px;
   padding:10px 14px;pointer-events:auto;box-shadow:var(--shadow-lg);
-  transition:border-color .2s,box-shadow .2s;margin-bottom:env(safe-area-inset-bottom,0px);
-  overflow:hidden}
+  transition:border-color .2s,box-shadow .2s;margin-bottom:env(safe-area-inset-bottom,0px)}
 #input-container:focus-within{border-color:var(--accent);box-shadow:var(--shadow-lg),0 0 0 3px var(--accent-d)}
+.input-left,.input-right{display:flex;align-items:center;gap:6px;flex-shrink:0}
 
 .inline-think-btn{background:none;border:none;color:var(--text3);cursor:pointer;
   padding:8px;border-radius:50%;display:flex;align-items:center;justify-content:center;
-  transition:all .2s;flex-shrink:0;position:relative}
+  transition:all .2s;flex-shrink:0;position:relative;width:40px;height:40px}
 .inline-think-btn:hover{color:var(--text);background:var(--surface2)}
 .inline-think-btn.active{color:var(--accent);background:var(--accent-d)}
+.think-wrap{position:relative;flex-shrink:0}
+.think-split{display:flex;align-items:center;gap:1px;padding:3px 5px 3px 3px;border:1px solid var(--border);
+  border-radius:12px;background:var(--surface);transition:border-color .2s,background .2s,box-shadow .2s;height:40px}
+.think-split:hover{border-color:color-mix(in srgb,var(--accent) 45%,var(--border))}
+.think-split.active{border-color:var(--accent);background:var(--accent-d);box-shadow:0 0 0 1px var(--accent-d)}
+.think-bolt,.think-caret{background:none;border:none;padding:4px;margin:0;display:flex;align-items:center;
+  justify-content:center;cursor:pointer;color:var(--text3);transition:color .2s;border-radius:8px}
+.think-bolt:hover,.think-caret:hover{color:var(--text)}
+.think-split.active .think-bolt,.think-split.active .think-caret{color:var(--accent)}
+.think-divider{width:1px;height:14px;background:var(--border);flex-shrink:0;margin:0 1px}
+.think-split.no-picker .think-divider,
+.think-split.no-picker .think-caret{display:none}
+#think-bolt-icon polygon{transition:fill .2s,fill-opacity .2s,stroke .2s}
+.think-split.lv0 #think-bolt-icon polygon{fill:none;stroke:var(--text3)}
+.think-split.lv1 #think-bolt-icon polygon{fill:var(--accent);fill-opacity:.15;stroke:var(--accent)}
+.think-split.lv2 #think-bolt-icon polygon{fill:var(--accent);fill-opacity:.35;stroke:var(--accent)}
+.think-split.lv3 #think-bolt-icon polygon{fill:var(--accent);fill-opacity:.55;stroke:var(--accent)}
+.think-split.lv4 #think-bolt-icon polygon{fill:var(--accent);fill-opacity:.8;stroke:var(--accent)}
+.think-split.lv5 #think-bolt-icon polygon{fill:var(--accent);fill-opacity:1;stroke:var(--accent)}
+.think-popover{position:absolute;bottom:calc(100% + 12px);left:0;width:272px;background:var(--surface);
+  border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow-lg);padding:14px 16px 12px;
+  z-index:70;opacity:0;transform:translateY(4px) scale(.96);transform-origin:bottom left;
+  pointer-events:none;transition:opacity .18s ease,transform .18s ease}
+.think-popover.open{opacity:1;transform:translateY(0) scale(1);pointer-events:auto}
+.think-popover.hidden{display:none}
+.tp-arrow{position:absolute;bottom:-6px;left:39px;transform:translateX(-50%) rotate(45deg);width:12px;height:12px;
+  background:var(--surface);border-right:1px solid var(--border);border-bottom:1px solid var(--border)}
+.tp-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px}
+.tp-title{font-size:11px;font-weight:600;color:var(--text3);letter-spacing:.4px;text-transform:uppercase}
+.tp-level{font-size:17px;font-weight:700;color:var(--accent)}
+.tp-slider{position:relative;height:28px;cursor:pointer;touch-action:none;outline:none;border-radius:6px}
+.tp-slider:focus-visible{box-shadow:0 0 0 2px var(--accent-d)}
+.tp-track{position:absolute;top:50%;left:8px;right:8px;height:4px;transform:translateY(-50%);
+  background:var(--surface3);border-radius:99px}
+.tp-fill{position:absolute;top:0;left:0;height:100%;width:0;background:var(--accent);border-radius:99px}
+.tp-dot{position:absolute;top:50%;transform:translate(-50%,-50%);width:10px;height:10px;border-radius:50%;
+  background:var(--surface);border:2px solid var(--surface3);transition:border-color .15s,background .15s;pointer-events:none}
+.tp-dot.on{border-color:var(--accent);background:var(--accent)}
+.tp-thumb{position:absolute;top:50%;transform:translate(-50%,-50%);width:16px;height:16px;border-radius:50%;
+  background:var(--accent);box-shadow:0 1px 4px rgba(0,0,0,.35);transition:left .12s ease;pointer-events:none}
+.tp-hint{margin-top:10px;font-size:12px;line-height:1.45;color:var(--text3);min-height:34px}
+.think-box{margin:0 0 6px;border:1px solid var(--border);border-radius:10px;
+  background:var(--surface2);padding:8px 12px;font-size:12.5px;line-height:1.55;
+  color:var(--text3);word-break:break-word}
+.think-box.live{border-style:dashed;font-style:italic}
+.think-box .think-head{display:flex;align-items:center;gap:6px;cursor:pointer;
+  user-select:none;font-size:12px;font-weight:600;color:var(--text3);padding:2px 0}
+.think-box .think-head:hover{color:var(--text)}
+.think-box .chev{transition:transform .2s;font-size:11px}
+.think-box.open .think-head .chev{transform:rotate(90deg)}
+.think-box .think-body{padding-top:6px;white-space:pre-wrap;max-height:260px;overflow:auto}
+.think-box.collapsed .think-body{display:none}
+.sess-auth-btn{display:block;margin:6px 16px 14px;padding:6px 12px;border:1px solid var(--border);
+  border-radius:8px;background:var(--surface2);color:var(--text);cursor:pointer;font-size:13px;transition:all .2s}
+.sess-auth-btn:hover{border-color:var(--accent);color:var(--accent)}
 .mic-recording{color:#f05555!important;animation:mic-pulse 1s ease-in-out infinite}
 @keyframes mic-pulse{0%,100%{opacity:1}50%{opacity:.4}}
 .mic-timer{display:none;font-size:11px;font-weight:600;color:#f05555;position:absolute;
@@ -278,13 +333,13 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 .tts-btn:hover{color:var(--text);background:var(--surface2)}
 .tts-btn.tts-playing{color:var(--accent);animation:mic-pulse 1s ease-in-out infinite}
 
-#msg-input{flex:1;min-width:0;background:none;border:none;outline:none;color:var(--text);
-  font-size:15px;line-height:1.5;padding:8px 0;resize:none;max-height:160px;
-  min-height:24px;font-family:inherit;margin-bottom:2px}
+#msg-input{flex:1 1 auto;min-width:0;background:none;border:none;outline:none;color:var(--text);
+  font-size:15px;line-height:1.5;padding:8px 0;resize:none;max-height:200px;
+  min-height:40px;font-family:inherit;overflow-y:auto}
 #msg-input::placeholder{color:var(--text3)}
-#send-btn{width:36px;height:36px;background:var(--accent);border:none;border-radius:18px;
+#send-btn{width:40px;height:40px;background:var(--accent);border:none;border-radius:20px;
   color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;
-  flex-shrink:0;transition:all .2s;margin-bottom:2px;box-shadow:0 2px 8px var(--accent-d)}
+  flex-shrink:0;transition:all .2s;box-shadow:0 2px 8px var(--accent-d)}
 #send-btn:hover:not(:disabled){transform:scale(1.05);background:var(--accent-h)}
 #send-btn:active:not(:disabled){transform:scale(.95)}
 #send-btn:disabled{background:var(--surface3);color:var(--text4);cursor:not-allowed;box-shadow:none}
@@ -352,11 +407,18 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
   align-items:center;justify-content:center;padding:20px}
 #settings-modal.open{display:flex}
 .settings-box{position:relative;background:var(--surface);border:1px solid var(--border);
-  border-radius:20px;padding:28px;max-width:520px;width:100%;max-height:85vh;
-  overflow-y:auto;box-shadow:var(--shadow-lg);animation:modalIn .25s ease-out}
-.settings-title{font-size:18px;font-weight:700;margin-bottom:20px;color:var(--text);
-  display:flex;align-items:center;gap:10px}
+  border-radius:20px;max-width:520px;width:100%;max-height:85vh;display:flex;
+  flex-direction:column;overflow:hidden;box-shadow:var(--shadow-lg);animation:modalIn .25s ease-out}
+.settings-title{flex-shrink:0;font-size:18px;font-weight:700;color:var(--text);
+  display:flex;align-items:center;gap:10px;padding:22px 24px 14px;border-bottom:1px solid var(--border)}
 .settings-title svg{color:var(--accent)}
+.settings-body{flex:1;min-height:0;overflow-y:auto;padding:18px 24px 8px}
+.settings-body::-webkit-scrollbar{width:9px}
+.settings-body::-webkit-scrollbar-thumb{background:var(--surface3);border-radius:99px;
+  border:2px solid transparent;background-clip:content-box}
+.settings-body::-webkit-scrollbar-track{background:transparent}
+.settings-actions{flex-shrink:0;display:flex;justify-content:flex-end;gap:10px;
+  padding:14px 24px;border-top:1px solid var(--border)}
 .settings-restart-notice{font-size:12px;color:var(--text3);padding:10px 14px;
   background:rgba(224,165,50,.08);border:1px solid rgba(224,165,50,.2);border-radius:10px;
   margin-bottom:16px;display:none}
@@ -386,6 +448,17 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
   box-shadow:0 0 8px var(--accent-d);transition:box-shadow .2s}
 .setting-input[type=range]::-webkit-slider-thumb:hover{box-shadow:0 0 14px var(--accent-d)}
 .setting-hint{font-size:11px;color:var(--text4);margin-top:4px}
+.info-btn{flex-shrink:0;width:20px;height:20px;border-radius:50%;border:1px solid var(--border);
+  background:var(--surface3);color:var(--text3);font-size:11px;font-weight:700;cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;transition:all .2s;padding:0}
+.info-btn:hover{color:var(--accent);border-color:var(--accent)}
+.info-btn.on{color:var(--accent);border-color:var(--accent)}
+.setting-label .label-wrap{display:flex;align-items:center;gap:8px;min-width:0}
+.setting-label .label-wrap .info-btn{margin-left:2px}
+.adv-toggle{cursor:pointer;user-select:none}
+.adv-toggle:hover{color:var(--text2)}
+.adv-toggle .adv-chev{display:inline-block;transition:transform .2s;font-size:10px}
+.adv-toggle.open .adv-chev{transform:rotate(90deg)}
 .settings-appearance{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px;
   padding:14px 16px;background:var(--surface2);border:1px solid var(--border);
   border-radius:12px}
@@ -400,8 +473,6 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 .theme-swatch::after{content:'';width:12px;height:12px;border-radius:50%;background:currentColor}
 .lang-select{width:100%;padding:6px 10px;background:var(--surface);border:1px solid var(--border);
   border-radius:var(--r-sm);color:var(--text);font-size:13px;font-family:inherit;cursor:pointer}
-.settings-actions{display:flex;gap:12px;justify-content:flex-end;margin-top:20px;
-  padding-top:14px;border-top:1px solid var(--border)}
 .settings-save{padding:10px 24px;background:var(--accent);border:none;border-radius:10px;
   color:#fff;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .2s}
 .settings-save:hover{background:var(--accent-h);transform:translateY(-1px)}
@@ -430,16 +501,20 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
   #topbar{padding:0 14px}
   #messages{padding:66px 14px 130px}
   #input-area{padding:0 12px;bottom:calc(10px + env(safe-area-inset-bottom,0px));position:absolute;left:0;right:0}
-  #input-container{max-width:100%;width:100%;padding:8px 10px;gap:6px;border-radius:20px}
-  #send-btn{width:34px;height:34px}
-  #msg-input{font-size:15px;min-height:22px}
+  #input-container{max-width:100%;width:100%;padding:8px 10px;gap:8px;border-radius:20px;flex-wrap:wrap}
+  #msg-input{order:1;flex:1 1 100%;min-height:24px;font-size:15px}
+  .input-left{order:2}
+  .input-right{order:3;margin-left:auto}
+  .think-split{height:36px}
+  .inline-think-btn{width:36px;height:36px}
+  #send-btn{width:36px;height:36px}
   .bubble{font-size:14px}
   .w-title{font-size:20px}
   body{font-size:14px}
   #topbar-right-widgets{display:flex}
   #top-ticker{display:none}
   .sess-item{padding:8px 8px}
-  .settings-box{max-width:100%;max-height:85vh;padding:20px;margin:10px}
+  .settings-box{max-width:100%;max-height:85vh;margin:10px}
 }
 
 /* ── Frosted glass mode (toggleable from Settings) ──────────────────────────
@@ -529,6 +604,9 @@ body.glass-mode .icon-btn,
 body.glass-mode .mem-btn,
 body.glass-mode .settings-btn,
 body.glass-mode .inline-think-btn,
+body.glass-mode .think-split,
+body.glass-mode .think-bolt,
+body.glass-mode .think-caret,
 body.glass-mode .tts-btn,
 body.glass-mode .sb-compact-toggle,
 body.glass-mode .copy-btn,
@@ -576,6 +654,52 @@ body.glass-mode .modal-backdrop{background:rgba(5,5,9,.55);backdrop-filter:blur(
 /* Theme-tinted scrollbar & selection */
 body.glass-mode ::-webkit-scrollbar-thumb{background:color-mix(in srgb, var(--accent) 28%, rgba(255,255,255,.14))}
 body.glass-mode ::selection{background:color-mix(in srgb, var(--accent) 35%, transparent)}
+
+/* Mobile (touch) glass: backdrop-filter is GPU-heavy on phones — keep the look,
+   drop the per-element blur compositing that causes jank */
+@media (hover:none){
+  body.glass-mode #topbar,
+  body.glass-mode #input-container,
+  body.glass-mode .modal-box,
+  body.glass-mode .settings-box,
+  body.glass-mode .settings-appearance{
+    backdrop-filter:blur(12px) saturate(140%);-webkit-backdrop-filter:blur(12px) saturate(140%)
+  }
+  body.glass-mode .msg-group.user .bubble,
+  body.glass-mode .mem-card,
+  body.glass-mode .code-wrapper,
+  body.glass-mode .w-icon,
+  body.glass-mode .preview-item,
+  body.glass-mode #toast,
+  body.glass-mode #ticker,
+  body.glass-mode #top-ticker,
+  body.glass-mode .sb-search input,
+  body.glass-mode .lang-select,
+  body.glass-mode .setting-input,
+  body.glass-mode .preview-remove,
+  body.glass-mode .icon-btn,
+  body.glass-mode .mem-btn,
+  body.glass-mode .settings-btn,
+  body.glass-mode .inline-think-btn,
+  body.glass-mode .think-split,
+  body.glass-mode .think-bolt,
+  body.glass-mode .think-caret,
+  body.glass-mode .tts-btn,
+  body.glass-mode .sb-compact-toggle,
+  body.glass-mode .copy-btn,
+  body.glass-mode .modal-cancel,
+  body.glass-mode .sess-del,
+  body.glass-mode .mem-del-btn,
+  body.glass-mode .new-btn,
+  body.glass-mode .top-new-btn,
+  body.glass-mode .w-start,
+  body.glass-mode .modal-confirm:not(.danger){
+    backdrop-filter:none;-webkit-backdrop-filter:none
+  }
+  body.glass-mode .modal-backdrop{backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+  body.glass-mode #send-btn:not(:disabled){backdrop-filter:none;-webkit-backdrop-filter:none}
+}
+
 
 /* ── Toggle switch ────────────────────────────────────────────────────────── */
 .switch-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
@@ -661,23 +785,50 @@ body.glass-mode ::selection{background:color-mix(in srgb, var(--accent) 35%, tra
   <div id="input-area">
     <div id="image-preview" class="hidden"></div>
     <div id="input-container">
-      <button class="inline-think-btn" id="inline-think-btn" onclick="toggleThink()" title="Think mode">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-      </button>
+      <div class="input-left">
+      <div class="think-wrap" id="think-wrap">
+        <div class="think-split" id="think-split">
+          <button class="think-bolt" id="inline-think-btn" onclick="toggleThink()" title="Think mode">
+            <svg id="think-bolt-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+          </button>
+          <span class="think-divider"></span>
+          <button class="think-caret" id="think-caret" onclick="toggleThinkPopover(event)" title="Think effort">
+            <svg id="think-chev" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </button>
+        </div>
+        <div class="think-popover hidden" id="think-popover" role="dialog" aria-label="Think effort">
+          <div class="tp-arrow"></div>
+          <div class="tp-head">
+            <span class="tp-title" id="tp-title"></span>
+            <span class="tp-level" id="tp-level"></span>
+          </div>
+          <div class="tp-slider" id="tp-slider" tabindex="0" role="slider" aria-valuemin="0" aria-valuemax="4" aria-valuenow="0">
+            <div class="tp-track">
+              <div class="tp-fill" id="tp-fill"></div>
+              <div class="tp-dots" id="tp-dots"></div>
+              <div class="tp-thumb" id="tp-thumb"></div>
+            </div>
+          </div>
+          <div class="tp-hint" id="tp-hint"></div>
+        </div>
+      </div>
       <input type="file" id="file-input" accept="image/*" multiple class="hidden" onchange="handleFiles(this.files)">
       <button class="inline-think-btn" id="attach-btn" onclick="document.getElementById('file-input').click()" title="Upload image">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
       </button>
+      </div>
+      <textarea id="msg-input" rows="1"></textarea>
+      <div class="input-right">
       <button class="inline-think-btn" id="mic-btn" onclick="toggleVoice()" title="Voice input">
         <svg id="mic-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="22"></line></svg>
         <span id="mic-timer" class="mic-timer"></span>
       </button>
-      <textarea id="msg-input" rows="1"></textarea>
       <button id="send-btn" onclick="sendMsg()">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
         </svg>
       </button>
+      </div>
     </div>
   </div>
 </div>
@@ -705,7 +856,8 @@ body.glass-mode ::selection{background:color-mix(in srgb, var(--accent) 35%, tra
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
       <span id="lbl-settings-title"></span>
     </div>
-    <div class="settings-restart-notice" id="settings-restart-notice"></div>
+    <div class="settings-body">
+      <div class="settings-restart-notice" id="settings-restart-notice"></div>
     <div id="settings-appearance" class="settings-appearance">
       <div class="appearance-group">
         <label id="lbl-theme-select"></label>
@@ -730,6 +882,7 @@ body.glass-mode ::selection{background:color-mix(in srgb, var(--accent) 35%, tra
       </div>
     </div>
     <div id="settings-form"></div>
+    </div>
     <div class="settings-actions">
       <button class="modal-cancel" onclick="closeSettings()" id="settings-cancel-btn"></button>
       <button class="settings-save" onclick="saveSettings()" id="settings-save-btn"></button>
@@ -740,6 +893,19 @@ body.glass-mode ::selection{background:color-mix(in srgb, var(--accent) 35%, tra
 <div id="toast"></div>
 
 <script>
+(function(){
+  function beacon(d){ try{ navigator.sendBeacon('/debug', new Blob([JSON.stringify(d)],{type:'application/json'})); }catch(e){} }
+  window.addEventListener('error', function(e){
+    beacon({t:'err', msg:String(e.message||'').slice(0,400), src:String(e.filename||'')+':'+e.lineno+':'+e.colno, ua:navigator.userAgent.slice(0,200)});
+  }, true);
+  window.addEventListener('unhandledrejection', function(e){
+    var r=e.reason; beacon({t:'rej', msg:String(r&&r.message||r).slice(0,400)});
+  });
+  window._beacon=beacon;
+})();
+</script>
+
+<script>
 // ── i18n ─────────────────────────────────────────────────────────────────────
 const STRINGS = {
   tr:{
@@ -748,6 +914,8 @@ const STRINGS = {
     welcomeTitle:'piSynapse', welcomeSub:'Özel. Yerel. Senin.\nTüm veriler Pi\'nde kalır.',
     startChat:'Sohbet başlat', readyTitle:'Hazır', readySub:'Takvim, e-posta, hava durumu ya da sadece sohbet.',
     noChats:'Henüz sohbet yok', chatPrefix:'Sohbet', del:'Sil', noMem:'Henüz hafıza yok',
+    authNeeded:'Bağlantı doğrulanamadı (API anahtarı geçersiz veya eksik)',
+    authEnter:'Anahtarı yeniden gir',
     noMemNote:'Konuşurken paylaştığın önemli detaylar burada tutulur.', loading:'Yükleniyor…',
     connErr:'Sunucuya ulaşılamadı', delErr:'Sohbet silinemedi', thinkOn:'Think modu açık',
     thinkOff:'Think modu kapalı', copy:'Kopyala', copied:'Kopyalandı', emailConfirm:'E-posta Gönder',
@@ -763,6 +931,7 @@ const STRINGS = {
     settingsCancel:'İptal', settingsSave:'Kaydet',
     themeLabel:'Tema Rengi', langLabel:'Dil',
     glassLabel:'Buzlu Cam Görünüm', glassHint:'Açık', glassHintOff:'Kapalı',
+    advanced:'Gelişmiş Ayarlar',
     micDenied:'Mikrofon izni reddedildi', transcribeErr:'Ses tanıma başarısız oldu',
     micHttps:'Mikrofon HTTPS gerektirir. HTTPS ile erişin veya localhost kullanın.',
     micTryingWhisper:'Whisper deneniyor…',
@@ -773,7 +942,10 @@ const STRINGS = {
     apiKeyPrompt:'API anahtarını girin (sunucu .env dosyasındaki API_KEY değeri):',
     searchPlaceholder:'Ara…',
     compact:'Dar',
-    thinkTitle:'Think modu'
+    thinkTitle:'Think modu',
+    thinkNone:'Kapalı', thinkMin:'Min', thinkLow:'Düşük', thinkMed:'Orta', thinkHigh:'Yüksek', thinkMax:'Maks',
+    thinkingTitle:'Düşünme', thinkingLive:'Düşünüyor…',
+    thinkEffortTitle:'Think seviyesi'
   },
   en:{
     newChat:'New chat', chats:'Chats', mem:'Memory', memTitle:'Memory',
@@ -781,6 +953,8 @@ const STRINGS = {
     welcomeTitle:'piSynapse', welcomeSub:'Private. Local. Yours.\nAll data stays on your Pi.',
     startChat:'Start chatting', readyTitle:'Ready', readySub:'Calendar, email, weather, or just a chat.',
     noChats:'No chats yet', chatPrefix:'Chat', del:'Delete', noMem:'No memories yet',
+    authNeeded:'Connection failed (API key invalid or missing)',
+    authEnter:'Re-enter key',
     noMemNote:'Important details you share will be structured here.', loading:'Loading…',
     connErr:'Could not reach server', delErr:'Could not delete chat', thinkOn:'Think mode on',
     thinkOff:'Think mode off', copy:'Copy', copied:'Copied', emailConfirm:'Send Email',
@@ -796,6 +970,7 @@ const STRINGS = {
     settingsCancel:'Cancel', settingsSave:'Save',
     themeLabel:'Theme Color', langLabel:'Language',
     glassLabel:'Frosted glass', glassHint:'On', glassHintOff:'Off',
+    advanced:'Advanced Settings',
     micDenied:'Microphone permission denied', transcribeErr:'Transcription failed',
     micHttps:'Microphone requires HTTPS. Use HTTPS or localhost.',
     micTryingWhisper:'Trying Whisper…',
@@ -806,7 +981,10 @@ const STRINGS = {
     apiKeyPrompt:'Enter API key (the API_KEY value from the server .env file):',
     searchPlaceholder:'Search…',
     compact:'Compact',
-    thinkTitle:'Think mode'
+    thinkTitle:'Think mode',
+    thinkNone:'Off', thinkMin:'Min', thinkLow:'Low', thinkMed:'Med', thinkHigh:'High', thinkMax:'Max',
+    thinkingTitle:'Thinking', thinkingLive:'Thinking…',
+    thinkEffortTitle:'Think effort'
   }
 };
 
@@ -816,7 +994,23 @@ let glass = localStorage.getItem('ps_glass') === '1';
 function t(k){ return STRINGS[lang][k] || k; }
 
 let currentSid = null; let sessionList = []; let loading = false; let memOpen = false;
-let thinkMode = false; let pendingAction = null; let tickerItems = []; let tickerIdx = 0; let typingEl = null;
+let pendingAction = null; let tickerItems = []; let tickerIdx = 0; let typingEl = null;
+const THINK_LEVELS = [
+  {effort:'minimal', hint:{tr:'Hafif düşünme, hızlı yanıt.', en:'Light thinking, fast responses.'}},
+  {effort:'low',     hint:{tr:'Düşük düşünme, hızlı yanıt.', en:'Low thinking, quick responses.'}},
+  {effort:'medium',  hint:{tr:'Dengeli analiz ve hız.', en:'Balanced analysis and speed.'}},
+  {effort:'high',    hint:{tr:'Daha derin analiz, daha yavaş yanıt.', en:'Deeper analysis, slower responses.'}},
+  {effort:'xhigh',   hint:{tr:'En derin analiz, en yavaş yanıt.', en:'Deepest analysis, slowest responses.'}},
+];
+// litert 0.15 maps all enabled levels to the same token budget; the effort
+// picker is hidden until per-level budgets land (litert b/514760339).
+// Flip to true to re-enable the 5-level slider — backend chain already works.
+const THINK_EFFORT_PICKER = false;
+const THINK_EFFORTS = THINK_LEVELS.map(l => l.effort);
+let thinkEffort = localStorage.getItem('ps_think_effort') || 'none';
+if(thinkEffort !== 'none' && !THINK_EFFORTS.includes(thinkEffort)) thinkEffort = 'none';
+let thinkMode = thinkEffort !== 'none';
+let lastThinkEffort = thinkMode ? thinkEffort : 'medium';
 let _cachedWeatherSummary = null; let _cachedWeatherRaw = null; let _cachedEvents = null;
 
 // ── Markdown, LaTeX & Copy (local parser) ─────────────────────────────────────
@@ -1027,6 +1221,8 @@ function applyLang(l){
   document.getElementById('m-cancel').textContent = t('cancel');
   document.getElementById('lbl-top-new').textContent = t('topNew');
   document.getElementById('lbl-settings-title').textContent = t('settingsTitle');
+  const lblAdv = document.getElementById('lbl-advanced');
+  if(lblAdv) lblAdv.textContent = _sectionLabel('Advanced');
   document.getElementById('settings-cancel-btn').textContent = t('settingsCancel');
   document.getElementById('settings-save-btn').textContent = t('settingsSave');
   document.getElementById('settings-restart-notice').textContent = t('settingsRestart');
@@ -1042,6 +1238,11 @@ function applyLang(l){
 
   document.getElementById('lbl-compact').textContent = t('compact');
   document.getElementById('inline-think-btn').title = t('thinkTitle');
+  const tpTitle = document.getElementById('tp-title');
+  if(tpTitle) tpTitle.textContent = t('thinkEffortTitle');
+  _renderThinkState();
+  const lblAdv2 = document.getElementById('lbl-advanced');
+  if(lblAdv2) lblAdv2.textContent = t('advanced');
 
   const langSel = document.getElementById('lang-select');
   if(langSel) langSel.value = l;
@@ -1070,11 +1271,154 @@ function applyLang(l){
   if(!currentSid) document.getElementById('sess-title').textContent = 'piSynapse';
 }
 
+function _thinkBtn(){ return document.getElementById('inline-think-btn'); }
+function _thinkSplit(){ return document.getElementById('think-split'); }
+function _thinkChev(){ return document.getElementById('think-chev'); }
+function _thinkIndex(){ const e = thinkMode ? thinkEffort : lastThinkEffort; return Math.max(0, THINK_LEVELS.findIndex(l => l.effort === e)); }
+
+function _levelName(effort){
+  const names = { minimal:'thinkMin', low:'thinkLow', medium:'thinkMed', high:'thinkHigh', xhigh:'thinkMax' };
+  return t(names[effort] || 'thinkMed');
+}
+
+function _renderThinkState(){
+  const idx = _thinkIndex();
+  _thinkSplit().classList.toggle('active', thinkMode);
+  _thinkSplit().classList.remove('lv0','lv1','lv2','lv3','lv4','lv5');
+  _thinkSplit().classList.add(thinkMode ? 'lv'+(idx+1) : 'lv0');
+  _thinkBtn().title = t('thinkTitle') + ' (' + (thinkMode ? _levelName(thinkEffort) : t('thinkNone')) + ')';
+  _thinkChev().style.color = thinkMode ? 'var(--accent)' : 'var(--text3)';
+  _syncPopover();
+}
+
 function toggleThink(){
-  thinkMode = !thinkMode;
-  document.getElementById('inline-think-btn').classList.toggle('active', thinkMode);
+  if(thinkMode){ lastThinkEffort = thinkEffort; thinkEffort = 'none'; }
+  else { thinkEffort = lastThinkEffort; }
+  localStorage.setItem('ps_think_effort', thinkEffort);
+  thinkMode = thinkEffort !== 'none';
+  if(thinkMode) lastThinkEffort = thinkEffort;
+  _renderThinkState();
   toast(thinkMode ? t('thinkOn') : t('thinkOff'));
 }
+
+function _syncPopover(){
+  const pop = document.getElementById('think-popover');
+  if(!pop || pop.classList.contains('hidden')) return;
+  const idx = _thinkIndex();
+  const disp = thinkMode ? thinkEffort : lastThinkEffort;
+  const slider = document.getElementById('tp-slider');
+  if(slider){
+    slider.setAttribute('aria-valuenow', idx);
+    slider.setAttribute('aria-valuetext', _levelName(disp));
+  }
+  const el = document.getElementById('tp-level');
+  if(el) el.textContent = _levelName(disp);
+  const hint = document.getElementById('tp-hint');
+  if(hint) hint.textContent = THINK_LEVELS[idx].hint[lang];
+  const thumb = document.getElementById('tp-thumb');
+  if(thumb) thumb.style.left = (idx/4*100) + '%';
+  const fill = document.getElementById('tp-fill');
+  if(fill) fill.style.width = (idx/4*100) + '%';
+  const dots = document.getElementById('tp-dots');
+  if(dots) dots.querySelectorAll('.tp-dot').forEach((d,i) => d.classList.toggle('on', i === idx));
+}
+
+function toggleThinkPopover(e){
+  if(!THINK_EFFORT_PICKER) return;
+  if(e) e.stopPropagation();
+  const pop = document.getElementById('think-popover');
+  if(!pop) return;
+  const wasOpen = pop.classList.contains('open');
+  closeThinkPopover();
+  if(!wasOpen){
+    pop.classList.remove('hidden');
+    requestAnimationFrame(() => {
+      _syncPopover();
+      pop.classList.add('open');
+      const slider = document.getElementById('tp-slider');
+      if(slider) slider.focus();
+    });
+  }
+}
+
+function closeThinkPopover(){
+  const pop = document.getElementById('think-popover');
+  if(!pop) return;
+  if(pop.classList.contains('open')){
+    pop.classList.remove('open');
+    setTimeout(() => pop.classList.add('hidden'), 200);
+  } else {
+    pop.classList.add('hidden');
+  }
+}
+
+function setThinkEffort(effort){
+  if(!THINK_EFFORTS.includes(effort)) return;
+  thinkEffort = effort;
+  localStorage.setItem('ps_think_effort', effort);
+  thinkMode = true;
+  lastThinkEffort = effort;
+  _renderThinkState();
+  _syncPopover();
+}
+
+function _sliderIndexFromEvent(ev){
+  const slider = document.getElementById('tp-slider');
+  const r = slider.getBoundingClientRect();
+  const x = Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width));
+  return Math.round(x * 4);
+}
+
+function _initThinkPopover(){
+  if(!THINK_EFFORT_PICKER){
+    const split = _thinkSplit();
+    if(split) split.classList.add('no-picker');
+    return;
+  }
+  const slider = document.getElementById('tp-slider');
+  const dots = document.getElementById('tp-dots');
+  if(!slider || !dots) return;
+  let dragging = false;
+  THINK_LEVELS.forEach((l, i) => {
+    const d = document.createElement('span');
+    d.className = 'tp-dot';
+    d.style.left = (i/4*100) + '%';
+    dots.appendChild(d);
+  });
+  slider.addEventListener('pointerdown', ev => {
+    ev.preventDefault();
+    dragging = true;
+    slider.setPointerCapture(ev.pointerId);
+    setThinkEffort(THINK_LEVELS[_sliderIndexFromEvent(ev)].effort);
+  });
+  slider.addEventListener('pointermove', ev => {
+    if(!dragging) return;
+    setThinkEffort(THINK_LEVELS[_sliderIndexFromEvent(ev)].effort);
+  });
+  ['pointerup','pointercancel'].forEach(evt => {
+    slider.addEventListener(evt, () => { dragging = false; });
+  });
+  slider.addEventListener('keydown', ev => {
+    const idx = _thinkIndex();
+    if(ev.key === 'ArrowLeft' || ev.key === 'ArrowDown'){ ev.preventDefault(); setThinkEffort(THINK_LEVELS[Math.max(0, idx-1)].effort); }
+    else if(ev.key === 'ArrowRight' || ev.key === 'ArrowUp'){ ev.preventDefault(); setThinkEffort(THINK_LEVELS[Math.min(4, idx+1)].effort); }
+    else if(ev.key === 'Home'){ ev.preventDefault(); setThinkEffort(THINK_LEVELS[0].effort); }
+    else if(ev.key === 'End'){ ev.preventDefault(); setThinkEffort(THINK_LEVELS[4].effort); }
+  });
+}
+
+document.addEventListener('click', ev => {
+  const pop = document.getElementById('think-popover');
+  if(pop && pop.classList.contains('open') && !pop.contains(ev.target) && ev.target.id !== 'think-caret'){
+    closeThinkPopover();
+  }
+});
+document.addEventListener('keydown', ev => {
+  if(ev.key === 'Escape'){
+    const pop = document.getElementById('think-popover');
+    if(pop && pop.classList.contains('open')) closeThinkPopover();
+  }
+});
 
 // ── Image Upload ─────────────────────────────────────────────────────────────
 let pendingImages = []; // [{name, base64, preview}]
@@ -1127,6 +1471,10 @@ document.addEventListener('DOMContentLoaded', () => {
     e.preventDefault(); dragCounter=0; overlay.classList.remove('active');
     if(e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
   });
+  _initThinkPopover();
+  const tpTitle = document.getElementById('tp-title');
+  if(tpTitle) tpTitle.textContent = t('thinkEffortTitle');
+  _renderThinkState();
 });
 
 // ── Voice Input ──────────────────────────────────────────────────────────────
@@ -1496,7 +1844,9 @@ let config = {username:'', default_city:'', model:'', stt_engine:'whisper', tts_
 let lastInputWasVoice = false;
 
 document.addEventListener('DOMContentLoaded', async ()=>{
+  if(window._beacon) window._beacon({t:'init', step:'start'});
   applyTheme(theme); applyGlass(glass); applyLang(lang); setupInput(); setupMobileKeyboard(); setupHoldToRecord();
+  if(window._beacon) window._beacon({t:'init', step:'prep-done'});
   // Check if API key is needed
   try {
     config = await api('GET','/config');
@@ -1506,18 +1856,20 @@ document.addEventListener('DOMContentLoaded', async ()=>{
       try { config = await api('GET','/config'); } catch {}
     }
   }
+  if(window._beacon) window._beacon({t:'init', step:'config-done'});
   // Preload settings so TTS/STT engines work without opening Settings panel
   try {
     const s = await api('GET','/config/settings');
     if(s) Object.assign(_settingsData, s);
   } catch {}
   await loadSessions(); showWelcome(); startTicker();
+  if(window._beacon) window._beacon({t:'init', step:'all-done'});
 });
 
 function setupInput(){
   const el=document.getElementById('msg-input');
   el.addEventListener('keydown', e=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendMsg(); } });
-  el.addEventListener('input', ()=>{ el.style.height='auto'; el.style.height=Math.min(el.scrollHeight,160)+'px'; });
+  el.addEventListener('input', ()=>{ el.style.height='auto'; el.style.height=Math.min(el.scrollHeight,200)+'px'; });
 }
 
 function setupMobileKeyboard(){
@@ -1533,7 +1885,23 @@ function setupMobileKeyboard(){
 
 // ── Chat History & Loading ──────────────────────────────────────────────────────
 async function loadSessions(){
-  try{ const d=await api('GET','/chat/sessions'); sessionList=d.sessions||[]; renderSessions(sessionList); } catch { renderSessions([]); }
+  try{ const d=await api('GET','/chat/sessions'); sessionList=d.sessions||[]; renderSessions(sessionList); }
+  catch(e){
+    if(e.message==='HTTP 401'){ window._authPrompted=false; renderAuthNeeded(); }
+    else renderSessions([]);
+  }
+}
+
+function renderAuthNeeded(){
+  const el=document.getElementById('session-list');
+  if(!el) return;
+  el.innerHTML=`<div style="padding:14px 16px 8px;font-size:13px;color:var(--text3)">${t('authNeeded')}</div>
+    <button class="sess-auth-btn" onclick="reenterKey()">${t('authEnter')}</button>`;
+}
+
+function reenterKey(){
+  const k=prompt(t('apiKeyPrompt'));
+  if(k){ setApiKey(k); loadSessions(); }
 }
 
 function sessName(s){ return s.name || (t('chatPrefix')+' '+s.session_id.slice(-6)); }
@@ -1571,7 +1939,7 @@ async function loadSession(sid){
   try{
     const d=await api('GET','/chat/history?session_id='+encodeURIComponent(sid));
     const msgs=d.messages||[];
-    if(msgs.length){ msgs.forEach(m=>addMsg(m.role,m.content,false,m.timestamp,m.images||null)); scrollEnd(true); } else showWelcomeMsg();
+    if(msgs.length){ msgs.forEach(m=>addMsg(m.role,m.content,false,m.timestamp,m.images||null,m.reasoning||null)); scrollEnd(true); } else showWelcomeMsg();
   } catch { showWelcomeMsg(); }
 }
 
@@ -1588,6 +1956,24 @@ function createStreamBubble(){
   document.getElementById('messages').appendChild(g); scrollEnd(true); return g.querySelector('.bubble');
 }
 
+function toggleThinkBox(box){
+  box.classList.toggle('collapsed');
+  box.classList.toggle('open');
+}
+
+function ensureThinkBox(bubble){
+  const g = bubble.closest('.msg-group');
+  let box = g.querySelector('.think-box');
+  if(box) return box;
+  box = document.createElement('div');
+  box.className = 'think-box live collapsed';
+  box.innerHTML = '<div class="think-head"><span class="chev">\u25B8</span><span class="lab"></span></div><div class="think-body"></div>';
+  box.querySelector('.lab').textContent = t('thinkingLive');
+  box.querySelector('.think-head').onclick = (e) => { e.stopPropagation(); toggleThinkBox(box); };
+  g.insertBefore(box, bubble);
+  return box;
+}
+
 async function sendMsg(){
   if(loading) return; const el=document.getElementById('msg-input'); const text=el.value.trim();
   const images=pendingImages.map(i=>i.base64);
@@ -1596,12 +1982,12 @@ async function sendMsg(){
   _pendingStream = { sid };
   el.value=''; el.style.height='auto'; pendingImages=[]; renderImagePreview();
   addMsg('user',text,true,null,images); showTyping(); setLoading(true);
-  let bubble=null, fullText='';
+  let bubble=null, fullText='', thinkBox=null, fullReasoning='';
   try{
     const headers={'Content-Type':'application/json'};
     const _k=getApiKey(); if(_k) headers['X-API-Key']=_k;
     const resp=await fetch(API+'/chat/stream',{ method:'POST', headers,
-      body:JSON.stringify({ message: text, session_id: sid, user_id: config.username||'default', think_mode: thinkMode, images })
+      body:JSON.stringify({ message: text, session_id: sid, user_id: config.username||'default', think_mode: thinkMode, images, reasoning_effort: thinkEffort })
     });
     if(!resp.ok) throw new Error('HTTP '+resp.status);
     const reader=resp.body.getReader(), dec=new TextDecoder(); let buf='';
@@ -1615,12 +2001,16 @@ async function sendMsg(){
           if(currentSid !== sid) continue; // user navigated away, skip rendering
           if(!bubble) bubble=createStreamBubble();
           fullText+=data.token; bubble.innerHTML=renderMd(fullText); scrollEnd(false);
-        } else if(data.confirm){
-          hideTyping(); showConfirmModal(data.confirm); setLoading(false); _pendingStream=null; return;
-        } else if(data.error){
-          hideTyping(); if(bubble) bubble.textContent='\u26A0\uFE0F '+data.error; else addMsg('assistant','\u26A0\uFE0F '+data.error);
-          toast(t('connErr'),true); setLoading(false); _pendingStream=null; return;
         } else if(data.done){
+          if(thinkBox && fullReasoning){
+            const body = thinkBox.querySelector('.think-body');
+            body.textContent = fullReasoning;
+            thinkBox.classList.remove('live');
+            thinkBox.classList.add('collapsed');
+            const head = thinkBox.querySelector('.think-head');
+            head.querySelector('.lab').textContent = t('thinkingTitle');
+            head.onclick = e => { e.stopPropagation(); toggleThinkBox(thinkBox); };
+          }
           if(currentSid === sid){
             await saveSessionName(text);
           }
@@ -1628,6 +2018,18 @@ async function sendMsg(){
           // Don't reload the session — the stream bubble already has the full text.
           // Reloading calls clearMsgs()+DOM rebuild, which causes a visible flash.
           // If the user navigated away during streaming, loadSessions() updates the sidebar.
+        } else if('reasoning' in data){
+          if(currentSid !== sid) continue;
+          if(!bubble) bubble=createStreamBubble();
+          if(!thinkBox){ thinkBox=ensureThinkBox(bubble); }
+          fullReasoning+=data.reasoning;
+          thinkBox.querySelector('.think-body').textContent=fullReasoning;
+          scrollEnd(false);
+        } else if(data.confirm){
+          hideTyping(); showConfirmModal(data.confirm); setLoading(false); _pendingStream=null; return;
+        } else if(data.error){
+          hideTyping(); if(bubble) bubble.textContent='\u26A0\uFE0F '+data.error; else addMsg('assistant','\u26A0\uFE0F '+data.error);
+          toast(t('connErr'),true); setLoading(false); _pendingStream=null; return;
         }
       }
     }
@@ -1679,7 +2081,7 @@ async function saveSessionName(firstMsg){
 }
 
 function setLoading(v){ loading=v; document.getElementById('send-btn').disabled=v; document.getElementById('status-dot').classList.toggle('thinking',v); }
-function addMsg(role, content, forceScroll=true, ts=null, images=null){
+ function addMsg(role, content, forceScroll=true, ts=null, images=null, reasoning=null){
   document.querySelector('.welcome')?.remove();
   const g=document.createElement('div'); g.className='msg-group '+role;
   const who=role==='user' ? (config.username||t('you')) : 'piSynapse';
@@ -1690,6 +2092,15 @@ function addMsg(role, content, forceScroll=true, ts=null, images=null){
     const imgDiv=document.createElement('div'); imgDiv.className='bubble-images';
     images.forEach(b64 => { const img=document.createElement('img'); img.src='data:image/jpeg;base64,'+b64; imgDiv.appendChild(img); });
     b.appendChild(imgDiv);
+  }
+  if(reasoning){
+    const box=document.createElement('div'); box.className='think-box collapsed';
+    box.innerHTML='<div class="think-head"><span class="chev">\u25B8</span><span class="lab"></span></div><div class="think-body"></div>';
+    box.querySelector('.lab').textContent = t('thinkingTitle');
+    box.querySelector('.think-body').textContent = reasoning;
+    const head=box.querySelector('.think-head');
+    head.onclick=()=>toggleThinkBox(box);
+    g.insertBefore(box, b);
   }
   if(role==='assistant'){
     b.innerHTML+=renderMd(content);
@@ -1802,22 +2213,87 @@ function triggerDelMemory(id, content) { showConfirmModal({ tool: 'delete_memory
 let _settingsData = {};
 
 const SETTINGS_GROUPS = {
-  'Generation':  ['LLM_TEMPERATURE','LLM_TOP_P','LLM_TOP_K','LLM_NUM_CTX'],
-  'Model':       ['LLM_MODEL','LLM_REASONING_EFFORT','LLM_KEEP_ALIVE'],
-  'Chat':        ['HISTORY_LIMIT','MEMORY_LIMIT','SUMMARY_BATCH_SIZE','SUMMARY_EARLY_TRIGGER'],
+  'Generation':  ['LLM_TEMPERATURE','LLM_NUM_CTX'],
+  'Model':       ['LLM_MODEL'],
+  'Chat':        ['HISTORY_LIMIT','MEMORY_LIMIT'],
   'Voice':       ['TTS_VOICE','TTS_ENGINE','STT_ENGINE','AUTO_SEND_ON_VOICE','AUTO_TTS_ON_VOICE'],
   'Personal':    ['ASSISTANT_USER','MAIL_PROVIDER','DEFAULT_CITY'],
 };
+
+const ADVANCED_KEYS = new Set([
+  'LLM_TOP_P','LLM_TOP_K','LLM_KEEP_ALIVE','SUMMARY_BATCH_SIZE',
+  'MEMORY_SIMILARITY_THRESHOLD','CONVERSATION_RETENTION_DAYS',
+  'MEMORY_RETENTION_DAYS','INTENT_LLM_FALLBACK',
+]);
+
+const HIDDEN_KEYS = new Set(['LLM_REASONING_EFFORT']);
+
+const SECTION_LABELS = {
+  tr:{'Generation':'Üretim','Model':'Model','Chat':'Sohbet','Voice':'Ses','Personal':'Kişisel','Other':'Diğer','Advanced':'Gelişmiş Ayarlar'},
+  en:{'Generation':'Generation','Model':'Model','Chat':'Chat','Voice':'Voice','Personal':'Personal','Other':'Other','Advanced':'Advanced Settings'},
+};
+
+const SETTING_HINTS = {
+  LLM_TOP_P: {
+    tr:'Çıktının çeşitliliğini ayarlayan olasılık eşiği. Tekrarlayan/karmaşık çıktı görürsen düşür (örn. 0.7). Yüksek = daha çeşitli. Varsayılan: 0.85',
+    en:'Probability threshold for output diversity. Lower it (e.g. 0.7) if output repeats or garbles. Higher = more varied. Default: 0.85',
+  },
+  LLM_TOP_K: {
+    tr:'Her adımda değerlendirilen en iyi token sayısı. Küçük = daha odaklı, büyük = daha çeşitli. Varsayılan: 40',
+    en:'Number of best tokens considered at each step. Smaller = more focused, larger = more varied. Default: 40',
+  },
+  LLM_KEEP_ALIVE: {
+    tr:'Modelin bellekte ne kadar süre yüklü tutulacağı. RAM azsa düşür (örn. 1h); hızlı yanıt istersen artır (örn. 12h). Varsayılan: 4h',
+    en:'How long the model stays loaded in memory. Lower (e.g. 1h) if RAM is tight; raise (e.g. 12h) for faster replies. Default: 4h',
+  },
+  SUMMARY_BATCH_SIZE: {
+    tr:'Sohbet özetinin kaç mesajda bir yenileneceği. Küçük = daha güncel ama daha çok işlem; büyük = daha az güncel. Varsayılan: 5',
+    en:'How often (in messages) the conversation summary refreshes. Smaller = more up-to-date but more processing. Default: 5',
+  },
+  MEMORY_SIMILARITY_THRESHOLD: {
+    tr:'Bir hafıza kartının konuşmaya ne kadar benzeşmesi gerektiği. Yüksek = daha az ama isabetli eşleşme; düşük = daha çok ama gürültülü. Varsayılan: 0.68',
+    en:'How similar a memory card must be to be included. Higher = fewer, more relevant matches; lower = more, noisier. Default: 0.68',
+  },
+  CONVERSATION_RETENTION_DAYS: {
+    tr:'Sohbetlerin otomatik silinmeden önce saklanacağı gün sayısı. 0 = silme yok. Yalnızca otomatik temizlik istiyorsan değiştir. Varsayılan: 0',
+    en:'Days conversations are kept before auto-deletion. 0 = never delete. Only change for automatic cleanup. Default: 0',
+  },
+  MEMORY_RETENTION_DAYS: {
+    tr:'Hafıza kartlarının otomatik silinmeden önce saklanacağı gün sayısı. 0 = silme yok. Varsayılan: 0',
+    en:'Days memory cards are kept before auto-deletion. 0 = never delete. Default: 0',
+  },
+  INTENT_LLM_FALLBACK: {
+    tr:'Niyet tespitinde emin olunamayınca LLM\'e de danışılır. Daha isabetli ama bazı yanıtlar +15 sn gecikebilir. Varsayılan: Kapalı',
+    en:'Asks the LLM when intent detection is uncertain. More accurate but some replies may take +15s. Default: Off',
+  },
+};
+
+function _sectionLabel(s){ return (SECTION_LABELS[lang] || SECTION_LABELS.en)[s] || s; }
+function _settingHint(key){
+  const h = SETTING_HINTS[key];
+  return h ? (h[lang] || h.tr || h.en) : '';
+}
 
 function _settingLabel(entry) {
   const lbl = entry.label || {};
   return lbl[lang] || lbl.tr || lbl.en || '';
 }
 
-function _renderSetting(key, entry) {
+function _renderSetting(key, entry, advanced) {
   const val = entry.value;
   const type = entry.type;
   const label = _settingLabel(entry);
+  const infoBtn = advanced ? `<button class="info-btn" id="ib-${key}" onclick="toggleSettingInfo('${key}')" title="?">\u24D8</button>` : '';
+  const hintDiv = advanced ? `<div class="setting-hint" id="hi-${key}" style="display:none">${esc(_settingHint(key))}</div>` : '';
+
+  if (type === 'select' && entry.options && entry.options.length === 2 &&
+      entry.options.some(o => o.value === 'on') && entry.options.some(o => o.value === 'off')) {
+    const checked = val === 'on';
+    const row = advanced
+      ? `<div class="setting-label"><span class="label-wrap"><span>${esc(label || key)}</span>${infoBtn}</span><label class="switch"><input type="checkbox" id="si-${key}" ${checked ? 'checked' : ''} onchange="this.dataset.val=this.checked?'on':'off'"><span class="track"></span></label></div>`
+      : `<div class="setting-label"><span>${esc(label || key)}</span><label class="switch"><input type="checkbox" id="si-${key}" ${checked ? 'checked' : ''} onchange="this.dataset.val=this.checked?'on':'off'"><span class="track"></span></label></div>`;
+    return `<div class="setting-item${advanced ? ' advanced' : ''}">${row}${hintDiv}</div>`;
+  }
 
   if (type === 'select' && entry.options) {
     let opts = '';
@@ -1825,14 +2301,23 @@ function _renderSetting(key, entry) {
       const olbl = _settingLabel(opt);
       opts += `<option value="${esc(opt.value)}" ${opt.value === val ? 'selected' : ''}>${esc(olbl)}</option>`;
     }
-    return `<div class="setting-item"><div class="setting-label"><span>${esc(label || key)}</span></div><select class="setting-input" id="si-${key}">${opts}</select></div>`;
+    const row = advanced
+      ? `<div class="setting-label"><span class="label-wrap"><span>${esc(label || key)}</span>${infoBtn}</span></div>`
+      : `<div class="setting-label"><span>${esc(label || key)}</span></div>`;
+    return `<div class="setting-item${advanced ? ' advanced' : ''}">${row}<select class="setting-input" id="si-${key}">${opts}</select>${hintDiv}</div>`;
   } else if (type === 'float' || type === 'int') {
     const min = entry.min ?? 0;
     const max = entry.max ?? 100;
     const step = entry.step ?? 1;
-    return `<div class="setting-item"><div class="setting-label"><span>${esc(label || key)}</span><span class="val-display" id="sv-${key}">${esc(val)}</span></div><input type="range" class="setting-input" id="si-${key}" min="${min}" max="${max}" step="${step}" value="${esc(val)}" oninput="document.getElementById('sv-${key}').textContent=this.value"></div>`;
+    const row = advanced
+      ? `<div class="setting-label"><span class="label-wrap"><span>${esc(label || key)}</span>${infoBtn}</span><span class="val-display" id="sv-${key}">${esc(val)}</span></div>`
+      : `<div class="setting-label"><span>${esc(label || key)}</span><span class="val-display" id="sv-${key}">${esc(val)}</span></div>`;
+    return `<div class="setting-item${advanced ? ' advanced' : ''}">${row}<input type="range" class="setting-input" id="si-${key}" min="${min}" max="${max}" step="${step}" value="${esc(val)}" oninput="document.getElementById('sv-${key}').textContent=this.value">${hintDiv}</div>`;
   } else {
-    return `<div class="setting-item"><div class="setting-label"><span>${esc(label || key)}</span></div><input type="text" class="setting-input" style="padding:8px 10px" id="si-${key}" value="${esc(val)}"></div>`;
+    const row = advanced
+      ? `<div class="setting-label"><span class="label-wrap"><span>${esc(label || key)}</span>${infoBtn}</span></div>`
+      : `<div class="setting-label"><span>${esc(label || key)}</span></div>`;
+    return `<div class="setting-item${advanced ? ' advanced' : ''}">${row}<input type="text" class="setting-input" style="padding:8px 10px" id="si-${key}" value="${esc(val)}">${hintDiv}</div>`;
   }
 }
 
@@ -1859,18 +2344,27 @@ async function openSettings(){
     let html = '';
     const usedKeys = new Set();
 
-    for (const [sectionLabel, keys] of Object.entries(SETTINGS_GROUPS)) {
-      const sectionKeys = keys.filter(k => keySet.has(k));
-      if (!sectionKeys.length) continue;
-      const items = sectionKeys.map(k => { usedKeys.add(k); return _renderSetting(k, _settingsData[k]); }).join('');
-      html += `<div class="settings-section"><div class="settings-section-title">${sectionLabel}</div><div class="settings-section-inner">${items}</div></div>`;
-    }
+    const renderGroup = (title, keys, advanced) => {
+      const sectionKeys = keys.filter(k => keySet.has(k) && !HIDDEN_KEYS.has(k) &&
+        (advanced ? ADVANCED_KEYS.has(k) : !ADVANCED_KEYS.has(k)));
+      if (!sectionKeys.length) return '';
+      const items = sectionKeys.map(k => { usedKeys.add(k); return _renderSetting(k, _settingsData[k], advanced); }).join('');
+      if (advanced) {
+        return `<div class="settings-section"><div class="settings-section-title adv-toggle" id="adv-toggle" onclick="toggleAdvanced()"><span class="adv-chev">▸</span><span id="lbl-advanced">${_sectionLabel('Advanced')}</span></div><div class="settings-section-inner adv-inner" id="advanced-inner" style="display:none">${items}</div></div>`;
+      }
+      return `<div class="settings-section"><div class="settings-section-title">${_sectionLabel(title)}</div><div class="settings-section-inner">${items}</div></div>`;
+    };
 
-    // Render any uncategorized keys
-    const remaining = Object.keys(_settingsData).filter(k => !usedKeys.has(k));
+    for (const [sectionLabel, keys] of Object.entries(SETTINGS_GROUPS)) {
+      html += renderGroup(sectionLabel, keys, false);
+    }
+    html += renderGroup('Advanced', Object.keys(_settingsData), true);
+
+    // Render any remaining uncategorized keys
+    const remaining = Object.keys(_settingsData).filter(k => !usedKeys.has(k) && !HIDDEN_KEYS.has(k) && !ADVANCED_KEYS.has(k));
     if (remaining.length) {
-      const items = remaining.map(k => _renderSetting(k, _settingsData[k])).join('');
-      html += `<div class="settings-section"><div class="settings-section-title">Other</div><div class="settings-section-inner">${items}</div></div>`;
+      const items = remaining.map(k => _renderSetting(k, _settingsData[k], false)).join('');
+      html += `<div class="settings-section"><div class="settings-section-title">${_sectionLabel('Other')}</div><div class="settings-section-inner">${items}</div></div>`;
     }
 
     form.innerHTML = html;
@@ -1879,13 +2373,31 @@ async function openSettings(){
   }
 }
 
+function toggleAdvanced(){
+  const inner = document.getElementById('advanced-inner');
+  const toggle = document.getElementById('adv-toggle');
+  if(!inner) return;
+  const show = inner.style.display === 'none';
+  inner.style.display = show ? '' : 'none';
+  if(toggle) toggle.classList.toggle('open', show);
+}
+
+function toggleSettingInfo(key){
+  const hi = document.getElementById('hi-' + key);
+  if(!hi) return;
+  const show = hi.style.display === 'none';
+  hi.style.display = show ? '' : 'none';
+  const ib = document.getElementById('ib-' + key);
+  if(ib) ib.classList.toggle('on', show);
+}
+
 function closeSettings(){ document.getElementById('settings-modal').classList.remove('open'); }
 
 async function saveSettings(){
   const values = {};
   for (const key of Object.keys(_settingsData)) {
     const el = document.getElementById('si-' + key);
-    if (el) values[key] = el.value;
+    if (el) values[key] = el.type === 'checkbox' ? (el.dataset.val || (el.checked ? 'on' : 'off')) : el.value;
   }
 
   try {
@@ -2015,15 +2527,16 @@ function relTime(ts){
 let toastTimer; function toast(msg, err=false){ const el=document.getElementById('toast'); el.textContent=msg; el.classList.toggle('err',err); el.classList.add('show'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.classList.remove('show'), 3000); }
 
 // ── Sidebar Swipe Gesture (mobile) ────────────────────────────────
-let _swipeStartX = 0, _swipeStartY = 0;
+let _swipeStartX = 0, _swipeStartY = 0, _swipeOnThink = false;
 document.addEventListener('touchstart', e => {
   const touch = e.touches[0];
   _swipeStartX = touch.clientX;
   _swipeStartY = touch.clientY;
+  _swipeOnThink = !!(e.target && e.target.closest && e.target.closest('#think-popover'));
 }, {passive: true});
 
 document.addEventListener('touchmove', e => {
-  if(window.innerWidth > 768) return;
+  if(window.innerWidth > 768 || _swipeOnThink) return;
   const touch = e.touches[0];
   const dx = touch.clientX - _swipeStartX;
   const dy = touch.clientY - _swipeStartY;

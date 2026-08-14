@@ -13,6 +13,13 @@ def test_litert_payload_thinking_off():
     assert payload["reasoning_effort"] == "none"
 
 
+def test_litert_payload_includes_sampling_params():
+    payload = _build_payload([{"role": "user", "content": "hi"}], think=False, use_tools=False, backend="litert")
+    assert payload["top_p"] == config.LLM_TOP_P
+    assert payload["top_k"] == config.LLM_TOP_K
+    assert payload["temperature"] == config.LLM_TEMPERATURE
+
+
 def test_litert_payload_thinking_on(monkeypatch):
     monkeypatch.setattr(config, "LLM_REASONING_EFFORT", "high")
     payload = _build_payload([{"role": "user", "content": "hi"}], think=True, use_tools=False, backend="litert")
@@ -87,3 +94,38 @@ def test_llm_request_forwards_think_to_litert():
 def test_llm_request_forwards_no_think_to_litert():
     payload = _capture_llm_request_payload(False)
     assert payload["reasoning_effort"] == "none"
+
+
+def test_litert_payload_request_effort_beats_config(monkeypatch):
+    monkeypatch.setattr(config, "LLM_REASONING_EFFORT", "medium")
+    payload = _build_payload(
+        [{"role": "user", "content": "hi"}], think=True, use_tools=False,
+        backend="litert", reasoning_effort="high",
+    )
+    assert payload["reasoning_effort"] == "high"
+
+
+def test_litert_payload_invalid_request_effort_falls_back(monkeypatch):
+    monkeypatch.setattr(config, "LLM_REASONING_EFFORT", "low")
+    payload = _build_payload(
+        [{"role": "user", "content": "hi"}], think=True, use_tools=False,
+        backend="litert", reasoning_effort="ultra",
+    )
+    assert payload["reasoning_effort"] == "medium"
+
+
+def test_litert_payload_request_effort_off_disables():
+    payload = _build_payload(
+        [{"role": "user", "content": "hi"}], think=True, use_tools=False,
+        backend="litert", reasoning_effort="none",
+    )
+    assert payload["reasoning_effort"] == "none"
+
+
+def test_clean_reasoning_strips_wrappers():
+    from llm.utils import clean_reasoning
+    raw = "<|channel>thought\nkullanıcı aslında hava durumunu soruyor.\n<channel|>cevap\n\n\n\n"
+    cleaned = clean_reasoning(raw)
+    assert "channel" not in cleaned
+    assert "kullanıcı" in cleaned
+    assert "\n\n\n" not in cleaned

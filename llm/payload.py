@@ -19,18 +19,21 @@ logger = logging.getLogger("piSynapse")
 _VALID_REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh")
 
 
-def _reasoning_effort(think: bool) -> str:
-    """Map think flag + configured level to a litert-lm reasoning_effort value.
+def _reasoning_effort(think: bool, requested: str | None = None) -> str:
+    """Map think flag + level to a litert-lm reasoning_effort value.
 
-    Read dynamically from the config module so that live settings updates
-    (Settings API + sync_config) take effect without a server restart.
+    An explicit per-request level (UI menu) wins; otherwise fall back to the
+    configured default read dynamically from the config module so that live
+    settings updates take effect without a server restart.
     """
     if not think:
         return "none"
     import config as _cfg
-    effort = (getattr(_cfg, "LLM_REASONING_EFFORT", "medium") or "medium").strip().lower()
+    if requested is None:
+        requested = getattr(_cfg, "LLM_REASONING_EFFORT", "medium") or "medium"
+    effort = requested.strip().lower()
     if effort not in _VALID_REASONING_EFFORTS:
-        logger.warning(f"Invalid LLM_REASONING_EFFORT={effort!r}, falling back to 'medium'")
+        logger.warning(f"Invalid reasoning_effort={effort!r}, falling back to 'medium'")
         return "medium"
     return effort
 
@@ -43,6 +46,7 @@ def _build_payload(
     use_tools: bool = True,
     tool_list: list[dict] | None = None,
     backend: str | None = None,
+    reasoning_effort: str | None = None,
 ) -> dict:
     if (backend or LLM_BACKEND) == "litert":
         model = LLM_MODEL.replace(":", "-")
@@ -51,10 +55,12 @@ def _build_payload(
             "messages": messages,
             "stream": stream,
             "temperature": LLM_TEMPERATURE,
+            "top_p": LLM_TOP_P,
+            "top_k": LLM_TOP_K,
             "max_tokens": LLM_NUM_CTX,
             # Gemma 4 thinking is a native request-level feature (litert-lm >= 0.15):
             # "none" disables it, any of minimal/low/medium/high/xhigh enables it.
-            "reasoning_effort": _reasoning_effort(think),
+            "reasoning_effort": _reasoning_effort(think, reasoning_effort),
         }
         if use_tools:
             payload["tools"] = tool_list if tool_list is not None else TOOLS

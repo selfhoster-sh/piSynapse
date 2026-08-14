@@ -19,7 +19,7 @@ from tools import (
 )
 
 from .payload import _build_full_messages, _build_payload, _normalize_messages_for_backend
-from .utils import _check_tool_leak, _get_client
+from .utils import _check_tool_leak, _get_client, clean_reasoning
 
 logger = logging.getLogger("piSynapse")
 
@@ -69,6 +69,7 @@ async def chat_with_ollama_stream(
     session_id: str = "",
     intent: str = "action",
     tool_group: str | None = None,
+    reasoning_effort: str = "",
 ):
     full_msgs = _build_full_messages(messages, memories or [], summary, session_id)
     context = {"user_id": user_id, "session_id": session_id}
@@ -98,14 +99,16 @@ async def chat_with_ollama_stream(
             payload = _build_payload(
                 _normalize_messages_for_backend(full_msgs + current_msgs, backend="litert"),
                 stream=True, think=think, use_tools=use_tools, tool_list=filtered_tools, backend="litert",
+                reasoning_effort=reasoning_effort,
             )
             url = f"{LITERT_BASE_URL}/v1/chat/completions"
         else:
-            payload = _build_payload(full_msgs + current_msgs, stream=True, think=think, use_tools=use_tools, tool_list=filtered_tools)
+            payload = _build_payload(full_msgs + current_msgs, stream=True, think=think, use_tools=use_tools, tool_list=filtered_tools, reasoning_effort=reasoning_effort)
             url = f"{OLLAMA_BASE_URL}/api/chat"
 
         buf = ""
         full_text = ""
+        full_reasoning = ""
         early_buf_flushed = False
         tool_calls_acc: list = []
         done_reason = None
@@ -132,6 +135,7 @@ async def chat_with_ollama_stream(
                         choice = chunk.get("choices", [{}])[0]
                         delta = choice.get("delta", {})
                         token = delta.get("content", "")
+                        reasoning_token = delta.get("reasoning_content") or ""
                         tc = delta.get("tool_calls")
                         finish = choice.get("finish_reason")
                         if finish:
@@ -143,6 +147,7 @@ async def chat_with_ollama_stream(
                             continue
                         msg = data.get("message", {})
                         token = msg.get("content", "")
+                        reasoning_token = msg.get("reasoning_content", "") or ""
                         tc = msg.get("tool_calls")
                         done = data.get("done", False)
                         if done:
@@ -150,6 +155,11 @@ async def chat_with_ollama_stream(
 
                     if tc:
                         tool_calls_acc = _merge_tool_calls(tool_calls_acc, tc)
+
+                    if reasoning_token:
+                        full_reasoning += reasoning_token
+                        if not tool_calls_acc:
+                            yield {"reasoning": reasoning_token}
 
                     if token:
                         full_text += token
@@ -205,7 +215,7 @@ async def chat_with_ollama_stream(
                 yield {"token": full_text}
             elif buf:
                 yield {"token": buf}
-            yield {"done": True, "memories_saved": memories_saved}
+            yield {"done": True, "memories_saved": memories_saved, "reasoning": clean_reasoning(full_reasoning)}
             return
 
         non_confirm_calls = [c for c in tool_calls_acc if c.get("function", {}).get("name", "") not in CONFIRM_TOOLS]
@@ -219,7 +229,7 @@ async def chat_with_ollama_stream(
             logger.info(f"All {len(tool_calls_acc)} tool call(s) already executed previously — yielding accumulated text as final answer")
             if buf:
                 yield {"token": buf}
-            yield {"done": True, "memories_saved": memories_saved}
+            yield {"done": True, "memories_saved": memories_saved, "reasoning": clean_reasoning(full_reasoning)}
             return
 
         if non_confirm_calls:
@@ -253,7 +263,7 @@ async def chat_with_ollama_stream(
             if err:
                 logger.warning(f"Confirm tool {tn} missing params: {err}")
                 yield {"token": err}
-                yield {"done": True, "memories_saved": memories_saved}
+                yield {"done": True, "memories_saved": memories_saved, "reasoning": clean_reasoning(full_reasoning)}
                 return
 
             preview = None
@@ -284,4 +294,4 @@ async def chat_with_ollama_stream(
                     break
 
     logger.warning(f"Max tool iterations ({LLM_MAX_TOOL_ITERATIONS}) exceeded in streaming")
-    yield {"done": True, "memories_saved": memories_saved}
+    yield {"done": True, "memories_saved": memories_saved, "reasoning": clean_reasoning(full_reasoning)}

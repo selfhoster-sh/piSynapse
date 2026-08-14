@@ -41,6 +41,7 @@ class ChatRequest(BaseModel):
     user_id: str = "default"
     think_mode: bool = False
     images: list[str] = []
+    reasoning_effort: str = ""
 
 
 class ChatResponse(BaseModel):
@@ -49,6 +50,7 @@ class ChatResponse(BaseModel):
     history_length: int
     memories_saved: int
     pending_action: dict | None = None
+    thinking: str | None = None
 
 
 class RenameRequest(BaseModel):
@@ -113,7 +115,7 @@ async def chat_endpoint(req: ChatRequest, background_tasks: BackgroundTasks):
         result = await chat_with_ollama(
             history, memories=memories, think=req.think_mode,
             summary=meta["summary"], user_id=req.user_id, session_id=req.session_id,
-            intent=intent, tool_group=tool_group,
+            intent=intent, tool_group=tool_group, reasoning_effort=req.reasoning_effort,
         )
 
         if result["pending_action"]:
@@ -122,12 +124,13 @@ async def chat_endpoint(req: ChatRequest, background_tasks: BackgroundTasks):
                 memories_saved=0, pending_action=result["pending_action"],
             )
 
-        await save_message(req.session_id, "assistant", result["reply"])
+        await save_message(req.session_id, "assistant", result["reply"], reasoning=result.get("thinking"))
         background_tasks.add_task(_update_summary, req.session_id)
 
         return ChatResponse(
             reply=result["reply"], session_id=req.session_id,
             history_length=len(history), memories_saved=result["memories_saved"],
+            thinking=result.get("thinking"),
         )
     except HTTPException:
         raise
@@ -163,10 +166,17 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
             async for event in chat_with_ollama_stream(
                 history, memories=memories, think=req.think_mode,
                 summary=meta["summary"], user_id=req.user_id, session_id=req.session_id,
-                intent=intent, tool_group=tool_group,
+                intent=intent, tool_group=tool_group, reasoning_effort=req.reasoning_effort,
             ):
                 if "token" in event:
                     reply_parts.append(event["token"])
+                    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                elif event.get("done"):
+                    full = strip_prefix("".join(reply_parts))
+                    await save_message(req.session_id, "assistant", full, reasoning=event.get("reasoning") or None)
+                    reply_saved = True
+                    yield f"data: {json.dumps({'done': True, 'session_id': req.session_id, 'memories_saved': event.get('memories_saved', 0)})}\n\n"
+                elif "reasoning" in event:
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                 elif "confirm" in event:
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
@@ -174,11 +184,6 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
                 elif "error" in event:
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                     return
-                elif event.get("done"):
-                    full = strip_prefix("".join(reply_parts))
-                    await save_message(req.session_id, "assistant", full)
-                    reply_saved = True
-                    yield f"data: {json.dumps({'done': True, 'session_id': req.session_id, 'memories_saved': event.get('memories_saved', 0)})}\n\n"
         except Exception as e:
             logger.error(f"Chat stream generate error: {e}")
             yield f"data: {json.dumps({'error': 'Stream error'})}\n\n"
@@ -237,7 +242,7 @@ async def rename_session(session_id: str, req: RenameRequest):
 
 @router.get("/history")
 async def get_chat_history(session_id: str = Query(...)):
-    msgs = await get_history(session_id, limit=50)
+    msgs = await get_history(session_id, limit=50, include_reasoning=True)
     return {"session_id": session_id, "messages": msgs}
 
 
