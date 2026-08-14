@@ -4,6 +4,19 @@ All notable changes to piSynapse will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 uses [Semantic Versioning](https://semver.org/).
 
+## [1.0.2] - 2026-08-14
+
+### Added
+
+- `LLM_REASONING_EFFORT` setting in the UI (Model group): pick the Gemma4
+  thinking level (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`) used
+  when Think mode is on. Live-updates via the settings API, no restart needed.
+
+### Changed
+
+- STT "Gemma4" label no longer claims voice emotion awareness: emotion/tone/mood
+  are inferred from the transcript content, not from vocal prosody.
+
 ## [1.0.1] - 2026-08-14
 
 ### Changed
