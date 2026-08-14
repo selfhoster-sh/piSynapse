@@ -15,7 +15,10 @@ _http_client: httpx.AsyncClient | None = None
 _TOOL_NAMES_ALTERNATION = "|".join(re.escape(n) for n in sorted(TOOL_NAMES, key=len, reverse=True))
 _TOOL_LEAK_RE = re.compile(r'\b(' + _TOOL_NAMES_ALTERNATION + r')\s*[\{\(]')
 _TOOL_CLEANUP_RE = re.compile(r'\b\w+\s*[\{\(].*$', re.DOTALL)
-_THINKING_STRIP_RE = re.compile(r'<think>.*?</think>', re.DOTALL)
+# Defensive strip: Qwen-style <think>...</think> and Gemma 4 channel tags.
+# litert-lm already separates thinking into channels (never in content), but
+# keep this in case the raw format ever leaks into a response.
+_THINKING_STRIP_RE = re.compile(r'<think>.*?</think>|<\|channel>thought\n.*?<channel\|>', re.DOTALL)
 
 # Strip "piSynapse:" prefix the model may prepend to responses
 _PREFIX_RE = re.compile(r'^(?:piSynapse|PiSynapse|pisynapse|PISYNAPSE)\s*:\s*', re.IGNORECASE)

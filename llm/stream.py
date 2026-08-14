@@ -70,7 +70,7 @@ async def chat_with_ollama_stream(
     intent: str = "action",
     tool_group: str | None = None,
 ):
-    full_msgs = _build_full_messages(messages, memories or [], summary, session_id, think=think)
+    full_msgs = _build_full_messages(messages, memories or [], summary, session_id)
     context = {"user_id": user_id, "session_id": session_id}
     current_msgs: list[dict] = []
     memories_saved = 0
@@ -97,7 +97,7 @@ async def chat_with_ollama_stream(
         if backend == "litert":
             payload = _build_payload(
                 _normalize_messages_for_backend(full_msgs + current_msgs, backend="litert"),
-                stream=True, use_tools=use_tools, tool_list=filtered_tools, backend="litert",
+                stream=True, think=think, use_tools=use_tools, tool_list=filtered_tools, backend="litert",
             )
             url = f"{LITERT_BASE_URL}/v1/chat/completions"
         else:
@@ -187,7 +187,7 @@ async def chat_with_ollama_stream(
             logger.info("Tool leak detected in stream buffer, retrying with think-mode...")
             try:
                 retry_payload = _build_payload(
-                    _build_full_messages(messages, memories or [], summary, session_id, think=True) + current_msgs,
+                    _build_full_messages(messages, memories or [], summary, session_id) + current_msgs,
                     stream=False, think=True, use_tools=True, tool_list=filtered_tools,
                 )
                 resp2 = await client.post(f"{OLLAMA_BASE_URL}/api/chat", json=retry_payload)

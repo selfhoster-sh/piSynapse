@@ -34,6 +34,9 @@ def _build_payload(
             "stream": stream,
             "temperature": LLM_TEMPERATURE,
             "max_tokens": LLM_NUM_CTX,
+            # Gemma 4 thinking is a native request-level feature (litert-lm >= 0.15):
+            # "none" disables it, any of minimal/low/medium/high/xhigh enables it.
+            "reasoning_effort": "medium" if think else "none",
         }
         if use_tools:
             payload["tools"] = tool_list if tool_list is not None else TOOLS
@@ -63,10 +66,8 @@ def _build_full_messages(
     memories: list[dict],
     summary: str,
     email_session_id: str,
-    think: bool = False,
     tool_group: str | None = None,
 ) -> list[dict]:
-    from config import LLM_MODEL
     from prompt import build_context, get_email_context, get_system_prompt, get_tool_system_prompt
 
     ctx = build_context(
@@ -78,12 +79,6 @@ def _build_full_messages(
         system = get_tool_system_prompt(tool_group) + ctx
     else:
         system = get_system_prompt() + ctx
-
-    if not think and "qwen3" in LLM_MODEL.lower():
-        system = "/no_think\n" + system
-
-    if think and LLM_BACKEND == "litert" and "qwen3" not in LLM_MODEL.lower():
-        system = "You reason step by step before answering.\n" + system
 
     return [{"role": "system", "content": system}] + base_msgs
 
