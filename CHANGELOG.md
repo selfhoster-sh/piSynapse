@@ -4,6 +4,21 @@ All notable changes to piSynapse will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 uses [Semantic Versioning](https://semver.org/).
 
+## [1.0.1] - 2026-08-14
+
+### Changed
+
+- Gemma4 think mode now uses the native LiteRT-LM `reasoning_effort` API
+  (`medium` on, `none` off) instead of a system-prompt injection.
+  Reasoning runs model-side and is stripped from responses (no leaks).
+- Qwen3-specific think-mode remnants (`/no_think`, "qwen3" checks) removed.
+- `_THINKING_STRIP_RE` also strips Gemma 4 `<|channel>thought ... <channel|>` tags.
+- `LLM_TIMEOUT` default raised to 240s to accommodate model-side reasoning.
+
+### Added
+
+- Unit tests for payload construction, think-mode forwarding, and tag stripping.
+
 ## [1.0.0] - 2026-08-13
 
 First full release — an offline-first, self-hosted personal AI assistant.
