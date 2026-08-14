@@ -2,6 +2,7 @@
 
 import asyncio
 
+import config
 from llm.chat import _llm_request
 from llm.payload import _build_full_messages, _build_payload
 from llm.utils import _THINKING_STRIP_RE
@@ -12,7 +13,14 @@ def test_litert_payload_thinking_off():
     assert payload["reasoning_effort"] == "none"
 
 
-def test_litert_payload_thinking_on():
+def test_litert_payload_thinking_on(monkeypatch):
+    monkeypatch.setattr(config, "LLM_REASONING_EFFORT", "high")
+    payload = _build_payload([{"role": "user", "content": "hi"}], think=True, use_tools=False, backend="litert")
+    assert payload["reasoning_effort"] == "high"
+
+
+def test_litert_payload_invalid_effort_falls_back(monkeypatch):
+    monkeypatch.setattr(config, "LLM_REASONING_EFFORT", "bogus")
     payload = _build_payload([{"role": "user", "content": "hi"}], think=True, use_tools=False, backend="litert")
     assert payload["reasoning_effort"] == "medium"
 

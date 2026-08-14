@@ -56,6 +56,7 @@ LLM_TOP_K = _safe_int("LLM_TOP_K", 40)
 LLM_MAX_TOOL_ITERATIONS = _safe_int("LLM_MAX_TOOL_ITERATIONS", 5)
 LLM_KEEP_ALIVE = os.getenv("LLM_KEEP_ALIVE", "4h")
 LLM_TIMEOUT = _safe_int("LLM_TIMEOUT", 240)
+LLM_REASONING_EFFORT = os.getenv("LLM_REASONING_EFFORT", "medium").strip().lower()
 
 # -- TTS (Piper) --
 TTS_VOICE = os.getenv("TTS_VOICE", "en_US-lessac-medium")
@@ -237,6 +238,14 @@ SETTINGS_SCHEMA: dict = {
     "MEMORY_RETENTION_DAYS":       {"type": "int", "default": "0", "label": {"tr": "Bellek Saklama (Gun, 0=kapali)", "en": "Memory Retention (days, 0=off)"}, "min": 0, "max": 3650, "step": 1},
     "SUMMARY_BATCH_SIZE": {"type": "int",   "default": "5",    "label": {"tr": "Ozetleme Batch Boyutu",       "en": "Summary Batch Size"},     "min": 2, "max": 20, "step": 1},
     "LLM_MODEL":          {"type": "select", "default": "gemma4-e2b", "label": {"tr": "LLM Model",              "en": "LLM Model"}},
+    "LLM_REASONING_EFFORT": {"type": "select", "default": "medium", "label": {"tr": "Dusunce Seviyesi (Gemma4)", "en": "Thinking Level (Gemma4)"}, "options": [
+        {"value": "none",     "label": {"tr": "Kapali (dusunme yok)",   "en": "Off (no thinking)"}},
+        {"value": "minimal",  "label": {"tr": "Minimal",                "en": "Minimal"}},
+        {"value": "low",      "label": {"tr": "Dusuk",                  "en": "Low"}},
+        {"value": "medium",   "label": {"tr": "Orta (varsayilan)",      "en": "Medium (default)"}},
+        {"value": "high",     "label": {"tr": "Yuksek",                 "en": "High"}},
+        {"value": "xhigh",    "label": {"tr": "En Yuksek (yavas)",      "en": "X-High (slow)"}},
+    ]},
     "LLM_KEEP_ALIVE":     {"type": "str",   "default": "4h",   "label": {"tr": "Model Saklama Suresi",       "en": "Model Keep Alive"}},
     "ASSISTANT_USER":     {"type": "str",   "default": "",     "label": {"tr": "Kullanici Adi",              "en": "Username"}},
     "MAIL_PROVIDER":      {"type": "select", "default": "", "label": {"tr": "E-posta Saglayici", "en": "Mail Provider"}, "options": [
@@ -255,7 +264,7 @@ SETTINGS_SCHEMA: dict = {
         {"value": "browser", "label": {"tr": "Tarayici (online, daha bircok ses)","en": "Browser (online, more voices)"}},
     ]},
     "STT_ENGINE":          {"type": "select", "default": "whisper", "label": {"tr": "Ses Motoru (STT)", "en": "Speech Engine (STT)"}, "options": [
-        {"value": "gemma4",  "label": {"tr": "Gemma4 Dogrudan (duygu algilama)",  "en": "Gemma4 Native (emotion-aware)"}},
+        {"value": "gemma4",  "label": {"tr": "Gemma4 Native (duygu: metin iceriginden)",  "en": "Gemma4 Native (emotion from text content)"}},
         {"value": "whisper", "label": {"tr": "Whisper (hizli, tam transkribe)",    "en": "Whisper (fast, full transcription)"}},
     ]},
     "AUTO_SEND_ON_VOICE":  {"type": "select", "default": "off", "label": {"tr": "Sesle Giri\u015fte Otomatik G\u00f6nder", "en": "Auto-Send on Voice Input"}, "options": [
@@ -316,6 +325,7 @@ def sync_config():
         ("LLM_BACKEND", "LLM_BACKEND"),
         ("LLM_MODEL", "LLM_MODEL"),
         ("LLM_KEEP_ALIVE", "LLM_KEEP_ALIVE"),
+        ("LLM_REASONING_EFFORT", "LLM_REASONING_EFFORT"),
         ("STT_ENGINE", "STT_ENGINE"),
         ("TTS_ENGINE", "TTS_ENGINE"),
         ("TTS_VOICE", "TTS_VOICE"),

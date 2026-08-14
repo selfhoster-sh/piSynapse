@@ -16,6 +16,24 @@ from tools import TOOLS
 
 logger = logging.getLogger("piSynapse")
 
+_VALID_REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh")
+
+
+def _reasoning_effort(think: bool) -> str:
+    """Map think flag + configured level to a litert-lm reasoning_effort value.
+
+    Read dynamically from the config module so that live settings updates
+    (Settings API + sync_config) take effect without a server restart.
+    """
+    if not think:
+        return "none"
+    import config as _cfg
+    effort = (getattr(_cfg, "LLM_REASONING_EFFORT", "medium") or "medium").strip().lower()
+    if effort not in _VALID_REASONING_EFFORTS:
+        logger.warning(f"Invalid LLM_REASONING_EFFORT={effort!r}, falling back to 'medium'")
+        return "medium"
+    return effort
+
 
 def _build_payload(
     messages: list[dict],
@@ -36,7 +54,7 @@ def _build_payload(
             "max_tokens": LLM_NUM_CTX,
             # Gemma 4 thinking is a native request-level feature (litert-lm >= 0.15):
             # "none" disables it, any of minimal/low/medium/high/xhigh enables it.
-            "reasoning_effort": "medium" if think else "none",
+            "reasoning_effort": _reasoning_effort(think),
         }
         if use_tools:
             payload["tools"] = tool_list if tool_list is not None else TOOLS
