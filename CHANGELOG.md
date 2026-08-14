@@ -57,6 +57,10 @@ uses [Semantic Versioning](https://semver.org/).
 - `LLM_TIMEOUT` default raised to 240s to accommodate model-side reasoning.
 - Service worker cache bumped to `pisynapse-v3` so stale cached pages no longer
   outlive fixes across hard refreshes.
+- Installer `.env` template now matches the running config: it includes
+  `LLM_REASONING_EFFORT`, `ENV_PATH` and `TRUST_X_FORWARDED_FOR`, and raises
+  `LLM_TIMEOUT` to 240s (the old hardcoded 120s could cut off model-side
+  reasoning on fresh installs).
 - Message input bar is responsive. Desktop: the (think)/(attach) buttons, an
   auto-growing textarea (min ~40px, max 200px, scrolling internally beyond
   that) and the (mic)/(send) buttons share one flex row, bottom-aligned so the
