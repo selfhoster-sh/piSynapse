@@ -55,7 +55,7 @@ LLM_TOP_P = _safe_float("LLM_TOP_P", 0.85)
 LLM_TOP_K = _safe_int("LLM_TOP_K", 40)
 LLM_MAX_TOOL_ITERATIONS = _safe_int("LLM_MAX_TOOL_ITERATIONS", 5)
 LLM_KEEP_ALIVE = os.getenv("LLM_KEEP_ALIVE", "4h")
-LLM_TIMEOUT = _safe_int("LLM_TIMEOUT", 120)
+LLM_TIMEOUT = _safe_int("LLM_TIMEOUT", 240)
 
 # -- TTS (Piper) --
 TTS_VOICE = os.getenv("TTS_VOICE", "en_US-lessac-medium")
@@ -282,7 +282,7 @@ PROTECTED_SETTINGS = {"OLLAMA_BASE_URL", "LITERT_BASE_URL", "LLM_BACKEND", "API_
 _NUMERIC_KEYS = {
     "LLM_NUM_CTX": (int, 8192), "LLM_NUM_BATCH": (int, 256),
     "LLM_TEMPERATURE": (float, 0.6), "LLM_TOP_P": (float, 0.85), "LLM_TOP_K": (int, 40),
-    "LLM_MAX_TOOL_ITERATIONS": (int, 5), "LLM_TIMEOUT": (int, 120),
+    "LLM_MAX_TOOL_ITERATIONS": (int, 5), "LLM_TIMEOUT": (int, 240),
     "HISTORY_LIMIT": (int, 12), "MEMORY_LIMIT": (int, 10),
     "SUMMARY_BATCH_SIZE": (int, 5), "SUMMARY_EARLY_TRIGGER": (int, 6),
     "WEATHER_TIMEOUT": (int, 10), "NEXTCLOUD_TIMEOUT": (int, 30),

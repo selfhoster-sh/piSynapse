@@ -33,7 +33,7 @@ async def _llm_request(
     normalized = _normalize_messages_for_backend(msgs, backend=backend)
 
     if backend == "litert":
-        payload = _build_payload(normalized, stream=False, use_tools=use_tools, tool_list=tool_list, backend="litert")
+        payload = _build_payload(normalized, stream=False, think=use_think, use_tools=use_tools, tool_list=tool_list, backend="litert")
         try:
             resp = await client.post(f"{LITERT_BASE_URL}/v1/chat/completions", json=payload)
             resp.raise_for_status()
@@ -121,7 +121,7 @@ async def chat_with_ollama(
     intent: str = "action",
     tool_group: str | None = None,
 ) -> dict:
-    full_msgs = _build_full_messages(messages, memories or [], summary, session_id, think=think, tool_group=tool_group)
+    full_msgs = _build_full_messages(messages, memories or [], summary, session_id, tool_group=tool_group)
     context = {"user_id": user_id, "session_id": session_id}
     current_msgs: list[dict] = []
     memories_saved = 0
@@ -160,7 +160,7 @@ async def chat_with_ollama(
         if not tool_calls and not think and use_tools and iteration == 0:
             reason = "tool leak" if _check_tool_leak(raw_content) else "empty tool_calls"
             logger.info(f"No tool calls produced ({reason}), retrying with think-mode...")
-            think_msgs = _build_full_messages(messages, memories or [], summary, session_id, think=True, tool_group=tool_group)
+            think_msgs = _build_full_messages(messages, memories or [], summary, session_id, tool_group=tool_group)
             think_msgs = _normalize_messages_for_backend(think_msgs + current_msgs, backend=LLM_BACKEND)
             resp2, msg2, err2 = await _llm_request(think_msgs, use_think=True, use_tools=use_tools, tool_list=filtered_tools)
             if not err2 and msg2:
