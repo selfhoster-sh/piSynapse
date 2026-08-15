@@ -4,6 +4,59 @@ All notable changes to piSynapse will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 uses [Semantic Versioning](https://semver.org/).
 
+## [1.1.1] - 2026-08-16
+
+### Security
+
+- Host-header allowlist (`TRUSTED_HOSTS`): the default `"*"` (host check
+  disabled) is replaced with an empty allowlist that auto-accepts only this
+  machine's local IPs/hostnames; any other Host header is rejected with 403.
+  Add your public domain to `TRUSTED_HOSTS` when exposing the server.
+- `/debug` beacon endpoint now requires the API key via `?k=` query param
+  (the auth-exempt telemetry path), is rate-limited and its body is capped
+  at 8 KB.
+- Settings API rejects values containing newlines (`.env` injection) and
+  writes `.env` under a file lock.
+- Database files (`.db`, `-wal`, `-shm`, `-journal`) are created and kept
+  owner-only (`0600`) via process umask, a startup re-check and systemd
+  `UMask=0077`.
+- Tool audit log no longer stores raw user content: sensitive param keys
+  (`body`, `content`, `text`, `password`, `token`, `api_key`, …) are stored
+  as `[REDACTED]` and serialized params are capped at 2048 chars.
+
+### Added
+
+- Retrieval now honors `TIME_BUDGET_MS` via `asyncio.wait_for` with a graceful
+  fallback instead of only logging a warning.
+- Query embedding is computed once per message and shared across retrieval,
+  memory search and intent classification.
+- Daily retention cleanup (conversations/memories) runs on a timer, not only
+  at startup.
+- CalDAV/notes/tasks clients and Whisper/Piper models load under a lock and
+  off the event loop (no request-path blocking).
+- Transcribe uploads stream to a temp file in chunks and are capped by
+  `MEDIA_MAX_MB` (default 100 MB; was a hard-coded 25 MB).
+
+### Fixed
+
+- Retrieved context is merged chronologically with recent messages
+  (`merge_history` now used in production).
+- Tool audit rollup is atomic per day and idempotent (no duplicate summaries).
+- SMTP send retries with a fresh connection per attempt; SSE reads have a
+  120 s idle timeout so a stalled model cannot hang the stream.
+- `build-essential` detection uses `dpkg -s` with `gcc`/`make` fallback
+  instead of a check that always failed; the installer no longer drops
+  `CONVERSATION_RETENTION_DAYS`/`MEMORY_RETENTION_DAYS` on re-run.
+- `.env` regeneration is safe against braces/backslashes in values.
+- Various: weather geo-cache LRU bound, warmup HTTP client closed,
+  opportunistic VACUUM, calendar widget today-cache, clearer Nextcloud error
+  messages, ambiguous calendar event matches reported instead of silently
+  picked.
+
+### Tests
+
+- Suite expanded from 85 to 158 tests; `ruff check` clean.
+
 ## [1.1.0] - 2026-08-14
 
 ### Added
