@@ -4,6 +4,7 @@ CalDAV integration for Nextcloud Tasks (VTODO).
 
 import asyncio
 import logging
+import threading
 import uuid
 from datetime import date, datetime
 
@@ -18,6 +19,9 @@ _client = None
 _task_calendar = None
 _todos_cache: list | None = None
 _todos_cache_ts: float = 0
+# Tasks run in worker threads (asyncio.to_thread); the lock makes the lazy
+# singleton creation single-flight across concurrent requests.
+_client_lock = threading.Lock()
 
 
 def _get_dav_client():
@@ -27,14 +31,16 @@ def _get_dav_client():
     if not NEXTCLOUD_URL or not NEXTCLOUD_PASSWORD:
         return None
     if _client is None:
-        import caldav
-        caldav_url = f"{NEXTCLOUD_URL.rstrip('/')}/remote.php/dav/"
-        _client = caldav.DAVClient(
-            url=caldav_url,
-            username=NEXTCLOUD_USER,
-            password=NEXTCLOUD_PASSWORD,
-            timeout=NEXTCLOUD_TIMEOUT,
-        )
+        with _client_lock:
+            if _client is None:
+                import caldav
+                caldav_url = f"{NEXTCLOUD_URL.rstrip('/')}/remote.php/dav/"
+                _client = caldav.DAVClient(
+                    url=caldav_url,
+                    username=NEXTCLOUD_USER,
+                    password=NEXTCLOUD_PASSWORD,
+                    timeout=NEXTCLOUD_TIMEOUT,
+                )
     return _client
 
 
@@ -158,11 +164,10 @@ def _list_tasks_sync(show_completed: bool) -> str:
 
     now = time.time()
     if _todos_cache is None or now - _todos_cache_ts > 30:
-        try:
-            _todos_cache = cal.todos()
-            _todos_cache_ts = now
-        except Exception:
-            _todos_cache = []
+        # A failed fetch raises (NOT swallowed): retry fires via @retry and
+        # the async wrapper reports a real error instead of "No tasks found."
+        _todos_cache = cal.todos()
+        _todos_cache_ts = now
     todos = _todos_cache
 
     if not todos:
@@ -206,10 +211,9 @@ def _complete_task_sync(uid_prefix: str) -> str:
     if not cal:
         return "ERROR: No task calendar found."
 
-    try:
-        todos = cal.todos()
-    except Exception:
-        todos = []
+    # A failed fetch raises (NOT swallowed): retry fires via @retry and the
+    # async wrapper reports a real error instead of "not found".
+    todos = cal.todos()
 
     for t in todos:
         d = _todo_to_dict(t)
@@ -229,10 +233,9 @@ def _delete_task_sync(uid_prefix: str) -> str:
     if not cal:
         return "ERROR: No task calendar found."
 
-    try:
-        todos = cal.todos()
-    except Exception:
-        todos = []
+    # A failed fetch raises (NOT swallowed): retry fires via @retry and the
+    # async wrapper reports a real error instead of "not found".
+    todos = cal.todos()
 
     for t in todos:
         d = _todo_to_dict(t)
@@ -255,11 +258,10 @@ def _search_tasks_sync(query: str) -> str:
 
     now = time.time()
     if _todos_cache is None or now - _todos_cache_ts > 30:
-        try:
-            _todos_cache = cal.todos()
-            _todos_cache_ts = now
-        except Exception:
-            _todos_cache = []
+        # A failed fetch raises (NOT swallowed): retry fires via @retry and
+        # the async wrapper reports a real error instead of "not found".
+        _todos_cache = cal.todos()
+        _todos_cache_ts = now
     todos = _todos_cache
 
     q = query.lower()

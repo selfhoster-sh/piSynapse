@@ -5,6 +5,7 @@ REST API integration for Nextcloud Notes (v1).
 import asyncio
 import json
 import logging
+import threading
 from typing import Any
 
 from utils import retry
@@ -13,6 +14,13 @@ logger = logging.getLogger("piSynapse")
 
 # Singleton pattern — reuse connection
 _notes_client: "NextcloudNotesClient | None" = None
+# Notes run in worker threads (asyncio.to_thread); the lock makes lazy
+# singleton creation single-flight across concurrent requests.
+_notes_lock = threading.Lock()
+
+
+class NotFoundError(Exception):
+    """Raised when Nextcloud returns 404 (resource does not exist)."""
 
 
 class NextcloudNotesClient:
@@ -28,7 +36,11 @@ class NextcloudNotesClient:
         self._list_cache_ts: float = 0
 
     def _request(self, method: str, path: str, data: dict | None = None) -> Any:
-        """Make an authenticated request to Nextcloud Notes API."""
+        """Make an authenticated request to Nextcloud Notes API.
+
+        Raises NotFoundError on 404 (so callers can tell "does not exist"
+        from a network/server failure), and the raw urllib error otherwise.
+        """
         import base64
         import urllib.error
         import urllib.request
@@ -45,10 +57,11 @@ class NextcloudNotesClient:
 
         try:
             with urllib.request.urlopen(req, timeout=self._timeout) as resp:
-                return json.loads(resp.read().decode("utf-8"))
+                raw = resp.read().decode("utf-8")
+                return json.loads(raw) if raw.strip() else None
         except urllib.error.HTTPError as e:
             if e.code == 404:
-                return None
+                raise NotFoundError(f"Not found: {path}") from e
             raise Exception(f"Nextcloud API error {e.code}: {e.reason}")
 
     @retry(attempts=2, delay=1.0)
@@ -100,10 +113,17 @@ class NextcloudNotesClient:
     @retry(attempts=2, delay=1.0)
     def update_note(self, note_id: int, title: str | None = None, content: str | None = None,
                     category: str | None = None, tags: list[str] | None = None) -> dict | None:
-        """Update an existing note. Only fields passed are updated."""
-        # Get current note to merge
-        current = self.get_note(note_id)
-        if not current:
+        """Update an existing note. Only fields passed are updated.
+
+        The GET (merge base) and the PUT share a single retry scope — fetching
+        via the decorated ``get_note`` would nest two retry layers (up to 4
+        attempts and doubled latency), so the merge is read here directly.
+        """
+        try:
+            current = self._request("GET", f"notes/{note_id}")
+        except NotFoundError:
+            return None
+        if not current or current.get("etag") is None:
             return None
         payload: dict[str, Any] = {"etag": current.get("etag", "")}
         if title is not None:
@@ -118,12 +138,15 @@ class NextcloudNotesClient:
 
     @retry(attempts=2, delay=1.0)
     def delete_note(self, note_id: int) -> bool:
-        """Delete a note by ID."""
+        """Delete a note by ID. Returns False only when the note does not exist.
+
+        Network/server failures raise instead of being reported as "not found".
+        """
         try:
             self._request("DELETE", f"notes/{note_id}")
-            return True
-        except Exception:
+        except NotFoundError:
             return False
+        return True
 
 
 def _get_client() -> NextcloudNotesClient | None:
@@ -133,7 +156,9 @@ def _get_client() -> NextcloudNotesClient | None:
     if not NEXTCLOUD_URL or not NEXTCLOUD_PASSWORD:
         return None
     if _notes_client is None:
-        _notes_client = NextcloudNotesClient()
+        with _notes_lock:
+            if _notes_client is None:
+                _notes_client = NextcloudNotesClient()
     return _notes_client
 
 
@@ -204,6 +229,8 @@ async def get_note(note_id: int) -> str:
         lines.append("")
         lines.append(content)
         return "\n".join(lines)
+    except NotFoundError:
+        return f"Note {note_id} not found."
     except Exception as e:
         logger.error(f"Nextcloud Notes Error: {e}")
         return "ERROR: Failed to get note."
@@ -233,6 +260,8 @@ async def update_note(note_id: int, title: str | None = None, content: str | Non
         if not result:
             return f"Note {note_id} not found."
         return f"OK Note {note_id} updated."
+    except NotFoundError:
+        return f"Note {note_id} not found."
     except Exception as e:
         logger.error(f"Nextcloud Notes Error: {e}")
         return "ERROR: Failed to update note."
@@ -246,6 +275,8 @@ async def delete_note(note_id: int) -> str:
     try:
         ok = await asyncio.to_thread(client.delete_note, note_id)
         return f"OK Note {note_id} deleted." if ok else f"Note {note_id} not found."
+    except NotFoundError:
+        return f"Note {note_id} not found."
     except Exception as e:
         logger.error(f"Nextcloud Notes Error: {e}")
         return "ERROR: Failed to delete note."

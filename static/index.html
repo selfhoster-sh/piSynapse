@@ -63,10 +63,12 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
   padding:6px;border-radius:8px;display:flex;align-items:center;justify-content:center;
   transition:all .2s;font-family:inherit}
 .icon-btn:hover{color:var(--text);background:var(--surface2)}
-.status-dot{width:8px;height:8px;border-radius:50%;background:var(--success);
-  transition:background .3s;flex-shrink:0;margin-left:4px}
-.status-dot.thinking{background:var(--accent);animation:pulse 1s cubic-bezier(.4,0,.6,1) infinite}
-@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}
+ .status-dot{width:8px;height:8px;border-radius:50%;background:var(--success);
+   transition:background .3s;flex-shrink:0;margin-left:4px}
+ .status-dot.thinking{background:var(--accent);animation:pulse 1s cubic-bezier(.4,0,.6,1) infinite}
+ .status-dot.warn{background:#f5b301}
+ .status-dot.error{background:#ef4444}
+ @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}
 
 .new-btn{width:100%;padding:10px 14px;background:var(--text);border:none;
   border-radius:var(--r-sm);color:var(--bg);font-size:13.5px;font-weight:600;
@@ -894,7 +896,7 @@ body.glass-mode ::selection{background:color-mix(in srgb, var(--accent) 35%, tra
 
 <script>
 (function(){
-  function beacon(d){ try{ navigator.sendBeacon('/debug', new Blob([JSON.stringify(d)],{type:'application/json'})); }catch(e){} }
+  function beacon(d){ try{ var k=''; try{ k=window.getApiKey?window.getApiKey():''; }catch(_e){} navigator.sendBeacon('/debug?k='+encodeURIComponent(k), new Blob([JSON.stringify(d)],{type:'application/json'})); }catch(e){} }
   window.addEventListener('error', function(e){
     beacon({t:'err', msg:String(e.message||'').slice(0,400), src:String(e.filename||'')+':'+e.lineno+':'+e.colno, ua:navigator.userAgent.slice(0,200)});
   }, true);
@@ -1862,7 +1864,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
     const s = await api('GET','/config/settings');
     if(s) Object.assign(_settingsData, s);
   } catch {}
-  await loadSessions(); showWelcome(); startTicker();
+  await loadSessions(); showWelcome(); startTicker(); startHealthPoll();
   if(window._beacon) window._beacon({t:'init', step:'all-done'});
 });
 
@@ -2080,7 +2082,7 @@ async function saveSessionName(firstMsg){
   }
 }
 
-function setLoading(v){ loading=v; document.getElementById('send-btn').disabled=v; document.getElementById('status-dot').classList.toggle('thinking',v); }
+function setLoading(v){ loading=v; const dot=document.getElementById('status-dot'); document.getElementById('send-btn').disabled=v; if(v){ dot.classList.remove('ok','warn','error'); dot.classList.add('thinking'); } else { dot.classList.remove('thinking'); pollHealth(); } }
  function addMsg(role, content, forceScroll=true, ts=null, images=null, reasoning=null){
   document.querySelector('.welcome')?.remove();
   const g=document.createElement('div'); g.className='msg-group '+role;
@@ -2423,6 +2425,38 @@ async function startTicker(){
   await refreshTicker();
   setInterval(refreshTicker, 3_600_000);
   setInterval(rotateTicker,  8_000);
+  startStalenessScan();
+}
+
+// ── Server health (status dot) ──────────────────────────────────────────────────
+async function pollHealth(){
+  if(loading) return; // don't fight the "thinking" pulse mid-request
+  const dot = document.getElementById('status-dot');
+  if(!dot) return;
+  try{
+    const h = await api('GET','/health');
+    const deps = h.dependencies || {};
+    const bad = Object.entries(deps).filter(([,v]) => v === 'error');
+    const warn = Object.entries(deps).filter(([,v]) => v === 'warn');
+    dot.classList.remove('ok','warn','error');
+    if(bad.length || warn.length){
+      const notes = bad.concat(warn).map(([k,v]) => k+': '+v);
+      dot.classList.add(bad.length ? 'error' : 'warn');
+      dot.title = notes.join('\n');
+    } else {
+      dot.classList.add('ok');
+      dot.title = 'piSynapse: all systems operational';
+    }
+  }catch(e){
+    dot.classList.remove('ok','warn','error');
+    dot.classList.add('error');
+    dot.title = 'piSynapse: server unreachable';
+  }
+}
+
+async function startHealthPoll(){
+  await pollHealth();
+  setInterval(pollHealth, 60_000);
 }
 
 async function refreshTicker(){
@@ -2443,14 +2477,41 @@ function rebuildTickerFromCache(){
     tickerItems.push({ icon: icons.sun||infoSvg, text });
   }
   if(_cachedEvents !== null){
-    if(_cachedEvents.length){
-      _cachedEvents.forEach(ev => tickerItems.push({ icon: icons.cal||infoSvg, text:`${ev.time} \u2014 ${ev.title}` }));
+    const evs = freshEvents(_cachedEvents);
+    if(evs.length){
+      evs.forEach(ev => tickerItems.push({ icon: icons.cal||infoSvg, text:`${ev.time} \u2014 ${ev.title}` }));
     } else {
       tickerItems.push({ icon: icons.cal||infoSvg, text: t('noEvents') });
     }
   }
   if(!tickerItems.length) tickerItems.push({ icon: infoSvg, text:'piSynapse \u2014 Memory Active' });
   tickerIdx = 0; showTickerItem(0);
+}
+
+// ── Staleness scan (calendar widget) ────────────────────────────────────────────
+// Client-side only: drops events whose start time has already passed, using the
+// cached /widget/calendar data. No extra network requests.
+function freshEvents(events){
+  const now = new Date();
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  return (events || []).filter(ev => {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(String(ev.time || ''));
+    if(!m) return true; // unparseable time: keep it rather than risk hiding a real event
+    return (parseInt(m[1], 10) * 60 + parseInt(m[2], 10)) >= nowMin;
+  });
+}
+
+function scanStaleness(){
+  if(!_cachedEvents || !_cachedEvents.length) return;
+  const fresh = freshEvents(_cachedEvents);
+  if(fresh.length === _cachedEvents.length) return; // nothing to prune
+  _cachedEvents = fresh;
+  rebuildTickerFromCache();
+}
+
+function startStalenessScan(){
+  scanStaleness();
+  setInterval(scanStaleness, 60_000);
 }
 
 function showTickerItem(idx){

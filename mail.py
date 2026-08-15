@@ -93,16 +93,14 @@ class MailClient(ABC):
         msg["Subject"] = subject
         msg.attach(MIMEText(body, "plain", "utf-8"))
         recipients = [a.strip() for field in (to, cc, bcc) if field for a in field.split(",") if a.strip()]
-        smtp = self._connect_smtp()
         try:
-            self._login_smtp(smtp)
-            smtp.sendmail(self._get_sender_email(), recipients, msg.as_string())
+            # Fresh SMTP connection per attempt (a failed sendmail can leave the
+            # socket in an unusable state), with exponential-backoff retry.
+            _send_with_retry(self, msg, recipients)
             return True
         except Exception as e:
             logger.error(f"Failed to send email to {to}: {e}")
             return False
-        finally:
-            _safe_smtp_quit(smtp)
 
     @retry(attempts=2, delay=2.0)
     def _search_emails(self, query: str, limit: int = 10) -> list[dict]:
@@ -285,6 +283,23 @@ def _safe_smtp_quit(smtp):
         smtp.quit()
     except Exception:
         pass
+
+
+@retry(attempts=2, delay=1.5)
+def _send_with_retry(client: MailClient, msg: MIMEMultipart, recipients: list[str]) -> bool:
+    """Deliver an email over a fresh SMTP connection.
+
+    Lives outside the class so the retry decorator can wrap it without
+    touching the per-instance socket. Returns True on success; raises so the
+    caller (or the decorator) decides on retry vs. failure reporting.
+    """
+    smtp = client._connect_smtp()
+    try:
+        client._login_smtp(smtp)
+        smtp.sendmail(client._get_sender_email(), recipients, msg.as_string())
+    finally:
+        _safe_smtp_quit(smtp)
+    return True
 
 
 _mail_clients: dict[str, MailClient] = {}

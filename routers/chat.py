@@ -27,6 +27,7 @@ from db import (
     update_session_summary,
 )
 from llm import chat_with_ollama, chat_with_ollama_stream, strip_prefix, summarize_conversation
+from retrieval import merge_history, retrieve_relevant_history
 
 logger = logging.getLogger("piSynapse")
 
@@ -51,6 +52,8 @@ class ChatResponse(BaseModel):
     memories_saved: int
     pending_action: dict | None = None
     thinking: str | None = None
+    retrieved_count: int = 0
+    retrieval_ms: int = 0
 
 
 class RenameRequest(BaseModel):
@@ -66,15 +69,27 @@ class ExecuteRequest(BaseModel):
 
 # -- Helpers --
 
-async def _gather_memories(message: str, user_id: str) -> list[dict]:
+async def _gather_memories(message: str, user_id: str, query_embedding: bytes | None = None) -> list[dict]:
     core = await get_memories(user_id=user_id, limit=5)
-    relevant = await search_memories(message, user_id=user_id, limit=MEMORY_LIMIT)
+    relevant = await search_memories(message, user_id=user_id, limit=MEMORY_LIMIT, query_embedding=query_embedding)
     seen, combined = set(), []
     for mem in core + relevant:
         if mem["id"] not in seen:
             seen.add(mem["id"])
             combined.append(mem)
     return combined[:MEMORY_LIMIT]
+
+
+async def _shared_query_embedding(message: str) -> bytes | None:
+    """Embed the query once so retrieval, intent and memory search share a
+    single inference instead of embedding the message three times.
+    """
+    try:
+        from embedding import embed_async
+        return await embed_async(message)
+    except Exception as e:
+        logger.warning(f"Shared query embedding failed (falling back to per-call): {e}")
+        return None
 
 
 async def _update_summary(session_id: str):
@@ -103,14 +118,18 @@ async def chat_endpoint(req: ChatRequest, background_tasks: BackgroundTasks):
         await save_message(req.session_id, "user", req.message, images=req.images or None)
 
         from llm import _classify_intent
+        query_embedding = await _shared_query_embedding(req.message)
         history_coro = get_history(req.session_id, limit=HISTORY_LIMIT)
-        memories_coro = _gather_memories(req.message, req.user_id)
+        retrieval_coro = retrieve_relevant_history(req.session_id, req.message, query_embedding=query_embedding)
+        memories_coro = _gather_memories(req.message, req.user_id, query_embedding=query_embedding)
         meta_coro = get_session_meta(req.session_id)
-        intent_coro = _classify_intent(req.message)
+        intent_coro = _classify_intent(req.message, query_embedding=query_embedding)
 
-        history, memories, meta, (intent, tool_group) = await asyncio.gather(
-            history_coro, memories_coro, meta_coro, intent_coro
+        history, retrieved, memories, meta, (intent, tool_group) = await asyncio.gather(
+            history_coro, retrieval_coro, memories_coro, meta_coro, intent_coro
         )
+        retrieved_msgs, ret_stats = retrieved
+        history = merge_history(history, retrieved_msgs)
 
         result = await chat_with_ollama(
             history, memories=memories, think=req.think_mode,
@@ -122,6 +141,7 @@ async def chat_endpoint(req: ChatRequest, background_tasks: BackgroundTasks):
             return ChatResponse(
                 reply="", session_id=req.session_id, history_length=len(history),
                 memories_saved=0, pending_action=result["pending_action"],
+                retrieved_count=len(retrieved_msgs), retrieval_ms=round(ret_stats["latency_ms"]),
             )
 
         await save_message(req.session_id, "assistant", result["reply"], reasoning=result.get("thinking"))
@@ -131,6 +151,7 @@ async def chat_endpoint(req: ChatRequest, background_tasks: BackgroundTasks):
             reply=result["reply"], session_id=req.session_id,
             history_length=len(history), memories_saved=result["memories_saved"],
             thinking=result.get("thinking"),
+            retrieved_count=len(retrieved_msgs), retrieval_ms=round(ret_stats["latency_ms"]),
         )
     except HTTPException:
         raise
@@ -145,14 +166,18 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
         await save_message(req.session_id, "user", req.message, images=req.images or None)
 
         from llm import _classify_intent
+        query_embedding = await _shared_query_embedding(req.message)
         history_coro = get_history(req.session_id, limit=HISTORY_LIMIT)
-        memories_coro = _gather_memories(req.message, req.user_id)
+        retrieval_coro = retrieve_relevant_history(req.session_id, req.message, query_embedding=query_embedding)
+        memories_coro = _gather_memories(req.message, req.user_id, query_embedding=query_embedding)
         meta_coro = get_session_meta(req.session_id)
-        intent_coro = _classify_intent(req.message)
+        intent_coro = _classify_intent(req.message, query_embedding=query_embedding)
 
-        history, memories, meta, (intent, tool_group) = await asyncio.gather(
-            history_coro, memories_coro, meta_coro, intent_coro
+        history, retrieved, memories, meta, (intent, tool_group) = await asyncio.gather(
+            history_coro, retrieval_coro, memories_coro, meta_coro, intent_coro
         )
+        retrieved_msgs, ret_stats = retrieved
+        history = merge_history(history, retrieved_msgs)
     except Exception as e:
         logger.error(f"Chat stream setup error: {e}")
         raise HTTPException(status_code=500, detail="Internal error")
@@ -175,7 +200,7 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
                     full = strip_prefix("".join(reply_parts))
                     await save_message(req.session_id, "assistant", full, reasoning=event.get("reasoning") or None)
                     reply_saved = True
-                    yield f"data: {json.dumps({'done': True, 'session_id': req.session_id, 'memories_saved': event.get('memories_saved', 0)})}\n\n"
+                    yield f"data: {json.dumps({'done': True, 'session_id': req.session_id, 'memories_saved': event.get('memories_saved', 0), 'retrieved_count': len(retrieved_msgs), 'retrieval_ms': round(ret_stats['latency_ms'])})}\n\n"
                 elif "reasoning" in event:
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                 elif "confirm" in event:
