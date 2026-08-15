@@ -3,6 +3,8 @@ Nextcloud CalDAV integration for calendar operations.
 """
 
 import logging
+import threading
+import time
 from datetime import datetime, timedelta
 
 from utils import retry
@@ -11,6 +13,22 @@ logger = logging.getLogger("piSynapse")
 
 _dav_client = None
 _dav_calendar = None
+# Guard lazy singleton creation: calendar_ops runs in worker threads
+# (asyncio.to_thread), so two concurrent calls could both build a client /
+# fetch calendars. The lock makes creation single-flight.
+_dav_lock = threading.Lock()
+
+# TTL cache for the calendar widget (list_events_today). The sidebar polls the
+# widget frequently while Nextcloud events change rarely; the cache is dropped
+# on every calendar write so the widget never goes stale for long.
+_TODAY_CACHE_TTL = 300.0  # seconds (~5 min)
+_today_cache: tuple[float, list[dict]] | None = None
+
+
+def _invalidate_today_cache() -> None:
+    """Drop cached today's events after a calendar write (create/update/delete)."""
+    global _today_cache
+    _today_cache = None
 
 
 def _get_nextcloud_client():
@@ -20,35 +38,41 @@ def _get_nextcloud_client():
         return None
     if _dav_client is not None:
         return _dav_client
-    import caldav
-    caldav_url = f"{NEXTCLOUD_URL.rstrip('/')}/remote.php/dav/"
-    try:
-        _dav_client = caldav.DAVClient(
-            url=caldav_url,
-            username=NEXTCLOUD_USER,
-            password=NEXTCLOUD_PASSWORD,
-            timeout=NEXTCLOUD_TIMEOUT,
-        )
-    except Exception as e:
-        logger.error("Failed to create CalDAV client: %s", e)
-        raise
-    return _dav_client
+    with _dav_lock:
+        if _dav_client is not None:
+            return _dav_client
+        import caldav
+        caldav_url = f"{NEXTCLOUD_URL.rstrip('/')}/remote.php/dav/"
+        try:
+            _dav_client = caldav.DAVClient(
+                url=caldav_url,
+                username=NEXTCLOUD_USER,
+                password=NEXTCLOUD_PASSWORD,
+                timeout=NEXTCLOUD_TIMEOUT,
+            )
+        except Exception as e:
+            logger.error("Failed to create CalDAV client: %s", e)
+            raise
+        return _dav_client
 
 
 def _get_primary_calendar(client):
     global _dav_calendar
     if _dav_calendar is not None:
         return _dav_calendar
-    try:
-        principal = client.principal()
-        calendars = principal.calendars()
-    except Exception as e:
-        logger.error("Failed to fetch CalDAV calendars: %s", e)
-        raise
-    if not calendars:
-        raise Exception("No calendar found on Nextcloud.")
-    _dav_calendar = calendars[0]
-    return _dav_calendar
+    with _dav_lock:
+        if _dav_calendar is not None:
+            return _dav_calendar
+        try:
+            principal = client.principal()
+            calendars = principal.calendars()
+        except Exception as e:
+            logger.error("Failed to fetch CalDAV calendars: %s", e)
+            raise
+        if not calendars:
+            raise Exception("No calendar found on Nextcloud.")
+        _dav_calendar = calendars[0]
+        return _dav_calendar
 
 
 def _get_uid(d) -> str:
@@ -56,6 +80,23 @@ def _get_uid(d) -> str:
     if uid and hasattr(uid, "value"):
         return str(uid.value)
     return ""
+
+
+def _ical_escape_text(value: str) -> str:
+    r"""Escape a TEXT value for embedding in an iCalendar (RFC 5545) property.
+
+    Newlines become ``\\n`` (instead of a real line break, which would inject
+    a fake property/VEVENT), and backslash/semicolon/comma are escaped so user
+    text cannot break out of the field or alter the calendar structure.
+    """
+    return (
+        str(value)
+        .replace("\\", "\\\\")
+        .replace("\r", "")
+        .replace("\n", "\\n")
+        .replace(";", "\\;")
+        .replace(",", "\\,")
+    )
 
 
 def _find_events(search_window_days_back: int = 30, search_window_days_ahead: int = 90):
@@ -78,28 +119,40 @@ def _find_events(search_window_days_back: int = 30, search_window_days_ahead: in
 def _match_event(events, summary: str, event_uid: str = "") -> tuple:
     """Find an event by UID (exact) or summary (substring).
 
-    Returns (event, matched_summary) or (None, None).
-    UID match takes priority when event_uid is provided.
+    Returns ``(event, matched_summary, status)`` where status is ``""`` on a
+    unique match, ``"not_found"``, ``"ambiguous"`` (more than one event
+    matched — never auto-picks) or ``"error"``.
     """
     try:
-        if event_uid:
+        def _matches() -> list:
+            found = []
             for ev in events:
                 d = ev.vobject_instance.vevent
-                uid = _get_uid(d)
-                if uid == event_uid or uid.startswith(event_uid):
+                if event_uid:
+                    uid = _get_uid(d)
+                    if uid == event_uid or uid.startswith(event_uid):
+                        found.append((ev, getattr(d, "summary", "").value))
+                else:
                     s = getattr(d, "summary", "").value
-                    return ev, s
-            return None, None
+                    if summary.lower() in s.lower():
+                        found.append((ev, s))
+            return found
 
-        for ev in events:
-            d = ev.vobject_instance.vevent
-            s = getattr(d, "summary", "").value
-            if summary.lower() in s.lower():
-                return ev, s
-        return None, None
+        matches = _matches()
+        if not matches:
+            return None, None, "not_found"
+        if len(matches) > 1:
+            labels = ", ".join(f"'{s}'" for _, s in matches[:5])
+            logger.warning(
+                "Ambiguous calendar match for %r (%d events: %s)",
+                event_uid or summary, len(matches), labels,
+            )
+            return None, None, "ambiguous"
+        ev, s = matches[0]
+        return ev, s, ""
     except Exception as e:
         logger.error("Failed to match calendar event: %s", e)
-        return None, None
+        return None, None, "error"
 
 
 @retry(attempts=2, delay=1.0)
@@ -115,12 +168,13 @@ def create_event(summary: str, start_time_str: str, duration_minutes: int = 60) 
             "BEGIN:VCALENDAR", "VERSION:2.0",
             "PRODID:-//piSynapse//EN",
             "BEGIN:VEVENT",
-            f"SUMMARY:{summary}",
+            f"SUMMARY:{_ical_escape_text(summary)}",
             f"DTSTART;VALUE=DATE-TIME:{start_dt.strftime('%Y%m%dT%H%M%S')}",
             f"DTEND;VALUE=DATE-TIME:{end_dt.strftime('%Y%m%dT%H%M%S')}",
             "END:VEVENT", "END:VCALENDAR",
         ]) + "\r\n"
         calendar.add_event(ical)
+        _invalidate_today_cache()
         return f"OK '{summary}' added to calendar."
     except Exception as e:
         logger.error("Failed to create calendar event '%s': %s", summary, e)
@@ -161,7 +215,12 @@ def list_events(days_ahead: int = 7) -> str:
 
 @retry(attempts=2, delay=1.0)
 def list_events_today() -> list[dict]:
-    """Structured today's events for the widget."""
+    """Structured today's events for the widget (TTL-cached, see ``_TODAY_CACHE_TTL``)."""
+    global _today_cache
+    if _today_cache is not None:
+        cached_at, cached = _today_cache
+        if time.monotonic() - cached_at < _TODAY_CACHE_TTL:
+            return cached
     try:
         from datetime import date
         client = _get_nextcloud_client()
@@ -179,7 +238,9 @@ def list_events_today() -> list[dict]:
             ts = st.strftime("%H:%M") if hasattr(st, "strftime") else str(st)
             uid = _get_uid(d)
             result.append({"time": ts, "title": s, "uid": uid})
-        return sorted(result, key=lambda x: x["time"])
+        result = sorted(result, key=lambda x: x["time"])
+        _today_cache = (time.monotonic(), result)
+        return result
     except Exception as e:
         logger.error("Failed to list today's events: %s", e)
         return []
@@ -219,10 +280,15 @@ def delete_event(summary: str, event_uid: str = "") -> str:
         events = _find_events()
         if not events:
             return f"'{summary}' not found."
-        ev, s = _match_event(events, summary, event_uid)
+        ev, s, status = _match_event(events, summary, event_uid)
+        if status == "ambiguous":
+            return f"'{summary}' matches multiple events — use a more specific title or the event UID."
+        if status == "error":
+            return "ERROR: Could not match event."
         if ev is None:
             return f"'{summary}' not found."
         ev.delete()
+        _invalidate_today_cache()
         return f"OK '{s}' deleted from calendar."
     except Exception as e:
         logger.error("Failed to delete calendar event '%s': %s", summary, e)
@@ -238,7 +304,11 @@ def update_event(summary: str, new_summary: str = "", new_start_time: str = "", 
         events = _find_events()
         if not events:
             return f"'{summary}' not found."
-        ev, s = _match_event(events, summary, event_uid)
+        ev, s, status = _match_event(events, summary, event_uid)
+        if status == "ambiguous":
+            return f"'{summary}' matches multiple events — use a more specific title or the event UID."
+        if status == "error":
+            return "ERROR: Could not match event."
         if ev is None:
             return f"'{summary}' not found."
         d = ev.vobject_instance.vevent
@@ -282,6 +352,7 @@ def update_event(summary: str, new_summary: str = "", new_start_time: str = "", 
 
         ev.data = ev.vobject_instance.serialize()
         ev.save()
+        _invalidate_today_cache()
         parts = []
         if new_summary:
             parts.append(f"title '{s}' → '{new_summary}'")

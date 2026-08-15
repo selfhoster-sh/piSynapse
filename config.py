@@ -56,6 +56,9 @@ LLM_TOP_K = _safe_int("LLM_TOP_K", 40)
 LLM_MAX_TOOL_ITERATIONS = _safe_int("LLM_MAX_TOOL_ITERATIONS", 5)
 LLM_KEEP_ALIVE = os.getenv("LLM_KEEP_ALIVE", "4h")
 LLM_TIMEOUT = _safe_int("LLM_TIMEOUT", 240)
+# Idle gap (seconds) allowed between SSE stream chunks before the stream is
+# aborted. Protects against the LLM server silently hanging mid-response.
+SSE_READ_IDLE_TIMEOUT = _safe_float("SSE_READ_IDLE_TIMEOUT", 120.0)
 LLM_REASONING_EFFORT = os.getenv("LLM_REASONING_EFFORT", "medium").strip().lower()
 
 # -- TTS (Piper) --
@@ -90,7 +93,10 @@ AUTO_TTS_ON_VOICE = os.getenv("AUTO_TTS_ON_VOICE", "off")
 # -- Security --
 API_KEY = os.getenv("API_KEY", "")
 CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
-TRUSTED_HOSTS = {h.strip() for h in os.getenv("TRUSTED_HOSTS", "*").split(",") if h.strip()}
+# Empty by default: main.py auto-allows this machine's local hostnames/IPs
+# and logs a warning. Set TRUSTED_HOSTS explicitly (e.g. your LAN IP or
+# hostname) to restrict further — see README.md.
+TRUSTED_HOSTS = {h.strip() for h in os.getenv("TRUSTED_HOSTS", "").split(",") if h.strip()}
 MEDIA_MAX_MB = _safe_int("MEDIA_MAX_MB", 100)
 # Only trust X-Forwarded-For when running behind a trusted reverse proxy.
 # Enabled by default: LAN users must not be able to spoof their IP to bypass rate limits.
@@ -128,8 +134,8 @@ IMAP_HOST = os.getenv("IMAP_HOST", "imap.gmail.com")
 IMAP_PORT = _safe_int("IMAP_PORT", 993)
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = _safe_int("SMTP_PORT", 465)
-IMAP_TIMEOUT = _safe_int("IMAP_TIMEOUT", 30)
-SMTP_TIMEOUT = _safe_int("SMTP_TIMEOUT", 30)
+IMAP_TIMEOUT = _safe_int("IMAP_TIMEOUT", 20)
+SMTP_TIMEOUT = _safe_int("SMTP_TIMEOUT", 20)
 
 # -- ProtonMail --
 # Empty = disabled (opt-in, matching the "privacy by default" philosophy).
@@ -292,11 +298,12 @@ _NUMERIC_KEYS = {
     "LLM_NUM_CTX": (int, 8192), "LLM_NUM_BATCH": (int, 256),
     "LLM_TEMPERATURE": (float, 0.6), "LLM_TOP_P": (float, 0.85), "LLM_TOP_K": (int, 40),
     "LLM_MAX_TOOL_ITERATIONS": (int, 5), "LLM_TIMEOUT": (int, 240),
+    "SSE_READ_IDLE_TIMEOUT": (float, 120.0),
     "HISTORY_LIMIT": (int, 12), "MEMORY_LIMIT": (int, 10),
     "SUMMARY_BATCH_SIZE": (int, 5), "SUMMARY_EARLY_TRIGGER": (int, 6),
     "WEATHER_TIMEOUT": (int, 10), "NEXTCLOUD_TIMEOUT": (int, 30),
     "IMAP_PORT": (int, 993), "SMTP_PORT": (int, 465),
-    "IMAP_TIMEOUT": (int, 30), "SMTP_TIMEOUT": (int, 30),
+    "IMAP_TIMEOUT": (int, 20), "SMTP_TIMEOUT": (int, 20),
     "PROTON_IMAP_PORT": (int, 1143), "PROTON_SMTP_PORT": (int, 1025),
     "MEMORY_SIMILARITY_THRESHOLD": (float, 0.68),
     "CONVERSATION_RETENTION_DAYS": (int, 0),

@@ -111,12 +111,15 @@ async def _get_tool_embeddings() -> list[tuple[str | None, str, bytes]]:
         return _tool_embed_cache
 
 
-async def _classify_intent(message: str) -> tuple[str, str | None]:
+async def _classify_intent(message: str, query_embedding: bytes | None = None) -> tuple[str, str | None]:
     try:
         from embedding import cosine_similarity, embed_async
         corpus = await _get_tool_embeddings()
         if corpus:
-            msg_vec = await embed_async(message)
+            if query_embedding is not None:
+                msg_vec = query_embedding  # already computed upstream (shared)
+            else:
+                msg_vec = await embed_async(message)
             best_sim = 0.0
             second_sim = 0.0
             best_group = None

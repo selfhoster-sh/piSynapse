@@ -4,13 +4,20 @@ Single persistent connection with WAL mode for Pi-friendly I/O.
 """
 
 import asyncio
+import json
 import logging
+import os
 
 import aiosqlite
 
 from config import DB_PATH
 
 logger = logging.getLogger("piSynapse")
+
+# DB files hold conversations, memories and audit params (incl. e-mail
+# bodies). Restrict the process umask so any file SQLite creates
+# (assistant.db / -wal / -shm / -journal) is born 0o600, never world-readable.
+os.umask(0o077)
 
 _db: aiosqlite.Connection | None = None
 _db_lock = asyncio.Lock()
@@ -35,6 +42,20 @@ async def _write_with_retry(db: aiosqlite.Connection, sql: str, params: tuple = 
             await asyncio.sleep(0.25 * (attempt + 1))
 
 
+async def _secure_db_files() -> None:
+    """Force owner-only permissions on the DB and its SQLite sidecars.
+
+    The DB is created on first run (not by install.py), so this runs on
+    every startup as a guarantee for fresh and pre-existing installs.
+    """
+    for path in (DB_PATH, DB_PATH + "-wal", DB_PATH + "-shm", DB_PATH + "-journal"):
+        try:
+            if os.path.exists(path):
+                os.chmod(path, 0o600)
+        except OSError as e:
+            logger.warning(f"Could not secure permissions on {path}: {e}")
+
+
 async def get_db() -> aiosqlite.Connection:
     global _db
     if _db is not None:
@@ -55,6 +76,7 @@ async def get_db() -> aiosqlite.Connection:
         await conn.execute("PRAGMA temp_store=MEMORY")
         await conn.execute("PRAGMA foreign_keys=ON")
         await conn.execute("PRAGMA busy_timeout=10000")
+        await _secure_db_files()
         _db = conn
         return _db
 
@@ -69,6 +91,16 @@ async def close_db():
 # -- Schema --
 
 # Ordered schema migrations. `user_version` tracks how many are applied.
+#
+# IMPORTANT — keep this list in sync with the CREATE TABLE definitions in
+# init_db() below. The CREATE TABLEs describe the full CURRENT schema (they
+# already include every column listed here) and are what brand-new databases
+# get. MIGRATIONS only matters for pre-existing databases whose tables were
+# created before a column existed. When adding a column:
+#   1. add it to the matching CREATE TABLE statement (new DBs), AND
+#   2. append a new entry at the END of MIGRATIONS (old DBs).
+# Never reorder, edit or remove an existing entry: user_version numbers are
+# baked into live databases and renumbering would re-run/skip migrations.
 MIGRATIONS: list[tuple[str, str, str]] = [
     ("conversations", "images", "TEXT"),
     ("sessions", "name", "TEXT"),
@@ -138,8 +170,28 @@ async def init_db():
         )
     """)
 
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS tool_audit_log (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            tool_name      TEXT NOT NULL,
+            params         TEXT,
+            success        INTEGER NOT NULL,
+            duration_ms    REAL,
+            error          TEXT,
+            is_summary     INTEGER NOT NULL DEFAULT 0,
+            day            TEXT,
+            total_calls    INTEGER,
+            success_count  INTEGER,
+            error_count    INTEGER,
+            tool_breakdown TEXT,
+            created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
     await db.execute("CREATE INDEX IF NOT EXISTS idx_conversations_session ON conversations(session_id, timestamp)")
     await db.execute("CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id, importance DESC)")
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_tool_audit_created ON tool_audit_log(created_at)")
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_tool_audit_rollup ON tool_audit_log(is_summary, created_at)")
 
     await _apply_migrations(db)
 
@@ -147,37 +199,275 @@ async def init_db():
 
     await db.commit()
 
+    # Sidecar -wal/-shm now exist after the first write; lock them down too.
+    await _secure_db_files()
+
+
+async def _vacuum_if_fragmented(db: aiosqlite.Connection) -> None:
+    """Compact the DB file only when it is mostly free pages.
+
+    The tool-audit rollup deletes thousands of detail rows every day, leaving
+    free pages behind; an unconditional daily VACUUM would add pointless I/O
+    and write-lock contention on every cleanup run. Triggering only above a
+    20% free-page ratio (and only for a meaningfully large DB) keeps the file
+    compact in practice with negligible overhead. Never raises.
+    """
+    try:
+        async with db.execute("PRAGMA freelist_count") as cur:
+            free = (await cur.fetchone())[0]
+        async with db.execute("PRAGMA page_count") as cur:
+            total = (await cur.fetchone())[0]
+        if total > 256 and free / total > 0.2:
+            await db.execute("VACUUM")
+            logger.info(f"VACUUM: reclaimed {free} free pages (file was {total} pages)")
+    except Exception as e:
+        logger.warning(f"VACUUM skipped: {e}")
+
 
 async def cleanup_expired_data() -> tuple[int, int]:
     """Delete data older than the configured retention (0 = keep forever).
+
+    Runs on startup and then periodically (see ``periodic_cleanup_loop``).
+    Never raises — a failure (DB locked, etc.) is logged and retried on the
+    next cycle so it cannot crash the service.
 
     Returns (deleted_conversation_rows, deleted_memory_rows).
     """
     from config import CONVERSATION_RETENTION_DAYS, MEMORY_RETENTION_DAYS
 
-    db = await get_db()
-    removed_conv = removed_mem = 0
-    if CONVERSATION_RETENTION_DAYS > 0:
-        cur = await _write_with_retry(
-            db,
-            "DELETE FROM conversations WHERE timestamp < datetime('now', ?)",
-            (f"-{CONVERSATION_RETENTION_DAYS} days",),
-        )
-        removed_conv = cur.rowcount if cur.rowcount else 0
+    try:
+        db = await get_db()
+        removed_conv = removed_mem = 0
+        if CONVERSATION_RETENTION_DAYS > 0:
+            cur = await _write_with_retry(
+                db,
+                "DELETE FROM conversations WHERE timestamp < datetime('now', ?)",
+                (f"-{CONVERSATION_RETENTION_DAYS} days",),
+            )
+            removed_conv = cur.rowcount if cur.rowcount else 0
+            await _write_with_retry(
+                db,
+                "DELETE FROM sessions WHERE id NOT IN (SELECT DISTINCT session_id FROM conversations)"
+            )
+        if MEMORY_RETENTION_DAYS > 0:
+            cur = await _write_with_retry(
+                db,
+                "DELETE FROM memories WHERE created_at < datetime('now', ?)",
+                (f"-{MEMORY_RETENTION_DAYS} days",),
+            )
+            removed_mem = cur.rowcount if cur.rowcount else 0
+        if removed_conv or removed_mem:
+            logger.info(f"Retention cleanup: {removed_conv} conversations, {removed_mem} memories deleted")
+        # Free-page compaction (opportunistic, see helper) after the deletes.
+        await _vacuum_if_fragmented(db)
+        return removed_conv, removed_mem
+    except Exception as e:
+        logger.warning(f"Retention cleanup failed, will retry next cycle: {e}")
+        return 0, 0
+
+
+# -- Tool audit log --
+
+# Params keys whose values are user content or secrets; their values are
+# replaced with [REDACTED] in the audit row so raw email/note/memory text and
+# credentials never hit the DB (the log keeps tool_name/success/duration/error
+# for accountability).
+_AUDIT_REDACT_KEYS = {
+    "password", "passwd", "pass", "token", "api_key", "apikey", "api-key",
+    "secret", "auth", "authorization", "credential", "credentials",
+    "body", "content", "text", "message", "prompt",
+}
+_AUDIT_PARAMS_MAX_CHARS = 2048
+
+
+def _redact_params(value):
+    """Recursively redact sensitive keys and return a log-safe structure."""
+    if isinstance(value, dict):
+        return {
+            k: ("[REDACTED]" if _is_redact_key(k) else _redact_params(v))
+            for k, v in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [_redact_params(v) for v in value]
+    return value
+
+
+def _is_redact_key(key: str) -> bool:
+    norm = str(key).lower().replace(" ", "_").replace("-", "_")
+    return norm in _AUDIT_REDACT_KEYS
+
+
+def _audit_params_json(params) -> str | None:
+    """Serialise params with sensitive fields redacted and a size cap."""
+    if not params:
+        return None
+    safe = _redact_params(params)
+    try:
+        out = json.dumps(safe, ensure_ascii=False)
+    except (TypeError, ValueError):
+        out = json.dumps(_redact_params(str(params)), ensure_ascii=False)
+    if len(out) > _AUDIT_PARAMS_MAX_CHARS:
+        out = out[:_AUDIT_PARAMS_MAX_CHARS] + " ...(truncated)"
+    return out
+
+
+async def log_tool_call(
+    tool_name: str,
+    params: dict | None,
+    success: bool,
+    duration_ms: float | None = None,
+    error: str | None = None,
+) -> None:
+    """Append a row to the tool audit log.
+
+    Deliberately swallows every failure (DB down, locked, schema issue) and
+    only logs a warning — this runs inside the tool-call loop's verification
+    hook and must never break or stall an actual tool execution.
+    """
+    try:
+        db = await get_db()
         await _write_with_retry(
             db,
-            "DELETE FROM sessions WHERE id NOT IN (SELECT DISTINCT session_id FROM conversations)"
+            "INSERT INTO tool_audit_log (tool_name, params, success, duration_ms, error) VALUES (?, ?, ?, ?, ?)",
+            (tool_name, _audit_params_json(params), 1 if success else 0, duration_ms, error),
         )
-    if MEMORY_RETENTION_DAYS > 0:
-        cur = await _write_with_retry(
-            db,
-            "DELETE FROM memories WHERE created_at < datetime('now', ?)",
-            (f"-{MEMORY_RETENTION_DAYS} days",),
+    except Exception as e:
+        logger.warning(f"Tool audit log write failed for '{tool_name}': {e}")
+
+
+async def rollup_tool_audit(days: int = 14) -> int:
+    """Compress detail rows older than `days` into one daily summary row per day.
+
+    Retention policy: detail rows survive for `days` (default 14), then are
+    aggregated into a per-day summary (total/success/error counts + per-tool
+    breakdown) and the detail rows are removed. Each day is processed inside
+    its own ``BEGIN IMMEDIATE`` transaction so the summary INSERT and the
+    detail DELETE commit atomically — a crash can never leave an orphan
+    summary row or a partially-removed day. Days that already have a summary
+    row are skipped, so a crash between runs cannot produce duplicate
+    summaries. Idempotent and never raises.
+
+    Returns the number of days rolled up.
+    """
+    import sqlite3
+    try:
+        db = await get_db()
+        cutoff = f"-{days} days"
+        cur = await db.execute(
+            """SELECT substr(created_at, 1, 10) AS day
+               FROM tool_audit_log
+               WHERE is_summary = 0 AND created_at < datetime('now', ?)
+                 AND substr(created_at, 1, 10) NOT IN
+                     (SELECT day FROM tool_audit_log WHERE is_summary = 1)
+               GROUP BY substr(created_at, 1, 10)""",
+            (cutoff,),
         )
-        removed_mem = cur.rowcount if cur.rowcount else 0
-    if removed_conv or removed_mem:
-        logger.info(f"Retention cleanup: {removed_conv} conversations, {removed_mem} memories deleted")
-    return removed_conv, removed_mem
+        days_found = [row[0] for row in await cur.fetchall()]
+
+        days_summarized = 0
+        for day in days_found:
+            # Each day is atomic: summary INSERT + detail DELETE in one txn.
+            for attempt in range(_LOCKED_RETRIES + 1):
+                try:
+                    await db.execute("BEGIN IMMEDIATE")
+                    breakdown = {}
+                    cur2 = await db.execute(
+                        """SELECT tool_name, COUNT(*) FROM tool_audit_log
+                           WHERE is_summary = 0 AND created_at < datetime('now', ?)
+                             AND substr(created_at, 1, 10) = ?
+                           GROUP BY tool_name""",
+                        (cutoff, day),
+                    )
+                    for name, cnt in await cur2.fetchall():
+                        breakdown[name] = cnt
+
+                    await db.execute(
+                        """INSERT INTO tool_audit_log
+                           (is_summary, day, total_calls, success_count, error_count, tool_breakdown, tool_name, success, created_at)
+                           SELECT 1, ?, COUNT(*), SUM(success), SUM(1 - success), ?, 'rollup', 1, ?
+                           FROM tool_audit_log
+                           WHERE is_summary = 0 AND created_at < datetime('now', ?)
+                             AND substr(created_at, 1, 10) = ?""",
+                        (day, json.dumps(breakdown), day, cutoff, day),
+                    )
+                    await db.execute(
+                        """DELETE FROM tool_audit_log
+                           WHERE is_summary = 0 AND created_at < datetime('now', ?)
+                             AND substr(created_at, 1, 10) = ?""",
+                        (cutoff, day),
+                    )
+                    await db.commit()
+                    days_summarized += 1
+                    break
+                except sqlite3.OperationalError as e:
+                    try:
+                        await db.rollback()
+                    except Exception:
+                        pass
+                    if "locked" not in str(e).lower() and "busy" not in str(e).lower():
+                        raise
+                    if attempt >= _LOCKED_RETRIES:
+                        raise
+                    logger.warning(f"SQLite busy during rollup of {day}, retrying ({attempt + 1}/{_LOCKED_RETRIES})...")
+                    await asyncio.sleep(0.25 * (attempt + 1))
+                except Exception:
+                    try:
+                        await db.rollback()
+                    except Exception:
+                        pass
+                    raise
+
+        if days_summarized:
+            logger.info(f"Tool audit rollup: {days_summarized} day(s) summarized")
+        return days_summarized
+    except Exception as e:
+        logger.warning(f"Tool audit rollup failed: {e}")
+        return 0
+
+
+ROLLUP_INTERVAL_SECONDS = 24 * 3600  # retention sweep runs once a day
+
+
+async def periodic_rollup_loop(interval: float = ROLLUP_INTERVAL_SECONDS, sleep=asyncio.sleep):
+    """Run rollup_tool_audit() once per `interval` until cancelled.
+
+    Mirrors the "never raise" principle of the verification hook: any failure
+    (DB lock, disk issue, ...) is logged and retried on the next cycle instead
+    of crashing the service. Cancellation propagates so the app can shut down
+    cleanly.
+
+    `sleep` is injectable for tests (avoids waiting a real 24 hours).
+    """
+    while True:
+        await sleep(interval)
+        try:
+            await rollup_tool_audit()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.warning(f"Periodic rollup failed, will retry next cycle: {e}")
+
+
+CLEANUP_INTERVAL_SECONDS = 24 * 3600  # retention cleanup runs once a day
+
+
+async def periodic_cleanup_loop(interval: float = CLEANUP_INTERVAL_SECONDS, sleep=asyncio.sleep):
+    """Run cleanup_expired_data() once per `interval` until cancelled.
+
+    Mirrors the "never raise" principle of the retention sweep — cleanup
+    failures are logged and retried on the next cycle instead of crashing the
+    service. Cancellation propagates so the app can shut down cleanly.
+
+    `sleep` is injectable for tests (avoids waiting a real 24 hours).
+    """
+    while True:
+        await sleep(interval)
+        try:
+            await cleanup_expired_data()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.warning(f"Periodic retention cleanup failed, will retry next cycle: {e}")
 
 
 # -- Conversations --
@@ -375,14 +665,15 @@ async def save_memory(content: str, category: str = "general",
     await db.commit()
 
 
-async def search_memories(query: str, user_id: str | None = None, limit: int = 5) -> list[dict]:
+async def search_memories(query: str, user_id: str | None = None, limit: int = 5, query_embedding: bytes | None = None) -> list[dict]:
     from config import DEFAULT_USER
     from embedding import cosine_similarity, embed_async
 
     user_id = user_id or DEFAULT_USER
 
     try:
-        query_embedding = await embed_async(query)
+        if query_embedding is None:
+            query_embedding = await embed_async(query)
     except Exception as e:
         logger.error(f"Embedding failed for memory search: {e}")
         return []
@@ -410,7 +701,6 @@ async def search_memories(query: str, user_id: str | None = None, limit: int = 5
             "importance": importance, "created_at": created_at, "similarity": sim,
         }))
 
-    await db.commit()
     scored.sort(key=lambda x: x[0], reverse=True)
     top = [m for sim, m in scored[:limit] if sim >= 0.35]
 
@@ -421,7 +711,9 @@ async def search_memories(query: str, user_id: str | None = None, limit: int = 5
                    access_count = access_count + 1 WHERE id = ?""",
                 (m["id"],),
             )
-        await db.commit()
+
+    # Single commit covers both the embedding backfill and the access stats.
+    await db.commit()
 
     return top
 
