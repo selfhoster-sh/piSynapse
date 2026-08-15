@@ -74,7 +74,7 @@ When you disable all external integrations, **zero data leaves your device**. No
 
 | Resource | Minimum | Recommended |
 |----------|---------|-------------|
-| **RAM** | 8 GB | 16 GB+ |
+| **RAM** | 4 GB | 8 GB+ |
 | **Storage** | 8 GB free | 16 GB+ (model + voice files) |
 | **CPU** | 4 cores (ARM or x86) | 8 cores |
 | **Network** | Internet (for initial setup only) | Internet |
