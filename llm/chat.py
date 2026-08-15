@@ -2,6 +2,7 @@
 import asyncio
 import json
 import logging
+import time
 
 from config import (
     LITERT_BASE_URL,
@@ -10,6 +11,7 @@ from config import (
     LLM_NUM_CTX,
     OLLAMA_BASE_URL,
 )
+from tool_verification import run_verification
 from tools import (
     CONFIRM_TOOLS,
     get_tools_for_group,
@@ -196,11 +198,18 @@ async def chat_with_ollama(
             for call in non_confirm_calls:
                 fn = call.get("function", {})
                 tn = fn.get("name", "")
+                args: dict = {}
+                t0 = time.perf_counter()
                 try:
-                    result = await run_tool(tn, parse_tool_args(fn.get("arguments")), context)
+                    args = parse_tool_args(fn.get("arguments"))
+                    result = await run_tool(tn, args, context)
+                    success = not result.startswith("ERROR")
                 except Exception as e:
                     logger.error(f"Tool {tn} failed: {e}")
                     result = f"ERROR: tool {tn} failed"
+                    success = False
+                duration_ms = (time.perf_counter() - t0) * 1000
+                await run_verification(tn, args, result, success, duration_ms=duration_ms, error=None if success else result)
                 if tn == "save_memory" and not result.startswith("ERROR"):
                     memories_saved += 1
                 tool_msg = {"role": "tool", "tool_name": tn, "content": result}
@@ -238,7 +247,7 @@ async def chat_with_ollama(
                 action["preview"] = preview
             logger.info(f"Confirmation required for tool: {tn}")
             return {"reply": "", "pending_action": action,
-                    "memories_saved": memories_saved}
+                    "memories_saved": memories_saved, "thinking": thinking}
 
         if non_confirm_calls and iteration < LLM_MAX_TOOL_ITERATIONS - 1:
             for m in reversed(current_msgs):

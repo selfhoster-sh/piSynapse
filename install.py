@@ -162,12 +162,32 @@ def step_system_deps() -> None:
         else:
             missing.append("curl")
 
-    if not IS_WIN and not shutil.which("build-essential"):
+    if not IS_WIN and not _build_tools_installed():
         if ask_yesno("Install build-essential (recommended for pip packages)?"):
             subprocess.run(["sudo", "apt-get", "install", "-y", "build-essential"])
 
     if not missing:
         ok("All system dependencies satisfied")
+
+
+def _build_tools_installed() -> bool:
+    """Return True when a C toolchain is already present.
+
+    Debian/Ubuntu: query the build-essential meta-package via dpkg. On systems
+    without dpkg (non-apt distros) fall back to checking for compilers on PATH;
+    if neither can be confirmed, report False so the installer asks again.
+    """
+    if shutil.which("dpkg"):
+        try:
+            r = subprocess.run(
+                ["dpkg", "-s", "build-essential"],
+                capture_output=True, timeout=15,
+            )
+            if r.returncode == 0:
+                return True
+        except Exception:
+            pass
+    return shutil.which("gcc") is not None and shutil.which("make") is not None
 
 
 # ── Step 3: Virtual env + Python packages ────────────────────────────────────
@@ -620,6 +640,7 @@ LLM_TOP_P=0.85
 LLM_TOP_K=40
 LLM_KEEP_ALIVE=4h
 LLM_TIMEOUT=240
+SSE_READ_IDLE_TIMEOUT=120.0
 LLM_MAX_TOOL_ITERATIONS=5
 LLM_REASONING_EFFORT=medium
 
@@ -632,6 +653,9 @@ HISTORY_LIMIT=12
 MEMORY_LIMIT=10
 SUMMARY_BATCH_SIZE=5
 SUMMARY_EARLY_TRIGGER=6
+# Retention (days; 0 = keep forever)
+CONVERSATION_RETENTION_DAYS=0
+MEMORY_RETENTION_DAYS=0
 
 # --- Database ---
 DB_PATH=assistant.db
@@ -669,8 +693,8 @@ PROTON_SMTP_HOST=localhost
 PROTON_SMTP_PORT=1025
 
 # --- Timeouts ---
-IMAP_TIMEOUT=30
-SMTP_TIMEOUT=30
+IMAP_TIMEOUT=20
+SMTP_TIMEOUT=20
 
 # --- Piper TTS ---
 TTS_VOICE={TTS_VOICE}
@@ -680,7 +704,9 @@ TTS_ENGINE={TTS_ENGINE}
 ENV_PATH=.env
 API_KEY={API_KEY}
 CORS_ORIGINS=
-TRUSTED_HOSTS=*
+# Comma-separated allowed Host header values (e.g. 192.168.1.109,myhost.local).
+# Empty = auto-allow this machine's local hostnames/IPs (safe default).
+TRUSTED_HOSTS={TRUSTED_HOSTS}
 # Trust X-Forwarded-For for client IPs when behind a reverse proxy (1/true/yes/on)
 TRUST_X_FORWARDED_FOR=
 MEDIA_MAX_MB=100
@@ -714,6 +740,18 @@ def _read_current_env() -> dict[str, str]:
     return result
 
 
+def _fill_template(template: str, values: dict) -> str:
+    """Substitute {PLACEHOLDER} keys without re-interpreting user-supplied
+    values (unlike str.format, which chokes on literal braces in values).
+    """
+
+    def _repl(m: re.Match) -> str:
+        key = m.group(1)
+        return values.get(key, m.group(0))
+
+    return re.sub(r"\{([A-Z0-9_]+)\}", _repl, template)
+
+
 def step_env() -> None:
     header("6 / 7  Environment configuration")
 
@@ -731,6 +769,12 @@ def step_env() -> None:
     # Personalization
     assistant_user = ask("Your name", current.get("ASSISTANT_USER", "default"))
     default_city = ask("Default city for weather", current.get("DEFAULT_CITY", ""))
+
+    # Security: allowed Host header values (empty = auto-allow local names/IPs).
+    trusted_hosts = ask(
+        "Allowed Host headers, comma-separated (empty = auto-allow local host/IP)",
+        current.get("TRUSTED_HOSTS", ""),
+    )
 
     # ── Email ────────────────────────────────────────────────────────────
     email_idx = menu("Email integration:", [
@@ -796,6 +840,7 @@ def step_env() -> None:
         "LITERT_PORT":        str(LITERT_PORT),
         "DEFAULT_CITY":       default_city,
         "ASSISTANT_USER":     assistant_user,
+        "TRUSTED_HOSTS":      trusted_hosts,
         "API_KEY":            api_key,
         "MAIL_PROVIDER":      mail_provider,
         "GMAIL_USER":         gmail_user,
@@ -816,8 +861,10 @@ def step_env() -> None:
     preserved_keys = {
         "OLLAMA_BASE_URL", "LITERT_BASE_URL", "LLM_NUM_CTX", "LLM_NUM_BATCH",
         "LLM_TEMPERATURE", "LLM_TOP_P", "LLM_TOP_K", "LLM_KEEP_ALIVE", "LLM_TIMEOUT",
+        "SSE_READ_IDLE_TIMEOUT",
         "LLM_MAX_TOOL_ITERATIONS", "LLM_REASONING_EFFORT", "ENV_PATH", "TRUST_X_FORWARDED_FOR", "EMBED_MODEL", "MEMORY_SIMILARITY_THRESHOLD",
         "HISTORY_LIMIT", "MEMORY_LIMIT", "SUMMARY_BATCH_SIZE", "SUMMARY_EARLY_TRIGGER",
+        "CONVERSATION_RETENTION_DAYS", "MEMORY_RETENTION_DAYS",
         "DB_PATH", "WEATHER_TIMEOUT", "NEXTCLOUD_TIMEOUT",
         "IMAP_HOST", "IMAP_PORT", "SMTP_HOST", "SMTP_PORT",
         "PROTON_IMAP_HOST", "PROTON_IMAP_PORT", "PROTON_SMTP_HOST", "PROTON_SMTP_PORT",
@@ -829,12 +876,11 @@ def step_env() -> None:
         if v:
             values[k] = v
 
-    content = _ENV_TEMPLATE.format(**values)
+    content = _fill_template(_ENV_TEMPLATE, values)
     for k, v in values.items():
         pattern = rf"^{re.escape(k)}=.*$"
-        replacement = f"{k}={v}"
         if re.search(pattern, content, re.MULTILINE):
-            content = re.sub(pattern, replacement, content, flags=re.MULTILINE)
+            content = re.sub(pattern, lambda _m: f"{k}={v}", content, flags=re.MULTILINE)
 
     env_path.write_text(content.strip() + "\n", encoding="utf-8")
     try:
@@ -842,6 +888,16 @@ def step_env() -> None:
     except OSError:
         pass
     ok(".env created / updated")
+
+    # Lock down any pre-existing SQLite files (db / -wal / -shm / -journal).
+    # The DB itself is created on first app start; db.py re-enforces this
+    # on every startup, this is the install-time safety net.
+    for p in sorted(Path(".").glob("*.db*")):
+        try:
+            if p.is_file():
+                os.chmod(p, 0o600)
+        except OSError:
+            pass
 
 
 # ── Step 7: systemd service (Linux only) ─────────────────────────────────────
@@ -872,6 +928,7 @@ Wants=network-online.target{" litert.service" if wants_litert else ""}
 Type=simple
 User={user}
 WorkingDirectory={project_dir}
+UMask=0077
 Environment=PATH={os.path.join(project_dir, VENV_DIR, "bin")}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ExecStart={uvicorn_path} main:app --host 0.0.0.0 --port 8765
 Restart=on-failure

@@ -8,6 +8,7 @@ import hmac
 import json
 import logging
 import os
+import socket
 import time
 import uuid as _uuid
 from collections import defaultdict
@@ -21,12 +22,13 @@ from fastapi.staticfiles import StaticFiles
 from config import (
     API_KEY,
     CORS_ORIGINS,
+    LLM_BACKEND,
     LLM_MODEL,
     MEDIA_MAX_MB,
     TRUST_X_FORWARDED_FOR,
     TRUSTED_HOSTS,
 )
-from db import close_db, init_db
+from db import close_db, get_db, init_db
 
 _request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="-")
 
@@ -88,8 +90,25 @@ async def lifespan(app: FastAPI):
         logger.warning("⚠  API_KEY is not set — all endpoints are UNPROTECTED. "
                        "Set API_KEY in .env for production use.")
 
+    if not TRUSTED_HOSTS:
+        logger.warning(
+            "TRUSTED_HOSTS is not set — accepting this machine's local "
+            f"hostnames/IPs only (auto: {sorted(_LOCAL_TRUSTED_HOSTS)}). "
+            "Set TRUSTED_HOSTS in .env (e.g. your LAN IP) to restrict for production."
+        )
+
     await init_db()
     logger.info("Database ready (WAL mode active)")
+
+    # Compress old tool-audit detail rows into daily summaries (idempotent).
+    # One-shot sweep on startup (clears any backlog), then a daily background task.
+    from db import periodic_cleanup_loop, periodic_rollup_loop, rollup_tool_audit
+    await rollup_tool_audit()
+    rollup_task = asyncio.create_task(periodic_rollup_loop())
+
+    # Retention sweep (conversations/memories) on a daily cadence; it also runs
+    # once inside init_db() but that covers only startup-time data.
+    cleanup_task = asyncio.create_task(periodic_cleanup_loop())
 
     # Warm up active LLM model in background
     async def _warmup():
@@ -97,51 +116,64 @@ async def lifespan(app: FastAPI):
             import httpx
 
             from config import LITERT_BASE_URL, LLM_BACKEND, LLM_NUM_BATCH, LLM_NUM_CTX, LLM_TOP_P, OLLAMA_BASE_URL
-            client = httpx.AsyncClient(timeout=120)
-            if LLM_BACKEND == "litert":
-                logger.info(f"Warming up LiteRT model '{LLM_MODEL}'...")
-                r = await client.post(
-                    f"{LITERT_BASE_URL}/v1/chat/completions",
-                    json={
-                        "model": LLM_MODEL.replace(":", "-"),
-                        "messages": [{"role": "user", "content": "hi"}],
-                        "max_tokens": 1,
-                        "temperature": 0.2,
-                        "stream": False,
-                    },
-                    timeout=60,
-                )
-                logger.info("LiteRT model ready."
-                            if r.status_code == 200
-                            else f"LiteRT warmup HTTP {r.status_code}")
-            else:
-                logger.info(f"Warming up Ollama model '{LLM_MODEL}'...")
-                from tools import TOOLS
-                r = await client.post(
-                    f"{OLLAMA_BASE_URL}/api/chat",
-                    json={
-                        "model": LLM_MODEL,
-                        "messages": [{"role": "user", "content": "hi"}],
-                        "stream": False,
-                        "keep_alive": os.getenv("LLM_KEEP_ALIVE", "4h"),
-                        "tools": TOOLS,
-                        "options": {
-                            "num_predict": 1,
+            # Short-lived client scoped to the warmup request (no leak).
+            async with httpx.AsyncClient(timeout=120) as client:
+                if LLM_BACKEND == "litert":
+                    logger.info(f"Warming up LiteRT model '{LLM_MODEL}'...")
+                    r = await client.post(
+                        f"{LITERT_BASE_URL}/v1/chat/completions",
+                        json={
+                            "model": LLM_MODEL.replace(":", "-"),
+                            "messages": [{"role": "user", "content": "hi"}],
+                            "max_tokens": 1,
                             "temperature": 0.2,
-                            "top_p": LLM_TOP_P,
-                            "num_ctx": LLM_NUM_CTX,
-                            "num_batch": LLM_NUM_BATCH,
+                            "stream": False,
                         },
-                    },
-                    timeout=120,
-                )
-                logger.info("Ollama model ready."
-                            if r.status_code == 200
-                            else f"Ollama warmup HTTP {r.status_code}")
+                        timeout=60,
+                    )
+                    logger.info("LiteRT model ready."
+                                if r.status_code == 200
+                                else f"LiteRT warmup HTTP {r.status_code}")
+                else:
+                    logger.info(f"Warming up Ollama model '{LLM_MODEL}'...")
+                    from tools import TOOLS
+                    r = await client.post(
+                        f"{OLLAMA_BASE_URL}/api/chat",
+                        json={
+                            "model": LLM_MODEL,
+                            "messages": [{"role": "user", "content": "hi"}],
+                            "stream": False,
+                            "keep_alive": os.getenv("LLM_KEEP_ALIVE", "4h"),
+                            "tools": TOOLS,
+                            "options": {
+                                "num_predict": 1,
+                                "temperature": 0.2,
+                                "top_p": LLM_TOP_P,
+                                "num_ctx": LLM_NUM_CTX,
+                                "num_batch": LLM_NUM_BATCH,
+                            },
+                        },
+                        timeout=120,
+                    )
+                    logger.info("Ollama model ready."
+                                if r.status_code == 200
+                                else f"Ollama warmup HTTP {r.status_code}")
         except Exception as e:
             logger.warning(f"Warmup failed: {e}")
 
     asyncio.create_task(_warmup())
+
+    # Pre-warm the embedding model (used by retrieval, intent and memory
+    # search). Without this the very first chat request pays the ONNX model
+    # load inside the request path, inflating TTFT.
+    async def _warmup_embeddings():
+        try:
+            from embedding import embed_async
+            await embed_async("")
+            logger.info("Embedding model ready (warmed up)")
+        except Exception as e:
+            logger.warning(f"Embedding warmup failed: {e}")
+    asyncio.create_task(_warmup_embeddings())
 
     # Check transcription dependencies
     import shutil as _shutil
@@ -164,6 +196,15 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(_preload_whisper())
 
     yield
+
+    # Cancel the background loops so the app can shut down cleanly.
+    for task in (rollup_task, cleanup_task):
+        task.cancel()
+    for task in (rollup_task, cleanup_task):
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
     await close_db()
     logger.info("Database connection closed.")
@@ -208,12 +249,66 @@ async def request_id_middleware(request: Request, call_next):
         _request_id_var.reset(token)
 
 
+def _local_trusted_hosts() -> set[str]:
+    """Loopback + this machine's hostname and ALL interface IPv4s (lowercased).
+
+    Used as the safe default when TRUSTED_HOSTS is unset: accepts requests
+    whose Host header is localhost or one of this machine's own addresses
+    (LAN, docker, VPN), while still rejecting arbitrary external domains.
+    """
+    allowed = {"localhost", "127.0.0.1", "::1"}
+    try:
+        allowed.add(socket.gethostname().lower())
+    except Exception:
+        pass
+    # All interface IPv4 addresses (Linux SIOCGIFADDR ioctl — no extra deps).
+    try:
+        import fcntl
+        import struct
+
+        for _index, name in socket.if_nameindex():
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                try:
+                    packed = fcntl.ioctl(s.fileno(), 0x8915, struct.pack("256s", name[:15].encode("utf-8")))
+                    allowed.add(socket.inet_ntoa(packed[20:24]))
+                finally:
+                    s.close()
+            except OSError:
+                continue
+    except Exception:
+        pass
+    # Fallback: primary outbound interface address (e.g. over a VPN).
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(("8.8.8.8", 80))
+            allowed.add(s.getsockname()[0])
+        finally:
+            s.close()
+    except Exception:
+        pass
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None):
+            ip = info[4][0]
+            if ":" not in ip or ip == "::1":
+                allowed.add(ip.lower())
+    except Exception:
+        pass
+    return allowed
+
+
+_LOCAL_TRUSTED_HOSTS = _local_trusted_hosts()
+
+
 @app.middleware("http")
 async def trusted_host_middleware(request: Request, call_next):
     if "*" in TRUSTED_HOSTS:
         return await call_next(request)
-    host = request.headers.get("host", "").split(":")[0]
-    if host and host not in TRUSTED_HOSTS:
+    # Unset → auto-allow this machine's local names/IPs (safe default).
+    allowed = _LOCAL_TRUSTED_HOSTS if not TRUSTED_HOSTS else {h.lower() for h in TRUSTED_HOSTS}
+    host = request.headers.get("host", "").split(":")[0].lower()
+    if host and host not in allowed:
         return JSONResponse(status_code=403, content={"detail": "Invalid Host header"})
     return await call_next(request)
 
@@ -221,6 +316,7 @@ async def trusted_host_middleware(request: Request, call_next):
 # ── Middleware: API Key auth + Rate limiting + Body size ───────────────────────
 
 _MAX_BODY_BYTES = 4 * 1024 * 1024  # 4 MB
+_DEBUG_MAX_BODY_BYTES = 8 * 1024    # debug beacons are tiny telemetry payloads
 
 
 @app.middleware("http")
@@ -228,20 +324,28 @@ async def security_middleware(request: Request, call_next):
     path = request.url.path
 
     # --- Skip auth for exempt paths ---
-    is_exempt = path == "/health" or path == "/" or path == "/favicon.ico" or path.startswith("/static") or path == "/debug"
+    is_exempt = path == "/health" or path == "/" or path == "/favicon.ico" or path.startswith("/static")
 
     # --- Skip auth for CORS preflight (HEAD/OPTIONS never carry API key) ---
     if request.method in ("HEAD", "OPTIONS"):
         is_exempt = True
 
+    # --- Debug beacon: navigator.sendBeacon cannot set headers, so it
+    # authenticates via the ?k= query param (still protected by API_KEY). ---
+    is_debug = path == "/debug"
+    if is_debug and API_KEY:
+        key = request.query_params.get("k", "")
+        if not hmac.compare_digest(key, API_KEY):
+            return JSONResponse(status_code=401, content={"detail": "Invalid or missing API key"})
+
     # --- API Key verification ---
-    if API_KEY and not is_exempt:
+    if API_KEY and not is_exempt and not is_debug:
         key = request.headers.get("x-api-key", "")
         if not hmac.compare_digest(key, API_KEY):
             return JSONResponse(status_code=401, content={"detail": "Invalid or missing API key"})
 
     # --- Rate limiting ---
-    if not is_exempt:
+    if not is_exempt or is_debug:
         if TRUST_X_FORWARDED_FOR:
             client_ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
         else:
@@ -253,8 +357,10 @@ async def security_middleware(request: Request, call_next):
             return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded. Try again later."})
 
     # --- Body size limit ---
-    # Paths that accept larger payloads (audio recordings, image uploads)
-    _large_body_paths = ("/chat", "/chat/transcribe", "/chat/transcribe-gemma4", "/chat/tts")
+    # Only the transcription endpoints accept larger payloads (audio recordings);
+    # everything else (chat text, TTS text, config JSON) stays at the 4 MB cap.
+    # Exact match, not prefix: "/chat" must not widen the limit for sub-routes.
+    _large_body_paths = frozenset({"/chat/transcribe", "/chat/transcribe-gemma4"})
     if request.method in ("POST", "PATCH"):
         te = request.headers.get("transfer-encoding", "")
         if "chunked" in te.lower():
@@ -265,9 +371,15 @@ async def security_middleware(request: Request, call_next):
                 body_size = int(cl)
             except (ValueError, TypeError):
                 return JSONResponse(status_code=400, content={"detail": "Invalid Content-Length header"})
-            limit = MEDIA_MAX_MB * 1024 * 1024 if request.url.path.startswith(_large_body_paths) else _MAX_BODY_BYTES
+            if is_debug:
+                limit = _DEBUG_MAX_BODY_BYTES
+            elif request.url.path in _large_body_paths:
+                limit = MEDIA_MAX_MB * 1024 * 1024
+            else:
+                limit = _MAX_BODY_BYTES
+            limit_str = f"{limit // (1024 * 1024)} MB" if limit >= 1024 * 1024 else f"{limit // 1024} KB"
             if body_size > limit:
-                return JSONResponse(status_code=413, content={"detail": f"Request body too large (max {limit // (1024*1024)} MB)"})
+                return JSONResponse(status_code=413, content={"detail": f"Request body too large (max {limit_str})"})
 
     return await call_next(request)
 
@@ -300,7 +412,69 @@ async def favicon():
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "model": LLM_MODEL}
+    return await collect_health()
+
+
+async def _check_db() -> str:
+    """Return 'ok' when the database answers a trivial query, else 'error'."""
+    try:
+        db = await get_db()
+        cur = await db.execute("SELECT 1")
+        await cur.fetchone()
+        return "ok"
+    except Exception as e:
+        logger.warning(f"Health: db check failed: {e}")
+        return "error"
+
+
+async def _check_llm() -> str:
+    """Ping the active LLM backend (LiteRT or Ollama) with a short timeout."""
+    try:
+        import httpx
+
+        from config import LITERT_BASE_URL, OLLAMA_BASE_URL
+        url = f"{LITERT_BASE_URL}/v1/models" if LLM_BACKEND == "litert" else f"{OLLAMA_BASE_URL}/api/tags"
+        async with httpx.AsyncClient(timeout=5) as client:
+            r = await client.get(url)
+        return "ok" if r.status_code < 500 else "error"
+    except Exception as e:
+        logger.warning(f"Health: llm check failed: {e}")
+        return "error"
+
+
+async def _check_nextcloud() -> str:
+    """Ping Nextcloud's status.php; 'disabled' when not configured (optional dep)."""
+    from config import NEXTCLOUD_URL
+    if not NEXTCLOUD_URL:
+        return "disabled"
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=5) as client:
+            r = await client.get(f"{NEXTCLOUD_URL.rstrip('/')}/status.php")
+        return "ok" if r.status_code < 500 else "error"
+    except Exception as e:
+        logger.warning(f"Health: nextcloud check failed: {e}")
+        return "error"
+
+
+async def collect_health() -> dict:
+    """Aggregate critical dependency statuses into a single health payload.
+
+    'disabled' dependencies (optional, e.g. Nextcloud when not configured)
+    are excluded from the overall healthy/degraded decision.
+    """
+    deps = {
+        "db": await _check_db(),
+        "llm": await _check_llm(),
+        "nextcloud": await _check_nextcloud(),
+    }
+    configured = {k: v for k, v in deps.items() if v != "disabled"}
+    degraded = any(v != "ok" for v in configured.values())
+    return {
+        "status": "degraded" if degraded else "healthy",
+        "model": LLM_MODEL,
+        "dependencies": deps,
+    }
 
 
 @app.post("/debug")

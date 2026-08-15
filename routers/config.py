@@ -92,6 +92,10 @@ async def update_settings(body: SettingsUpdate):
             raise HTTPException(status_code=400, detail=f"{key} must be >= {schema['min']}")
         if "max" in schema and schema["type"] in ("int", "float") and float(value) > schema["max"]:
             raise HTTPException(status_code=400, detail=f"{key} must be <= {schema['max']}")
+        # Never allow line breaks: a "\n" in a value could inject a new
+        # key=value line into .env on the next read.
+        if "\n" in value or "\r" in value:
+            raise HTTPException(status_code=400, detail=f"Invalid value for {key}: newlines are not allowed")
         os.environ[key] = value
         validated[key] = value
         updated_keys.append(key)

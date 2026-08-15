@@ -2,6 +2,7 @@
 import asyncio
 import json
 import logging
+import time
 
 from config import (
     LITERT_BASE_URL,
@@ -9,7 +10,9 @@ from config import (
     LLM_MAX_TOOL_ITERATIONS,
     LLM_NUM_CTX,
     OLLAMA_BASE_URL,
+    SSE_READ_IDLE_TIMEOUT,
 )
+from tool_verification import run_verification
 from tools import (
     CONFIRM_TOOLS,
     get_tools_for_group,
@@ -24,6 +27,31 @@ from .utils import _check_tool_leak, _get_client, clean_reasoning
 logger = logging.getLogger("piSynapse")
 
 EARLY_BUFFER_CHARS = 8
+
+
+async def _iter_sse_lines(resp, idle_timeout: float):
+    """Yield decoded lines from an httpx streaming response.
+
+    Each chunk read is bounded by ``idle_timeout`` — if the server sends no
+    bytes for that long (silent hang mid-stream), the generator stops so the
+    client never stalls indefinitely on a dead connection.
+    """
+    it = resp.aiter_bytes()
+    buf = b""
+    while True:
+        try:
+            chunk = await asyncio.wait_for(it.__anext__(), timeout=idle_timeout)
+        except asyncio.TimeoutError:
+            logger.warning(f"SSE stream idle timeout — no data for {idle_timeout}s, aborting stream")
+            break
+        except StopAsyncIteration:
+            break
+        buf += chunk
+        while b"\n" in buf:
+            line, buf = buf.split(b"\n", 1)
+            yield line.decode("utf-8", errors="replace")
+    if buf:
+        yield buf.decode("utf-8", errors="replace")
 
 
 def _merge_tool_calls(acc: list, tc: list) -> list:
@@ -117,7 +145,7 @@ async def chat_with_ollama_stream(
         try:
             async with client.stream("POST", url, json=payload) as resp:
                 resp.raise_for_status()
-                async for raw in resp.aiter_lines():
+                async for raw in _iter_sse_lines(resp, SSE_READ_IDLE_TIMEOUT):
                     if not raw:
                         continue
 
@@ -237,11 +265,18 @@ async def chat_with_ollama_stream(
             for call in non_confirm_calls:
                 fn = call.get("function", {})
                 tn = fn.get("name", "")
+                args: dict = {}
+                t0 = time.perf_counter()
                 try:
-                    result = await run_tool(tn, parse_tool_args(fn.get("arguments")), context)
+                    args = parse_tool_args(fn.get("arguments"))
+                    result = await run_tool(tn, args, context)
+                    success = not result.startswith("ERROR")
                 except Exception as e:
                     logger.error(f"Tool {tn} failed: {e}")
                     result = f"ERROR: tool {tn} failed"
+                    success = False
+                duration_ms = (time.perf_counter() - t0) * 1000
+                await run_verification(tn, args, result, success, duration_ms=duration_ms, error=None if success else result)
                 if tn == "save_memory" and not result.startswith("ERROR"):
                     memories_saved += 1
                 tool_msg = {"role": "tool", "tool_name": tn, "content": result}
