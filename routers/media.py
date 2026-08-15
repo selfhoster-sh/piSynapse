@@ -12,6 +12,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
 import wave
 
 import httpx
@@ -28,18 +29,16 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 
 _whisper_model = None
 _whisper_backend = None
+# Model loading is slow (hundreds of MB) and blocks; the lock keeps at most
+# one thread loading while request threads wait on the result.
+_whisper_load_lock = threading.Lock()
 
-def _get_whisper():
-    global _whisper_model, _whisper_backend
-    if _whisper_model is not None:
-        return _whisper_model
 
+def _load_whisper():
+    """Load the Whisper model (blocking — always call via to_thread)."""
     try:
         from faster_whisper import WhisperModel
-        _whisper_model = WhisperModel("tiny", device="cpu", compute_type="int8")
-        _whisper_backend = "faster_whisper"
-        logger.info("Whisper model loaded (faster-whisper tiny, CPU)")
-        return _whisper_model
+        return WhisperModel("tiny", device="cpu", compute_type="int8"), "faster_whisper"
     except ImportError:
         logger.info("faster-whisper not installed, trying openai-whisper...")
     except Exception as e:
@@ -47,16 +46,27 @@ def _get_whisper():
 
     try:
         import whisper as _ow
-        _whisper_model = _ow.load_model("tiny")
-        _whisper_backend = "openai_whisper"
-        logger.info("Whisper model loaded (openai-whisper tiny)")
-        return _whisper_model
+        return _ow.load_model("tiny"), "openai_whisper"
     except ImportError:
         logger.warning("openai-whisper not installed either — transcription unavailable")
     except Exception as e:
         logger.error(f"openai-whisper load failed: {e}")
 
-    return None
+    return None, None
+
+
+def _get_whisper():
+    global _whisper_model, _whisper_backend
+    if _whisper_model is not None:
+        return _whisper_model
+    with _whisper_load_lock:
+        if _whisper_model is not None:
+            return _whisper_model
+        model, backend = _load_whisper()
+        _whisper_model, _whisper_backend = model, backend
+        if model is not None:
+            logger.info(f"Whisper model loaded ({backend} tiny, CPU)")
+        return _whisper_model
 
 
 def _transcribe_faster(model, path: str, kwargs: dict) -> tuple[str, str]:
@@ -78,7 +88,65 @@ def _check_ffmpeg() -> bool:
     return _ffmpeg_available
 
 
-_MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+_UPLOAD_CHUNK_SIZE = 64 * 1024
+
+
+class _UploadTooLargeError(Exception):
+    def __init__(self, max_bytes: int):
+        self.max_bytes = max_bytes
+
+
+def _upload_max_bytes() -> int:
+    """Hard cap for audio uploads, aligned with MEDIA_MAX_MB (default 100 MB).
+
+    Kept in sync with the middleware in main.py so large recordings (e.g.
+    50 MB+ phone videos) reach the handler instead of being cut off early.
+    """
+    try:
+        from config import MEDIA_MAX_MB
+        return max(int(MEDIA_MAX_MB), 1) * 1024 * 1024
+    except (ImportError, ValueError, TypeError):
+        return 100 * 1024 * 1024
+
+
+async def _save_upload(audio: UploadFile) -> str:
+    """Stream an upload body to a temp file with a hard size cap.
+
+    Rejects early from Content-Length when present; otherwise accumulates
+    chunks and aborts as soon as the cap is exceeded (no full body buffered
+    in memory). Returns the temp file path; raises HTTPException(413) on
+    oversized input. The caller is responsible for unlinking the temp file.
+    """
+    max_bytes = _upload_max_bytes()
+    cl = audio.headers.get("content-length")
+    if cl:
+        try:
+            if int(cl) > max_bytes:
+                raise _UploadTooLargeError(max_bytes)
+        except (ValueError, TypeError):
+            pass  # malformed header → rely on chunked accumulation
+    suffix = os.path.splitext(audio.filename or "audio.webm")[1] or ".webm"
+    tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
+    tmp_path = tmp.name
+    try:
+        total = 0
+        while True:
+            chunk = await audio.read(_UPLOAD_CHUNK_SIZE)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > max_bytes:
+                raise _UploadTooLargeError(max_bytes)
+            tmp.write(chunk)
+    except Exception:
+        tmp.close()
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+    tmp.close()
+    return tmp_path
 
 
 def _convert_to_wav(src: str, dst: str, pcm_f32le: bool = False) -> subprocess.CompletedProcess:
@@ -116,23 +184,26 @@ async def transcribe_audio(
     audio: UploadFile = File(...),
     lang: str = Query(default=""),
 ):
-    model = _get_whisper()
+    # Model load is slow (faster-whisper/openai-whisper) — never run it on the
+    # event loop. The background preload usually wins; to_thread covers the race.
+    model = await asyncio.to_thread(_get_whisper)
     if model is None:
         raise HTTPException(status_code=503, detail="Transcription service unavailable. Install faster-whisper or openai-whisper.")
     suffix = os.path.splitext(audio.filename or "audio.webm")[1] or ".webm"
-    data = await audio.read()
-    if len(data) > _MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="Audio file too large (max 25 MB)")
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-        tmp.write(data)
-        tmp_path = tmp.name
+    try:
+        tmp_path = await _save_upload(audio)
+    except _UploadTooLargeError as e:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Audio file too large (max {e.max_bytes // (1024 * 1024)} MB)",
+        )
 
     whisper_lang = None
     if lang:
         whisper_lang = lang
 
     try:
-        audio_size = len(data)
+        audio_size = os.path.getsize(tmp_path)
         logger.info(f"Whisper input: {audio_size} bytes, suffix={suffix}, lang={whisper_lang}")
 
         wav_path = tmp_path + ".wav"
@@ -193,13 +264,13 @@ async def transcribe_gemma4(
     if not _check_ffmpeg():
         raise HTTPException(status_code=503, detail="ffmpeg not installed — gemma4 audio transcription unavailable. Install ffmpeg or use whisper engine.")
     from config import LITERT_BASE_URL, LLM_BACKEND, LLM_MODEL, OLLAMA_BASE_URL
-    suffix = os.path.splitext(audio.filename or "audio.webm")[1] or ".webm"
-    data = await audio.read()
-    if len(data) > _MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="Audio file too large (max 25 MB)")
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-        tmp.write(data)
-        tmp_path = tmp.name
+    try:
+        tmp_path = await _save_upload(audio)
+    except _UploadTooLargeError as e:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Audio file too large (max {e.max_bytes // (1024 * 1024)} MB)",
+        )
 
     wav_path = tmp_path + ".wav"
     try:
@@ -304,6 +375,21 @@ ALLOWED_TTS_VOICES = {
     "en_US-amy-medium",
 }
 
+def _load_piper_voice(voice_name: str):
+    """Locate and load a Piper voice model (blocking — call via to_thread)."""
+    from piper import PiperVoice
+    search_paths = [
+        os.path.join(PIPER_MODELS_DIR, f"{voice_name}.onnx"),
+        os.path.expanduser(f"~/.local/share/piper-voices/{voice_name}/{voice_name}.onnx"),
+        os.path.expanduser(f"~/.config/piper-voices/{voice_name}/{voice_name}.onnx"),
+    ]
+    model_path = next((p for p in search_paths if os.path.exists(p)), None)
+    if model_path is None:
+        logger.warning(f"Piper voice not found: {voice_name}")
+        return None
+    return PiperVoice.load(model_path)
+
+
 async def _get_tts(voice_name: str):
     if voice_name in _tts_voices:
         return _tts_voices[voice_name]
@@ -311,17 +397,11 @@ async def _get_tts(voice_name: str):
         if voice_name in _tts_voices:
             return _tts_voices[voice_name]
         try:
-            from piper import PiperVoice
-            search_paths = [
-                os.path.join(PIPER_MODELS_DIR, f"{voice_name}.onnx"),
-                os.path.expanduser(f"~/.local/share/piper-voices/{voice_name}/{voice_name}.onnx"),
-                os.path.expanduser(f"~/.config/piper-voices/{voice_name}/{voice_name}.onnx"),
-            ]
-            model_path = next((p for p in search_paths if os.path.exists(p)), None)
-            if model_path is None:
-                logger.warning(f"Piper voice not found: {voice_name}")
+            # PiperVoice.load is slow and CPU-bound — offload it so a TTS
+            # request never blocks the event loop while the model loads.
+            voice = await asyncio.to_thread(_load_piper_voice, voice_name)
+            if voice is None:
                 return None
-            voice = PiperVoice.load(model_path)
             _tts_voices[voice_name] = voice
             logger.info(f"Piper TTS loaded: {voice_name}")
             return voice

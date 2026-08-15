@@ -22,37 +22,66 @@ class TestMatchEvent:
         ev1 = self._make_mock_event("uid-111", "Dentist Appointment")
         ev2 = self._make_mock_event("uid-222", "Dentist Appointment")
         events = [ev1, ev2]
-        result, matched = _match_event(events, "Dentist", event_uid="uid-222")
+        result, matched, status = _match_event(events, "Dentist", event_uid="uid-222")
         assert result is ev2
         assert matched == "Dentist Appointment"
+        assert status == ""
 
     def test_uid_partial_match(self):
         from calendar_ops import _match_event
         ev = self._make_mock_event("abc-def-123", "Meeting")
-        result, matched = _match_event([ev], "Meeting", event_uid="abc-def")
+        result, matched, status = _match_event([ev], "Meeting", event_uid="abc-def")
         assert result is ev
         assert matched == "Meeting"
+        assert status == ""
 
-    def test_uid_no_match_returns_none(self):
+    def test_uid_no_match_returns_not_found(self):
         from calendar_ops import _match_event
         ev = self._make_mock_event("uid-111", "Event A")
-        result, matched = _match_event([ev], "Event A", event_uid="uid-999")
+        result, matched, status = _match_event([ev], "Event A", event_uid="uid-999")
         assert result is None
         assert matched is None
+        assert status == "not_found"
 
     def test_summary_substring_fallback(self):
         from calendar_ops import _match_event
         ev = self._make_mock_event("uid-111", "Team Standup")
-        result, matched = _match_event([ev], "standup")
+        result, matched, status = _match_event([ev], "standup")
         assert result is ev
         assert matched == "Team Standup"
+        assert status == ""
 
-    def test_summary_no_match_returns_none(self):
+    def test_summary_no_match_returns_not_found(self):
         from calendar_ops import _match_event
         ev = self._make_mock_event("uid-111", "Event A")
-        result, matched = _match_event([ev], "Nonexistent")
+        result, matched, status = _match_event([ev], "Nonexistent")
         assert result is None
         assert matched is None
+        assert status == "not_found"
+
+    def test_ambiguous_summary_never_auto_picks(self):
+        from calendar_ops import _match_event
+        ev1 = self._make_mock_event("uid-111", "Dentist Appointment")
+        ev2 = self._make_mock_event("uid-222", "Dentist Appointment")
+        result, matched, status = _match_event([ev1, ev2], "dentist")
+        assert result is None
+        assert matched is None
+        assert status == "ambiguous"
+
+    def test_ambiguous_uid_never_auto_picks(self):
+        from calendar_ops import _match_event
+        ev1 = self._make_mock_event("uid-111", "Dentist Appointment")
+        ev2 = self._make_mock_event("uid-111-extra", "Dentist Follow-up")
+        result, matched, status = _match_event([ev1, ev2], "Dentist", event_uid="uid-111")
+        assert result is None
+        assert status == "ambiguous"
+
+    def test_ical_escape_text_blocks_injection(self):
+        from calendar_ops import _ical_escape_text
+        assert _ical_escape_text("foo") == "foo"
+        assert _ical_escape_text("a\r\nb") == "a\\nb"
+        assert _ical_escape_text("a,b;c") == "a\\,b\\;c"
+        assert _ical_escape_text("back\\slash") == "back\\\\slash"
 
 
 class TestRunTool:

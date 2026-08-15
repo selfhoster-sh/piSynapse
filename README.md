@@ -271,8 +271,11 @@ curl http://localhost:8765/health
 ## Security Notes
 
 - The server is intended for **trusted home LAN use**. API key auth protects the
-  endpoints, but traffic is plain HTTP — do **not** expose the server to the
-  public internet without a TLS reverse proxy (e.g. Caddy/nginx) in front.
+  endpoints, but traffic is plain HTTP — the API key, the `/debug?k=` beacon
+  token and all credentials the assistant relays (Proton mail, Nextcloud) travel
+  in cleartext on the wire. Do **not** expose the server to the public internet
+  or an untrusted network without a TLS reverse proxy (e.g. Caddy/nginx) in
+  front.
 - Keep `.env` permissions locked down (`chmod 600 .env`) — it contains mail,
   Nextcloud and API secrets.
 - Rate limiting keys on the client IP. Behind a reverse proxy, set
