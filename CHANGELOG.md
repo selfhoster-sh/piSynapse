@@ -6,6 +6,38 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [1.1.1] - 2026-08-16
 
+This release bundles the tool-execution verification layer, the tool audit
+log, the health + semantic retrieval work, and the hardening from a
+multi-session stability audit (30 findings).
+
+### Added
+
+- Tool-execution verification (`tool_verification.py`): every tool call is
+  checked by a `run_verification()` hook embedded in both tool-call loops
+  (stream + chat). It runs after each call and can never raise or stall
+  execution.
+- Tool audit log: a new SQLite `tool_audit_log` table records every tool call
+  (tool name, params, success, duration, error). Detail rows older than
+  14 days are rolled up into per-day summary rows — once at startup and then
+  automatically every 24 hours.
+- `/health` endpoint: reports `healthy`/`degraded` with live checks of the
+  database, LLM backend and Nextcloud. The frontend shows a status dot
+  (green/yellow/red) that polls every 60 s and names the failing dependency.
+- Semantic history retrieval (`retrieval.py`): mitigates
+  "lost-in-the-middle" by replacing the middle of the context window with the
+  top-k most relevant older messages, using FastEmbed embeddings + cosine
+  similarity. Runs in parallel with history loading under a 1500 ms
+  best-effort budget and falls back gracefully on any error.
+- Frontend staleness scan for the calendar widget: a client-side 60 s timer
+  drops events whose start time has passed, so the ticker no longer gets
+  stuck on the first event of the day (no extra network requests).
+- Daily retention cleanup (conversations/memories) now runs on a background
+  timer, not only at startup.
+- CalDAV/notes/tasks clients and Whisper/Piper models load under a lock and
+  off the event loop (no request-path blocking).
+- Transcribe uploads stream to a temp file in chunks and are capped by
+  `MEDIA_MAX_MB` (default 100 MB; was a hard-coded 25 MB).
+
 ### Security
 
 - Host-header allowlist (`TRUSTED_HOSTS`): the default `"*"` (host check
@@ -23,22 +55,18 @@ uses [Semantic Versioning](https://semver.org/).
 - Tool audit log no longer stores raw user content: sensitive param keys
   (`body`, `content`, `text`, `password`, `token`, `api_key`, …) are stored
   as `[REDACTED]` and serialized params are capped at 2048 chars.
+- Tool-call leak hardening: literal `<|tool_call|>` tags and JSON
+  `"name": "tool"` echoes are detected and suppressed mid-stream; tools can
+  only be dispatched from real parsed `tool_calls` (regression test for a
+  historical bug). A regex-based action-claim detection was tried and removed
+  in favor of this loop-level hardening.
 
-### Added
+### Fixed
 
 - Retrieval now honors `TIME_BUDGET_MS` via `asyncio.wait_for` with a graceful
   fallback instead of only logging a warning.
 - Query embedding is computed once per message and shared across retrieval,
   memory search and intent classification.
-- Daily retention cleanup (conversations/memories) runs on a timer, not only
-  at startup.
-- CalDAV/notes/tasks clients and Whisper/Piper models load under a lock and
-  off the event loop (no request-path blocking).
-- Transcribe uploads stream to a temp file in chunks and are capped by
-  `MEDIA_MAX_MB` (default 100 MB; was a hard-coded 25 MB).
-
-### Fixed
-
 - Retrieved context is merged chronologically with recent messages
   (`merge_history` now used in production).
 - Tool audit rollup is atomic per day and idempotent (no duplicate summaries).
@@ -55,7 +83,7 @@ uses [Semantic Versioning](https://semver.org/).
 
 ### Tests
 
-- Suite expanded from 85 to 158 tests; `ruff check` clean.
+- Suite expanded from 27 to 158 tests; `ruff check` clean.
 
 ## [1.1.0] - 2026-08-14
 
