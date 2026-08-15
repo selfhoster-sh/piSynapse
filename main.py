@@ -93,7 +93,7 @@ async def lifespan(app: FastAPI):
     if not TRUSTED_HOSTS:
         logger.warning(
             "TRUSTED_HOSTS is not set — accepting this machine's local "
-            f"hostnames/IPs only (auto: {sorted(_LOCAL_TRUSTED_HOSTS)}). "
+            f"hostnames/IPs only ({len(_LOCAL_TRUSTED_HOSTS)} auto-accepted). "
             "Set TRUSTED_HOSTS in .env (e.g. your LAN IP) to restrict for production."
         )
 

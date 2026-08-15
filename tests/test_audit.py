@@ -282,7 +282,7 @@ def test_db_files_are_600_after_init(audit_db):
     """init_db() must leave the DB and its WAL sidecars owner-only."""
     import stat
 
-    paths = [dbmod.DB_PATH, dbmod.DB_PATH + "-wal", dbmod.DB_PATH + "-shm"]
+    paths = [os.path.abspath(p) for p in (dbmod.DB_PATH, dbmod.DB_PATH + "-wal", dbmod.DB_PATH + "-shm")]
     assert any(os.path.exists(p) for p in paths)
     for p in paths:
         if os.path.exists(p):
@@ -293,6 +293,7 @@ def test_secure_db_files_fixes_permissive_db(audit_db):
     """_secure_db_files() repairs a pre-existing world-readable DB."""
     import stat
 
-    os.chmod(dbmod.DB_PATH, 0o644)
+    db = os.path.abspath(dbmod.DB_PATH)
+    os.chmod(db, 0o644)
     asyncio.run(dbmod._secure_db_files())
-    assert stat.S_IMODE(os.stat(dbmod.DB_PATH).st_mode) == 0o600
+    assert stat.S_IMODE(os.stat(db).st_mode) == 0o600

@@ -49,6 +49,7 @@ async def _secure_db_files() -> None:
     every startup as a guarantee for fresh and pre-existing installs.
     """
     for path in (DB_PATH, DB_PATH + "-wal", DB_PATH + "-shm", DB_PATH + "-journal"):
+        path = os.path.abspath(path)
         try:
             if os.path.exists(path):
                 os.chmod(path, 0o600)
