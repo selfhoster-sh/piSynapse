@@ -27,7 +27,7 @@ jobs:
           pip install pytest pytest-asyncio
 
       - name: Syntax check
-        run: python -m compileall -q main.py config.py install.py utils.py prompt.py db.py embedding.py mail.py calendar_ops.py nextcloud_notes.py nextcloud_tasks.py weather.py llm routers tools
+        run: python -m compileall -q main.py config.py install.py utils.py prompt.py db.py embedding.py mail.py calendar_ops.py nextcloud_notes.py nextcloud_tasks.py weather.py retrieval.py tool_verification.py llm routers tools
 
       - name: Lint (ruff)
         run: |
