@@ -3,7 +3,7 @@ import asyncio
 import logging
 import os
 
-from config import LITERT_BASE_URL, LLM_KEEP_ALIVE, LLM_MODEL, OLLAMA_BASE_URL
+from config import LITERT_BASE_URL, OLLAMA_BASE_URL, get
 
 from .utils import _get_client
 
@@ -176,8 +176,9 @@ async def _classify_intent(message: str, query_embedding: bytes | None = None) -
     if os.getenv("INTENT_LLM_FALLBACK", "off") == "on":
         backend = (os.environ.get("LLM_BACKEND") or "ollama").strip().lower()
         client = _get_client()
+        model_name = get("LLM_MODEL", "gemma4-e2b")
         payload = {
-            "model": LLM_MODEL.replace(":", "-") if backend == "litert" else LLM_MODEL,
+            "model": model_name.replace(":", "-") if backend == "litert" else model_name,
             "messages": [
                 {"role": "system", "content": _INTENT_PROMPT},
                 {"role": "user", "content": message},
@@ -188,7 +189,7 @@ async def _classify_intent(message: str, query_embedding: bytes | None = None) -
             url = f"{LITERT_BASE_URL}/v1/chat/completions"
         else:
             payload["options"] = {"temperature": 0, "num_predict": 20, "num_ctx": 512}
-            payload["keep_alive"] = LLM_KEEP_ALIVE
+            payload["keep_alive"] = get("LLM_KEEP_ALIVE", "4h")
             url = f"{OLLAMA_BASE_URL}/api/chat"
         try:
             resp = await client.post(url, json=payload)
