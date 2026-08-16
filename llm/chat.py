@@ -13,12 +13,13 @@ from tool_verification import run_verification
 from tools import (
     CONFIRM_TOOLS,
     get_tools_for_group,
+    is_tool_success,
     parse_tool_args,
     run_tool,
     validate_confirm_params,
 )
 
-from .payload import _build_full_messages, _build_payload, _normalize_messages_for_backend
+from .payload import _build_full_messages, _build_payload, _normalize_messages_for_backend, trim_messages_for_context
 from .utils import _THINKING_STRIP_RE, _check_tool_leak, _get_client, clean_reasoning, strip_prefix
 
 logger = logging.getLogger("piSynapse")
@@ -124,7 +125,7 @@ async def chat_with_ollama(
     tool_group: str | None = None,
     reasoning_effort: str = "",
 ) -> dict:
-    full_msgs = _build_full_messages(messages, memories or [], summary, session_id, tool_group=tool_group)
+    full_msgs = await _build_full_messages(messages, memories or [], summary, session_id, tool_group=tool_group)
     context = {"user_id": user_id, "session_id": session_id}
     current_msgs: list[dict] = []
     memories_saved = 0
@@ -144,9 +145,18 @@ async def chat_with_ollama(
             logger.info(f"No specific group — sending combined tools ({len(filtered_tools)} tools)")
 
     executed_tool_sigs: set[str] = set()
+    tools_tokens = 0
+    if use_tools and filtered_tools:
+        tools_tokens = len(json.dumps(filtered_tools, ensure_ascii=False)) // 4
 
     for iteration in range(get("LLM_MAX_TOOL_ITERATIONS", 5)):
         iter_msgs = _normalize_messages_for_backend(full_msgs + current_msgs, backend=get("LLM_BACKEND", "litert"))
+        iter_msgs = trim_messages_for_context(
+            iter_msgs,
+            context_window=int(get("LLM_NUM_CTX", 6144)),
+            reserved_output=int(get("LLM_MAX_OUTPUT_TOKENS", 2048)),
+            tools_tokens=tools_tokens,
+        )
         resp_json, message, err = await _llm_request(
             iter_msgs, use_think=think, use_tools=use_tools,
             tool_list=filtered_tools, reasoning_effort=reasoning_effort,
@@ -159,7 +169,7 @@ async def chat_with_ollama(
             return {"reply": "Engine Error: empty response from language model.", "pending_action": None, "memories_saved": memories_saved, "thinking": None}
 
         if resp_json.get("done_reason") == "length":
-            logger.warning(f"Ollama stopped early (done_reason='length'). Consider raising LLM_NUM_CTX (currently {get('LLM_NUM_CTX', 8192)}).")
+            logger.warning(f"Ollama stopped early (done_reason='length'). Consider raising LLM_NUM_CTX (currently {get('LLM_NUM_CTX', 6144)}).")
 
         tool_calls = message.get("tool_calls") or []
         raw_content = _THINKING_STRIP_RE.sub('', message.get("content", "") or "").strip()
@@ -168,7 +178,7 @@ async def chat_with_ollama(
         if not tool_calls and not think and use_tools and iteration == 0:
             reason = "tool leak" if _check_tool_leak(raw_content) else "empty tool_calls"
             logger.info(f"No tool calls produced ({reason}), retrying with think-mode...")
-            think_msgs = _build_full_messages(messages, memories or [], summary, session_id, tool_group=tool_group)
+            think_msgs = await _build_full_messages(messages, memories or [], summary, session_id, tool_group=tool_group)
             think_msgs = _normalize_messages_for_backend(think_msgs + current_msgs, backend=get("LLM_BACKEND", "litert"))
             resp2, msg2, err2 = await _llm_request(think_msgs, use_think=True, use_tools=use_tools, tool_list=filtered_tools)
             if not err2 and msg2:
@@ -202,14 +212,14 @@ async def chat_with_ollama(
                 try:
                     args = parse_tool_args(fn.get("arguments"))
                     result = await run_tool(tn, args, context)
-                    success = not result.startswith("ERROR")
+                    success = is_tool_success(result)
                 except Exception as e:
                     logger.error(f"Tool {tn} failed: {e}")
                     result = f"ERROR: tool {tn} failed"
                     success = False
                 duration_ms = (time.perf_counter() - t0) * 1000
                 await run_verification(tn, args, result, success, duration_ms=duration_ms, error=None if success else result)
-                if tn == "save_memory" and not result.startswith("ERROR"):
+                if tn == "save_memory" and is_tool_success(result):
                     memories_saved += 1
                 tool_msg = {"role": "tool", "tool_name": tn, "content": result}
                 if call.get("id"):

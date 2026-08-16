@@ -54,6 +54,8 @@ async def get_settings():
             entry["max"] = schema["max"]
         if "step" in schema:
             entry["step"] = schema["step"]
+        if "desc" in schema:
+            entry["desc"] = schema["desc"]
         result[key] = entry
     return result
 
@@ -96,9 +98,15 @@ async def update_settings(body: SettingsUpdate):
         # key=value line into .env on the next read.
         if "\n" in value or "\r" in value:
             raise HTTPException(status_code=400, detail=f"Invalid value for {key}: newlines are not allowed")
-        os.environ[key] = value
         validated[key] = value
         updated_keys.append(key)
+
+    # All values validated OK — only now mutate the running process.
+    # Applying os.environ inside the loop would leave a partial update if a
+    # later key raised HTTPException (os.environ changed, .env + module
+    # attributes stale → three-way divergence).
+    for key, value in validated.items():
+        os.environ[key] = value
 
     # Read .env, modify, then write back
     lines = ENV_PATH.read_text(encoding="utf-8").splitlines()

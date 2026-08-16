@@ -14,6 +14,7 @@ Flow:
 """
 
 import getpass
+import json
 import os
 import re
 import secrets
@@ -354,36 +355,108 @@ def _litert_model_served(model_id: str) -> bool:
         return False
 
 
+def _litert_python() -> str:
+    """Return a python interpreter that can import litert_lm.
+
+    litert-lm is installed one of two ways:
+      - `uv tool install litert-lm` → dedicated tool venv
+        (~/.local/share/uv/tools/litert-lm/bin/python3)
+      - `pip install litert-lm` into the app venv → .venv python
+    The piServe server (litert_serve/server.py) must run under the
+    interpreter that has the litert_lm package — the CLI binary alone is
+    not enough.
+    """
+    uv_python = os.path.expanduser("~/.local/share/uv/tools/litert-lm/bin/python3")
+    if os.path.isfile(uv_python):
+        return uv_python
+    if os.path.isfile(venv_bin("python3")):
+        return venv_bin("python3")
+    return venv_bin("python3")
+
+
+def _model_dash_id() -> str:
+    """Model id as the app requests it ('gemma4:e2b' → 'gemma4-e2b')."""
+    return STATE.get("model", "gemma4:e2b").replace(":", "-")
+
+
+def _piserve_config_path() -> Path:
+    return Path(__file__).resolve().parent / "litert_serve" / "config.json"
+
+
+def _write_piserve_config() -> bool:
+    """Regenerate litert_serve/config.json for the installed model.
+
+    server.py reads this file (Engine needs an exact model_path, and
+    `litert-lm serve` ignores max_num_tokens — this is the whole reason
+    piServe exists). Atomic write so a crash can't leave a half-written
+    config behind.
+    """
+    model_id = _model_dash_id()
+    cfg = {
+        "model_id": model_id,
+        "model_path": os.path.expanduser(f"~/.litert-lm/models/{model_id}/model.litertlm"),
+        "max_num_tokens": 6144,
+        "speculative_decoding": True,
+        "use_ringbuffers_local_attention": False,
+        "enable_ynnpack": False,
+        "host": "127.0.0.1",
+        "port": LITERT_PORT,
+    }
+    cfg_path = _piserve_config_path()
+    try:
+        tmp = cfg_path.with_name(cfg_path.name + ".tmp")
+        tmp.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
+        os.replace(tmp, cfg_path)
+        return True
+    except OSError as e:
+        warn(f"Could not write {cfg_path}: {e}")
+        return False
+
+
 def _start_litert_server(litert_bin: str) -> bool:
-    """Start the LiteRT server and wait until it accepts requests."""
+    """Start the piServe backend and wait until it accepts requests.
+
+    piServe (litert_serve/server.py) wraps the litert Engine so the
+    context window is configurable (max_num_tokens); the stock
+    `litert-lm serve` hard-caps at 4096 and is bound to 127.0.0.1.
+    """
     if _litert_is_running():
         ok(f"LiteRT server already running on :{LITERT_PORT}")
         return True
 
+    server_py = Path(__file__).resolve().parent / "litert_serve" / "server.py"
+    if not server_py.is_file():
+        error(f"Missing server file: {server_py}")
+        error("Re-run install from the piSynapse checkout (litert_serve/ must sit next to install.py).")
+        return False
+
+    if not _write_piserve_config():
+        return False
+
     # Linux with systemd → proper service (auto-start on boot).
     if shutil.which("systemctl"):
-        if ask_yesno("Create & start LiteRT systemd service (auto-start on boot)?"):
-            if _create_litert_service():
+        if ask_yesno("Create & start piServe systemd service (auto-start on boot)?"):
+            if _create_piserve_service(server_py):
                 return _wait_litert_ready()
             return False
-    elif ask_yesno(f"Start LiteRT server now on port {LITERT_PORT}?"):
+    elif ask_yesno(f"Start piServe server now on port {LITERT_PORT}?"):
         pass
     else:
         info("Skipping server start. Start it later with:")
-        info(f"  {litert_bin} serve --host 0.0.0.0 --port {LITERT_PORT}")
+        info(f"  {_litert_python()} {server_py}")
         return False
 
-    info(f"Starting LiteRT server on :{LITERT_PORT}...")
+    info(f"Starting piServe on 127.0.0.1:{LITERT_PORT}...")
     log_path = os.path.abspath("litert-server.log")
     logf = open(log_path, "ab")
     try:
         subprocess.Popen(
-            [litert_bin, "serve", "--host", "0.0.0.0", "--port", str(LITERT_PORT)],
+            [_litert_python(), str(server_py)],
             stdout=logf, stderr=logf, stdin=subprocess.DEVNULL,
             start_new_session=True,
         )
     except Exception as e:
-        error(f"Could not start LiteRT server: {e}")
+        error(f"Could not start piServe: {e}")
         return False
     ok(f"Server starting — logs: {log_path}")
     return _wait_litert_ready()
@@ -404,18 +477,18 @@ def _wait_litert_ready(timeout_s: int = 120) -> bool:
     return False
 
 
-def _create_litert_service() -> bool:
-    """Create a systemd unit for litert-lm serve."""
+def _create_piserve_service(server_py: Path) -> bool:
+    """Create a systemd unit that runs litert_serve/server.py (piServe)."""
     if not shutil.which("systemctl"):
         warn("systemctl not found — skipping systemd service")
         return False
 
     user = os.environ.get("SUDO_USER") or os.environ.get("USER") or "pi"
-    litert_bin = _find_litert_bin() or "litert-lm"
+    python = _litert_python()
     user_home = os.path.expanduser(f"~{user}")
 
     unit = f"""[Unit]
-Description=LiteRT-LM API Server (piSynapse backend)
+Description=piServe (LiteRT-LM backend for piSynapse)
 After=network-online.target
 Wants=network-online.target
 
@@ -423,7 +496,7 @@ Wants=network-online.target
 Type=simple
 User={user}
 Environment=HOME={user_home}
-ExecStart={litert_bin} serve --host 0.0.0.0 --port {LITERT_PORT}
+ExecStart={python} {server_py}
 Restart=on-failure
 RestartSec=5
 
@@ -431,16 +504,22 @@ RestartSec=5
 WantedBy=multi-user.target
 """
     try:
-        tmp = Path("/tmp/litert.service")
+        tmp = Path("/tmp/piserve.service")
         tmp.write_text(unit, encoding="utf-8")
-        subprocess.run(["sudo", "cp", str(tmp), "/etc/systemd/system/litert.service"], check=True)
+        subprocess.run(["sudo", "cp", str(tmp), "/etc/systemd/system/piserve.service"], check=True)
         subprocess.run(["sudo", "systemctl", "daemon-reload"], capture_output=True)
-        subprocess.run(["sudo", "systemctl", "enable", "litert"], capture_output=True)
-        subprocess.run(["sudo", "systemctl", "start", "litert"])
-        ok("litert.service created and started")
+        subprocess.run(["sudo", "systemctl", "enable", "piserve"], capture_output=True)
+        subprocess.run(["sudo", "systemctl", "start", "piserve"])
+        # Retire the legacy litert.service — it binds the same port with a
+        # fixed 4096-token cap, so leaving both up would fight for :9379.
+        if os.path.exists("/etc/systemd/system/litert.service"):
+            subprocess.run(["sudo", "systemctl", "stop", "litert"], capture_output=True)
+            subprocess.run(["sudo", "systemctl", "disable", "litert"], capture_output=True)
+            info("Stopped & disabled legacy litert.service (superseded by piserve.service)")
+        ok("piserve.service created and started")
         return True
     except Exception as e:
-        warn(f"Could not create litert systemd service: {e}")
+        warn(f"Could not create piserve systemd service: {e}")
         return False
 
 
@@ -633,14 +712,14 @@ LITERT_BASE_URL=http://localhost:{LITERT_PORT}
 
 # --- Model ---
 LLM_MODEL={LLM_MODEL}
-LLM_NUM_CTX=8192
+LLM_NUM_CTX=6144
 LLM_NUM_BATCH=256
 LLM_TEMPERATURE=0.6
 LLM_TOP_P=0.85
 LLM_TOP_K=40
 LLM_KEEP_ALIVE=4h
-LLM_TIMEOUT=240
-SSE_READ_IDLE_TIMEOUT=120.0
+LLM_TIMEOUT=600
+SSE_READ_IDLE_TIMEOUT=300.0
 LLM_MAX_TOOL_ITERATIONS=5
 LLM_REASONING_EFFORT=medium
 LLM_MAX_OUTPUT_TOKENS=2048
@@ -918,12 +997,12 @@ def step_systemd() -> None:
         user = os.environ.get("SUDO_USER") or os.environ.get("USER") or "pi"
         project_dir = os.path.abspath(".")
         uvicorn_path = os.path.join(project_dir, VENV_DIR, "bin", "uvicorn")
-        wants_litert = STATE.get("backend") == "litert" and os.path.exists("/etc/systemd/system/litert.service")
+        wants_litert = STATE.get("backend") == "litert" and os.path.exists("/etc/systemd/system/piserve.service")
 
         unit = f"""[Unit]
 Description=piSynapse AI Assistant
-After=network-online.target{" litert.service" if wants_litert else ""}
-Wants=network-online.target{" litert.service" if wants_litert else ""}
+After=network-online.target{" piserve.service" if wants_litert else ""}
+Wants=network-online.target{" piserve.service" if wants_litert else ""}
 
 [Service]
 Type=simple
@@ -982,7 +1061,7 @@ def print_summary() -> None:
     print(f"\n  {'Backend':12s}: {backend}")
     print(f"  {'Model':12s}: {model}")
     if backend == "litert":
-        print(f"  {'LiteRT':12s}: {'systemd (active)' if os.path.exists('/etc/systemd/system/litert.service') else f'background process on :{LITERT_PORT}'}")
+        print(f"  {'LiteRT':12s}: {'systemd (active)' if os.path.exists('/etc/systemd/system/piserve.service') else f'background process on :{LITERT_PORT}'}")
     if os.path.exists("/etc/systemd/system/pisynapse.service"):
         print(f"  {'piSynapse':12s}: systemd (active)")
     if api_key:
@@ -993,17 +1072,16 @@ def print_summary() -> None:
     print(f"    {activate}")
     print(f"    {run_cmd}")
     if backend == "litert" and not _litert_is_running():
-        litert_bin = _find_litert_bin() or "litert-lm"
-        print("\n  LiteRT is not running — start it first in another terminal:")
-        print(f"    {litert_bin} serve --host 0.0.0.0 --port {LITERT_PORT}")
+        print("\n  piServe is not running — start it first in another terminal:")
+        print(f"    {_litert_python()} {Path(__file__).resolve().parent / 'litert_serve' / 'server.py'}")
     if backend == "ollama" and not _ollama_is_running():
         print("\n  Ollama is not running — start it first:")
         print("    ollama serve")
     print("\n  Open http://localhost:8765 in your browser.")
     if api_key:
         print("  Enter your API key when prompted.\n")
-    if os.path.exists("/etc/systemd/system/litert.service") or os.path.exists("/etc/systemd/system/pisynapse.service"):
-        print(f"  {'Manage':12s}: systemctl status litert pisynapse\n")
+    if os.path.exists("/etc/systemd/system/piserve.service") or os.path.exists("/etc/systemd/system/pisynapse.service"):
+        print(f"  {'Manage':12s}: systemctl status piserve pisynapse\n")
 
 
 # ── Entry ─────────────────────────────────────────────────────────────────────

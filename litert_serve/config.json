@@ -1,0 +1,10 @@
+{
+  "model_id": "gemma4-e2b",
+  "model_path": "/home/salih/.litert-lm/models/gemma4-e2b/model.litertlm",
+  "max_num_tokens": 6144,
+  "speculative_decoding": true,
+  "use_ringbuffers_local_attention": false,
+  "enable_ynnpack": false,
+  "host": "127.0.0.1",
+  "port": 9379
+}

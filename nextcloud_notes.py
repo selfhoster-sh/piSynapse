@@ -207,7 +207,7 @@ async def get_note(note_id: int) -> str:
     try:
         note = await asyncio.to_thread(client.get_note, note_id)
         if not note:
-            return f"Note {note_id} not found."
+            return f"ERROR: Note {note_id} not found."
         title = note.get("title", "Untitled")
         content = note.get("content", "")
         category = note.get("category", "")
@@ -258,7 +258,7 @@ async def update_note(note_id: int, title: str | None = None, content: str | Non
     try:
         result = await asyncio.to_thread(client.update_note, note_id, title, content)
         if not result:
-            return f"Note {note_id} not found."
+            return f"ERROR: Note {note_id} not found."
         return f"OK Note {note_id} updated."
     except NotFoundError:
         return f"Note {note_id} not found."

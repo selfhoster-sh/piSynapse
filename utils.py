@@ -79,10 +79,23 @@ def retry(attempts: int = 2, delay: float = 1.0, backoff: float = 2.0, jitter: f
 
 # -- Text Processing --
 
+# Invisible/format characters frequently used as spam padding in email bodies
+# (nbsp, figure space, soft hyphen, zero-width chars, combining marks, controls).
+_INVISIBLE_RE = re.compile(
+    "[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\u00ad\u034f\u0350-\u036f\u061c\u115f\u1160"
+    "\u17b4-\u17b5\u180b-\u180d\u200b-\u200f\u2028\u2029\u2060-\u2064"
+    "\u206a-\u206f\ufeff]"
+)
+
+
 def clean_body_text(text: str) -> str:
-    """Collapse whitespace to reduce token usage when passing email body to LLM."""
+    """Normalize email body text: strip invisible spam padding, collapse whitespace.
+
+    Reduces token usage dramatically when the body is passed to the LLM.
+    """
     if not text:
         return ""
+    text = _INVISIBLE_RE.sub("", text)
     return re.sub(r"\s+", " ", text).strip()
 
 
