@@ -73,15 +73,17 @@ def _deserialize(blob: bytes) -> np.ndarray:
     """Deserialize an embedding vector stored in SQLite.
 
     Rows written today hold raw float32 bytes (see ``embed()``). Very old rows
-    may hold a legacy numpy pickle instead — detect both by magic bytes and
-    fall back to unpickling so cosine_similarity neither misreads nor crashes
-    on legacy data.
+    may hold a legacy numpy pickle instead. Raw buffers can start with any byte
+    (e.g. 0x80 from a negative float), so detect by length/finiteness rather
+    than a magic byte, and only fall back to unpickling when that fails.
     """
     if blob.startswith(b"\x93NUMPY"):  # numpy .npy container
         import io
         return np.load(io.BytesIO(blob), allow_pickle=False)
-    if blob.startswith(b"\x80"):  # legacy pickle protocol marker
-        import pickle
-        arr = pickle.loads(blob)
-        return np.asarray(arr, dtype="float32")
-    return np.frombuffer(blob, dtype="float32")
+    if len(blob) % 4 == 0:
+        arr = np.frombuffer(blob, dtype="float32")
+        if arr.size > 0 and np.all(np.isfinite(arr)) and np.max(np.abs(arr)) < 1000:
+            return arr
+    import pickle
+    arr = pickle.loads(blob)
+    return np.asarray(arr, dtype="float32")

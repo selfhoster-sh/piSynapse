@@ -4,6 +4,105 @@ All notable changes to piSynapse will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 uses [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-08-16
+
+This release replaces the stock `litert-lm serve` with a purpose-built
+OpenAI-compatible backend (piServe) that raises the context window from 4096
+to 6144 tokens, applies UI settings live without a restart, roughly doubles
+decode speed via MTP speculative decoding, and adds persistent email ID
+mapping plus a large batch of email-list, frontend and i18n polish.
+
+### Added
+
+- **piServe backend** (`litert_serve/`): a small OpenAI-compatible HTTP server
+  wrapping `litert_lm.engine.Engine` directly. It replaces `litert-lm serve`,
+  which hard-caps the KV cache at 4096 tokens and ignores `max_num_tokens`.
+  piServe exposes only `/v1/models` and `/v1/chat/completions` (SSE streaming),
+  passes tool schemas through via `RawSchemaTool` without executing them
+  (piSynapse runs its own tool loop), and maps `reasoning_effort` to a
+  thinking-token budget. Context is configurable and set to 6144 tokens.
+- **MTP speculative decoding**: enabled for `gemma4-e2b`, roughly doubling
+  decode throughput (7.8 → 15.9 tok/s measured).
+- **Live settings**: the config module now exposes `config.get()`, and all
+  consumers read values dynamically, so changes made in the Settings UI apply
+  immediately without a service restart.
+- **`LLM_MAX_OUTPUT_TOKENS`** setting (default 2048): caps output per reply.
+  litert-lm ignores `max_tokens`, so chat payloads and summaries send
+  `max_completion_tokens` instead, and the media TTS path forwards it too.
+- **Persistent email ID mapping**: a new `email_session_map` SQLite table maps
+  display list numbers to real IMAP IDs (replacing the 1-hour in-memory cache
+  that died on service restarts). `read_email` accepts either `message_id` or
+  `id`.
+- **Think-mode tool-call leak recovery**: leaked `<|tool_call|>` fragments are
+  parsed and the underlying tool is actually executed instead of being printed
+  as raw text.
+- Turkish as the default UI language on Turkish browsers
+  (`navigator.language`), real Turkish labels in the settings schema, and
+  localized connection/context error messages (`errConnLost`,
+  `errContextTooLong`).
+
+### Changed
+
+- Context window raised to 6144 tokens (`LLM_NUM_CTX` default/max), with
+  `LLM_TIMEOUT` raised to 600 s and the SSE idle timeout to 300 s to match the
+  longer prefill/output window.
+- Installer: writes `litert_serve/config.json` for the installed model,
+  creates and enables `piserve.service`, and retires the legacy
+  `litert.service`; `.env` template and defaults aligned to 6144.
+- Email listing: raw IMAP IDs are never shown to the model; each item is one
+  compact line (`N. From | Subject | Date | Preview`), double numbering is
+  removed, and list numbers stay in sync across blocks (`<ol start>`).
+- Settings UI: "Context Window" and "Max Output" are separate, documented
+  options; advanced items gain inline descriptions.
+- Ambiguous follow-ups ("tell me about the Ollama email") now route to the
+  email tool through a deterministic `contextual_email_followup` rule instead
+  of relying on the LLM fallback alone.
+- Email bodies are cleaned of invisible Unicode control/spam characters and
+  truncated to 1500 chars before reaching the model.
+- Intent LLM fallback sends `max_tokens: 20` so a vague message costs a tiny
+  classification instead of a full generation; the fallback backend defaults
+  to `litert` (was `ollama`).
+- Model name is shown in the sidebar; the think button was simplified to a
+  single inline toggle (the 5-level picker stays dormant behind the flag).
+- Service worker is served from the site root (`/sw.js`), fixing its scope so
+  PWA updates actually cover the app.
+
+### Fixed
+
+- Empty-list rendering regression: list items vanished after a `renderMd`
+  group-index change; numbers are now real text (`.ol-num` spans) so they also
+  copy correctly.
+- Email lists no longer truncated at ~600 tokens: the compact one-line format
+  plus `max_completion_tokens` produce every requested item.
+- `read_email` with a list number resolves through the DB map even after a
+  restart; out-of-range fallback preserved.
+- Invisible-character flooding (thousands of zero-width/spacing characters in
+  emails) no longer blows the context budget or yields blank replies; the
+  client also warns when the model returns an empty response.
+- Embedding deserialization bug: raw float32 buffers whose first byte is
+  `0x80` were misdetected as pickles, zeroing every cosine similarity;
+  detection is now magic-byte based (`.npy` / raw buffer / pickle).
+- Context overflow mid-stream triggers a shrink-and-retry instead of a silent
+  empty reply.
+- Config `PATCH` writes are atomic; tool-group metadata flows through the
+  streaming tool path; `tools/__init__.py` exports `is_tool_success`/`_as_bool`.
+- Tool audit: `execute_action` calls are audited and verified, confirm-modal
+  branches sanitize exceptions, and PII keys (`body`, `content`, `text`,
+  `password`, `token`, `api_key`, …) are redacted from mail and audit logs.
+- CodeQL findings: startup no longer logs the trusted-host IP list, and file
+  paths are normalized before permission checks.
+
+### Removed
+
+- Dead code verified and deleted: `install_prod.py`, `web_release.py`,
+  `client_script/README.md`, `templates/render_settings.html`.
+
+### Tests
+
+- Suite expanded from 158 to 239 tests (email ID resolution, leaked tool-call
+  parsing, dispatcher branches, PII redaction, media streaming, live payload
+  sampling); `ruff check` clean.
+
 ## [1.1.1] - 2026-08-16
 
 This release bundles the tool-execution verification layer, the tool audit

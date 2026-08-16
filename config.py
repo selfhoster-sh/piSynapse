@@ -59,17 +59,17 @@ LLM_BACKEND = os.getenv("LLM_BACKEND", "litert").lower()
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 LITERT_BASE_URL = os.getenv("LITERT_BASE_URL", "http://localhost:9379")
 LLM_MODEL = os.getenv("LLM_MODEL", "gemma4-e2b")
-LLM_NUM_CTX = _safe_int("LLM_NUM_CTX", 8192)
+LLM_NUM_CTX = _safe_int("LLM_NUM_CTX", 6144)
 LLM_NUM_BATCH = _safe_int("LLM_NUM_BATCH", 256)
 LLM_TEMPERATURE = _safe_float("LLM_TEMPERATURE", 0.6)
 LLM_TOP_P = _safe_float("LLM_TOP_P", 0.85)
 LLM_TOP_K = _safe_int("LLM_TOP_K", 40)
 LLM_MAX_TOOL_ITERATIONS = _safe_int("LLM_MAX_TOOL_ITERATIONS", 5)
 LLM_KEEP_ALIVE = os.getenv("LLM_KEEP_ALIVE", "4h")
-LLM_TIMEOUT = _safe_int("LLM_TIMEOUT", 240)
+LLM_TIMEOUT = _safe_int("LLM_TIMEOUT", 600)
 # Idle gap (seconds) allowed between SSE stream chunks before the stream is
 # aborted. Protects against the LLM server silently hanging mid-response.
-SSE_READ_IDLE_TIMEOUT = _safe_float("SSE_READ_IDLE_TIMEOUT", 120.0)
+SSE_READ_IDLE_TIMEOUT = _safe_float("SSE_READ_IDLE_TIMEOUT", 300.0)
 LLM_REASONING_EFFORT = os.getenv("LLM_REASONING_EFFORT", "medium").strip().lower()
 # Cap on generated output tokens per response (litert-lm reads this via
 # max_completion_tokens; its own default ~600 was truncating long answers).
@@ -246,47 +246,49 @@ def _query_model_options_sync() -> dict:
 
 # -- Settings API (for PATCH /config/settings) --
 SETTINGS_SCHEMA: dict = {
-    "DEFAULT_CITY":        {"type": "str",   "default": "",     "label": {"tr": "Varsayilan Sehir",          "en": "Default City"}},
-    "LLM_TEMPERATURE":    {"type": "float", "default": "0.6",  "label": {"tr": "Sicaklik (Temperature)",     "en": "Temperature"},           "min": 0.0, "max": 2.0, "step": 0.05},
+    "DEFAULT_CITY":        {"type": "str",   "default": "",     "label": {"tr": "Varsayılan Şehir",          "en": "Default City"}},
+    "LLM_TEMPERATURE":    {"type": "float", "default": "0.6",  "label": {"tr": "Sıcaklık (Temperature)",     "en": "Temperature"},           "min": 0.0, "max": 2.0, "step": 0.05},
     "LLM_TOP_P":          {"type": "float", "default": "0.85", "label": {"tr": "Top P",                      "en": "Top P"},                  "min": 0.1, "max": 1.0, "step": 0.05},
     "LLM_TOP_K":          {"type": "int",   "default": "40",   "label": {"tr": "Top K",                      "en": "Top K"},                  "min": 1, "max": 200, "step": 1},
-    "LLM_NUM_CTX":        {"type": "int",   "default": "8192", "label": {"tr": "Baglam Penceresi (Tokens)",  "en": "Context Window (Tokens)"},"min": 2048, "max": 32768, "step": 1024},
-    "LLM_MAX_OUTPUT_TOKENS": {"type": "int", "default": "2048", "label": {"tr": "Maks Cikti (Tokens)", "en": "Max Output (Tokens)"}, "min": 256, "max": 8192, "step": 256},
-    "HISTORY_LIMIT":      {"type": "int",   "default": "12",   "label": {"tr": "Gecmis Mesaj Sayisi",        "en": "History Message Limit"},  "min": 4, "max": 50, "step": 1},
-    "MEMORY_LIMIT":       {"type": "int",   "default": "10",   "label": {"tr": "Hafiza Karti Sayisi",        "en": "Memory Card Limit"},      "min": 1, "max": 30, "step": 1},
-    "MEMORY_SIMILARITY_THRESHOLD": {"type": "float", "default": "0.68", "label": {"tr": "Bellek Benzerlik Esigi", "en": "Memory Similarity Threshold"}, "min": 0.1, "max": 0.99, "step": 0.01},
-    "CONVERSATION_RETENTION_DAYS": {"type": "int", "default": "0", "label": {"tr": "Sohbet Saklama (Gun, 0=kapali)", "en": "Chat Retention (days, 0=off)"}, "min": 0, "max": 3650, "step": 1},
-    "MEMORY_RETENTION_DAYS":       {"type": "int", "default": "0", "label": {"tr": "Bellek Saklama (Gun, 0=kapali)", "en": "Memory Retention (days, 0=off)"}, "min": 0, "max": 3650, "step": 1},
-    "SUMMARY_BATCH_SIZE": {"type": "int",   "default": "5",    "label": {"tr": "Ozetleme Batch Boyutu",       "en": "Summary Batch Size"},     "min": 2, "max": 20, "step": 1},
+    "LLM_NUM_CTX":        {"type": "int",   "default": "6144", "label": {"tr": "Bağlam Penceresi (Tokens)",  "en": "Context Window (Tokens)"},"min": 2048, "max": 6144, "step": 512,
+        "desc": {"tr": "Modelin toplam token hafızası. Sunucu tavanı 6144'tür; geçmiş kırpma bütçesi ve sunucu bağlam ayarı bu değerle belirlenir.", "en": "Total token memory of the model. Server ceiling is 6144; the history trimming budget and the server context setting follow this value."}},
+    "LLM_MAX_OUTPUT_TOKENS": {"type": "int", "default": "2048", "label": {"tr": "Maks Çıktı (Tokens)", "en": "Max Output (Tokens)"}, "min": 256, "max": 6144, "step": 256,
+        "desc": {"tr": "Asistanın tek yanıttaki maksimum üretim uzunluğu (token). Daha uzun cevaplar için artırabilirsiniz.", "en": "Maximum length of a single assistant reply (tokens). Raise for longer answers."}},
+    "HISTORY_LIMIT":      {"type": "int",   "default": "12",   "label": {"tr": "Geçmiş Mesaj Sayısı",        "en": "History Message Limit"},  "min": 4, "max": 50, "step": 1},
+    "MEMORY_LIMIT":       {"type": "int",   "default": "10",   "label": {"tr": "Hafıza Kartı Sayısı",        "en": "Memory Card Limit"},      "min": 1, "max": 30, "step": 1},
+    "MEMORY_SIMILARITY_THRESHOLD": {"type": "float", "default": "0.68", "label": {"tr": "Bellek Benzerlik Eşiği", "en": "Memory Similarity Threshold"}, "min": 0.1, "max": 0.99, "step": 0.01},
+    "CONVERSATION_RETENTION_DAYS": {"type": "int", "default": "0", "label": {"tr": "Sohbet Saklama (Gün, 0=kapalı)", "en": "Chat Retention (days, 0=off)"}, "min": 0, "max": 3650, "step": 1},
+    "MEMORY_RETENTION_DAYS":       {"type": "int", "default": "0", "label": {"tr": "Bellek Saklama (Gün, 0=kapalı)", "en": "Memory Retention (days, 0=off)"}, "min": 0, "max": 3650, "step": 1},
+    "SUMMARY_BATCH_SIZE": {"type": "int",   "default": "5",    "label": {"tr": "Özetleme Batch Boyutu",       "en": "Summary Batch Size"},     "min": 2, "max": 20, "step": 1},
     "LLM_MODEL":          {"type": "select", "default": "gemma4-e2b", "label": {"tr": "LLM Model",              "en": "LLM Model"}},
-    "LLM_REASONING_EFFORT": {"type": "select", "default": "medium", "label": {"tr": "Dusunce Seviyesi (Gemma4)", "en": "Thinking Level (Gemma4)"}, "options": [
-        {"value": "none",     "label": {"tr": "Kapali (dusunme yok)",   "en": "Off (no thinking)"}},
+    "LLM_REASONING_EFFORT": {"type": "select", "default": "medium", "label": {"tr": "Düşünce Seviyesi (Gemma4)", "en": "Thinking Level (Gemma4)"}, "options": [
+        {"value": "none",     "label": {"tr": "Kapalı (düşünme yok)",   "en": "Off (no thinking)"}},
         {"value": "minimal",  "label": {"tr": "Minimal",                "en": "Minimal"}},
-        {"value": "low",      "label": {"tr": "Dusuk",                  "en": "Low"}},
-        {"value": "medium",   "label": {"tr": "Orta (varsayilan)",      "en": "Medium (default)"}},
-        {"value": "high",     "label": {"tr": "Yuksek",                 "en": "High"}},
-        {"value": "xhigh",    "label": {"tr": "En Yuksek (yavas)",      "en": "X-High (slow)"}},
+        {"value": "low",      "label": {"tr": "Düşük",                  "en": "Low"}},
+        {"value": "medium",   "label": {"tr": "Orta (varsayılan)",      "en": "Medium (default)"}},
+        {"value": "high",     "label": {"tr": "Yüksek",                 "en": "High"}},
+        {"value": "xhigh",    "label": {"tr": "En Yüksek (yavaş)",      "en": "X-High (slow)"}},
     ]},
-    "LLM_KEEP_ALIVE":     {"type": "str",   "default": "4h",   "label": {"tr": "Model Saklama Suresi",       "en": "Model Keep Alive"}},
-    "ASSISTANT_USER":     {"type": "str",   "default": "",     "label": {"tr": "Kullanici Adi",              "en": "Username"}},
-    "MAIL_PROVIDER":      {"type": "select", "default": "", "label": {"tr": "E-posta Saglayici", "en": "Mail Provider"}, "options": [
-        {"value": "", "label": {"tr": "Kapal\u0131 (e-posta yok)", "en": "Off (no email)"}},
+    "LLM_KEEP_ALIVE":     {"type": "str",   "default": "4h",   "label": {"tr": "Model Saklama Süresi",       "en": "Model Keep Alive"}},
+    "ASSISTANT_USER":     {"type": "str",   "default": "",     "label": {"tr": "Kullanıcı Adı",              "en": "Username"}},
+    "MAIL_PROVIDER":      {"type": "select", "default": "", "label": {"tr": "E-posta Sağlayıcı", "en": "Mail Provider"}, "options": [
+        {"value": "", "label": {"tr": "Kapalı (e-posta yok)", "en": "Off (no email)"}},
         {"value": "gmail", "label": {"tr": "Gmail", "en": "Gmail"}},
         {"value": "proton", "label": {"tr": "ProtonMail (ProtonBridge)", "en": "ProtonMail (ProtonBridge)"}},
         {"value": "auto", "label": {"tr": "Otomatik (Proton varsa onu kullan)", "en": "Auto (Proton if available)"}},
     ]},
     "TTS_VOICE":           {"type": "select", "default": "en_US-lessac-medium", "label": {"tr": "Ses (Piper TTS)",  "en": "Voice (Piper TTS)"}, "options": [
-        {"value": "tr_TR-dfki-medium",      "label": {"tr": "Turkce — Erkek (DFKI)",       "en": "Turkish — Male (DFKI)"}},
-        {"value": "en_US-lessac-medium",     "label": {"tr": "Ingilizce — Erkek (Lessac)",  "en": "English — Male (Lessac)"}},
-        {"value": "en_US-amy-medium",        "label": {"tr": "Ingilizce — Kadin (Amy)",     "en": "English — Female (Amy)"}},
+        {"value": "tr_TR-dfki-medium",      "label": {"tr": "Türkçe — Erkek (DFKI)",       "en": "Turkish — Male (DFKI)"}},
+        {"value": "en_US-lessac-medium",     "label": {"tr": "İngilizce — Erkek (Lessac)",  "en": "English — Male (Lessac)"}},
+        {"value": "en_US-amy-medium",        "label": {"tr": "İngilizce — Kadın (Amy)",     "en": "English — Female (Amy)"}},
     ]},
     "TTS_ENGINE":          {"type": "select", "default": "piper", "label": {"tr": "Ses Motoru (TTS)", "en": "Speech Engine (TTS)"}, "options": [
         {"value": "piper",   "label": {"tr": "Piper (local, offline)",           "en": "Piper (local, offline)"}},
-        {"value": "browser", "label": {"tr": "Tarayici (online, daha bircok ses)","en": "Browser (online, more voices)"}},
+        {"value": "browser", "label": {"tr": "Tarayıcı (online, daha birçok ses)","en": "Browser (online, more voices)"}},
     ]},
     "STT_ENGINE":          {"type": "select", "default": "whisper", "label": {"tr": "Ses Motoru (STT)", "en": "Speech Engine (STT)"}, "options": [
-        {"value": "gemma4",  "label": {"tr": "Gemma4 Native (duygu: metin iceriginden)",  "en": "Gemma4 Native (emotion from text content)"}},
-        {"value": "whisper", "label": {"tr": "Whisper (hizli, tam transkribe)",    "en": "Whisper (fast, full transcription)"}},
+        {"value": "gemma4",  "label": {"tr": "Gemma4 Native (duygu: metin içeriğinden)",  "en": "Gemma4 Native (emotion from text content)"}},
+        {"value": "whisper", "label": {"tr": "Whisper (hızlı, tam transkribe)",    "en": "Whisper (fast, full transcription)"}},
     ]},
     "AUTO_SEND_ON_VOICE":  {"type": "select", "default": "off", "label": {"tr": "Sesle Giri\u015fte Otomatik G\u00f6nder", "en": "Auto-Send on Voice Input"}, "options": [
         {"value": "off",  "label": {"tr": "Kapal\u0131", "en": "Off"}},
@@ -303,18 +305,18 @@ SETTINGS_SCHEMA: dict = {
 }
 
 # Settings that require a server restart to take effect
-RESTART_REQUIRED_KEYS = {"LLM_NUM_CTX", "LLM_NUM_BATCH"}
+RESTART_REQUIRED_KEYS = {"LLM_NUM_BATCH"}
 
 # Settings that must NEVER be changed via the API (security-sensitive)
 PROTECTED_SETTINGS = {"OLLAMA_BASE_URL", "LITERT_BASE_URL", "LLM_BACKEND", "API_KEY", "CORS_ORIGINS", "TRUSTED_HOSTS", "TRUST_X_FORWARDED_FOR", "MEDIA_MAX_MB"}
 
 # All integer/float config keys that should be re-synced after .env updates
 _NUMERIC_KEYS = {
-    "LLM_NUM_CTX": (int, 8192), "LLM_NUM_BATCH": (int, 256),
+    "LLM_NUM_CTX": (int, 6144), "LLM_NUM_BATCH": (int, 256),
     "LLM_TEMPERATURE": (float, 0.6), "LLM_TOP_P": (float, 0.85), "LLM_TOP_K": (int, 40),
-    "LLM_MAX_TOOL_ITERATIONS": (int, 5), "LLM_TIMEOUT": (int, 240),
+    "LLM_MAX_TOOL_ITERATIONS": (int, 5), "LLM_TIMEOUT": (int, 600),
     "LLM_MAX_OUTPUT_TOKENS": (int, 2048),
-    "SSE_READ_IDLE_TIMEOUT": (float, 120.0),
+    "SSE_READ_IDLE_TIMEOUT": (float, 300.0),
     "HISTORY_LIMIT": (int, 12), "MEMORY_LIMIT": (int, 10),
     "SUMMARY_BATCH_SIZE": (int, 5), "SUMMARY_EARLY_TRIGGER": (int, 6),
     "WEATHER_TIMEOUT": (int, 10), "NEXTCLOUD_TIMEOUT": (int, 30),

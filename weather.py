@@ -54,7 +54,7 @@ async def get_weather(city: str = "") -> str:
             )
             gd = geo.json()
             if not gd:
-                return f"City not found: {city}"
+                return f"ERROR: City not found: {city}"
             coords = (gd[0]["lat"], gd[0]["lon"])
             _cache_city(city, *coords)
         lat, lon = coords
@@ -71,4 +71,4 @@ async def get_weather(city: str = "") -> str:
         return f"{city}: {c['temperature_2m']}°C, feels like {c['apparent_temperature']}°C"
     except Exception as e:
         logger.error(f"Weather API error: {e}")
-        return "Weather error: unable to fetch weather data"
+        return "ERROR: unable to fetch weather data"

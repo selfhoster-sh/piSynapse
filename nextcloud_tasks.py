@@ -120,11 +120,25 @@ def _todo_to_dict(todo) -> dict:
 
 # -- Sync helpers (called via asyncio.to_thread) --
 
+def _calendar_or_config_error() -> str:
+    """Explain why the task calendar is unavailable.
+
+    ``_get_task_calendar`` returns None for two very different reasons:
+    Nextcloud isn't configured at all (credentials missing) or it is
+    configured but no VTODO-capable calendar exists. Reporting the latter
+    for the former is misleading — the user would create a calendar they
+    can't use.
+    """
+    if _get_dav_client() is None:
+        return "ERROR: Nextcloud not configured. Set NEXTCLOUD_URL and NEXTCLOUD_PASSWORD in settings."
+    return "ERROR: No task calendar found. Create a task list in Nextcloud Tasks app first."
+
+
 @retry(attempts=2, delay=1.0)
 def _create_task_sync(summary: str, due: str, priority: int, notes: str) -> str:
     cal = _get_task_calendar()
     if not cal:
-        return "ERROR: No task calendar found. Create a task list in Nextcloud Tasks app first."
+        return _calendar_or_config_error()
 
     todo = Todo()
     uid = f"{uuid.uuid4()}@pisynapse"
@@ -160,7 +174,7 @@ def _list_tasks_sync(show_completed: bool) -> str:
     import time
     cal = _get_task_calendar()
     if not cal:
-        return "ERROR: No task calendar found."
+        return _calendar_or_config_error()
 
     now = time.time()
     if _todos_cache is None or now - _todos_cache_ts > 30:
@@ -209,7 +223,7 @@ def _complete_task_sync(uid_prefix: str) -> str:
     global _todos_cache, _todos_cache_ts
     cal = _get_task_calendar()
     if not cal:
-        return "ERROR: No task calendar found."
+        return _calendar_or_config_error()
 
     # A failed fetch raises (NOT swallowed): retry fires via @retry and the
     # async wrapper reports a real error instead of "not found".
@@ -231,7 +245,7 @@ def _delete_task_sync(uid_prefix: str) -> str:
     global _todos_cache, _todos_cache_ts
     cal = _get_task_calendar()
     if not cal:
-        return "ERROR: No task calendar found."
+        return _calendar_or_config_error()
 
     # A failed fetch raises (NOT swallowed): retry fires via @retry and the
     # async wrapper reports a real error instead of "not found".
@@ -254,7 +268,7 @@ def _search_tasks_sync(query: str) -> str:
     import time
     cal = _get_task_calendar()
     if not cal:
-        return "ERROR: No task calendar found."
+        return _calendar_or_config_error()
 
     now = time.time()
     if _todos_cache is None or now - _todos_cache_ts > 30:

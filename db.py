@@ -189,10 +189,25 @@ async def init_db():
         )
     """)
 
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS email_session_map (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            seq        INTEGER NOT NULL,
+            message_id TEXT NOT NULL,
+            subject    TEXT DEFAULT '',
+            sender     TEXT DEFAULT '',
+            preview    TEXT DEFAULT '',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(session_id, seq)
+        )
+    """)
+
     await db.execute("CREATE INDEX IF NOT EXISTS idx_conversations_session ON conversations(session_id, timestamp)")
     await db.execute("CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id, importance DESC)")
     await db.execute("CREATE INDEX IF NOT EXISTS idx_tool_audit_created ON tool_audit_log(created_at)")
     await db.execute("CREATE INDEX IF NOT EXISTS idx_tool_audit_rollup ON tool_audit_log(is_summary, created_at)")
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_email_session_map_session ON email_session_map(session_id, seq)")
 
     await _apply_migrations(db)
 
@@ -277,6 +292,10 @@ _AUDIT_REDACT_KEYS = {
     "password", "passwd", "pass", "token", "api_key", "apikey", "api-key",
     "secret", "auth", "authorization", "credential", "credentials",
     "body", "content", "text", "message", "prompt",
+    # E-mail fields: recipient addresses, subject and sender are PII and
+    # must not land in the audit log in plaintext.
+    "to", "cc", "bcc", "from", "sender", "recipient", "recipients",
+    "subject", "reply_to", "replyto", "from_address", "to_address",
 }
 _AUDIT_PARAMS_MAX_CHARS = 2048
 
@@ -525,7 +544,63 @@ async def clear_history(session_id: str):
     db = await get_db()
     await db.execute("DELETE FROM conversations WHERE session_id = ?", (session_id,))
     await db.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+    await db.execute("DELETE FROM email_session_map WHERE session_id = ?", (session_id,))
     await db.commit()
+
+
+# -- Email list-number → message-ID mapping --
+#
+# The model sees email lists as "1., 2., ..." and is told never to show raw
+# IDs. This table persists the mapping from that list number to the real IMAP
+# message ID per session, so a follow-up like "read email 3" keeps resolving
+# correctly even after a restart or when a session is resumed later. Rows are
+# replaced on every list_emails / search_emails call.
+
+async def save_email_map(session_id: str, emails: list[dict]):
+    """Replace the stored email listing for a session with a new one."""
+    if not session_id or not emails:
+        return
+    db = await get_db()
+    await _write_with_retry(db, "DELETE FROM email_session_map WHERE session_id = ?", (session_id,))
+    for seq, m in enumerate(emails, 1):
+        await _write_with_retry(
+            db,
+            "INSERT INTO email_session_map (session_id, seq, message_id, subject, sender, preview) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                session_id,
+                seq,
+                str(m.get("id", "")),
+                m.get("subject", "")[:200],
+                m.get("from", "")[:200],
+                (m.get("body", "") or "")[:200],
+            ),
+        )
+
+
+async def get_email_map(session_id: str) -> list[dict]:
+    """Return the persisted email listing for a session (list-number order)."""
+    if not session_id:
+        return []
+    db = await get_db()
+    async with db.execute(
+        """SELECT message_id, subject, sender, preview FROM email_session_map
+           WHERE session_id = ? ORDER BY seq ASC""",
+        (session_id,),
+    ) as cur:
+        rows = await cur.fetchall()
+    return [
+        {"id": r[0], "subject": r[1], "from": r[2], "preview": r[3]}
+        for r in rows
+    ]
+
+
+async def clear_email_map(session_id: str):
+    """Drop the stored email listing for a session (used on history clear)."""
+    if not session_id:
+        return
+    db = await get_db()
+    await _write_with_retry(db, "DELETE FROM email_session_map WHERE session_id = ?", (session_id,))
 
 
 # -- Sessions --

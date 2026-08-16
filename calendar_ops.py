@@ -279,14 +279,14 @@ def delete_event(summary: str, event_uid: str = "") -> str:
             return "ERROR: Nextcloud credentials missing."
         events = _find_events()
         if not events:
-            return f"'{summary}' not found."
+            return f"ERROR: '{summary}' not found."
         ev, s, status = _match_event(events, summary, event_uid)
         if status == "ambiguous":
             return f"'{summary}' matches multiple events — use a more specific title or the event UID."
         if status == "error":
             return "ERROR: Could not match event."
         if ev is None:
-            return f"'{summary}' not found."
+            return f"ERROR: '{summary}' not found."
         ev.delete()
         _invalidate_today_cache()
         return f"OK '{s}' deleted from calendar."
@@ -303,14 +303,14 @@ def update_event(summary: str, new_summary: str = "", new_start_time: str = "", 
             return "ERROR: Nextcloud credentials missing."
         events = _find_events()
         if not events:
-            return f"'{summary}' not found."
+            return f"ERROR: '{summary}' not found."
         ev, s, status = _match_event(events, summary, event_uid)
         if status == "ambiguous":
             return f"'{summary}' matches multiple events — use a more specific title or the event UID."
         if status == "error":
             return "ERROR: Could not match event."
         if ev is None:
-            return f"'{summary}' not found."
+            return f"ERROR: '{summary}' not found."
         d = ev.vobject_instance.vevent
 
         def _is_date(v) -> bool:

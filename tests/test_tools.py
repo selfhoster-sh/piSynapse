@@ -4,6 +4,7 @@ from tools import (
     TOOL_GROUPS,
     TOOL_NAMES,
     TOOLS,
+    _as_bool,
     _safe_int,
     get_combined_tools,
     get_tools_for_group,
@@ -24,6 +25,35 @@ class TestSafeInt:
         import pytest
         with pytest.raises(ValueError, match="test"):
             _safe_int("abc", 0, "test")
+
+    def test_min_value_rejects_negative(self):
+        import pytest
+        with pytest.raises(ValueError, match=">= 1"):
+            _safe_int(-5, 10, "limit", min_value=1)
+
+    def test_min_value_allows_at_boundary(self):
+        assert _safe_int(1, 10, "limit", min_value=1) == 1
+
+
+class TestAsBool:
+    def test_real_bool_passthrough(self):
+        assert _as_bool(True) is True
+        assert _as_bool(False) is False
+
+    def test_string_false_is_false(self):
+        assert _as_bool("false") is False
+        assert _as_bool("0") is False
+        assert _as_bool("no") is False
+        assert _as_bool("") is False
+
+    def test_string_true_is_true(self):
+        assert _as_bool("true") is True
+        assert _as_bool("1") is True
+        assert _as_bool("yes") is True
+
+    def test_unknown_value_uses_default(self):
+        assert _as_bool("banana", default=False) is False
+        assert _as_bool("banana", default=True) is True
 
 
 class TestToolDefinitions:

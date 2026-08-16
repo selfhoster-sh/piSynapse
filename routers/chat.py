@@ -117,7 +117,7 @@ async def chat_endpoint(req: ChatRequest, background_tasks: BackgroundTasks):
     try:
         await save_message(req.session_id, "user", req.message, images=req.images or None)
 
-        from llm import _classify_intent
+        from llm import _classify_intent, contextual_email_followup
         query_embedding = await _shared_query_embedding(req.message)
         history_coro = get_history(req.session_id, limit=get("HISTORY_LIMIT", 12))
         retrieval_coro = retrieve_relevant_history(req.session_id, req.message, query_embedding=query_embedding)
@@ -130,6 +130,10 @@ async def chat_endpoint(req: ChatRequest, background_tasks: BackgroundTasks):
         )
         retrieved_msgs, ret_stats = retrieved
         history = merge_history(history, retrieved_msgs)
+
+        if intent == "question" and tool_group is None and contextual_email_followup(req.message, history):
+            intent, tool_group = "action", "email"
+            logger.info(f"Contextual follow-up detected (email): {req.message!r}")
 
         result = await chat_with_ollama(
             history, memories=memories, think=req.think_mode,
@@ -165,7 +169,7 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
     try:
         await save_message(req.session_id, "user", req.message, images=req.images or None)
 
-        from llm import _classify_intent
+        from llm import _classify_intent, contextual_email_followup
         query_embedding = await _shared_query_embedding(req.message)
         history_coro = get_history(req.session_id, limit=get("HISTORY_LIMIT", 12))
         retrieval_coro = retrieve_relevant_history(req.session_id, req.message, query_embedding=query_embedding)
@@ -178,6 +182,10 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
         )
         retrieved_msgs, ret_stats = retrieved
         history = merge_history(history, retrieved_msgs)
+
+        if intent == "question" and tool_group is None and contextual_email_followup(req.message, history):
+            intent, tool_group = "action", "email"
+            logger.info(f"Contextual follow-up detected (email): {req.message!r}")
     except Exception as e:
         logger.error(f"Chat stream setup error: {e}")
         raise HTTPException(status_code=500, detail="Internal error")
@@ -234,13 +242,28 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
 
 @router.post("/execute", response_model=ChatResponse)
 async def execute_action(req: ExecuteRequest):
-    from tools import CONFIRM_TOOLS, run_tool, validate_confirm_params
+    import time
+
+    from tool_verification import run_verification
+    from tools import CONFIRM_TOOLS, is_tool_success, run_tool, validate_confirm_params
     try:
         if req.tool in CONFIRM_TOOLS:
             err = validate_confirm_params(req.tool, req.params)
             if err:
                 raise HTTPException(status_code=400, detail=err)
-        result = await run_tool(req.tool, req.params, context={"user_id": req.user_id, "session_id": req.session_id})
+        t0 = time.perf_counter()
+        try:
+            result = await run_tool(req.tool, req.params, context={"user_id": req.user_id, "session_id": req.session_id})
+            success = is_tool_success(result)
+        except Exception as e:
+            logger.error(f"Execute action error: {e}")
+            result = f"ERROR: {e}"
+            success = False
+        duration_ms = (time.perf_counter() - t0) * 1000
+        # Manual executions (confirmed destructive actions) are exactly the
+        # ones that must be audit-logged — the model loop already logs its
+        # own tool calls, but /execute runs outside that loop.
+        await run_verification(req.tool, req.params, result, success, duration_ms=duration_ms, error=None if success else result)
         await save_message(req.session_id, "assistant", result)
         return ChatResponse(reply=result, session_id=req.session_id, history_length=0, memories_saved=0)
     except HTTPException:

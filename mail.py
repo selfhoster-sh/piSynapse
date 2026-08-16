@@ -72,13 +72,13 @@ class MailClient(ABC):
             for part in data:
                 if isinstance(part, tuple):
                     msg = email.message_from_bytes(part[1])
-                    body = _get_body(msg)
+                    body = clean_body_text(_get_body(msg))
                     return {
                         "id": message_id,
                         "subject": decode_email_header(msg["Subject"]),
                         "from": decode_email_header(msg["From"]),
                         "date": decode_email_header(msg["Date"]),
-                        "body": body[:2000],
+                        "body": body[:1500],
                     }
             return None
         finally:
@@ -99,7 +99,7 @@ class MailClient(ABC):
             _send_with_retry(self, msg, recipients)
             return True
         except Exception as e:
-            logger.error(f"Failed to send email to {to}: {e}")
+            logger.error(f"Failed to send email: {e}")
             return False
 
     @retry(attempts=2, delay=2.0)

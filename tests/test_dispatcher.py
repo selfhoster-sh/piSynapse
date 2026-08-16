@@ -128,14 +128,14 @@ class TestMailTools:
     async def test_list_emails_formats_and_caches(self):
         msgs = [{"from": "a@x.com", "subject": "Hi", "date": "Mon", "id": 5, "body": "hello world"}]
         mc = _mail_client(messages=msgs)
-        with patch("mail.get_active_mail_client", return_value=mc), patch("prompt.cache_email_context") as cache:
+        with patch("mail.get_active_mail_client", return_value=mc), patch("prompt.cache_email_context", new=AsyncMock()) as cache:
             result = await run_tool("list_emails", {"limit": 3}, context={"session_id": "s1"})
         mc.get_messages.assert_awaited_once_with(1, "INBOX", 3)
-        cache.assert_called_once_with("s1", msgs)
+        cache.assert_awaited_once_with("s1", msgs)
         assert "From: a@x.com" in result
         assert "Subject: Hi" in result
         assert "ID:" not in result
-        assert "1." in result
+        assert "\n1." not in result
         assert "Preview: hello world" in result
 
     async def test_list_emails_does_not_cache_without_session(self):
@@ -160,14 +160,15 @@ class TestMailTools:
         mc = _mail_client(message=None)
         with patch("mail.get_active_mail_client", return_value=mc):
             result = await run_tool("read_email", {"message_id": 42})
-        assert result == "Email not found."
+        assert result == "ERROR: Email not found. Run list_emails first to get the current listing."
 
     async def test_read_email_returns_details(self):
         msg = {"from": "a@x.com", "subject": "Hi", "date": "Mon", "body": "content here"}
         mc = _mail_client(message=msg)
-        with patch("mail.get_active_mail_client", return_value=mc):
-            result = await run_tool("read_email", {"message_id": 42})
-        mc.get_message.assert_awaited_once_with(1, "INBOX", 42)
+        cached = [{"id": "42", "from": "a@x.com", "subject": "Hi", "preview": "content here"}]
+        with patch("mail.get_active_mail_client", return_value=mc), patch("prompt.get_email_context", new=AsyncMock(return_value=cached)):
+            result = await run_tool("read_email", {"message_id": "1"}, context={"session_id": "s1"})
+        mc.get_message.assert_awaited_once_with(1, "INBOX", "42")
         assert "From: a@x.com" in result
         assert "content here" in result
 
@@ -175,18 +176,38 @@ class TestMailTools:
         msg = {"from": "a@x.com", "subject": "Hi", "date": "Mon", "body": "content here"}
         mc = _mail_client(message=msg)
         cached = [{"id": "999", "from": "a@x.com", "subject": "Hi", "preview": "content here"}]
-        with patch("mail.get_active_mail_client", return_value=mc), patch("prompt.get_email_context", return_value=cached):
+        with patch("mail.get_active_mail_client", return_value=mc), patch("prompt.get_email_context", new=AsyncMock(return_value=cached)):
             result = await run_tool("read_email", {"message_id": "1"}, context={"session_id": "s1"})
         mc.get_message.assert_awaited_once_with(1, "INBOX", "999")
         assert "content here" in result
 
-    async def test_read_email_list_number_out_of_range_falls_back(self):
+    async def test_read_email_accepts_id_param_alias(self):
+        msg = {"from": "a@x.com", "subject": "Hi", "date": "Mon", "body": "content here"}
+        mc = _mail_client(message=msg)
+        cached = [{"id": "999", "from": "a@x.com", "subject": "Hi", "preview": "content here"}]
+        with patch("mail.get_active_mail_client", return_value=mc), patch("prompt.get_email_context", new=AsyncMock(return_value=cached)):
+            result = await run_tool("read_email", {"id": "1"}, context={"session_id": "s1"})
+        mc.get_message.assert_awaited_once_with(1, "INBOX", "999")
+        assert "content here" in result
+
+    async def test_read_email_list_number_out_of_range_refused(self):
+        """An out-of-range list number must be refused, not passed to IMAP as
+        a raw UID (which could silently read the wrong message).
+        """
         cached = [{"id": "999", "from": "a@x.com", "subject": "Hi", "preview": "content here"}]
         mc = _mail_client(message=None)
-        with patch("mail.get_active_mail_client", return_value=mc), patch("prompt.get_email_context", return_value=cached):
+        with patch("mail.get_active_mail_client", return_value=mc), patch("prompt.get_email_context", new=AsyncMock(return_value=cached)):
             result = await run_tool("read_email", {"message_id": "5"}, context={"session_id": "s1"})
-        mc.get_message.assert_awaited_once_with(1, "INBOX", "5")
-        assert result == "Email not found."
+        mc.get_message.assert_not_awaited()
+        assert result == "ERROR: Email not found. Run list_emails first to get the current listing."
+
+    async def test_read_email_refused_without_listing(self):
+        """A numeric reference with no cached listing must not hit IMAP."""
+        mc = _mail_client(message=None)
+        with patch("mail.get_active_mail_client", return_value=mc), patch("prompt.get_email_context", new=AsyncMock(return_value=[])):
+            result = await run_tool("read_email", {"message_id": "42"}, context={"session_id": "s1"})
+        mc.get_message.assert_not_awaited()
+        assert result.startswith("ERROR: Email not found.")
 
     async def test_send_requires_all_fields(self):
         with patch("mail.get_active_mail_client", return_value=_mail_client()):
@@ -314,6 +335,20 @@ class TestTasksTools:
             result = await run_tool("list_tasks", {"show_completed": True})
         lt.assert_awaited_once_with(show_completed=True)
         assert result == "[]"
+
+    async def test_list_tasks_string_false_is_false(self):
+        """bool('false') would wrongly enable show_completed."""
+        with patch("nextcloud_tasks.list_tasks", new=AsyncMock(return_value="[]")) as lt:
+            result = await run_tool("list_tasks", {"show_completed": "false"})
+        lt.assert_awaited_once_with(show_completed=False)
+        assert result == "[]"
+
+    async def test_list_emails_negative_limit_rejected(self):
+        mc = _mail_client()
+        with patch("mail.get_active_mail_client", return_value=mc):
+            result = await run_tool("list_emails", {"limit": -5})
+        assert result.startswith("ERROR: 'limit' must be >= 1")
+        mc.get_messages.assert_not_awaited()
 
     async def test_complete_task_requires_uid(self):
         result = await run_tool("complete_task", {})

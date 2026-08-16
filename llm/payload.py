@@ -75,7 +75,7 @@ def _build_payload(
             "temperature": temperature,
             "top_p": top_p,
             "top_k": top_k,
-            "num_ctx": get("LLM_NUM_CTX", 8192),
+            "num_ctx": get("LLM_NUM_CTX", 6144),
             "num_batch": get("LLM_NUM_BATCH", 256),
         },
         "keep_alive": get("LLM_KEEP_ALIVE", "4h"),
@@ -85,7 +85,7 @@ def _build_payload(
     return payload
 
 
-def _build_full_messages(
+async def _build_full_messages(
     base_msgs: list[dict],
     memories: list[dict],
     summary: str,
@@ -97,7 +97,7 @@ def _build_full_messages(
     ctx = build_context(
         memories=memories or None,
         summary=summary,
-        email_context=get_email_context(email_session_id) or None,
+        email_context=await get_email_context(email_session_id) or None,
     )
     if tool_group:
         system = get_tool_system_prompt(tool_group) + ctx
@@ -105,6 +105,86 @@ def _build_full_messages(
         system = get_system_prompt() + ctx
 
     return [{"role": "system", "content": system}] + base_msgs
+
+
+def _estimate_msg_tokens(message: dict) -> int:
+    """Rough token estimate (chars/4; ~850 for images/audio) for one message."""
+    content = message.get("content") or ""
+    if isinstance(content, list):
+        total = 0
+        for part in content:
+            if isinstance(part, dict):
+                ptype = part.get("type", "")
+                if ptype in ("image_url", "input_audio"):
+                    total += 850
+                else:
+                    total += len(str(part.get("text") or "")) // 4
+            else:
+                total += len(str(part)) // 4
+        return max(1, total)
+    return max(1, len(str(content)) // 4)
+
+
+def trim_messages_for_context(
+    messages: list[dict],
+    *,
+    context_window: int,
+    reserved_output: int,
+    tools_tokens: int = 0,
+) -> list[dict]:
+    """Drop the oldest history messages so the prompt fits the model's context.
+
+    ``messages[0]`` is assumed to be the system message and is always kept, as
+    is the newest (current) message. Older messages are dropped from the oldest
+    side once the estimated token budget is exceeded. The output reservation is
+    capped at a quarter of the context so as much room as possible goes to
+    history (important for small-context backends like litert's server ceiling).
+    """
+    if len(messages) <= 1:
+        return messages
+    system = messages[0]
+    rest = messages[1:]
+    fixed = _estimate_msg_tokens(system) + max(0, int(tools_tokens))
+    floor = 128
+
+    # The current turn (last user message + any in-flight tool round-trips) is
+    # mandatory — the model must see the user's request to answer it.
+    last_user_idx = len(rest) - 1
+    for i in range(len(rest) - 1, -1, -1):
+        if rest[i].get("role") == "user":
+            last_user_idx = i
+            break
+    mandatory = rest[last_user_idx:]
+    mandatory_tokens = sum(_estimate_msg_tokens(m) for m in mandatory)
+
+    reserve = min(int(reserved_output), max(floor, context_window // 4))
+    reserve = max(1, min(reserve, context_window - fixed - mandatory_tokens - floor))
+    budget = context_window - fixed - reserve - mandatory_tokens
+    if budget <= 0:
+        logger.debug("Context trim: no room for history (ctx=%d, fixed=%d), keeping only the current turn", context_window, fixed)
+        return [system] + mandatory
+
+    older = rest[:last_user_idx]
+    total_older = sum(_estimate_msg_tokens(m) for m in older)
+    if total_older <= budget:
+        return messages
+
+    extra = []
+    used = 0
+    for m in reversed(older):
+        cost = _estimate_msg_tokens(m)
+        if used + cost > budget:
+            break
+        extra.append(m)
+        used += cost
+    extra.reverse()
+    while extra and extra[0].get("role") == "tool":
+        extra.pop(0)
+    logger.debug(
+        "Context trim: %d -> %d history msgs (ctx=%d, fixed=%d, reserve=%d)",
+        len(older), len(extra), context_window, fixed, reserve,
+    )
+    return [system] + extra + mandatory
 
 
 def _normalize_messages_for_backend(messages: list[dict], backend: str = "ollama") -> list[dict]:

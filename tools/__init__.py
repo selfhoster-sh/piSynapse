@@ -5,13 +5,14 @@ from .definitions import (
     TOOL_GROUPS,
     TOOL_NAMES,
     TOOLS,
+    _as_bool,
     _safe_int,
     get_combined_tools,
     get_tools_for_group,
     parse_tool_args,
     validate_confirm_params,
 )
-from .dispatcher import run_tool
+from .dispatcher import is_tool_success, run_tool
 
 __all__ = [
     "TOOLS",
@@ -24,5 +25,7 @@ __all__ = [
     "validate_confirm_params",
     "parse_tool_args",
     "run_tool",
+    "is_tool_success",
     "_safe_int",
+    "_as_bool",
 ]

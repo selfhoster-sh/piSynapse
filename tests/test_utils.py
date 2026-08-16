@@ -11,6 +11,20 @@ def test_clean_body_text():
     assert clean_body_text("\nhello\nworld\n") == "hello world"
 
 
+def test_clean_body_text_strips_invisible_spam_padding():
+    padding = "\xa0\u2007\xad\u0350\u200b\ufeff"
+    dirty = "Content starts here" + (padding * 500) + "ends here"
+    cleaned = clean_body_text(dirty)
+    assert "Content starts here" in cleaned
+    assert "ends here" in cleaned
+    assert "\xa0" not in cleaned
+    assert "\u2007" not in cleaned
+    assert "\xad" not in cleaned
+    assert "\u0350" not in cleaned
+    assert "\u200b" not in cleaned
+    assert "\ufeff" not in cleaned
+
+
 def test_sanitize_imap_query():
     assert sanitize_imap_query('hello "world"') == "hello world"
     assert sanitize_imap_query("no quotes here") == "no quotes here"

@@ -58,6 +58,7 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 .sb-head{padding:18px 16px 14px;border-bottom:1px solid var(--border)}
 .sb-top-controls{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
 .sb-brand-text{font-size:13px;font-weight:700;letter-spacing:1px;color:var(--text2);text-transform:uppercase}
+.model-label{font-size:11px;color:var(--text3);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-left:8px}
 .logo-controls{display:flex;align-items:center;gap:4px}
 .icon-btn{background:none;border:none;color:var(--text3);cursor:pointer;
   padding:6px;border-radius:8px;display:flex;align-items:center;justify-content:center;
@@ -174,6 +175,9 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 /* Markdown, code, LaTeX */
 .bubble p{margin-bottom:12px}.bubble p:last-child{margin-bottom:0}
 .bubble ul,.bubble ol{padding-left:24px;margin-bottom:12px}
+.bubble ol{list-style:none;padding-left:4px}
+.bubble ol li{margin-bottom:2px}
+.ol-num{font-weight:600;margin-right:8px}
 .bubble li{margin-bottom:4px}
 .bubble-images{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
 .bubble-images img{max-width:240px;max-height:240px;border-radius:10px;cursor:pointer;
@@ -450,6 +454,7 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
   box-shadow:0 0 8px var(--accent-d);transition:box-shadow .2s}
 .setting-input[type=range]::-webkit-slider-thumb:hover{box-shadow:0 0 14px var(--accent-d)}
 .setting-hint{font-size:11px;color:var(--text4);margin-top:4px}
+.setting-desc{font-size:11px;color:var(--text4);margin-top:4px;line-height:1.4}
 .info-btn{flex-shrink:0;width:20px;height:20px;border-radius:50%;border:1px solid var(--border);
   background:var(--surface3);color:var(--text3);font-size:11px;font-weight:700;cursor:pointer;
   display:inline-flex;align-items:center;justify-content:center;transition:all .2s;padding:0}
@@ -725,6 +730,7 @@ body.glass-mode ::selection{background:color-mix(in srgb, var(--accent) 35%, tra
   <div class="sb-head">
     <div class="sb-top-controls">
       <span class="sb-brand-text">PISYNAPSE</span>
+      <span class="model-label" id="model-label"></span>
       <div class="logo-controls">
         <div class="status-dot" id="status-dot"></div>
       </div>
@@ -789,15 +795,9 @@ body.glass-mode ::selection{background:color-mix(in srgb, var(--accent) 35%, tra
     <div id="input-container">
       <div class="input-left">
       <div class="think-wrap" id="think-wrap">
-        <div class="think-split" id="think-split">
-          <button class="think-bolt" id="inline-think-btn" onclick="toggleThink()" title="Think mode">
-            <svg id="think-bolt-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-          </button>
-          <span class="think-divider"></span>
-          <button class="think-caret" id="think-caret" onclick="toggleThinkPopover(event)" title="Think effort">
-            <svg id="think-chev" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-          </button>
-        </div>
+        <button class="inline-think-btn" id="inline-think-btn" onclick="toggleThink()" title="Think mode">
+          <svg id="think-bolt-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+        </button>
         <div class="think-popover hidden" id="think-popover" role="dialog" aria-label="Think effort">
           <div class="tp-arrow"></div>
           <div class="tp-head">
@@ -919,9 +919,15 @@ const STRINGS = {
     authNeeded:'Bağlantı doğrulanamadı (API anahtarı geçersiz veya eksik)',
     authEnter:'Anahtarı yeniden gir',
     noMemNote:'Konuşurken paylaştığın önemli detaylar burada tutulur.', loading:'Yükleniyor…',
-    connErr:'Sunucuya ulaşılamadı', delErr:'Sohbet silinemedi', thinkOn:'Think modu açık',
+    connErr:'Sunucuya ulaşılamadı', errConnLost:'Sunucuyla bağlantı kurulamadı. Lütfen tekrar dene.',
+    errContextTooLong:'Bağlam çok uzun olduğu için model yanıt üretemedi. Lütfen yeni bir sohbet açıp tekrar dene.',
+    delErr:'Sohbet silinemedi', thinkOn:'Think modu açık',
     thinkOff:'Think modu kapalı', copy:'Kopyala', copied:'Kopyalandı', emailConfirm:'E-posta Gönder',
+    emptyReply:'Yanıt alınamadı — model boş cevap döndürdü, lütfen tekrar dene.',
     delConfirm:'Etkinliği Sil', chatDelConfirm:'Sohbeti Sil', memDelConfirm:'Hafızayı Sil',
+    updateEventConfirm:'Etkinliği Güncelle', noteDelConfirm:'Notu Sil', taskDoneConfirm:'Görevi Tamamla', taskDelConfirm:'Görevi Sil',
+    noteId:'Not ID', taskUid:'Görev', eventNewSummary:'Yeni Başlık', eventNewTime:'Yeni Başlangıç Saati', eventNewDur:'Yeni Süre (dk)',
+    confirmAction:'Onayla',
     emailTo:'Kime', emailSubj:'Konu', emailBody:'İçerik', emailCc:'Cc', emailBcc:'Bcc', delEventName:'Etkinlik',
     chatDelName:'Silinecek Sohbet', memDelContent:'Silinecek Bilgi', warnEmail:'Bu işlem geri alınamaz.',
     warnDel:'Silme işlemi geri alınamaz.', warnChatDel:'Bu sohbetin geçmişi veritabanından kalıcı olarak temizlenecektir.',
@@ -929,7 +935,7 @@ const STRINGS = {
     confirm:'Gönder', confirmDel:'Sil', noEvents:'Bugün etkinlik yok', noCity:'Şehir tanımlı değil',
     you:'Sen', topNew:'Yeni', feelsLike:'Hissedilen',
     settings:'Ayarlar', settingsTitle:'Ayarlar', settingsSaved:'Ayarlar kaydedildi',
-    settingsRestart:'Bazı ayarlar (bağlam penceresi) yalnızca sunucu yeniden başlatıldığında geçerli olur.',
+     settingsRestart:'Bazı ayarlar sunucu yeniden başlatıldığında tam etkili olur.',
     settingsCancel:'İptal', settingsSave:'Kaydet',
     themeLabel:'Tema Rengi', langLabel:'Dil',
     glassLabel:'Buzlu Cam Görünüm', glassHint:'Açık', glassHintOff:'Kapalı',
@@ -958,9 +964,15 @@ const STRINGS = {
     authNeeded:'Connection failed (API key invalid or missing)',
     authEnter:'Re-enter key',
     noMemNote:'Important details you share will be structured here.', loading:'Loading…',
-    connErr:'Could not reach server', delErr:'Could not delete chat', thinkOn:'Think mode on',
+    connErr:'Could not reach server', errConnLost:'Could not connect to the server. Please try again.',
+    errContextTooLong:'The model could not produce a reply because the context is too long. Please start a new chat and try again.',
+    delErr:'Could not delete chat', thinkOn:'Think mode on',
     thinkOff:'Think mode off', copy:'Copy', copied:'Copied', emailConfirm:'Send Email',
+    emptyReply:'No response received — the model returned an empty reply, please try again.',
     delConfirm:'Delete Event', chatDelConfirm:'Delete Chat', memDelConfirm:'Delete Memory',
+    updateEventConfirm:'Update Event', noteDelConfirm:'Delete Note', taskDoneConfirm:'Complete Task', taskDelConfirm:'Delete Task',
+    noteId:'Note ID', taskUid:'Task', eventNewSummary:'New Title', eventNewTime:'New Start Time', eventNewDur:'New Duration (min)',
+    confirmAction:'Confirm',
     emailTo:'To', emailSubj:'Subject', emailBody:'Content', emailCc:'Cc', emailBcc:'Bcc', delEventName:'Event',
     chatDelName:'Chat to Delete', memDelContent:'Record to Delete', warnEmail:'This action cannot be undone.',
     warnDel:'Deletion cannot be undone.', warnChatDel:'This chat history will be permanently wiped from the database.',
@@ -968,7 +980,7 @@ const STRINGS = {
     confirm:'Send', confirmDel:'Delete', noEvents:'No events today', noCity:'City not configured',
     you:'You', topNew:'New', feelsLike:'Feels like',
     settings:'Settings', settingsTitle:'Settings', settingsSaved:'Settings saved',
-    settingsRestart:'Some settings (context window) only take effect after server restart.',
+    settingsRestart:'Some settings take full effect only after server restart.',
     settingsCancel:'Cancel', settingsSave:'Save',
     themeLabel:'Theme Color', langLabel:'Language',
     glassLabel:'Frosted glass', glassHint:'On', glassHintOff:'Off',
@@ -990,7 +1002,7 @@ const STRINGS = {
   }
 };
 
-let lang  = localStorage.getItem('ps_lang')  || 'en';
+let lang  = localStorage.getItem('ps_lang') || ((navigator.language||'').toLowerCase().startsWith('tr') ? 'tr' : 'en');
 let theme = localStorage.getItem('ps_theme') || 'orange';
 let glass = localStorage.getItem('ps_glass') === '1';
 function t(k){ return STRINGS[lang][k] || k; }
@@ -1007,6 +1019,9 @@ const THINK_LEVELS = [
 // litert 0.15 maps all enabled levels to the same token budget; the effort
 // picker is hidden until per-level budgets land (litert b/514760339).
 // Flip to true to re-enable the 5-level slider — backend chain already works.
+// Note: the think button is currently a plain icon button (same as mic/attach);
+// re-enabling the picker also requires restoring the split/caret markup + lv
+// fill classes in #think-wrap (see git history).
 const THINK_EFFORT_PICKER = false;
 const THINK_EFFORTS = THINK_LEVELS.map(l => l.effort);
 let thinkEffort = localStorage.getItem('ps_think_effort') || 'none';
@@ -1135,7 +1150,7 @@ function renderMd(raw){
       const startN=parseInt(m[1],10);
       if(startN!==1) olCounter=startN-1;
       const its=[];
-      while(i<lines.length && (m=lines[i].match(/^\d+\. (.*)/))){ its.push(`<li>${inl(m[2])}</li>`); i++; }
+      while(i<lines.length && (m=lines[i].match(/^(\d+)\. (.*)/))){ its.push(`<li><span class="ol-num">${m[1]}.</span> ${inl(m[2])}</li>`); i++; }
       out.push(`<ol start="${olCounter+1}">${its.join('')}</ol>`);
       olCounter+=its.length;
       continue;
@@ -1289,11 +1304,16 @@ function _levelName(effort){
 
 function _renderThinkState(){
   const idx = _thinkIndex();
-  _thinkSplit().classList.toggle('active', thinkMode);
-  _thinkSplit().classList.remove('lv0','lv1','lv2','lv3','lv4','lv5');
-  _thinkSplit().classList.add(thinkMode ? 'lv'+(idx+1) : 'lv0');
+  _thinkBtn().classList.toggle('active', thinkMode);
+  const split = _thinkSplit();
+  if(split){
+    split.classList.toggle('active', thinkMode);
+    split.classList.remove('lv0','lv1','lv2','lv3','lv4','lv5');
+    split.classList.add(thinkMode ? 'lv'+(idx+1) : 'lv0');
+  }
   _thinkBtn().title = t('thinkTitle') + ' (' + (thinkMode ? _levelName(thinkEffort) : t('thinkNone')) + ')';
-  _thinkChev().style.color = thinkMode ? 'var(--accent)' : 'var(--text3)';
+  const chev = _thinkChev();
+  if(chev) chev.style.color = thinkMode ? 'var(--accent)' : 'var(--text3)';
   _syncPopover();
 }
 
@@ -1863,6 +1883,8 @@ document.addEventListener('DOMContentLoaded', async ()=>{
     }
   }
   if(window._beacon) window._beacon({t:'init', step:'config-done'});
+  const modelLabel = document.getElementById('model-label');
+  if(modelLabel && config.model) modelLabel.textContent = config.model;
   // Preload settings so TTS/STT engines work without opening Settings panel
   try {
     const s = await api('GET','/config/settings');
@@ -1989,6 +2011,7 @@ async function sendMsg(){
   el.value=''; el.style.height='auto'; pendingImages=[]; renderImagePreview();
   addMsg('user',text,true,null,images); showTyping(); setLoading(true);
   let bubble=null, fullText='', thinkBox=null, fullReasoning='';
+  let gotReply=false, emptyWarningShown=false;
   try{
     const headers={'Content-Type':'application/json'};
     const _k=getApiKey(); if(_k) headers['X-API-Key']=_k;
@@ -2006,6 +2029,7 @@ async function sendMsg(){
         if('token' in data){
           if(currentSid !== sid) continue; // user navigated away, skip rendering
           if(!bubble) bubble=createStreamBubble();
+          gotReply=true;
           fullText+=data.token; bubble.innerHTML=renderMd(fullText); scrollEnd(false);
         } else if(data.done){
           if(thinkBox && fullReasoning){
@@ -2016,6 +2040,10 @@ async function sendMsg(){
             const head = thinkBox.querySelector('.think-head');
             head.querySelector('.lab').textContent = t('thinkingTitle');
             head.onclick = e => { e.stopPropagation(); toggleThinkBox(thinkBox); };
+          }
+          if(!gotReply && !emptyWarningShown){
+            emptyWarningShown=true;
+            if(bubble) bubble.textContent='\u26A0\uFE0F '+t('emptyReply'); else addMsg('assistant','\u26A0\uFE0F '+t('emptyReply'));
           }
           if(currentSid === sid){
             await saveSessionName(text);
@@ -2034,7 +2062,11 @@ async function sendMsg(){
         } else if(data.confirm){
           hideTyping(); showConfirmModal(data.confirm); setLoading(false); _pendingStream=null; return;
         } else if(data.error){
-          hideTyping(); if(bubble) bubble.textContent='\u26A0\uFE0F '+data.error; else addMsg('assistant','\u26A0\uFE0F '+data.error);
+          hideTyping();
+          const eMsg = /connection error/i.test(data.error) ? t('errConnLost')
+            : /context too long/i.test(data.error) ? t('errContextTooLong')
+            : data.error;
+          if(bubble) bubble.textContent='\u26A0\uFE0F '+eMsg; else addMsg('assistant','\u26A0\uFE0F '+eMsg);
           toast(t('connErr'),true); setLoading(false); _pendingStream=null; return;
         }
       }
@@ -2045,6 +2077,13 @@ async function sendMsg(){
     }
   } finally{
     if(_pendingStream?.sid === sid) _pendingStream=null;
+    if(!gotReply && !emptyWarningShown){
+      emptyWarningShown=true;
+      if(currentSid === sid){
+        if(bubble) bubble.textContent='\u26A0\uFE0F '+t('emptyReply');
+        else addMsg('assistant','\u26A0\uFE0F '+t('emptyReply'));
+      }
+    }
     if(currentSid === sid){
       // Add TTS button to streamed bubble (createStreamBubble doesn't add one)
       if(bubble && fullText){
@@ -2156,6 +2195,26 @@ function showConfirmModal(action){
   } else if(action.tool==='delete_memory'){
     iconBox.innerHTML=trashSvg; document.getElementById('m-title').textContent=t('memDelConfirm');
     fields.innerHTML=mField(t('memDelContent'), action.params.content||''); warn.style.display='flex'; warn.innerHTML=`${alertSvg} <span>${t('warnMemDel')}</span>`; btn.textContent=t('confirmDel'); btn.className='modal-confirm danger';
+  } else if(action.tool==='update_calendar_event'){
+    iconBox.innerHTML=alertSvg; document.getElementById('m-title').textContent=t('updateEventConfirm');
+    fields.innerHTML=mInput(t('delEventName'), action.params.summary||'', 'summary')
+      + mInput(t('eventNewSummary'), action.params.new_summary||'', 'new_summary')
+      + mInput(t('eventNewTime'), action.params.new_start_time||'', 'new_start_time')
+      + mInput(t('eventNewDur'), action.params.new_duration_minutes||'', 'new_duration_minutes');
+    warn.style.display='flex'; warn.innerHTML=`${alertSvg} <span>${t('warnDel')}</span>`; btn.textContent=t('confirmAction'); btn.className='modal-confirm';
+  } else if(action.tool==='delete_note'){
+    iconBox.innerHTML=trashSvg; document.getElementById('m-title').textContent=t('noteDelConfirm');
+    fields.innerHTML=mField(t('noteId'), action.params.note_id||''); warn.style.display='flex'; warn.innerHTML=`${alertSvg} <span>${t('warnDel')}</span>`; btn.textContent=t('confirmDel'); btn.className='modal-confirm danger';
+  } else if(action.tool==='complete_task'){
+    iconBox.innerHTML=alertSvg; document.getElementById('m-title').textContent=t('taskDoneConfirm');
+    fields.innerHTML=mField(t('taskUid'), action.params.uid||''); warn.style.display='flex'; warn.innerHTML=`${alertSvg} <span>${t('warnDel')}</span>`; btn.textContent=t('confirmAction'); btn.className='modal-confirm';
+  } else if(action.tool==='delete_task'){
+    iconBox.innerHTML=trashSvg; document.getElementById('m-title').textContent=t('taskDelConfirm');
+    fields.innerHTML=mField(t('taskUid'), action.params.uid||''); warn.style.display='flex'; warn.innerHTML=`${alertSvg} <span>${t('warnDel')}</span>`; btn.textContent=t('confirmDel'); btn.className='modal-confirm danger';
+  } else {
+    iconBox.innerHTML=alertSvg; document.getElementById('m-title').textContent=action.tool||'Confirm';
+    fields.innerHTML=Object.entries(action.params||{}).map(([k,v])=>mField(k, String(v))).join('');
+    warn.style.display='flex'; warn.innerHTML=`${alertSvg} <span>${t('warnDel')}</span>`; btn.textContent=t('confirmAction'); btn.className='modal-confirm';
   }
   document.getElementById('confirm-modal').classList.add('open');
 }
@@ -2219,7 +2278,7 @@ function triggerDelMemory(id, content) { showConfirmModal({ tool: 'delete_memory
 let _settingsData = {};
 
 const SETTINGS_GROUPS = {
-  'Generation':  ['LLM_TEMPERATURE','LLM_NUM_CTX'],
+  'Generation':  ['LLM_TEMPERATURE','LLM_NUM_CTX','LLM_MAX_OUTPUT_TOKENS'],
   'Model':       ['LLM_MODEL'],
   'Chat':        ['HISTORY_LIMIT','MEMORY_LIMIT'],
   'Voice':       ['TTS_VOICE','TTS_ENGINE','STT_ENGINE','AUTO_SEND_ON_VOICE','AUTO_TTS_ON_VOICE'],
@@ -2289,6 +2348,9 @@ function _renderSetting(key, entry, advanced) {
   const val = entry.value;
   const type = entry.type;
   const label = _settingLabel(entry);
+  const dl = entry.desc || {};
+  const descText = dl[lang] || dl.tr || dl.en || '';
+  const descDiv = (!advanced && descText) ? `<div class="setting-desc">${esc(descText)}</div>` : '';
   const infoBtn = advanced ? `<button class="info-btn" id="ib-${key}" onclick="toggleSettingInfo('${key}')" title="?">\u24D8</button>` : '';
   const hintDiv = advanced ? `<div class="setting-hint" id="hi-${key}" style="display:none">${esc(_settingHint(key))}</div>` : '';
 
@@ -2298,7 +2360,7 @@ function _renderSetting(key, entry, advanced) {
     const row = advanced
       ? `<div class="setting-label"><span class="label-wrap"><span>${esc(label || key)}</span>${infoBtn}</span><label class="switch"><input type="checkbox" id="si-${key}" ${checked ? 'checked' : ''} onchange="this.dataset.val=this.checked?'on':'off'"><span class="track"></span></label></div>`
       : `<div class="setting-label"><span>${esc(label || key)}</span><label class="switch"><input type="checkbox" id="si-${key}" ${checked ? 'checked' : ''} onchange="this.dataset.val=this.checked?'on':'off'"><span class="track"></span></label></div>`;
-    return `<div class="setting-item${advanced ? ' advanced' : ''}">${row}${hintDiv}</div>`;
+    return `<div class="setting-item${advanced ? ' advanced' : ''}">${row}${hintDiv}${descDiv}</div>`;
   }
 
   if (type === 'select' && entry.options) {
@@ -2310,7 +2372,7 @@ function _renderSetting(key, entry, advanced) {
     const row = advanced
       ? `<div class="setting-label"><span class="label-wrap"><span>${esc(label || key)}</span>${infoBtn}</span></div>`
       : `<div class="setting-label"><span>${esc(label || key)}</span></div>`;
-    return `<div class="setting-item${advanced ? ' advanced' : ''}">${row}<select class="setting-input" id="si-${key}">${opts}</select>${hintDiv}</div>`;
+    return `<div class="setting-item${advanced ? ' advanced' : ''}">${row}<select class="setting-input" id="si-${key}">${opts}</select>${hintDiv}${descDiv}</div>`;
   } else if (type === 'float' || type === 'int') {
     const min = entry.min ?? 0;
     const max = entry.max ?? 100;
@@ -2318,12 +2380,12 @@ function _renderSetting(key, entry, advanced) {
     const row = advanced
       ? `<div class="setting-label"><span class="label-wrap"><span>${esc(label || key)}</span>${infoBtn}</span><span class="val-display" id="sv-${key}">${esc(val)}</span></div>`
       : `<div class="setting-label"><span>${esc(label || key)}</span><span class="val-display" id="sv-${key}">${esc(val)}</span></div>`;
-    return `<div class="setting-item${advanced ? ' advanced' : ''}">${row}<input type="range" class="setting-input" id="si-${key}" min="${min}" max="${max}" step="${step}" value="${esc(val)}" oninput="document.getElementById('sv-${key}').textContent=this.value">${hintDiv}</div>`;
+    return `<div class="setting-item${advanced ? ' advanced' : ''}">${row}<input type="range" class="setting-input" id="si-${key}" min="${min}" max="${max}" step="${step}" value="${esc(val)}" oninput="document.getElementById('sv-${key}').textContent=this.value">${hintDiv}${descDiv}</div>`;
   } else {
     const row = advanced
       ? `<div class="setting-label"><span class="label-wrap"><span>${esc(label || key)}</span>${infoBtn}</span></div>`
       : `<div class="setting-label"><span>${esc(label || key)}</span></div>`;
-    return `<div class="setting-item${advanced ? ' advanced' : ''}">${row}<input type="text" class="setting-input" style="padding:8px 10px" id="si-${key}" value="${esc(val)}">${hintDiv}</div>`;
+    return `<div class="setting-item${advanced ? ' advanced' : ''}">${row}<input type="text" class="setting-input" style="padding:8px 10px" id="si-${key}" value="${esc(val)}">${hintDiv}${descDiv}</div>`;
   }
 }
 
@@ -2651,7 +2713,7 @@ if(localStorage.getItem('ps_compact')) document.body.classList.add('sidebar-comp
 
 // ── PWA Service Worker ──────────────────────────────────────
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('/static/sw.js').catch(()=>{});
+  navigator.serviceWorker.register('/sw.js').catch(()=>{});
 }
 
 // ── Standalone PWA adjustments ──────────────────────────────────────────────

@@ -30,14 +30,14 @@ RULES (follow these exactly):
 1. When the user asks you to DO something — list, show, create, delete, send, save, update, change, search, read, complete — call the tool immediately. Do NOT describe what you would do. Do NOT ask "shall I?". Just do it.
 2. When the user asks about their emails, tasks, notes, or calendar: call the list tool with sensible defaults (past 7 days for calendar, 10 recent for email, all for tasks/notes). Do NOT ask "how many" or "which ones".
 3. If a list result is sparse (e.g. no events today), proactively expand the search (e.g. to 7 days) without being asked.
-4. After calling a list tool, you have the data to answer follow-up questions. The "Recent Emails Context" section below contains email previews. Only call read_email if the user asks for full details. Do NOT ask the user "which one" or "what ID" — just pick the right email from the data you already have.
+ 4. After calling a list tool, you have the data to answer follow-up questions. The "Recent Emails Context" section below contains email previews. Only call read_email if the user asks for full details. Do NOT ask the user "which one" or "what ID" — just pick the right email from the data you already have. When the user asks to read or explain an email they refer to by sender, topic, or list number, call read_email immediately with its list number and summarize the content. If several emails match, read and summarize the most recent one.
 5. When the user asks to change/update/modify something (event, task, note, email), call the update tool directly. Do NOT say "I can't do that" — you have all the tools you need.
 6. save_memory is for durable user facts only (preferences, habits, personal info). Never save greetings or facts already shown in Core Memories.
 7. For relative dates (tomorrow, next week, in X hours, next Monday): call get_datetime first, then call the real tool with the absolute date.
 8. Always convert dates to ISO 8601 when calling tool parameters.
 9. Keep responses concise — a few sentences to a short paragraph, unless the task genuinely needs more detail.
 10. Be natural and conversational. Use a warm, friendly tone. It's okay to say "Sure!" or "Of course!".
-11. When listing emails or other multi-item results, number the items CONSECUTIVELY ('1.', '2.', '3.', ...) — never repeat the same number. Present each email as ONE compact line: '**N.** Gönderen: X — Konu: Y — Özet: ...' with a very short preview. Keep the whole list short enough to fit without being cut off. Never show raw email IDs; refer to each email only by its list number.
+11. When listing emails or other multi-item results, number the items CONSECUTIVELY starting at 1 ('1.', '2.', '3.', ...) — never repeat the same number. Present each email as ONE compact markdown list line: '1. Gönderen: X — Konu: Y — Özet: ...' (write the number then a period+space, then the text — do NOT use bold '**1.**' for the number and do NOT copy any leading numbers that may appear in tool output). Keep the whole list short enough to fit without being cut off. Never show raw email IDs; refer to each email only by its list number.
 
 Always use the "Current date and time" value below — never guess or assume.
 
@@ -64,9 +64,14 @@ _GROUP_TOOLS: dict[str, tuple[str, str]] = {
         "list_emails, read_email, send_email, search_emails",
         "When the user asks about their emails, call list_emails with limit=10 immediately. "
         "Present the results as a numbered list ('1.', '2.', '3.', ...) — never repeat a number, "
-        "one compact line per email: '**N.** Gönderen: X — Konu: Y — Özet: ...'. "
+        "one compact line per email: '1. Gönderen: X — Konu: Y — Özet: ...' (plain number, "
+        "then a period+space, then the text — do NOT use bold '**1.**' and do NOT copy any "
+        "leading numbers that may appear in tool output). "
         "Never show raw email IDs; refer to emails only by their list number. "
-        "If the user asks about a specific email's content and you don't have the data, call search_emails to find it. "
+        "When the user asks to read or explain an email from the list by sender, topic, or number, "
+        "call read_email immediately with its list number and summarize the content — never ask which email. "
+        "If several emails match, read and summarize the most recent one. "
+        "If the user asks about an email's content that is not in the list, call search_emails to find it. "
         "Call read_email with the email's list number for full details. "
         "Call send_email to send (requires confirmation). "
         "Never ask the user to provide an email ID or subject — you have the tools to find it yourself.",
@@ -191,27 +196,28 @@ def build_context(
     return "".join(parts)
 
 
-# -- Email context cache (per session) --
-_email_context: dict[str, tuple[float, list[dict]]] = {}
-_EMAIL_CONTEXT_TTL = 3600  # 1 hour
+# -- Email context (persistent, per-session listing) --
+#
+# The email listing is stored in the `email_session_map` table, not in memory:
+# the list number the model sees ("1.", "2.", ...) maps to the real IMAP
+# message ID and survives restarts, so a resumed session still resolves
+# "read email 3" correctly.
+
+async def cache_email_context(session_id: str, emails: list[dict]):
+    """Persist the recent email listing for a session."""
+    if not session_id:
+        return
+    from db import save_email_map
+    await save_email_map(session_id, emails)
 
 
-def cache_email_context(session_id: str, emails: list[dict]):
-    """Store recent email listing for later reference resolution."""
-    import time
-    now = time.time()
-    expired = [k for k, (ts, _) in _email_context.items() if now - ts > _EMAIL_CONTEXT_TTL]
-    for k in expired:
-        del _email_context[k]
-    if session_id:
-        _email_context[session_id] = (now, [
-            {"id": m.get("id", ""), "subject": m.get("subject", ""),
-             "from": m.get("from", ""), "preview": m.get("body", "")[:200]}
-            for m in emails
-        ])
+async def get_email_context(session_id: str) -> list[dict]:
+    """Retrieve the persisted email listing for a session."""
+    from db import get_email_map
+    return await get_email_map(session_id)
 
 
-def get_email_context(session_id: str) -> list[dict]:
-    """Retrieve cached email context for a session."""
-    entry = _email_context.get(session_id)
-    return entry[1] if entry else []
+async def clear_email_context(session_id: str):
+    """Drop the persisted email listing for a session."""
+    from db import clear_email_map
+    await clear_email_map(session_id)

@@ -324,7 +324,7 @@ async def security_middleware(request: Request, call_next):
     path = request.url.path
 
     # --- Skip auth for exempt paths ---
-    is_exempt = path == "/health" or path == "/" or path == "/favicon.ico" or path.startswith("/static")
+    is_exempt = path == "/health" or path == "/" or path == "/favicon.ico" or path == "/sw.js" or path.startswith("/static")
 
     # --- Skip auth for CORS preflight (HEAD/OPTIONS never carry API key) ---
     if request.method in ("HEAD", "OPTIONS"):
@@ -408,6 +408,11 @@ async def read_index():
 @app.get("/favicon.ico")
 async def favicon():
     return FileResponse("static/icons/favicon.ico", media_type="image/x-icon")
+
+
+@app.get("/sw.js")
+async def service_worker():
+    return FileResponse("static/sw.js", media_type="application/javascript")
 
 
 @app.get("/health")
