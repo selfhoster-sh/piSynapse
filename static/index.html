@@ -1118,7 +1118,7 @@ function renderMd(raw){
   });
 
   const lines=s.split('\n'), out=[];
-  let i=0, m;
+  let i=0, m, olCounter=0;
 
   while(i<lines.length){
     const l=lines[i];
@@ -1131,10 +1131,14 @@ function renderMd(raw){
       while(i<lines.length && (m=lines[i].match(/^[-*] (.*)/))){ its.push(`<li>${inl(m[1])}</li>`); i++; }
       out.push(`<ul>${its.join('')}</ul>`); continue;
     }
-    if((m=l.match(/^\d+\. (.*)/))){
+    if((m=l.match(/^(\d+)\. (.*)/))){
+      const startN=parseInt(m[1],10);
+      if(startN!==1) olCounter=startN-1;
       const its=[];
-      while(i<lines.length && (m=lines[i].match(/^\d+\. (.*)/))){ its.push(`<li>${inl(m[1])}</li>`); i++; }
-      out.push(`<ol>${its.join('')}</ol>`); continue;
+      while(i<lines.length && (m=lines[i].match(/^\d+\. (.*)/))){ its.push(`<li>${inl(m[2])}</li>`); i++; }
+      out.push(`<ol start="${olCounter+1}">${its.join('')}</ol>`);
+      olCounter+=its.length;
+      continue;
     }
     if(l.trim().startsWith('|')){
       const rows=[];

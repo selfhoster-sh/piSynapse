@@ -105,7 +105,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "list_emails",
-            "description": "Show the user's recent inbox emails with sender, subject, date, and a preview. Returns a list you can use to answer questions or pick one to read in full.",
+            "description": "Show the user's recent inbox emails with sender, subject, date, and a short preview. Each email is numbered (1., 2., ...). Refer to emails only by their list number — never show raw IDs to the user.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -119,11 +119,11 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "read_email",
-            "description": "Read the full content of one email by its ID from list_emails or search_emails results. Use this when the user asks about details of a specific email.",
+            "description": "Read the full content of one email by its list number (e.g. '3') from list_emails or search_emails results. Use this when the user asks about details of a specific email.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "message_id": {"type": "string", "description": "The email's ID (shown in list_emails output under 'ID:')."},
+                    "message_id": {"type": "string", "description": "The email's list number (e.g. '3') from list_emails or search_emails output. Never ask the user for or show raw IDs."},
                 },
                 "required": ["message_id"],
             },
@@ -151,7 +151,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "search_emails",
-            "description": "Search the user's emails by subject, sender, or body content. Returns matching emails with previews. Useful when the user mentions a specific topic or person.",
+            "description": "Search the user's emails by subject, sender, or body content. Returns numbered matching emails with previews (1., 2., ...). Useful when the user mentions a specific topic or person. Never show raw IDs to the user.",
             "parameters": {
                 "type": "object",
                 "properties": {

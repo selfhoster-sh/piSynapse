@@ -10,6 +10,23 @@ from .definitions import _safe_int
 logger = logging.getLogger("piSynapse")
 
 
+def _resolve_email_id(session_id: str, ref) -> str | None:
+    """Resolve a 1-based list position to the real email ID for this session.
+
+    The model only ever sees numbered list items (never raw IDs). If ``ref``
+    is a number that fits the cached listing, map it to the stored ID;
+    otherwise pass the reference through unchanged (legacy raw-ID calls).
+    """
+    from prompt import get_email_context
+
+    emails = get_email_context(session_id)
+    if emails and (isinstance(ref, int) or (isinstance(ref, str) and ref.isdigit())):
+        idx = int(ref)
+        if 1 <= idx <= len(emails):
+            return emails[idx - 1].get("id")
+    return ref
+
+
 async def run_tool(name: str, params: dict, context: dict | None = None) -> str:
     """Route a tool call to the appropriate handler and return the result string."""
     context = context or {}
@@ -208,23 +225,21 @@ async def _run_mail_tool(name: str, params: dict, session_id: str = "") -> str:
                 return "Inbox is empty."
             if session_id:
                 cache_email_context(session_id, msgs)
-            lines = [f" Recent Emails (showing {len(msgs)}):\n"]
+            lines = [f" Recent Emails (showing {len(msgs)}):"]
             for i, m in enumerate(msgs, 1):
-                lines.append(f"{i}. From: {m.get('from', '?')}")
-                lines.append(f"   Subject: {m.get('subject', '(no subject)')}")
-                lines.append(f"   Date: {m.get('date', '?')}")
-                lines.append(f"   ID: {m.get('id')}")
-                bp = m.get("body", "")
-                if bp:
-                    lines.append(f"   Preview: {bp[:250]}...")
-                lines.append("")
+                bp = (m.get("body", "") or "").replace("\n", " ")[:150]
+                lines.append(
+                    f"{i}. From: {m.get('from', '?')} | Subject: {m.get('subject', '(no subject)')} "
+                    f"| Date: {m.get('date', '?')} | Preview: {bp}"
+                )
             return "\n".join(lines)
 
         elif name == "read_email":
             mid = params.get("message_id")
             if not mid:
                 return "ERROR: message_id required."
-            m = await mc.get_message(account_id, mailbox_id, mid)
+            resolved = _resolve_email_id(session_id, mid)
+            m = await mc.get_message(account_id, mailbox_id, resolved)
             if not m:
                 return "Email not found."
             return (f"Email Details\n\nFrom: {m.get('from', '?')}\n"
@@ -251,15 +266,13 @@ async def _run_mail_tool(name: str, params: dict, session_id: str = "") -> str:
                 return f"'{q}' no results found."
             if session_id:
                 cache_email_context(session_id, results)
-            lines = [f"'{q}' Results:\n"]
+            lines = [f"'{q}' Results ({len(results)}):"]
             for i, m in enumerate(results, 1):
-                lines.append(f"{i}. From: {m.get('from', '?')}")
-                lines.append(f"   Subject: {m.get('subject', '(no subject)')}")
-                lines.append(f"   ID: {m.get('id')}")
-                bp = m.get("body", "")
-                if bp:
-                    lines.append(f"   Preview: {bp[:250]}...")
-                lines.append("")
+                bp = (m.get("body", "") or "").replace("\n", " ")[:150]
+                lines.append(
+                    f"{i}. From: {m.get('from', '?')} | Subject: {m.get('subject', '(no subject)')} "
+                    f"| Preview: {bp}"
+                )
             return "\n".join(lines)
 
     except ValueError as e:

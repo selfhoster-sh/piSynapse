@@ -134,7 +134,8 @@ class TestMailTools:
         cache.assert_called_once_with("s1", msgs)
         assert "From: a@x.com" in result
         assert "Subject: Hi" in result
-        assert "ID: 5" in result
+        assert "ID:" not in result
+        assert "1." in result
         assert "Preview: hello world" in result
 
     async def test_list_emails_does_not_cache_without_session(self):
@@ -169,6 +170,23 @@ class TestMailTools:
         mc.get_message.assert_awaited_once_with(1, "INBOX", 42)
         assert "From: a@x.com" in result
         assert "content here" in result
+
+    async def test_read_email_resolves_list_number_to_id(self):
+        msg = {"from": "a@x.com", "subject": "Hi", "date": "Mon", "body": "content here"}
+        mc = _mail_client(message=msg)
+        cached = [{"id": "999", "from": "a@x.com", "subject": "Hi", "preview": "content here"}]
+        with patch("mail.get_active_mail_client", return_value=mc), patch("prompt.get_email_context", return_value=cached):
+            result = await run_tool("read_email", {"message_id": "1"}, context={"session_id": "s1"})
+        mc.get_message.assert_awaited_once_with(1, "INBOX", "999")
+        assert "content here" in result
+
+    async def test_read_email_list_number_out_of_range_falls_back(self):
+        cached = [{"id": "999", "from": "a@x.com", "subject": "Hi", "preview": "content here"}]
+        mc = _mail_client(message=None)
+        with patch("mail.get_active_mail_client", return_value=mc), patch("prompt.get_email_context", return_value=cached):
+            result = await run_tool("read_email", {"message_id": "5"}, context={"session_id": "s1"})
+        mc.get_message.assert_awaited_once_with(1, "INBOX", "5")
+        assert result == "Email not found."
 
     async def test_send_requires_all_fields(self):
         with patch("mail.get_active_mail_client", return_value=_mail_client()):
@@ -206,7 +224,8 @@ class TestMailTools:
             result = await run_tool("search_emails", {"query": "Match"}, context={"session_id": "s2"})
         mc.search_messages.assert_awaited_once_with(1, "Match", 10)
         cache.assert_called_once_with("s2", msgs)
-        assert "'Match' Results:" in result
+        assert "'Match' Results (1):" in result
+        assert "ID:" not in result
 
     async def test_mail_exception_is_sanitized(self):
         mc = _mail_client()
