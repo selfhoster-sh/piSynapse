@@ -4,7 +4,7 @@ import re
 
 import httpx
 
-from config import LLM_TIMEOUT
+from config import get
 from tools import TOOL_NAMES
 
 logger = logging.getLogger("piSynapse")
@@ -37,8 +37,15 @@ _REASONING_WRAP_RE = re.compile(r'<\|channel>.*?\n|<channel\|>|</?think>', re.DO
 
 def _get_client() -> httpx.AsyncClient:
     global _http_client
+    timeout = float(get("LLM_TIMEOUT", 240))
     if _http_client is None or _http_client.is_closed:
-        _http_client = httpx.AsyncClient(timeout=LLM_TIMEOUT)
+        _http_client = httpx.AsyncClient(timeout=timeout)
+        return _http_client
+    try:
+        if _http_client.timeout.connect != timeout:
+            _http_client.timeout = httpx.Timeout(timeout)
+    except Exception:
+        pass
     return _http_client
 
 

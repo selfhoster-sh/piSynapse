@@ -6,11 +6,8 @@ import time
 
 from config import (
     LITERT_BASE_URL,
-    LLM_BACKEND,
-    LLM_MAX_TOOL_ITERATIONS,
-    LLM_NUM_CTX,
     OLLAMA_BASE_URL,
-    SSE_READ_IDLE_TIMEOUT,
+    get,
 )
 from tool_verification import run_verification
 from tools import (
@@ -104,7 +101,7 @@ async def chat_with_ollama_stream(
     current_msgs: list[dict] = []
     memories_saved = 0
     client = _get_client()
-    backend = LLM_BACKEND
+    backend = get("LLM_BACKEND", "litert")
 
     from tools import get_combined_tools
     if intent == "question" and tool_group is None:
@@ -122,7 +119,7 @@ async def chat_with_ollama_stream(
 
     executed_tool_sigs: set[str] = set()
 
-    for iteration in range(LLM_MAX_TOOL_ITERATIONS):
+    for iteration in range(get("LLM_MAX_TOOL_ITERATIONS", 5)):
         if backend == "litert":
             payload = _build_payload(
                 _normalize_messages_for_backend(full_msgs + current_msgs, backend="litert"),
@@ -145,7 +142,7 @@ async def chat_with_ollama_stream(
         try:
             async with client.stream("POST", url, json=payload) as resp:
                 resp.raise_for_status()
-                async for raw in _iter_sse_lines(resp, SSE_READ_IDLE_TIMEOUT):
+                async for raw in _iter_sse_lines(resp, get("SSE_READ_IDLE_TIMEOUT", 120.0)):
                     if not raw:
                         continue
 
@@ -219,7 +216,7 @@ async def chat_with_ollama_stream(
             return
 
         if done_reason == "length":
-            logger.warning(f"Model stopped early (done_reason='length'). Consider raising LLM_NUM_CTX (currently {LLM_NUM_CTX}).")
+            logger.warning(f"Model stopped early (done_reason='length'). Consider raising LLM_NUM_CTX (currently {get('LLM_NUM_CTX', 8192)}).")
 
         if not tool_calls_acc and not think and backend != "litert" and _check_tool_leak(full_text):
             logger.info("Tool leak detected in stream buffer, retrying with think-mode...")
@@ -318,7 +315,7 @@ async def chat_with_ollama_stream(
             yield {"confirm": action}
             return
 
-        if non_confirm_calls and iteration < LLM_MAX_TOOL_ITERATIONS - 1:
+        if non_confirm_calls and iteration < get("LLM_MAX_TOOL_ITERATIONS", 5) - 1:
             for m in reversed(current_msgs):
                 if m.get("role") == "tool":
                     m["content"] += (
@@ -328,5 +325,5 @@ async def chat_with_ollama_stream(
                     )
                     break
 
-    logger.warning(f"Max tool iterations ({LLM_MAX_TOOL_ITERATIONS}) exceeded in streaming")
+    logger.warning(f"Max tool iterations ({get('LLM_MAX_TOOL_ITERATIONS', 5)}) exceeded in streaming")
     yield {"done": True, "memories_saved": memories_saved, "reasoning": clean_reasoning(full_reasoning)}
