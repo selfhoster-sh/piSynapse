@@ -18,6 +18,12 @@ logger = logging.getLogger("piSynapse")
 
 _VALID_REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh")
 
+# Cap on generated output tokens. litert-lm's own default (~600) was cutting
+# long answers (e.g. email lists) short; the full context window (LLM_NUM_CTX)
+# lets the model run away into repetition loops. 2048 fits a 10-item email list
+# with ~4x headroom while still bounding runaway generation to ~2-3 minutes.
+_MAX_OUTPUT_TOKENS = 2048
+
 
 def _reasoning_effort(think: bool, requested: str | None = None) -> str:
     """Map think flag + level to a litert-lm reasoning_effort value.
@@ -57,7 +63,9 @@ def _build_payload(
             "temperature": LLM_TEMPERATURE,
             "top_p": LLM_TOP_P,
             "top_k": LLM_TOP_K,
-            "max_tokens": LLM_NUM_CTX,
+            "max_tokens": _MAX_OUTPUT_TOKENS,
+            # litert-lm only reads max_completion_tokens; max_tokens is ignored.
+            "max_completion_tokens": _MAX_OUTPUT_TOKENS,
             # Gemma 4 thinking is a native request-level feature (litert-lm >= 0.15):
             # "none" disables it, any of minimal/low/medium/high/xhigh enables it.
             "reasoning_effort": _reasoning_effort(think, reasoning_effort),
