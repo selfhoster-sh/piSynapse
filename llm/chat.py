@@ -97,6 +97,7 @@ async def summarize_conversation(messages: list[dict], previous_summary: str = "
     )
     if backend == "litert":
         payload["max_tokens"] = 500
+        payload["max_completion_tokens"] = 500
         url = f"{LITERT_BASE_URL}/v1/chat/completions"
     else:
         payload["options"] = {**payload.get("options", {}), "num_predict": 500}

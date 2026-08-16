@@ -309,6 +309,7 @@ async def transcribe_gemma4(
                     ],
                 }],
                 "max_tokens": num_predict,
+                "max_completion_tokens": num_predict,
                 "temperature": 0.1,
             }
             async with httpx.AsyncClient(timeout=60) as client:
