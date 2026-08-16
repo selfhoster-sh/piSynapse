@@ -2,12 +2,40 @@
 import asyncio
 import logging
 import os
+import re
 
 from config import LITERT_BASE_URL, OLLAMA_BASE_URL, get
 
 from .utils import _get_client
 
 logger = logging.getLogger("piSynapse")
+
+_FOLLOWUP_RE = re.compile(
+    r"gelen|anlat|detayl[ıi]|içeri[gğ]ini|icerigini|oku|özetle|ozetle|ne yaz|yazan", re.IGNORECASE
+)
+_EMAIL_CTX_MARKERS = (
+    "gönderen:", "konu:", "özet:", "e-posta", "eposta", "posta",
+    "mail", "gelen kutusu", "mesaj", "email",
+)
+
+
+def _has_recent_email_context(history: list[dict]) -> bool:
+    for m in history[-8:]:
+        content = m.get("content") or m.get("text") or ""
+        if not isinstance(content, str):
+            continue
+        low = content.lower()
+        if any(mk in low for mk in _EMAIL_CTX_MARKERS):
+            return True
+    return False
+
+
+def contextual_email_followup(message: str, history: list[dict]) -> bool:
+    """True if the message is a follow-up reference to a previously listed email."""
+    if not _FOLLOWUP_RE.search(message):
+        return False
+    return _has_recent_email_context(history)
+
 
 # Prompt fed to the LLM when INTENT_LLM_FALLBACK=on
 _INTENT_PROMPT = (
@@ -100,10 +128,7 @@ async def _get_tool_embeddings() -> list[tuple[str | None, str, bytes]]:
             from embedding import embed_batch_async
             descriptions = [desc for _, desc in _TOOL_EMBED_CORPUS]
             vecs = await embed_batch_async(descriptions)
-            _tool_embed_cache = [
-                (group, desc, vec.astype("float32").tobytes())
-                for (group, desc), vec in zip(_TOOL_EMBED_CORPUS, vecs)
-            ]
+            _tool_embed_cache = [(group, desc, vec) for (group, desc), vec in zip(_TOOL_EMBED_CORPUS, vecs)]
             logger.info("Tool embedding corpus loaded (intent routing)")
         except Exception as e:
             logger.warning(f"Tool embedding corpus failed: {e}, intent routing disabled")
@@ -174,7 +199,7 @@ async def _classify_intent(message: str, query_embedding: bytes | None = None) -
 
     # Optional LLM fallback — improves accuracy but adds ~15s delay before streaming starts.
     if os.getenv("INTENT_LLM_FALLBACK", "off") == "on":
-        backend = (os.environ.get("LLM_BACKEND") or "ollama").strip().lower()
+        backend = (os.environ.get("LLM_BACKEND") or "litert").strip().lower()
         client = _get_client()
         model_name = get("LLM_MODEL", "gemma4-e2b")
         payload = {
@@ -184,6 +209,8 @@ async def _classify_intent(message: str, query_embedding: bytes | None = None) -
                 {"role": "user", "content": message},
             ],
             "stream": False,
+            "max_tokens": 20,
+            "max_completion_tokens": 20,
         }
         if backend == "litert":
             url = f"{LITERT_BASE_URL}/v1/chat/completions"

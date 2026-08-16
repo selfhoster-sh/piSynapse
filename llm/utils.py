@@ -1,4 +1,5 @@
 """Shared HTTP client, tool-leak detection, and text cleanup for LLM modules."""
+import json
 import logging
 import re
 
@@ -34,10 +35,58 @@ _PREFIX_RE = re.compile(r'^(?:piSynapse|PiSynapse|pisynapse|PISYNAPSE)\s*:\s*', 
 # Reasoning-channel wrapper tags that may surround thinking text
 _REASONING_WRAP_RE = re.compile(r'<\|channel>.*?\n|<channel\|>|</?think>', re.DOTALL)
 
+# Literal leaked tool call the model may write as plain text instead of a
+# structured tool_calls object, e.g. `<|tool_call|>call:read_email{id:5}<tool_call|>`.
+# Group 1 = tool name, group 2 = `key:value` argument payload.
+_TOOL_CALL_TAG_RE = re.compile(
+    r'<\|?/?tool_call\|?>\s*call:(\w+)\s*\{([^{}]*)\}\s*<\|?/?tool_call\|?>',
+    re.DOTALL,
+)
+
+
+def parse_leaked_tool_call(text: str) -> dict | None:
+    """Recover a tool call the model emitted as plain text.
+
+    Some small models write `<|tool_call|>call:read_email{id:5}<tool_call|>`
+    in the content channel instead of producing a real ``tool_calls`` object.
+    Returns an OpenAI-style tool-call dict when found, else ``None``.
+    """
+    if not text:
+        return None
+    m = _TOOL_CALL_TAG_RE.search(text)
+    if not m:
+        return None
+    name, args_src = m.group(1), m.group(2)
+    args: dict = {}
+    for kq, ku, val in re.findall(r'(?:"(\w+)"|(\w+))\s*:\s*("(?:\\.|[^"])*"|[^,}\s]+)', args_src):
+        key = kq or ku
+        if val.startswith('"') and val.endswith('"'):
+            try:
+                val = json.loads(val)
+            except (ValueError, TypeError):
+                val = val[1:-1]
+        elif val.isdigit():
+            val = int(val)
+        args[key] = val
+    return {
+        "id": f"leaked_{name}",
+        "type": "function",
+        "function": {"name": name, "arguments": json.dumps(args, ensure_ascii=False)},
+    }
+
+
+def strip_tool_leaks(text: str) -> str:
+    """Remove leaked <|tool_call|> fragments from assistant text."""
+    if not text:
+        return text
+    text = _TOOL_CALL_TAG_RE.sub("", text)
+    text = _TOOL_TAG_RE.sub("", text)
+    return re.sub(r"[ \t]{2,}", " ", text).strip()
+
 
 def _get_client() -> httpx.AsyncClient:
     global _http_client
-    timeout = float(get("LLM_TIMEOUT", 240))
+    timeout = float(get("LLM_TIMEOUT", 600))
     if _http_client is None or _http_client.is_closed:
         _http_client = httpx.AsyncClient(timeout=timeout)
         return _http_client

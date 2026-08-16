@@ -175,6 +175,13 @@ def test_deserialize_raw_float32():
     np.testing.assert_allclose(result, vec)
 
 
+def test_deserialize_raw_float32_starting_with_0x80():
+    vec = np.array([0x00000080, 0xC0000000, 0x40400000], dtype=np.uint32).view(np.float32)
+    blob = vec.tobytes()
+    assert blob[0] == 0x80
+    np.testing.assert_allclose(_deserialize(blob), vec)
+
+
 def test_deserialize_legacy_pickle():
     vec = np.array([0.25, 1.5], dtype="float32")
     blob = pickle.dumps(vec)

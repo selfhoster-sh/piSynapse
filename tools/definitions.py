@@ -4,14 +4,41 @@
 import json
 
 
-def _safe_int(value, default: int, param_name: str) -> int:
-    """Try to cast value to int; raise ValueError on failure."""
+def _safe_int(value, default: int, param_name: str, min_value: int | None = None) -> int:
+    """Try to cast value to int; raise ValueError on failure.
+
+    If ``min_value`` is given, values below it are rejected — e.g. a
+    negative ``limit`` must not silently become "fetch from the end".
+    """
     if value is None:
         return default
     try:
-        return int(value)
+        out = int(value)
     except (ValueError, TypeError):
         raise ValueError(f"'{param_name}' must be a valid number, got: {value!r}")
+    if min_value is not None and out < min_value:
+        raise ValueError(f"'{param_name}' must be >= {min_value}, got: {value!r}")
+    return out
+
+
+def _as_bool(value, default: bool = False) -> bool:
+    """Parse a value as a boolean, tolerating 'false'/'0' strings.
+
+    Model tool args are JSON, so show_completed arrives as true/false —
+    but LLMs sometimes emit the string "false", which ``bool("false")``
+    wrongly treats as True. This normalises both.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        v = value.strip().lower()
+        if v in ("1", "true", "yes", "on", "y", "t"):
+            return True
+        if v in ("0", "false", "no", "off", "n", "f", ""):
+            return False
+    return default
 
 # -- Tool Definitions (Ollama native tool-calling schema) --
 

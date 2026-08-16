@@ -6,7 +6,9 @@ import logging
 
 import config
 from llm.chat import _llm_request
-from llm.payload import _build_full_messages, _build_payload
+from llm.intent import contextual_email_followup
+from llm.payload import _build_full_messages, _build_payload, trim_messages_for_context
+from llm.stream import _is_context_overflow, _shrink_tool_responses
 from llm.utils import _THINKING_STRIP_RE
 
 
@@ -40,8 +42,8 @@ def test_ollama_payload_unaffected_by_thinking():
     assert "reasoning_effort" not in payload
 
 
-def test_build_full_messages_has_no_qwen3_remnants():
-    messages = _build_full_messages([{"role": "user", "content": "hi"}], [], "", "")
+async def test_build_full_messages_has_no_qwen3_remnants():
+    messages = await _build_full_messages([{"role": "user", "content": "hi"}], [], "", "")
     assert messages[0]["role"] == "system"
     assert "/no_think" not in messages[0]["content"]
     assert "reason step by step" not in messages[0]["content"]
@@ -314,6 +316,33 @@ def test_check_tool_leak_detects_historical_tag_and_json_echo():
     assert not _check_tool_leak("")
 
 
+def test_parse_leaked_tool_call_recovers_call_text():
+    from llm.utils import parse_leaked_tool_call
+
+    call = parse_leaked_tool_call("<|tool_call|>call:read_email{id:5}<tool_call|>")
+    assert call is not None
+    assert call["function"]["name"] == "read_email"
+    args = json.loads(call["function"]["arguments"])
+    assert args == {"id": 5}
+
+    call2 = parse_leaked_tool_call('Bazı açıklama metni <|tool_call|>call:read_email{"message_id":"3"}<tool_call|> sonrası')
+    assert call2 is not None
+    assert json.loads(call2["function"]["arguments"]) == {"message_id": "3"}
+
+    assert parse_leaked_tool_call("Tamamen normal bir mesaj") is None
+    assert parse_leaked_tool_call("") is None
+    assert parse_leaked_tool_call(None) is None
+
+
+def test_strip_tool_leaks_removes_fragments():
+    from llm.utils import strip_tool_leaks
+
+    assert strip_tool_leaks("<|tool_call|>call:read_email{id:5}<tool_call|>") == ""
+    assert strip_tool_leaks("Merhaba <|tool_call|>call:read_email{id:5}<tool_call|> gibi") == "Merhaba gibi"
+    assert strip_tool_leaks("") == ""
+    assert strip_tool_leaks(None) is None
+
+
 def test_stream_catches_tool_call_tag_leak_without_firing_tool(monkeypatch, caplog):
     import llm.stream as llm_stream
 
@@ -380,3 +409,133 @@ def test_build_payload_reads_live_max_output(monkeypatch):
     payload = _build_payload([{"role": "user", "content": "hi"}], backend="litert", use_tools=False)
     assert payload["max_tokens"] == 4096
     assert payload["max_completion_tokens"] == 4096
+
+
+def test_contextual_email_followup_positive():
+    history = [
+        {"role": "assistant", "content": "İşte son e-postalar:\n1. Gönderen: Ollama — Konu: DeepSeek — Özet: ..."},
+        {"role": "user", "content": "başka şey sordum"},
+    ]
+    assert contextual_email_followup("Ollama'dan geleni detaylı anlat", history)
+    assert contextual_email_followup("o epostanın içeriğini oku bana", history)
+
+
+def test_contextual_email_followup_negative():
+    history = [{"role": "assistant", "content": "Bugün hava 24 derece olacak."}]
+    assert not contextual_email_followup("Ollama'dan geleni detaylı anlat", history)
+    assert not contextual_email_followup("Python'da dict nasıl birleştirilir?", history)
+
+
+def test_is_context_overflow():
+    assert _is_context_overflow(RuntimeError("INVALID_ARGUMENT: Input token ids are too long. Exceeding the maximum number of tokens allowed: 5056 >= 6144"))
+    assert _is_context_overflow(RuntimeError("context length exceeded"))
+    assert not _is_context_overflow(RuntimeError("connection refused"))
+
+
+def test_shrink_tool_responses_truncates():
+    msgs = [{"role": "tool", "tool_name": "read_email", "content": "x" * 2000}]
+    _shrink_tool_responses(msgs)
+    assert len(msgs[0]["content"]) <= 650
+    assert "[content truncated]" in msgs[0]["content"]
+
+    short = [{"role": "tool", "tool_name": "list_emails", "content": "short"}]
+    _shrink_tool_responses(short)
+    assert short[0]["content"] == "short"
+
+
+def test_trim_fits_context_by_dropping_oldest():
+    sys_msg = {"role": "system", "content": "system " * 200}           # ~200 tokens
+    history = [{"role": "user", "content": f"u{i} " * 100} for i in range(6)]
+    messages = [sys_msg] + history
+
+    trimmed = trim_messages_for_context(messages, context_window=512, reserved_output=64)
+    assert trimmed[0] is sys_msg
+    assert trimmed[-1] == history[-1]
+    assert len(trimmed) < len(messages)
+
+
+def test_trim_keeps_current_user_message_when_tight():
+    sys_msg = {"role": "system", "content": "sys " * 500}              # ~500 tokens
+    user = {"role": "user", "content": "current request " * 20}
+    history = [{"role": "user", "content": "old " * 200}, {"role": "assistant", "content": "old reply " * 200}]
+    messages = [sys_msg] + history + [user]
+
+    trimmed = trim_messages_for_context(messages, context_window=1024, reserved_output=128)
+    assert trimmed[-1] == user
+    assert trimmed[0] is sys_msg
+
+
+def test_trim_drops_orphaned_tool_messages_at_boundary():
+    sys_msg = {"role": "system", "content": "sys " * 100}
+    # A tool result whose assistant caller is older and dropped
+    messages = [
+        sys_msg,
+        {"role": "user", "content": "a " * 300},
+        {"role": "assistant", "content": "", "tool_calls": [{"function": {"name": "x", "arguments": "{}"}, "id": "c1"}]},
+        {"role": "tool", "content": "tool result " * 50, "tool_call_id": "c1"},
+        {"role": "user", "content": "b " * 300},
+        {"role": "assistant", "content": "", "tool_calls": [{"function": {"name": "y", "arguments": "{}"}, "id": "c2"}]},
+        {"role": "tool", "content": "tool result " * 50, "tool_call_id": "c2"},
+    ]
+    trimmed = trim_messages_for_context(messages, context_window=700, reserved_output=64)
+    assert trimmed[0] is sys_msg
+    assert not trimmed[1].get("role") == "tool" or trimmed[1].get("tool_call_id", "") not in ("c1",)
+
+
+def test_trim_keeps_chain_intact_when_fits():
+    sys_msg = {"role": "system", "content": "sys " * 50}
+    messages = [
+        sys_msg,
+        {"role": "user", "content": "ok"},
+        {"role": "assistant", "content": "", "tool_calls": [{"function": {"name": "x", "arguments": "{}"}, "id": "c1"}]},
+        {"role": "tool", "content": "result", "tool_call_id": "c1"},
+    ]
+    trimmed = trim_messages_for_context(messages, context_window=2048, reserved_output=128)
+    assert trimmed == messages
+
+
+def test_stream_forwards_tool_group_to_build_full_messages(monkeypatch):
+    """chat_with_ollama_stream must forward tool_group into
+    _build_full_messages so the group-specific system prompt (e.g. the
+    email list-number convention) is used — not just the tool filter.
+    """
+    import llm.stream as llm_stream
+
+    captured = {}
+
+    async def fake_build(messages, memories, summary, session_id, tool_group=None):
+        captured["tool_group"] = tool_group
+        return [{"role": "user", "content": "hi"}]
+
+    monkeypatch.setattr(llm_stream, "_build_full_messages", fake_build)
+    monkeypatch.setattr(llm_stream, "_get_client", lambda: _FakeStreamClient())
+    async def _noop(*a, **k):
+        return None
+    monkeypatch.setattr(llm_stream, "run_verification", _noop)
+
+    _collect_stream_events([{"role": "user", "content": "hi"}], intent="action", tool_group="email")
+
+    assert captured.get("tool_group") == "email"
+
+
+def test_stream_defaults_tool_group_to_none(monkeypatch):
+    """Without an explicit tool_group, _build_full_messages must be called
+    with tool_group=None (full default system prompt).
+    """
+    import llm.stream as llm_stream
+
+    captured = {}
+
+    async def fake_build(messages, memories, summary, session_id, tool_group=None):
+        captured["tool_group"] = tool_group
+        return [{"role": "user", "content": "hi"}]
+
+    monkeypatch.setattr(llm_stream, "_build_full_messages", fake_build)
+    monkeypatch.setattr(llm_stream, "_get_client", lambda: _FakeStreamClient())
+    async def _noop(*a, **k):
+        return None
+    monkeypatch.setattr(llm_stream, "run_verification", _noop)
+
+    _collect_stream_events([{"role": "user", "content": "hi"}], intent="action")
+
+    assert captured.get("tool_group") is None

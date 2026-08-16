@@ -2,6 +2,7 @@
 import asyncio
 import json
 import logging
+import re
 import time
 
 from config import (
@@ -13,17 +14,34 @@ from tool_verification import run_verification
 from tools import (
     CONFIRM_TOOLS,
     get_tools_for_group,
+    is_tool_success,
     parse_tool_args,
     run_tool,
     validate_confirm_params,
 )
 
-from .payload import _build_full_messages, _build_payload, _normalize_messages_for_backend
-from .utils import _check_tool_leak, _get_client, clean_reasoning
+from .payload import _build_full_messages, _build_payload, _normalize_messages_for_backend, trim_messages_for_context
+from .utils import _check_tool_leak, _get_client, clean_reasoning, parse_leaked_tool_call, strip_tool_leaks
 
 logger = logging.getLogger("piSynapse")
 
 EARLY_BUFFER_CHARS = 8
+
+TRUNCATION_RETRY_NOTE = (
+    "\n\n[Note: The previous reply was cut off mid-answer. "
+    "Continue where you left off and COMPLETE the answer fully "
+    "without stopping early. Do not repeat items already listed.]"
+)
+
+
+def _looks_truncated(text: str) -> bool:
+    """Heuristic: True when the reply ends at a dangling list marker (e.g. '4.')"""
+    if not text:
+        return False
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    if not lines:
+        return False
+    return bool(re.match(r"^\d+\.\s*$", lines[-1].strip()))
 
 
 async def _iter_sse_lines(resp, idle_timeout: float):
@@ -84,6 +102,18 @@ def _merge_tool_calls(acc: list, tc: list) -> list:
     return acc
 
 
+def _is_context_overflow(err: Exception) -> bool:
+    msg = str(err).lower()
+    return any(k in msg for k in ("token", "too long", "context", "invalid_argument"))
+
+
+def _shrink_tool_responses(current_msgs: list[dict]) -> None:
+    """Truncate tool responses so the prompt fits the model's context window."""
+    for m in current_msgs:
+        if m.get("role") == "tool" and isinstance(m.get("content"), str) and len(m["content"]) > 600:
+            m["content"] = m["content"][:600] + "\n[content truncated]"
+
+
 async def chat_with_ollama_stream(
     messages: list[dict],
     *,
@@ -96,7 +126,7 @@ async def chat_with_ollama_stream(
     tool_group: str | None = None,
     reasoning_effort: str = "",
 ):
-    full_msgs = _build_full_messages(messages, memories or [], summary, session_id)
+    full_msgs = await _build_full_messages(messages, memories or [], summary, session_id, tool_group=tool_group)
     context = {"user_id": user_id, "session_id": session_id}
     current_msgs: list[dict] = []
     memories_saved = 0
@@ -118,17 +148,38 @@ async def chat_with_ollama_stream(
             logger.info(f"No specific group — sending combined tools ({len(filtered_tools)} tools)")
 
     executed_tool_sigs: set[str] = set()
+    truncation_retried = False
+    overflow_retried = False
 
     for iteration in range(get("LLM_MAX_TOOL_ITERATIONS", 5)):
+        if truncation_retried:
+            use_tools = False
+            filtered_tools = None
+        tools_tokens = 0
+        if use_tools and filtered_tools:
+            tools_tokens = len(json.dumps(filtered_tools, ensure_ascii=False)) // 4
         if backend == "litert":
             payload = _build_payload(
-                _normalize_messages_for_backend(full_msgs + current_msgs, backend="litert"),
+                trim_messages_for_context(
+                    _normalize_messages_for_backend(full_msgs + current_msgs, backend="litert"),
+                    context_window=int(get("LLM_NUM_CTX", 6144)),
+                    reserved_output=int(get("LLM_MAX_OUTPUT_TOKENS", 2048)),
+                    tools_tokens=tools_tokens,
+                ),
                 stream=True, think=think, use_tools=use_tools, tool_list=filtered_tools, backend="litert",
                 reasoning_effort=reasoning_effort,
             )
             url = f"{LITERT_BASE_URL}/v1/chat/completions"
         else:
-            payload = _build_payload(full_msgs + current_msgs, stream=True, think=think, use_tools=use_tools, tool_list=filtered_tools, reasoning_effort=reasoning_effort)
+            payload = _build_payload(
+                trim_messages_for_context(
+                    full_msgs + current_msgs,
+                    context_window=int(get("LLM_NUM_CTX", 6144)),
+                    reserved_output=int(get("LLM_MAX_OUTPUT_TOKENS", 2048)),
+                    tools_tokens=tools_tokens,
+                ),
+                stream=True, think=think, use_tools=use_tools, tool_list=filtered_tools, reasoning_effort=reasoning_effort,
+            )
             url = f"{OLLAMA_BASE_URL}/api/chat"
 
         buf = ""
@@ -142,7 +193,7 @@ async def chat_with_ollama_stream(
         try:
             async with client.stream("POST", url, json=payload) as resp:
                 resp.raise_for_status()
-                async for raw in _iter_sse_lines(resp, get("SSE_READ_IDLE_TIMEOUT", 120.0)):
+                async for raw in _iter_sse_lines(resp, get("SSE_READ_IDLE_TIMEOUT", 300.0)):
                     if not raw:
                         continue
 
@@ -157,6 +208,11 @@ async def chat_with_ollama_stream(
                             chunk = json.loads(raw)
                         except json.JSONDecodeError:
                             continue
+                        if chunk.get("error"):
+                            err = chunk["error"]
+                            if isinstance(err, dict):
+                                err = err.get("message", str(err))
+                            raise RuntimeError(f"litert stream error: {err}")
                         choice = chunk.get("choices", [{}])[0]
                         delta = choice.get("delta", {})
                         token = delta.get("content", "")
@@ -212,17 +268,31 @@ async def chat_with_ollama_stream(
 
         except Exception as e:
             logger.error(f"Stream error ({backend}): {e}")
+            if _is_context_overflow(e) and not overflow_retried and current_msgs:
+                overflow_retried = True
+                _shrink_tool_responses(current_msgs)
+                logger.info("Context overflow detected — shrinking tool responses and retrying")
+                continue
             yield {"error": f"{backend} connection error"}
             return
 
+        if not full_text and not full_reasoning and not tool_calls_acc and current_msgs:
+            if not overflow_retried:
+                overflow_retried = True
+                _shrink_tool_responses(current_msgs)
+                logger.warning("Generation returned empty after tool call — shrinking tool responses and retrying")
+                continue
+            yield {"error": "Model generation failed (context too long). Please ask again."}
+            return
+
         if done_reason == "length":
-            logger.warning(f"Model stopped early (done_reason='length'). Consider raising LLM_NUM_CTX (currently {get('LLM_NUM_CTX', 8192)}).")
+            logger.warning(f"Model stopped early (done_reason='length'). Consider raising LLM_NUM_CTX (currently {get('LLM_NUM_CTX', 6144)}).")
 
         if not tool_calls_acc and not think and backend != "litert" and _check_tool_leak(full_text):
             logger.info("Tool leak detected in stream buffer, retrying with think-mode...")
             try:
                 retry_payload = _build_payload(
-                    _build_full_messages(messages, memories or [], summary, session_id) + current_msgs,
+                    await _build_full_messages(messages, memories or [], summary, session_id) + current_msgs,
                     stream=False, think=True, use_tools=True, tool_list=filtered_tools,
                 )
                 resp2 = await client.post(f"{OLLAMA_BASE_URL}/api/chat", json=retry_payload)
@@ -235,13 +305,28 @@ async def chat_with_ollama_stream(
                 logger.warning(f"Think-mode retry failed: {e}")
 
         if not tool_calls_acc:
-            if suppressing and full_text:
-                logger.warning(f"No tool call found after suppression, yielding raw text: {full_text[:120]}...")
-                yield {"token": full_text}
-            elif buf:
-                yield {"token": buf}
-            yield {"done": True, "memories_saved": memories_saved, "reasoning": clean_reasoning(full_reasoning)}
-            return
+            leaked = parse_leaked_tool_call(full_text)
+            if leaked:
+                logger.info(f"Recovered leaked tool call: {leaked['function']['name']}() — executing")
+                tool_calls_acc = [leaked]
+            else:
+                truncated = done_reason == "length" or _looks_truncated(full_text or buf)
+                if truncated and not truncation_retried and current_msgs:
+                    truncation_retried = True
+                    for m in reversed(current_msgs):
+                        if m.get("role") == "tool":
+                            m["content"] += TRUNCATION_RETRY_NOTE
+                            break
+                    logger.info("Final reply looked truncated — regenerating once")
+                    continue
+
+                if suppressing and full_text:
+                    logger.warning(f"No tool call found after suppression, yielding raw text: {full_text[:120]}...")
+                    yield {"token": strip_tool_leaks(full_text)}
+                elif buf:
+                    yield {"token": buf}
+                yield {"done": True, "memories_saved": memories_saved, "reasoning": clean_reasoning(full_reasoning)}
+                return
 
         non_confirm_calls = [c for c in tool_calls_acc if c.get("function", {}).get("name", "") not in CONFIRM_TOOLS]
         confirm_calls = [c for c in tool_calls_acc if c.get("function", {}).get("name", "") in CONFIRM_TOOLS]
@@ -267,14 +352,14 @@ async def chat_with_ollama_stream(
                 try:
                     args = parse_tool_args(fn.get("arguments"))
                     result = await run_tool(tn, args, context)
-                    success = not result.startswith("ERROR")
+                    success = is_tool_success(result)
                 except Exception as e:
                     logger.error(f"Tool {tn} failed: {e}")
                     result = f"ERROR: tool {tn} failed"
                     success = False
                 duration_ms = (time.perf_counter() - t0) * 1000
                 await run_verification(tn, args, result, success, duration_ms=duration_ms, error=None if success else result)
-                if tn == "save_memory" and not result.startswith("ERROR"):
+                if tn == "save_memory" and is_tool_success(result):
                     memories_saved += 1
                 tool_msg = {"role": "tool", "tool_name": tn, "content": result}
                 if call.get("id"):
