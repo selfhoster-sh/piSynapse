@@ -11,7 +11,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from config import HISTORY_LIMIT, MEMORY_LIMIT, SUMMARY_BATCH_SIZE, SUMMARY_EARLY_TRIGGER
+from config import get
 from db import (
     clear_history,
     delete_memory,
@@ -71,13 +71,13 @@ class ExecuteRequest(BaseModel):
 
 async def _gather_memories(message: str, user_id: str, query_embedding: bytes | None = None) -> list[dict]:
     core = await get_memories(user_id=user_id, limit=5)
-    relevant = await search_memories(message, user_id=user_id, limit=MEMORY_LIMIT, query_embedding=query_embedding)
+    relevant = await search_memories(message, user_id=user_id, limit=get("MEMORY_LIMIT", 10), query_embedding=query_embedding)
     seen, combined = set(), []
     for mem in core + relevant:
         if mem["id"] not in seen:
             seen.add(mem["id"])
             combined.append(mem)
-    return combined[:MEMORY_LIMIT]
+    return combined[:get("MEMORY_LIMIT", 10)]
 
 
 async def _shared_query_embedding(message: str) -> bytes | None:
@@ -96,8 +96,8 @@ async def _update_summary(session_id: str):
     try:
         meta = await get_session_meta(session_id)
         to_summarize, new_boundary = await get_messages_to_summarize(
-            session_id, HISTORY_LIMIT, meta["summarized_until"],
-            SUMMARY_BATCH_SIZE, early_trigger=SUMMARY_EARLY_TRIGGER,
+            session_id, get("HISTORY_LIMIT", 12), meta["summarized_until"],
+            get("SUMMARY_BATCH_SIZE", 5), early_trigger=get("SUMMARY_EARLY_TRIGGER", 6),
         )
         if not to_summarize:
             return
@@ -119,7 +119,7 @@ async def chat_endpoint(req: ChatRequest, background_tasks: BackgroundTasks):
 
         from llm import _classify_intent
         query_embedding = await _shared_query_embedding(req.message)
-        history_coro = get_history(req.session_id, limit=HISTORY_LIMIT)
+        history_coro = get_history(req.session_id, limit=get("HISTORY_LIMIT", 12))
         retrieval_coro = retrieve_relevant_history(req.session_id, req.message, query_embedding=query_embedding)
         memories_coro = _gather_memories(req.message, req.user_id, query_embedding=query_embedding)
         meta_coro = get_session_meta(req.session_id)
@@ -167,7 +167,7 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
 
         from llm import _classify_intent
         query_embedding = await _shared_query_embedding(req.message)
-        history_coro = get_history(req.session_id, limit=HISTORY_LIMIT)
+        history_coro = get_history(req.session_id, limit=get("HISTORY_LIMIT", 12))
         retrieval_coro = retrieve_relevant_history(req.session_id, req.message, query_embedding=query_embedding)
         memories_coro = _gather_memories(req.message, req.user_id, query_embedding=query_embedding)
         meta_coro = get_session_meta(req.session_id)

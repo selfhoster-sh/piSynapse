@@ -10,7 +10,7 @@ import asyncio
 import logging
 import time
 
-from config import HISTORY_LIMIT
+from config import get
 
 logger = logging.getLogger("piSynapse")
 
@@ -40,7 +40,7 @@ def merge_history(history: list[dict], retrieved: list[dict], recent_window: int
 
 async def _fetch_candidates(session_id: str, recent_window: int = RECENT_WINDOW) -> list[dict]:
     """Older messages just before the verbatim window, chronological order."""
-    limit = max(0, HISTORY_LIMIT - recent_window)
+    limit = max(0, get("HISTORY_LIMIT", 12) - recent_window)
     if limit == 0:
         return []
     from db import get_db

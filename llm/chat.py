@@ -6,10 +6,8 @@ import time
 
 from config import (
     LITERT_BASE_URL,
-    LLM_BACKEND,
-    LLM_MAX_TOOL_ITERATIONS,
-    LLM_NUM_CTX,
     OLLAMA_BASE_URL,
+    get,
 )
 from tool_verification import run_verification
 from tools import (
@@ -32,7 +30,7 @@ async def _llm_request(
     reasoning_effort: str | None = None,
 ) -> tuple[dict | None, dict | None, str | None]:
     client = _get_client()
-    backend = LLM_BACKEND
+    backend = get("LLM_BACKEND", "litert")
     normalized = _normalize_messages_for_backend(msgs, backend=backend)
 
     if backend == "litert":
@@ -87,7 +85,7 @@ async def summarize_conversation(messages: list[dict], previous_summary: str = "
         "Updated summary:"
     )
     client = _get_client()
-    backend = LLM_BACKEND
+    backend = get("LLM_BACKEND", "litert")
     payload = _build_payload(
         [{"role": "system", "content": SUMMARY_SYSTEM_PROMPT},
          {"role": "user", "content": user_content}],
@@ -147,8 +145,8 @@ async def chat_with_ollama(
 
     executed_tool_sigs: set[str] = set()
 
-    for iteration in range(LLM_MAX_TOOL_ITERATIONS):
-        iter_msgs = _normalize_messages_for_backend(full_msgs + current_msgs, backend=LLM_BACKEND)
+    for iteration in range(get("LLM_MAX_TOOL_ITERATIONS", 5)):
+        iter_msgs = _normalize_messages_for_backend(full_msgs + current_msgs, backend=get("LLM_BACKEND", "litert"))
         resp_json, message, err = await _llm_request(
             iter_msgs, use_think=think, use_tools=use_tools,
             tool_list=filtered_tools, reasoning_effort=reasoning_effort,
@@ -161,7 +159,7 @@ async def chat_with_ollama(
             return {"reply": "Engine Error: empty response from language model.", "pending_action": None, "memories_saved": memories_saved, "thinking": None}
 
         if resp_json.get("done_reason") == "length":
-            logger.warning(f"Ollama stopped early (done_reason='length'). Consider raising LLM_NUM_CTX (currently {LLM_NUM_CTX}).")
+            logger.warning(f"Ollama stopped early (done_reason='length'). Consider raising LLM_NUM_CTX (currently {get('LLM_NUM_CTX', 8192)}).")
 
         tool_calls = message.get("tool_calls") or []
         raw_content = _THINKING_STRIP_RE.sub('', message.get("content", "") or "").strip()
@@ -171,7 +169,7 @@ async def chat_with_ollama(
             reason = "tool leak" if _check_tool_leak(raw_content) else "empty tool_calls"
             logger.info(f"No tool calls produced ({reason}), retrying with think-mode...")
             think_msgs = _build_full_messages(messages, memories or [], summary, session_id, tool_group=tool_group)
-            think_msgs = _normalize_messages_for_backend(think_msgs + current_msgs, backend=LLM_BACKEND)
+            think_msgs = _normalize_messages_for_backend(think_msgs + current_msgs, backend=get("LLM_BACKEND", "litert"))
             resp2, msg2, err2 = await _llm_request(think_msgs, use_think=True, use_tools=use_tools, tool_list=filtered_tools)
             if not err2 and msg2:
                 tc2 = msg2.get("tool_calls") or []
@@ -250,7 +248,7 @@ async def chat_with_ollama(
             return {"reply": "", "pending_action": action,
                     "memories_saved": memories_saved, "thinking": thinking}
 
-        if non_confirm_calls and iteration < LLM_MAX_TOOL_ITERATIONS - 1:
+        if non_confirm_calls and iteration < get("LLM_MAX_TOOL_ITERATIONS", 5) - 1:
             for m in reversed(current_msgs):
                 if m.get("role") == "tool":
                     m["content"] += (
@@ -260,6 +258,6 @@ async def chat_with_ollama(
                     )
                     break
 
-    logger.warning(f"Max tool iterations ({LLM_MAX_TOOL_ITERATIONS}) exceeded")
+    logger.warning(f"Max tool iterations ({get('LLM_MAX_TOOL_ITERATIONS', 5)}) exceeded")
     return {"reply": "I made several tool calls but couldn't reach a final answer -- please try rephrasing.",
             "pending_action": None, "memories_saved": memories_saved, "thinking": thinking}

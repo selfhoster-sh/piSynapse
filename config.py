@@ -14,6 +14,17 @@ load_dotenv()
 logger = logging.getLogger("piSynapse")
 
 
+def get(key: str, default=None):
+    """Dynamically read a config value.
+
+    Returns the current module attribute (live after sync_config()) instead of
+    an import-time copy, so consumers calling this per-request pick up settings
+    changes made from the UI without a server restart.
+    """
+    import config as _cfg
+    return getattr(_cfg, key, default)
+
+
 def _safe_int(key: str, default: int) -> int:
     """Parse an int env var with fallback and logging on invalid values."""
     raw = os.getenv(key)
@@ -60,6 +71,9 @@ LLM_TIMEOUT = _safe_int("LLM_TIMEOUT", 240)
 # aborted. Protects against the LLM server silently hanging mid-response.
 SSE_READ_IDLE_TIMEOUT = _safe_float("SSE_READ_IDLE_TIMEOUT", 120.0)
 LLM_REASONING_EFFORT = os.getenv("LLM_REASONING_EFFORT", "medium").strip().lower()
+# Cap on generated output tokens per response (litert-lm reads this via
+# max_completion_tokens; its own default ~600 was truncating long answers).
+LLM_MAX_OUTPUT_TOKENS = _safe_int("LLM_MAX_OUTPUT_TOKENS", 2048)
 
 # -- TTS (Piper) --
 TTS_VOICE = os.getenv("TTS_VOICE", "en_US-lessac-medium")
@@ -237,6 +251,7 @@ SETTINGS_SCHEMA: dict = {
     "LLM_TOP_P":          {"type": "float", "default": "0.85", "label": {"tr": "Top P",                      "en": "Top P"},                  "min": 0.1, "max": 1.0, "step": 0.05},
     "LLM_TOP_K":          {"type": "int",   "default": "40",   "label": {"tr": "Top K",                      "en": "Top K"},                  "min": 1, "max": 200, "step": 1},
     "LLM_NUM_CTX":        {"type": "int",   "default": "8192", "label": {"tr": "Baglam Penceresi (Tokens)",  "en": "Context Window (Tokens)"},"min": 2048, "max": 32768, "step": 1024},
+    "LLM_MAX_OUTPUT_TOKENS": {"type": "int", "default": "2048", "label": {"tr": "Maks Cikti (Tokens)", "en": "Max Output (Tokens)"}, "min": 256, "max": 8192, "step": 256},
     "HISTORY_LIMIT":      {"type": "int",   "default": "12",   "label": {"tr": "Gecmis Mesaj Sayisi",        "en": "History Message Limit"},  "min": 4, "max": 50, "step": 1},
     "MEMORY_LIMIT":       {"type": "int",   "default": "10",   "label": {"tr": "Hafiza Karti Sayisi",        "en": "Memory Card Limit"},      "min": 1, "max": 30, "step": 1},
     "MEMORY_SIMILARITY_THRESHOLD": {"type": "float", "default": "0.68", "label": {"tr": "Bellek Benzerlik Esigi", "en": "Memory Similarity Threshold"}, "min": 0.1, "max": 0.99, "step": 0.01},
@@ -298,6 +313,7 @@ _NUMERIC_KEYS = {
     "LLM_NUM_CTX": (int, 8192), "LLM_NUM_BATCH": (int, 256),
     "LLM_TEMPERATURE": (float, 0.6), "LLM_TOP_P": (float, 0.85), "LLM_TOP_K": (int, 40),
     "LLM_MAX_TOOL_ITERATIONS": (int, 5), "LLM_TIMEOUT": (int, 240),
+    "LLM_MAX_OUTPUT_TOKENS": (int, 2048),
     "SSE_READ_IDLE_TIMEOUT": (float, 120.0),
     "HISTORY_LIMIT": (int, 12), "MEMORY_LIMIT": (int, 10),
     "SUMMARY_BATCH_SIZE": (int, 5), "SUMMARY_EARLY_TRIGGER": (int, 6),

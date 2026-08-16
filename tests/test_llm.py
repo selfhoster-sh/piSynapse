@@ -238,7 +238,8 @@ def test_verification_hook_fires_after_successful_tool_call(monkeypatch):
     async def fake_verify(name, params, result, success, **kwargs):
         calls.append((name, params, result, success, kwargs))
 
-    monkeypatch.setattr(llm_stream, "LLM_BACKEND", "litert")
+    import config as _cfg
+    monkeypatch.setattr(_cfg, "LLM_BACKEND", "litert")
     monkeypatch.setattr(llm_stream, "_get_client", lambda: _FakeStreamClient())
     monkeypatch.setattr(llm_stream, "run_verification", fake_verify)
 
@@ -264,7 +265,8 @@ def test_verification_hook_reports_failure_when_tool_raises(monkeypatch):
     async def failing_tool(name, params, context=None):
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(llm_stream, "LLM_BACKEND", "litert")
+    import config as _cfg
+    monkeypatch.setattr(_cfg, "LLM_BACKEND", "litert")
     monkeypatch.setattr(llm_stream, "_get_client", lambda: _FakeStreamClient())
     monkeypatch.setattr(llm_stream, "run_verification", fake_verify)
     monkeypatch.setattr(llm_stream, "run_tool", failing_tool)
@@ -320,7 +322,8 @@ def test_stream_catches_tool_call_tag_leak_without_firing_tool(monkeypatch, capl
     async def fake_run_tool(name, params, context=None):
         calls.append(name)
 
-    monkeypatch.setattr(llm_stream, "LLM_BACKEND", "litert")
+    import config as _cfg
+    monkeypatch.setattr(_cfg, "LLM_BACKEND", "litert")
     monkeypatch.setattr(llm_stream, "_get_client", lambda: _FakeTextStreamClient("<|tool_call|>get_current_time"))
     monkeypatch.setattr(llm_stream, "run_tool", fake_run_tool)
 
@@ -345,7 +348,8 @@ def test_chat_plain_text_cannot_fire_tool(monkeypatch, caplog):
         content = '<|tool_call|>send_email {"to": "a@b.c"}'
         return ({"choices": [{"message": {"content": content}}]}, {"content": content}, None)
 
-    monkeypatch.setattr(llm_chat, "LLM_BACKEND", "litert")
+    import config as _cfg
+    monkeypatch.setattr(_cfg, "LLM_BACKEND", "litert")
     monkeypatch.setattr(llm_chat, "_llm_request", fake_llm_request)
     monkeypatch.setattr(llm_chat, "run_tool", fake_run_tool)
 
@@ -357,3 +361,22 @@ def test_chat_plain_text_cannot_fire_tool(monkeypatch, caplog):
     assert calls == []
     assert result["reply"].startswith("<|tool_call|>")
     assert any("tool leak" in r.message for r in caplog.records)
+
+
+def test_build_payload_reads_live_sampling_config(monkeypatch):
+    monkeypatch.setattr(config, "LLM_TEMPERATURE", 1.2)
+    monkeypatch.setattr(config, "LLM_TOP_P", 0.9)
+    monkeypatch.setattr(config, "LLM_TOP_K", 80)
+    monkeypatch.setattr(config, "LLM_MODEL", "gemma4-e4b")
+    payload = _build_payload([{"role": "user", "content": "hi"}], backend="litert", use_tools=False)
+    assert payload["temperature"] == 1.2
+    assert payload["top_p"] == 0.9
+    assert payload["top_k"] == 80
+    assert payload["model"] == "gemma4-e4b"
+
+
+def test_build_payload_reads_live_max_output(monkeypatch):
+    monkeypatch.setattr(config, "LLM_MAX_OUTPUT_TOKENS", 4096)
+    payload = _build_payload([{"role": "user", "content": "hi"}], backend="litert", use_tools=False)
+    assert payload["max_tokens"] == 4096
+    assert payload["max_completion_tokens"] == 4096
