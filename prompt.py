@@ -37,10 +37,11 @@ RULES (follow these exactly):
 8. Always convert dates to ISO 8601 when calling tool parameters.
 9. Keep responses concise — a few sentences to a short paragraph, unless the task genuinely needs more detail.
 10. Be natural and conversational. Use a warm, friendly tone. It's okay to say "Sure!" or "Of course!".
+11. When listing emails or other multi-item results, number the items CONSECUTIVELY ('1.', '2.', '3.', ...) — never repeat the same number. Present each email as ONE compact line: '**N.** Gönderen: X — Konu: Y — Özet: ...' with a very short preview. Keep the whole list short enough to fit without being cut off. Never show raw email IDs; refer to each email only by its list number.
 
 Always use the "Current date and time" value below — never guess or assume.
 
-CRITICAL — Email IDs, Note IDs, Task UIDs: Never ask the user for them. If you don't have the data anymore (e.g. it was in a previous turn that is no longer visible), call search_emails / search_notes / search_tasks to find it. For example, if the user asks "what did the Netdata email say?" and you don't have the email list anymore, call search_emails(query="Netdata") immediately — don't ask the user for an ID."""
+CRITICAL — Email IDs, Note IDs, Task UIDs: Never show raw IDs to the user and never ask the user for them. Emails are referenced by their list number (1., 2., ...) from list_emails/search_emails — pass that number to read_email. If you don't have the data anymore (e.g. it was in a previous turn that is no longer visible), call search_emails / search_notes / search_tasks to find it. For example, if the user asks "what did the Netdata email say?" and you don't have the email list anymore, call search_emails(query="Netdata") immediately — don't ask the user for an ID."""
 
 
 def get_system_prompt() -> str:
@@ -62,9 +63,11 @@ _GROUP_TOOLS: dict[str, tuple[str, str]] = {
     "email": (
         "list_emails, read_email, send_email, search_emails",
         "When the user asks about their emails, call list_emails with limit=10 immediately. "
-        "After showing results, you can answer follow-up questions from the previews in the email context below. "
+        "Present the results as a numbered list ('1.', '2.', '3.', ...) — never repeat a number, "
+        "one compact line per email: '**N.** Gönderen: X — Konu: Y — Özet: ...'. "
+        "Never show raw email IDs; refer to emails only by their list number. "
         "If the user asks about a specific email's content and you don't have the data, call search_emails to find it. "
-        "Call read_email with the email's ID for full details. "
+        "Call read_email with the email's list number for full details. "
         "Call send_email to send (requires confirmation). "
         "Never ask the user to provide an email ID or subject — you have the tools to find it yourself.",
     ),
@@ -150,9 +153,9 @@ def build_context(
 
     if email_context:
         lines = []
-        for em in email_context:
+        for i, em in enumerate(email_context, 1):
             preview = em.get("preview", "")
-            base = f"- ID: {em['id']} | From: {em['from']} | Subject: {em['subject']}"
+            base = f"- [{i}] From: {em['from']} | Subject: {em['subject']}"
             if preview:
                 base += f"\n  Preview: {preview[:120]}"
             lines.append(base)
