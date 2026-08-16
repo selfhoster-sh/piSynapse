@@ -5,6 +5,7 @@ TRUSTED_HOSTS safe default, and newline rejection in settings writes.
 """
 
 import asyncio
+import os
 
 import pytest
 from fastapi import FastAPI, HTTPException
@@ -121,3 +122,44 @@ def test_update_settings_rejects_newline_in_value(tmp_path, monkeypatch):
         asyncio.run(rc.update_settings(SettingsUpdate(values={"ASSISTANT_USER": "bob\nAPI_KEY=evil"})))
     assert exc.value.status_code == 400
     assert "newlines" in exc.value.detail
+
+
+def test_update_settings_is_atomic_on_multi_key_failure(tmp_path, monkeypatch):
+    """If any key in a multi-key PATCH fails, NO key may be applied to
+    os.environ (previously earlier keys were mutated before the failure,
+    leaving os.environ out of sync with .env and the module attributes).
+    """
+    import routers.config as rc
+    from routers.config import SettingsUpdate
+
+    monkeypatch.setattr(rc, "ENV_PATH", tmp_path / "env_test")
+    (tmp_path / "env_test").write_text("LLM_TEMPERATURE=0.6\n", encoding="utf-8")
+
+    monkeypatch.delenv("LLM_TEMPERATURE", raising=False)
+    monkeypatch.delenv("LLM_MAX_OUTPUT_TOKENS", raising=False)
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(rc.update_settings(SettingsUpdate(values={
+            "LLM_TEMPERATURE": "0.9",          # valid
+            "LLM_MAX_OUTPUT_TOKENS": "99999",  # exceeds schema max → 400
+        })))
+    assert exc.value.status_code == 400
+
+    assert os.environ.get("LLM_TEMPERATURE") is None
+    assert os.environ.get("LLM_MAX_OUTPUT_TOKENS") is None
+    assert (tmp_path / "env_test").read_text(encoding="utf-8") == "LLM_TEMPERATURE=0.6\n"
+
+
+def test_update_settings_applies_all_keys_on_success(tmp_path, monkeypatch):
+    import routers.config as rc
+    from routers.config import SettingsUpdate
+
+    monkeypatch.setattr(rc, "ENV_PATH", tmp_path / "env_test")
+    (tmp_path / "env_test").write_text("LLM_TEMPERATURE=0.6\n", encoding="utf-8")
+
+    monkeypatch.delenv("LLM_TEMPERATURE", raising=False)
+
+    resp = asyncio.run(rc.update_settings(SettingsUpdate(values={"LLM_TEMPERATURE": "0.9"})))
+    assert resp["ok"] is True
+    assert os.environ.get("LLM_TEMPERATURE") == "0.9"
+    assert "LLM_TEMPERATURE=0.9" in (tmp_path / "env_test").read_text(encoding="utf-8")

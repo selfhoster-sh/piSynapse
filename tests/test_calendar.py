@@ -88,7 +88,7 @@ class TestRunTool:
     async def test_unknown_tool_returns_not_found(self):
         from tools.dispatcher import run_tool
         result = await run_tool("nonexistent_tool", {})
-        assert result == "Tool not found."
+        assert result == "ERROR: Tool not found."
 
 
 class TestIntentFallback:

@@ -43,7 +43,7 @@ def test_log_tool_call_writes_row(audit_db):
     assert success == 1
     assert dur == pytest.approx(120.5)
     assert err is None
-    assert json.loads(params) == {"to": "a@b.c", "cc": None}
+    assert json.loads(params) == {"to": "[REDACTED]", "cc": "[REDACTED]"}
 
     name, params, success, dur, err, is_summary, day = rows[1]
     assert name == "delete_task"
@@ -64,9 +64,9 @@ def test_log_tool_call_redacts_sensitive_params(audit_db):
     rows = asyncio.run(_fetch_all("SELECT params FROM tool_audit_log"))
     stored = json.loads(rows[0][0])
     assert stored["body"] == "[REDACTED]"
-    assert stored["to"] == "a@b.c"
-    assert stored["subject"] == "hello"
-    assert stored["cc"] is None
+    assert stored["to"] == "[REDACTED]"
+    assert stored["subject"] == "[REDACTED]"
+    assert stored["cc"] == "[REDACTED]"
 
 
 def test_log_tool_call_redacts_nested_secret_keys(audit_db):
