@@ -2,27 +2,11 @@
 import json
 import logging
 
-from config import (
-    LLM_BACKEND,
-    LLM_KEEP_ALIVE,
-    LLM_MODEL,
-    LLM_NUM_BATCH,
-    LLM_NUM_CTX,
-    LLM_TEMPERATURE,
-    LLM_TOP_K,
-    LLM_TOP_P,
-)
 from tools import TOOLS
 
 logger = logging.getLogger("piSynapse")
 
 _VALID_REASONING_EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh")
-
-# Cap on generated output tokens. litert-lm's own default (~600) was cutting
-# long answers (e.g. email lists) short; the full context window (LLM_NUM_CTX)
-# lets the model run away into repetition loops. 2048 fits a 10-item email list
-# with ~4x headroom while still bounding runaway generation to ~2-3 minutes.
-_MAX_OUTPUT_TOKENS = 2048
 
 
 def _reasoning_effort(think: bool, requested: str | None = None) -> str:
@@ -34,9 +18,9 @@ def _reasoning_effort(think: bool, requested: str | None = None) -> str:
     """
     if not think:
         return "none"
-    import config as _cfg
+    from config import get
     if requested is None:
-        requested = getattr(_cfg, "LLM_REASONING_EFFORT", "medium") or "medium"
+        requested = get("LLM_REASONING_EFFORT", "medium") or "medium"
     effort = requested.strip().lower()
     if effort not in _VALID_REASONING_EFFORTS:
         logger.warning(f"Invalid reasoning_effort={effort!r}, falling back to 'medium'")
@@ -54,18 +38,26 @@ def _build_payload(
     backend: str | None = None,
     reasoning_effort: str | None = None,
 ) -> dict:
-    if (backend or LLM_BACKEND) == "litert":
-        model = LLM_MODEL.replace(":", "-")
+    # Read live values so UI setting changes apply without a restart.
+    from config import get
+    backend = (backend or get("LLM_BACKEND", "litert")).lower()
+    model_name = get("LLM_MODEL", "gemma4-e2b")
+    temperature = get("LLM_TEMPERATURE", 0.6)
+    top_p = get("LLM_TOP_P", 0.85)
+    top_k = get("LLM_TOP_K", 40)
+    max_output = int(get("LLM_MAX_OUTPUT_TOKENS", 2048) or 2048)
+
+    if backend == "litert":
         payload = {
-            "model": model,
+            "model": model_name.replace(":", "-"),
             "messages": messages,
             "stream": stream,
-            "temperature": LLM_TEMPERATURE,
-            "top_p": LLM_TOP_P,
-            "top_k": LLM_TOP_K,
-            "max_tokens": _MAX_OUTPUT_TOKENS,
+            "temperature": temperature,
+            "top_p": top_p,
+            "top_k": top_k,
+            "max_tokens": max_output,
             # litert-lm only reads max_completion_tokens; max_tokens is ignored.
-            "max_completion_tokens": _MAX_OUTPUT_TOKENS,
+            "max_completion_tokens": max_output,
             # Gemma 4 thinking is a native request-level feature (litert-lm >= 0.15):
             # "none" disables it, any of minimal/low/medium/high/xhigh enables it.
             "reasoning_effort": _reasoning_effort(think, reasoning_effort),
@@ -75,18 +67,18 @@ def _build_payload(
         return payload
 
     payload = {
-        "model": LLM_MODEL,
+        "model": model_name,
         "messages": messages,
         "stream": stream,
         "think": think,
         "options": {
-            "temperature": LLM_TEMPERATURE,
-            "top_p": LLM_TOP_P,
-            "top_k": LLM_TOP_K,
-            "num_ctx": LLM_NUM_CTX,
-            "num_batch": LLM_NUM_BATCH,
+            "temperature": temperature,
+            "top_p": top_p,
+            "top_k": top_k,
+            "num_ctx": get("LLM_NUM_CTX", 8192),
+            "num_batch": get("LLM_NUM_BATCH", 256),
         },
-        "keep_alive": LLM_KEEP_ALIVE,
+        "keep_alive": get("LLM_KEEP_ALIVE", "4h"),
     }
     if use_tools:
         payload["tools"] = tool_list if tool_list is not None else TOOLS
