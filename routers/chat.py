@@ -132,6 +132,12 @@ async def chat_endpoint(req: ChatRequest, background_tasks: BackgroundTasks):
     if not req.message.strip() and not req.images:
         raise HTTPException(status_code=400, detail="Message or image is required.")
 
+    # Per-session rate limit (20 req/min per session)
+    from main import _session_limiter
+    if not _session_limiter.allow(req.session_id):
+        raise HTTPException(status_code=429, detail="Session rate limit exceeded. Try again later.")
+        raise HTTPException(status_code=400, detail="Message or image is required.")
+
     try:
         await save_message(req.session_id, "user", req.message, images=req.images or None)
 
@@ -187,6 +193,11 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
     _validate_session_id(req.session_id)
     if not req.message.strip() and not req.images:
         raise HTTPException(status_code=400, detail="Message or image is required.")
+
+    # Per-session rate limit (20 req/min per session)
+    from main import _session_limiter
+    if not _session_limiter.allow(req.session_id):
+        raise HTTPException(status_code=429, detail="Session rate limit exceeded. Try again later.")
 
     try:
         await save_message(req.session_id, "user", req.message, images=req.images or None)
@@ -330,9 +341,10 @@ async def clear_chat_history(session_id: str = Query(...)):
 # -- Memories --
 
 @router.get("/memories")
-async def list_memories(user_id: str = Query("default")):
-    mems = await get_all_memories(user_id)
-    return {"user_id": user_id, "count": len(mems), "memories": mems}
+async def list_memories(user_id: str = Query("default"), limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0)):
+    all_mems = await get_all_memories(user_id)
+    page = all_mems[offset:offset + limit]
+    return {"user_id": user_id, "count": len(all_mems), "limit": limit, "offset": offset, "memories": page}
 
 
 @router.delete("/memories")
@@ -343,4 +355,21 @@ async def delete_memory_endpoint(user_id: str = Query("default"), id: str = Quer
         raise HTTPException(status_code=400, detail="Invalid memory ID.")
     await delete_memory(user_id=user_id, memory_id=memory_id)
     return {"status": "success", "message": f"Memory {id} deleted."}
+
+
+# -- Export --
+
+@router.get("/export")
+async def export_data(user_id: str = Query("default")):
+    """Export all user data as JSON (memories + sessions summary)."""
+    from db import get_all_memories, get_all_sessions
+    mems = await get_all_memories(user_id)
+    sessions = await get_all_sessions()
+    return {
+        "user_id": user_id,
+        "memories": [{"id": m["id"], "content": m["content"], "category": m["category"], "importance": m["importance"]} for m in mems],
+        "sessions": sessions,
+        "session_count": len(sessions),
+        "memory_count": len(mems),
+    }
 

@@ -261,6 +261,8 @@ TOOLS = [
                     "note_id": {"type": "integer", "description": "The note's actual ID from Nextcloud (e.g. 284)."},
                     "title": {"type": "string", "description": "New title (leave empty to keep current)."},
                     "content": {"type": "string", "description": "New content (leave empty to keep current)."},
+                    "category": {"type": "string", "description": "New category (leave empty to keep current)."},
+                    "tags": {"type": "array", "items": {"type": "string"}, "description": "New tags list (leave empty to keep current)."},
                 },
                 "required": ["note_id"],
             },
