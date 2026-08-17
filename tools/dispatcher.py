@@ -12,7 +12,7 @@ logger = logging.getLogger("piSynapse")
 
 def _get_context_fn(name: str):
     """Return the context getter function for a given tool category."""
-    from prompt import get_email_context, get_notes_context, get_tasks_context, get_calendar_context
+    from prompt import get_calendar_context, get_email_context, get_notes_context, get_tasks_context
     return {
         "email": get_email_context,
         "notes": get_notes_context,
@@ -162,9 +162,13 @@ async def _run_notes_tool(name: str, params: dict, session_id: str = "") -> str:
         create_note,
         delete_note,
         get_note,
-        list_notes as _list_notes_raw,
-        search_notes as _search_notes_raw,
         update_note,
+    )
+    from nextcloud_notes import (
+        list_notes as _list_notes_raw,
+    )
+    from nextcloud_notes import (
+        search_notes as _search_notes_raw,
     )
 
     try:
@@ -242,7 +246,6 @@ def _parse_note_listing(text: str) -> list[dict]:
     while i < len(lines):
         m = re.match(r"\s*\*?\s*(\d+)\.\s+(.+)", lines[i])
         if m:
-            seq = int(m.group(1))
             title = m.group(2).strip()
             preview = ""
             category = ""
@@ -269,7 +272,11 @@ async def _run_tasks_tool(name: str, params: dict, session_id: str = "") -> str:
         complete_task,
         create_task,
         delete_task,
+    )
+    from nextcloud_tasks import (
         list_tasks as _list_tasks_raw,
+    )
+    from nextcloud_tasks import (
         search_tasks as _search_tasks_raw,
     )
 
@@ -339,7 +346,6 @@ def _parse_task_listing(text: str) -> list[dict]:
     while i < len(lines):
         m = re.match(r"\s*(\d+)\.\s+\[([ox])\]\s+(.+)", lines[i])
         if m:
-            seq = int(m.group(1))
             completed = m.group(2) == "x"
             summary = m.group(3).strip()
             uid = ""
@@ -374,7 +380,6 @@ def _parse_calendar_listing(text: str) -> list[dict]:
     while i < len(lines):
         m = re.match(r"\s*(\d+)\.\s+(.+?\|.+)", lines[i])
         if m:
-            seq = int(m.group(1))
             rest = m.group(2).strip()
             parts = rest.split("|", 1)
             start_time = parts[0].strip() if len(parts) > 1 else ""
