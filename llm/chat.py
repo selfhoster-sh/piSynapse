@@ -163,10 +163,10 @@ async def chat_with_ollama(
         )
         if err:
             logger.error(f"Ollama request failed: {err}")
-            return {"reply": "Engine Error: could not reach the language model.", "pending_action": None, "memories_saved": memories_saved, "thinking": None}
+            return {"reply": "Motorla bağlantı kurulamadı. Lütfen tekrar deneyin.", "pending_action": None, "memories_saved": memories_saved, "thinking": None}
         if not resp_json or not message:
             logger.error(f"Ollama returned empty response (resp_json={resp_json}, message={message})")
-            return {"reply": "Engine Error: empty response from language model.", "pending_action": None, "memories_saved": memories_saved, "thinking": None}
+            return {"reply": "Motor boş yanıt döndürdü. Lütfen tekrar deneyin.", "pending_action": None, "memories_saved": memories_saved, "thinking": None}
 
         if resp_json.get("done_reason") == "length":
             logger.warning(f"Ollama stopped early (done_reason='length'). Consider raising LLM_NUM_CTX (currently {get('LLM_NUM_CTX', 6144)}).")
@@ -248,6 +248,30 @@ async def chat_with_ollama(
                     matches = await asyncio.to_thread(find_events_by_summary, params.get("summary", ""), days_back=30, days_ahead=90)
                     if matches:
                         preview = "; ".join(f"'{m['summary']}' at {m['start']}" for m in matches)
+                except Exception as e:
+                    logger.warning(f"Preview lookup for {tn} failed: {e}")
+            elif tn == "delete_note":
+                try:
+                    from prompt import get_notes_context
+                    notes = await get_notes_context(session_id)
+                    ref = params.get("note_id")
+                    if notes and ref:
+                        is_num = isinstance(ref, int) or (isinstance(ref, str) and ref.isdigit())
+                        if is_num and 1 <= int(ref) <= len(notes):
+                            n = notes[int(ref) - 1]
+                            preview = f"{n.get('title', 'Untitled')}"
+                except Exception as e:
+                    logger.warning(f"Preview lookup for {tn} failed: {e}")
+            elif tn in ("complete_task", "delete_task"):
+                try:
+                    from prompt import get_tasks_context
+                    tasks = await get_tasks_context(session_id)
+                    ref = params.get("uid", "")
+                    if tasks and ref:
+                        is_num = isinstance(ref, int) or (isinstance(ref, str) and ref.isdigit())
+                        if is_num and 1 <= int(ref) <= len(tasks):
+                            t_item = tasks[int(ref) - 1]
+                            preview = f"{t_item.get('summary', 'Untitled')}"
                 except Exception as e:
                     logger.warning(f"Preview lookup for {tn} failed: {e}")
 
