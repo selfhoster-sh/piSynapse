@@ -22,7 +22,7 @@ from starlette.responses import Response
 
 logger = logging.getLogger("piSynapse")
 
-router = APIRouter(prefix="/chat", tags=["chat"])
+router = APIRouter(prefix="/chat", tags=["media"])
 
 
 # -- Whisper Transcription --

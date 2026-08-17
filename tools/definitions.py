@@ -416,6 +416,9 @@ def get_combined_tools() -> list[dict]:
 # Tools requiring user confirmation before execution
 CONFIRM_TOOLS = {"send_email", "delete_calendar_event", "update_calendar_event", "delete_note", "complete_task", "delete_task"}
 
+# Tools that are safe to run offline (no destructive side effects, no network needed)
+OFFLINE_SAFE_TOOLS = {"set_timer", "save_memory", "web_search"}
+
 # Required params for confirm tools (checked before yielding confirm event)
 CONFIRM_REQUIRED = {
     "send_email": ["to", "subject", "body"],
