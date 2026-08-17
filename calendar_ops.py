@@ -24,11 +24,16 @@ _dav_lock = threading.Lock()
 _TODAY_CACHE_TTL = 300.0  # seconds (~5 min)
 _today_cache: tuple[float, list[dict]] | None = None
 
+# Short-lived cache for _find_events to avoid redundant CalDAV calls
+_find_events_cache: tuple[float, list] | None = None
+_FIND_EVENTS_CACHE_TTL = 5.0  # seconds
+
 
 def _invalidate_today_cache() -> None:
     """Drop cached today's events after a calendar write (create/update/delete)."""
-    global _today_cache
+    global _today_cache, _find_events_cache
     _today_cache = None
+    _find_events_cache = None
 
 
 def _get_nextcloud_client():
@@ -108,13 +113,18 @@ def _ical_escape_text(value: str) -> str:
 
 
 def _find_events(search_window_days_back: int = 30, search_window_days_ahead: int = 90):
-    """Return all events in the search window."""
+    """Return all events in the search window (cached for 5s to avoid redundant CalDAV calls)."""
+    global _find_events_cache
+    now = time.time()
+    if _find_events_cache and (now - _find_events_cache[0]) < _FIND_EVENTS_CACHE_TTL:
+        return _find_events_cache[1]
     try:
         calendar = _get_calendar()
         events = calendar.date_search(
             datetime.now() - timedelta(days=search_window_days_back),
             datetime.now() + timedelta(days=search_window_days_ahead),
         )
+        _find_events_cache = (now, events)
         return events
     except Exception as e:
         logger.error("Failed to search calendar events: %s", e)

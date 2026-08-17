@@ -818,9 +818,12 @@ async def update_session_name(session_id: str, name: str):
 async def get_all_sessions() -> list[dict]:
     db = await get_db()
     async with db.execute(
-        """SELECT id, created_at, last_active, name,
-                  (SELECT COUNT(*) FROM conversations WHERE session_id = sessions.id) as msg_count
-           FROM sessions ORDER BY last_active DESC"""
+        """SELECT s.id, s.created_at, s.last_active, s.name,
+                  COUNT(c.session_id) as msg_count
+           FROM sessions s
+           LEFT JOIN conversations c ON c.session_id = s.id
+           GROUP BY s.id
+           ORDER BY s.last_active DESC"""
     ) as cur:
         rows = await cur.fetchall()
     return [
@@ -955,43 +958,70 @@ async def search_memories(query: str, user_id: str | None = None, limit: int = 5
         return []
 
     db = await get_db()
+    # Phase 1: load only IDs + embeddings for fast similarity scoring
     async with db.execute(
-        "SELECT id, content, category, importance, created_at, embedding FROM memories WHERE user_id = ?",
+        "SELECT id, embedding FROM memories WHERE user_id = ?",
         (user_id,),
     ) as cur:
         rows = await cur.fetchall()
 
     scored = []
-    for mem_id, content, category, importance, created_at, blob in rows:
+    backfill_ids = []
+    for mem_id, blob in rows:
         if blob is None:
-            try:
-                blob = await embed_async(content)
-                await db.execute("UPDATE memories SET embedding = ? WHERE id = ?", (blob, mem_id))
-            except Exception as e:
-                logger.error(f"Embedding backfill failed for memory {mem_id}: {e}")
-                continue
-
+            backfill_ids.append(mem_id)
+            continue
         sim = cosine_similarity(query_embedding, blob)
-        scored.append((sim, {
-            "id": mem_id, "content": content, "category": category,
-            "importance": importance, "created_at": created_at, "similarity": sim,
-        }))
+        scored.append((sim, mem_id))
 
     scored.sort(key=lambda x: x[0], reverse=True)
-    top = [m for sim, m in scored[:limit] if sim >= 0.35]
+    top = [(sim, mid) for sim, mid in scored[:limit] if sim >= 0.35]
 
+    # Phase 2: fetch full content only for top results
+    result = []
     if top:
-        for m in top:
-            await db.execute(
-                """UPDATE memories SET last_accessed = CURRENT_TIMESTAMP,
-                   access_count = access_count + 1 WHERE id = ?""",
-                (m["id"],),
-            )
+        placeholders = ",".join("?" * len(top))
+        ids = [m_id for _, m_id in top]
+        async with db.execute(
+            f"SELECT id, content, category, importance, created_at FROM memories WHERE id IN ({placeholders})",
+            ids,
+        ) as cur:
+            content_map = {r[0]: r[1:] for r in await cur.fetchall()}
+        for sim, mem_id in top:
+            c, cat, imp, cat_at = content_map.get(mem_id, ("", "", 0, ""))
+            result.append({
+                "id": mem_id, "content": c, "category": cat,
+                "importance": imp, "created_at": cat_at, "similarity": sim,
+            })
 
-    # Single commit covers both the embedding backfill and the access stats.
+    if backfill_ids:
+        async def _backfill():
+            for mid in backfill_ids:
+                try:
+                    row = await db.execute("SELECT content FROM memories WHERE id = ?", (mid,))
+                    r = await row.fetchone()
+                    if r:
+                        emb = await embed_async(r[0])
+                        await db.execute("UPDATE memories SET embedding = ? WHERE id = ?", (emb, mid))
+                except Exception as e:
+                    logger.error("Embedding backfill failed for memory %s: %s", mid, e)
+            await db.commit()
+        import asyncio
+        asyncio.create_task(_backfill())
+
+    # Update access stats for retrieved results
+    if result:
+        ids = [m["id"] for m in result]
+        placeholders = ",".join("?" * len(ids))
+        await db.execute(
+            f"""UPDATE memories SET last_accessed = CURRENT_TIMESTAMP,
+               access_count = access_count + 1 WHERE id IN ({placeholders})""",
+            ids,
+        )
+
     await db.commit()
 
-    return top
+    return result
 
 
 async def get_memories(user_id: str | None = None, limit: int = 10) -> list[dict]:
