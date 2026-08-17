@@ -82,6 +82,15 @@ class _RateLimiter:
 _rate_limiter = _RateLimiter(rpm=30)
 
 
+class _SessionRateLimiter(_RateLimiter):
+    """Per-session rate limiter — same token-bucket, keyed by session_id."""
+    def allow(self, session_id: str) -> bool:
+        return super().allow(session_id)
+
+
+_session_limiter = _SessionRateLimiter(rpm=20)
+
+
 # ── Lifespan ──────────────────────────────────────────────────────────────────
 
 @asynccontextmanager
