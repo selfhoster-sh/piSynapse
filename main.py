@@ -57,20 +57,29 @@ class _RateLimiter:
         self._buckets: dict[str, list[float]] = defaultdict(list)
         self._last_cleanup = time.time()
 
-    def allow(self, ip: str) -> bool:
+    def allow(self, ip: str) -> tuple[bool, int]:
+        """Returns (allowed, remaining). remaining = max(0, rpm - count)."""
         now = time.time()
         if now - self._last_cleanup > 60:
             self._cleanup(now)
-        # Evict oldest entry if bucket limit reached (prevents unbounded growth)
         if len(self._buckets) >= self.max_buckets and ip not in self._buckets:
-            return False
+            return False, 0
         bucket = self._buckets[ip]
         cutoff = now - 60
         bucket[:] = [t for t in bucket if t > cutoff]
+        remaining = max(0, self.rpm - len(bucket))
         if len(bucket) >= self.rpm:
-            return False
+            return False, 0
         bucket.append(now)
-        return True
+        return True, remaining - 1
+
+    def remaining(self, ip: str) -> int:
+        """Count remaining tokens without consuming one."""
+        now = time.time()
+        bucket = self._buckets.get(ip, [])
+        cutoff = now - 60
+        active = [t for t in bucket if t > cutoff]
+        return max(0, self.rpm - len(active))
 
     def _cleanup(self, now: float):
         cutoff = now - 120
@@ -84,7 +93,7 @@ _rate_limiter = _RateLimiter(rpm=30)
 
 class _SessionRateLimiter(_RateLimiter):
     """Per-session rate limiter — same token-bucket, keyed by session_id."""
-    def allow(self, session_id: str) -> bool:
+    def allow(self, session_id: str) -> tuple[bool, int]:
         return super().allow(session_id)
 
 
@@ -221,7 +230,40 @@ async def lifespan(app: FastAPI):
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(
+    lifespan=lifespan,
+    title="piSynapse",
+    description=(
+        "piSynapse personal AI assistant API.\n\n"
+        "## Authentication\n"
+        "All endpoints require `X-API-Key` header (except `/health`, `/`, `/static/*`).\n\n"
+        "## Streaming (SSE)\n"
+        "`POST /chat/stream` returns `text/event-stream`. Events:\n"
+        "- `{token: \"...\"}` — incremental text\n"
+        "- `{reasoning: \"...\"}` — thinking content (when think_mode=true)\n"
+        "- `{confirm: {tool, params, preview?}}` — tool confirmation required\n"
+        "- `{done: true, session_id, memories_saved}` — stream complete\n"
+        "- `{error: \"...\"}` — error during stream\n\n"
+        "### Reconnection\n"
+        "SSE idle timeout: 300s. On disconnect, retry with exponential backoff (1s, 2s, 4s, max 30s).\n"
+        "If a `done` event was not received, the last message may be partial — re-fetch history to verify.\n\n"
+        "## Mobile Notes\n"
+        "- Images: use `POST /chat/upload` (multipart) instead of base64 in chat body.\n"
+        "- Offline: use `POST /chat/sync` to batch queue commands when reconnected.\n"
+        "- Rate limits: 30 req/min per IP, 20 req/min per session."
+    ),
+    version="2.0.0",
+    openapi_tags=[
+        {"name": "chat", "description": "Core chat, streaming, and message management"},
+        {"name": "sessions", "description": "Session lifecycle (create, list, rename, delete)"},
+        {"name": "memories", "description": "Long-term memory management"},
+        {"name": "media", "description": "Voice transcription, TTS, image upload"},
+        {"name": "sync", "description": "Offline command sync (mobile)"},
+        {"name": "config", "description": "Settings and configuration"},
+        {"name": "widgets", "description": "Weather and calendar widgets"},
+        {"name": "health", "description": "Health check"},
+    ],
+)
 
 # CORS — restrict to specific origins when set, otherwise same-origin only
 if CORS_ORIGINS:
@@ -357,6 +399,7 @@ async def security_middleware(request: Request, call_next):
             return JSONResponse(status_code=401, content={"detail": "Invalid or missing API key"})
 
     # --- Rate limiting ---
+    client_ip = None
     if not is_exempt or is_debug:
         if TRUST_X_FORWARDED_FOR:
             client_ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
@@ -365,8 +408,10 @@ async def security_middleware(request: Request, call_next):
             client_ip = request.client.host if request.client else "unknown"
         if not client_ip:
             client_ip = "unknown"
-        if not _rate_limiter.allow(client_ip):
-            return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded. Try again later."})
+        allowed, remaining = _rate_limiter.allow(client_ip)
+        if not allowed:
+            return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded. Try again later."},
+                               headers={"Retry-After": "60", "X-RateLimit-Limit": str(_rate_limiter.rpm), "X-RateLimit-Remaining": "0"})
 
     # --- Body size limit ---
     # Only the transcription endpoints accept larger payloads (audio recordings);
@@ -393,7 +438,12 @@ async def security_middleware(request: Request, call_next):
             if body_size > limit:
                 return JSONResponse(status_code=413, content={"detail": f"Request body too large (max {limit_str})"})
 
-    return await call_next(request)
+    response = await call_next(request)
+    if client_ip:
+        rem = _rate_limiter.remaining(client_ip)
+        response.headers["X-RateLimit-Limit"] = str(_rate_limiter.rpm)
+        response.headers["X-RateLimit-Remaining"] = str(rem)
+    return response
 
 
 # ── Routers ───────────────────────────────────────────────────────────────────
