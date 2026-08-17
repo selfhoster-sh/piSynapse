@@ -242,6 +242,21 @@ async def init_db():
 
     await db.execute("CREATE INDEX IF NOT EXISTS idx_tasks_session_map_session ON tasks_session_map(session_id, seq)")
 
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS calendar_session_map (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            seq        INTEGER NOT NULL,
+            uid        TEXT NOT NULL,
+            summary    TEXT DEFAULT '',
+            start_time TEXT DEFAULT '',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(session_id, seq)
+        )
+    """)
+
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_calendar_session_map_session ON calendar_session_map(session_id, seq)")
+
     await _apply_migrations(db)
 
     await cleanup_expired_data()
@@ -737,6 +752,55 @@ async def clear_tasks_map(session_id: str):
         return
     db = await get_db()
     await _write_with_retry(db, "DELETE FROM tasks_session_map WHERE session_id = ?", (session_id,))
+
+
+# -- Calendar Session Map --
+# Same pattern as email/notes/tasks: model sees numbered list, we map to real UIDs.
+
+async def save_calendar_map(session_id: str, events: list[dict]):
+    """Replace the stored calendar listing for a session with a new one."""
+    if not session_id or not events:
+        return
+    db = await get_db()
+    await _write_with_retry(db, "DELETE FROM calendar_session_map WHERE session_id = ?", (session_id,))
+    for seq, ev in enumerate(events, 1):
+        await _write_with_retry(
+            db,
+            "INSERT INTO calendar_session_map (session_id, seq, uid, summary, start_time) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (
+                session_id,
+                seq,
+                str(ev.get("uid", "")),
+                ev.get("summary", "")[:200],
+                ev.get("start", "")[:50],
+            ),
+        )
+
+
+async def get_calendar_map(session_id: str) -> list[dict]:
+    """Return the persisted calendar listing for a session (list-number order)."""
+    if not session_id:
+        return []
+    db = await get_db()
+    async with db.execute(
+        """SELECT uid, summary, start_time FROM calendar_session_map
+           WHERE session_id = ? ORDER BY seq ASC""",
+        (session_id,),
+    ) as cur:
+        rows = await cur.fetchall()
+    return [
+        {"uid": r[0], "summary": r[1], "start": r[2]}
+        for r in rows
+    ]
+
+
+async def clear_calendar_map(session_id: str):
+    """Drop the stored calendar listing for a session (used on history clear)."""
+    if not session_id:
+        return
+    db = await get_db()
+    await _write_with_retry(db, "DELETE FROM calendar_session_map WHERE session_id = ?", (session_id,))
 
 
 # -- Sessions --
