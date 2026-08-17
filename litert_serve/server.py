@@ -19,7 +19,6 @@ import argparse
 import json
 import logging
 import signal
-import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -144,7 +143,7 @@ def reload_engine() -> dict:
     Waits for in-flight requests to finish, then swaps the engine.
     Returns status dict.
     """
-    global _cfg, Handler, _active_requests
+    global _cfg, _active_requests
 
     if not _config_path or not _config_path.exists():
         return {"ok": False, "error": "config.json not found"}
@@ -159,7 +158,7 @@ def reload_engine() -> dict:
         # Compare with current config
         engine_keys = ("model_path", "max_num_tokens", "speculative_decoding",
                         "use_ringbuffers_local_attention", "enable_ynnpack")
-        changed = {k: (old, new_cfg[k]) for k in engine_keys
+        changed = {k: (_cfg.get(k), new_cfg[k]) for k in engine_keys
                    if _cfg.get(k) != new_cfg.get(k)}
 
         if not changed and _cfg.get("model_id") == new_cfg.get("model_id"):
