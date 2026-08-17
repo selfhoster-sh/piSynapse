@@ -115,5 +115,29 @@ def decode_email_header(value) -> str:
 
 
 def sanitize_imap_query(query: str) -> str:
-    """Remove characters that would break IMAP search syntax."""
-    return query.replace('"', "").replace("\\", "").strip()
+    """Remove characters that would break IMAP search syntax.
+
+    Only allows alphanumeric characters, spaces, and basic safe punctuation.
+    IMAP search interprets quotes, parens, asterisks, and braces as operators —
+    all stripped to prevent injection (e.g. ``foo*) ALL`` leaking entire inbox).
+    """
+    return re.sub(r"[^a-zA-Z0-9\s._@-]", "", query).strip()
+
+
+def sanitize_external_text(text: str) -> str:
+    """Sanitize external content (email, calendar, notes) before injection into LLM prompt.
+
+    Strips HTML tags, script injection vectors, and control characters.
+    This prevents XSS via malicious email subjects, calendar descriptions,
+    or note content that could be rendered as HTML by the frontend.
+    """
+    if not text:
+        return ""
+    # Strip HTML tags
+    text = re.sub(r"<[^>]+>", "", text)
+    # Strip common script injection patterns
+    text = re.sub(r"javascript:", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"on\w+\s*=", "", text, flags=re.IGNORECASE)
+    # Strip control characters (keep newlines and tabs)
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
+    return text.strip()

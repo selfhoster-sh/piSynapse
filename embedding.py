@@ -73,9 +73,9 @@ def _deserialize(blob: bytes) -> np.ndarray:
     """Deserialize an embedding vector stored in SQLite.
 
     Rows written today hold raw float32 bytes (see ``embed()``). Very old rows
-    may hold a legacy numpy pickle instead. Raw buffers can start with any byte
-    (e.g. 0x80 from a negative float), so detect by length/finiteness rather
-    than a magic byte, and only fall back to unpickling when that fails.
+    may hold a legacy numpy pickle — these are rejected for security (arbitrary
+    code execution risk). Raw buffers can start with any byte (e.g. 0x80 from
+    a negative float), so detect by length/finiteness rather than a magic byte.
     """
     if blob.startswith(b"\x93NUMPY"):  # numpy .npy container
         import io
@@ -84,6 +84,6 @@ def _deserialize(blob: bytes) -> np.ndarray:
         arr = np.frombuffer(blob, dtype="float32")
         if arr.size > 0 and np.all(np.isfinite(arr)) and np.max(np.abs(arr)) < 1000:
             return arr
-    import pickle
-    arr = pickle.loads(blob)
-    return np.asarray(arr, dtype="float32")
+    # Reject unrecognized formats (including legacy pickle) — unpickling
+    # untrusted data is arbitrary code execution.
+    raise ValueError("Unrecognized embedding format — re-embed this memory")
