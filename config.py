@@ -73,7 +73,7 @@ SSE_READ_IDLE_TIMEOUT = _safe_float("SSE_READ_IDLE_TIMEOUT", 300.0)
 LLM_REASONING_EFFORT = os.getenv("LLM_REASONING_EFFORT", "medium").strip().lower()
 # Cap on generated output tokens per response (litert-lm reads this via
 # max_completion_tokens; its own default ~600 was truncating long answers).
-LLM_MAX_OUTPUT_TOKENS = _safe_int("LLM_MAX_OUTPUT_TOKENS", 2048)
+LLM_MAX_OUTPUT_TOKENS = _safe_int("LLM_MAX_OUTPUT_TOKENS", 4096)
 
 # -- TTS (Piper) --
 TTS_VOICE = os.getenv("TTS_VOICE", "en_US-lessac-medium")
@@ -250,9 +250,9 @@ SETTINGS_SCHEMA: dict = {
     "LLM_TEMPERATURE":    {"type": "float", "default": "0.6",  "label": {"tr": "Sıcaklık (Temperature)",     "en": "Temperature"},           "min": 0.0, "max": 2.0, "step": 0.05},
     "LLM_TOP_P":          {"type": "float", "default": "0.85", "label": {"tr": "Top P",                      "en": "Top P"},                  "min": 0.1, "max": 1.0, "step": 0.05},
     "LLM_TOP_K":          {"type": "int",   "default": "40",   "label": {"tr": "Top K",                      "en": "Top K"},                  "min": 1, "max": 200, "step": 1},
-    "LLM_NUM_CTX":        {"type": "int",   "default": "6144", "label": {"tr": "Bağlam Penceresi (Tokens)",  "en": "Context Window (Tokens)"},"min": 2048, "max": 6144, "step": 512,
-        "desc": {"tr": "Modelin toplam token hafızası. Sunucu tavanı 6144'tür; geçmiş kırpma bütçesi ve sunucu bağlam ayarı bu değerle belirlenir.", "en": "Total token memory of the model. Server ceiling is 6144; the history trimming budget and the server context setting follow this value."}},
-    "LLM_MAX_OUTPUT_TOKENS": {"type": "int", "default": "2048", "label": {"tr": "Maks Çıktı (Tokens)", "en": "Max Output (Tokens)"}, "min": 256, "max": 6144, "step": 256,
+    "LLM_NUM_CTX":        {"type": "int",   "default": "8192", "label": {"tr": "Bağlam Penceresi (Tokens)",  "en": "Context Window (Tokens)"},"min": 2048, "max": 32768, "step": 512,
+        "desc": {"tr": "Modelin toplam token hafızası. Sunucu tavanı modelin kapasitesine göre değişir; geçmiş kırpma bütçesi ve sunucu bağlam ayarı bu değerle belirlenir.", "en": "Total token memory of the model. Server ceiling depends on the model capacity; the history trimming budget and the server context setting follow this value."}},
+    "LLM_MAX_OUTPUT_TOKENS": {"type": "int", "default": "4096", "label": {"tr": "Maks Çıktı (Tokens)", "en": "Max Output (Tokens)"}, "min": 256, "max": 16384, "step": 256,
         "desc": {"tr": "Asistanın tek yanıttaki maksimum üretim uzunluğu (token). Daha uzun cevaplar için artırabilirsiniz.", "en": "Maximum length of a single assistant reply (tokens). Raise for longer answers."}},
     "HISTORY_LIMIT":      {"type": "int",   "default": "12",   "label": {"tr": "Geçmiş Mesaj Sayısı",        "en": "History Message Limit"},  "min": 4, "max": 50, "step": 1},
     "MEMORY_LIMIT":       {"type": "int",   "default": "10",   "label": {"tr": "Hafıza Kartı Sayısı",        "en": "Memory Card Limit"},      "min": 1, "max": 30, "step": 1},
