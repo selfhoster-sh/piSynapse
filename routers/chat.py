@@ -6,6 +6,8 @@ Handles chat messages, streaming responses, session management, and memory.
 import asyncio
 import json
 import logging
+import re
+import traceback
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -32,6 +34,21 @@ from retrieval import merge_history, retrieve_relevant_history
 logger = logging.getLogger("piSynapse")
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+
+# -- Session ID validation --
+# Allow: alphanumeric, hyphens, underscores. Max 64 chars.
+# Rejects injection attempts, excessively long IDs, and path-traversal patterns.
+_SESSION_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
+
+
+def _validate_session_id(session_id: str) -> str:
+    """Return session_id if valid, else raise 400."""
+    if not _SESSION_ID_RE.match(session_id):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid session_id: use only letters, numbers, hyphens, underscores (max 64 chars).",
+        )
+    return session_id
 
 
 # -- Request/Response Models --
@@ -111,6 +128,7 @@ async def _update_summary(session_id: str):
 
 @router.post("/", response_model=ChatResponse)
 async def chat_endpoint(req: ChatRequest, background_tasks: BackgroundTasks):
+    _validate_session_id(req.session_id)
     if not req.message.strip() and not req.images:
         raise HTTPException(status_code=400, detail="Message or image is required.")
 
@@ -160,12 +178,16 @@ async def chat_endpoint(req: ChatRequest, background_tasks: BackgroundTasks):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Chat endpoint error: {e}")
+        logger.error("Chat endpoint error: %s\n%s", e, traceback.format_exc())
         raise HTTPException(status_code=500, detail="Internal error")
 
 
 @router.post("/stream")
 async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
+    _validate_session_id(req.session_id)
+    if not req.message.strip() and not req.images:
+        raise HTTPException(status_code=400, detail="Message or image is required.")
+
     try:
         await save_message(req.session_id, "user", req.message, images=req.images or None)
 
@@ -187,7 +209,7 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
             intent, tool_group = "action", "email"
             logger.info(f"Contextual follow-up detected (email): {req.message!r}")
     except Exception as e:
-        logger.error(f"Chat stream setup error: {e}")
+        logger.error("Chat stream setup error: %s\n%s", e, traceback.format_exc())
         raise HTTPException(status_code=500, detail="Internal error")
 
     reply_parts: list[str] = []
@@ -218,7 +240,7 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                     return
         except Exception as e:
-            logger.error(f"Chat stream generate error: {e}")
+            logger.error("Chat stream generate error: %s\n%s", e, traceback.format_exc())
             yield f"data: {json.dumps({'error': 'Stream error'})}\n\n"
         finally:
             if not reply_saved and reply_parts:
@@ -227,7 +249,7 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
                     reply_saved = True
                     logger.info("Saved partial assistant reply after stream interruption")
                 except Exception as e:
-                    logger.error(f"Failed to save partial reply: {e}")
+                    logger.error("Failed to save partial reply: %s\n%s", e, traceback.format_exc())
 
     summary_bg = BackgroundTasks()
     summary_bg.add_task(_update_summary, req.session_id)
@@ -244,6 +266,7 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
 async def execute_action(req: ExecuteRequest):
     import time
 
+    _validate_session_id(req.session_id)
     from tool_verification import run_verification
     from tools import CONFIRM_TOOLS, is_tool_success, run_tool, validate_confirm_params
     try:
@@ -256,7 +279,7 @@ async def execute_action(req: ExecuteRequest):
             result = await run_tool(req.tool, req.params, context={"user_id": req.user_id, "session_id": req.session_id})
             success = is_tool_success(result)
         except Exception as e:
-            logger.error(f"Execute action error: {e}")
+            logger.error("Execute action error: %s\n%s", e, traceback.format_exc())
             result = f"ERROR: {e}"
             success = False
         duration_ms = (time.perf_counter() - t0) * 1000
@@ -269,7 +292,7 @@ async def execute_action(req: ExecuteRequest):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Execute action error: {e}")
+        logger.error("Execute action error: %s\n%s", e, traceback.format_exc())
         raise HTTPException(status_code=500, detail="Internal error")
 
 
@@ -282,7 +305,9 @@ async def list_sessions():
 
 @router.patch("/sessions/{session_id}")
 async def rename_session(session_id: str, req: RenameRequest):
-    await update_session_name(session_id, req.name)
+    _validate_session_id(session_id)
+    name = (req.name or "").strip()[:100] or "Unnamed"
+    await update_session_name(session_id, name)
     return {"ok": True}
 
 
@@ -290,12 +315,14 @@ async def rename_session(session_id: str, req: RenameRequest):
 
 @router.get("/history")
 async def get_chat_history(session_id: str = Query(...)):
+    _validate_session_id(session_id)
     msgs = await get_history(session_id, limit=50, include_reasoning=True)
     return {"session_id": session_id, "messages": msgs}
 
 
 @router.delete("/history")
 async def clear_chat_history(session_id: str = Query(...)):
+    _validate_session_id(session_id)
     await clear_history(session_id)
     return {"status": "success", "message": f"'{session_id}' deleted."}
 
