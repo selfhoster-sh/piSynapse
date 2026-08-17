@@ -25,7 +25,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from litert_lm.engine import Engine
-from litert_lm.interfaces import SamplerConfig, ThinkingConfig, Tool
+from litert_lm.interfaces import Backend, SamplerConfig, ThinkingConfig, Tool
 
 LOG = logging.getLogger("piserve")
 
@@ -134,6 +134,8 @@ def _create_engine(cfg: dict) -> Engine:
         enable_speculative_decoding=bool(cfg["speculative_decoding"]),
         use_ringbuffers_local_attention=bool(cfg["use_ringbuffers_local_attention"]),
         enable_ynnpack=bool(cfg["enable_ynnpack"]),
+        vision_backend=Backend.CPU(),
+        audio_backend=Backend.CPU(),
     )
 
 
