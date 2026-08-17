@@ -157,10 +157,13 @@ def build_context(
     used_tokens = 0
 
     if email_context:
+        from utils import sanitize_external_text
         lines = []
         for i, em in enumerate(email_context, 1):
-            preview = em.get("preview", "")
-            base = f"- [{i}] From: {em['from']} | Subject: {em['subject']}"
+            preview = sanitize_external_text(em.get("preview", ""))
+            subject = sanitize_external_text(em.get("subject", ""))
+            sender = sanitize_external_text(em.get("from", ""))
+            base = f"- [{i}] From: {sender} | Subject: {subject}"
             if preview:
                 base += f"\n  Preview: {preview[:120]}"
             lines.append(base)

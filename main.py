@@ -331,9 +331,12 @@ async def security_middleware(request: Request, call_next):
         is_exempt = True
 
     # --- Debug beacon: navigator.sendBeacon cannot set headers, so it
-    # authenticates via the ?k= query param (still protected by API_KEY). ---
+    # authenticates via the ?k= query param (still protected by API_KEY).
+    # Always require auth for /debug — never leave it open. ---
     is_debug = path == "/debug"
-    if is_debug and API_KEY:
+    if is_debug:
+        if not API_KEY:
+            return JSONResponse(status_code=403, content={"detail": "Debug endpoint disabled: API_KEY not configured"})
         key = request.query_params.get("k", "")
         if not hmac.compare_digest(key, API_KEY):
             return JSONResponse(status_code=401, content={"detail": "Invalid or missing API key"})
@@ -490,3 +493,8 @@ async def debug_ingest(request: Request):
     except Exception as e:
         print(f"DBG|bad payload: {e}")
     return {"ok": True}
+
+
+# NOTE: CalDAV client (calendar_ops.py, nextcloud_tasks.py) holds credentials
+# in memory. Never log the client object directly — only log exception messages.
+# The caldav library's __repr__ may include connection details.
