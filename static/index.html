@@ -17,10 +17,11 @@
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 
 :root{
+  /* WCAG AA: text 4.5:1, text2 5.1:1, text3 4.76:1 on surface; text4 3.16:1 (decorative) */
   --bg:#0a0a0f; --surface:#111116; --surface2:#1a1a22; --surface3:#26262f;
   --border:#1e1e2a; --accent:#f0943a; --accent-d:rgba(240,148,58,.12);
-  --accent-h:#e08020; --text:#e2e2e8; --text2:#8a8a9e; --text3:#5e5e72;
-  --text4:#404056; --user-bg:#1a1a22; --danger:#e05555; --success:#4ecb71;
+  --accent-h:#e08020; --text:#e2e2e8; --text2:#8a8a9e; --text3:#7e7e96;
+  --text4:#626276; --user-bg:#1a1a22; --danger:#e05555; --success:#4ecb71;
   --r:16px; --r-sm:10px; --r-chat:18px;
   --shadow-sm:0 1px 3px rgba(0,0,0,.2);
   --shadow-md:0 4px 12px rgba(0,0,0,.3);
@@ -57,15 +58,15 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
   transition:transform .3s cubic-bezier(.4,0,.2,1)}
 .sb-head{padding:18px 16px 14px;border-bottom:1px solid var(--border)}
 .sb-top-controls{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
-.sb-brand-text{font-size:13px;font-weight:700;letter-spacing:1px;color:var(--text2);text-transform:uppercase}
-.model-label{font-size:11px;color:var(--text3);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-left:8px}
+.sb-brand-text{font-size:14px;font-weight:800;letter-spacing:1.2px;color:var(--text);text-transform:uppercase}
 .logo-controls{display:flex;align-items:center;gap:4px}
-.icon-btn{background:none;border:none;color:var(--text3);cursor:pointer;
+.icon-btn{background:none;border:none;color:var(--text2);cursor:pointer;
   padding:6px;border-radius:8px;display:flex;align-items:center;justify-content:center;
   transition:all .2s;font-family:inherit}
 .icon-btn:hover{color:var(--text);background:var(--surface2)}
  .status-dot{width:8px;height:8px;border-radius:50%;background:var(--success);
    transition:background .3s;flex-shrink:0;margin-left:4px}
+ .status-dot.ok{background:var(--success)}
  .status-dot.thinking{background:var(--accent);animation:pulse 1s cubic-bezier(.4,0,.6,1) infinite}
  .status-dot.warn{background:#f5b301}
  .status-dot.error{background:#ef4444}
@@ -79,12 +80,19 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 .new-btn:active{transform:scale(.98)}
 
 #sidebar-scroll-container{flex:1;overflow-y:auto;display:flex;flex-direction:column;padding-bottom:10px}
-.sb-label{padding:14px 16px 6px;font-size:11px;font-weight:700;
-  letter-spacing:.08em;text-transform:uppercase;color:var(--text4)}
+.sb-label{padding:12px 12px 6px;font-size:11px;font-weight:700;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--text3);
+  display:flex;align-items:center;justify-content:space-between;gap:6px}
+.sb-chats-label{user-select:none}
+.sb-label-controls{display:flex;align-items:center;gap:2px}
+.sb-label .icon-btn{padding:4px;border-radius:7px;width:26px;height:26px;color:var(--text3)}
+.sb-label .icon-btn:hover{color:var(--text);background:var(--surface2)}
+#search-toggle.on{color:var(--accent);background:var(--surface2)}
+.sb-mem-head{display:none}
+.sb-mem-back{opacity:.85}
 
 #session-list{padding:4px 8px;transition:max-height .3s cubic-bezier(.4,0,.2,1);flex:1}
-#session-list.compressed-list{max-height:115px;overflow-y:auto;flex:none;
-  border-bottom:1px solid var(--border);padding-bottom:8px}
+#session-list.hidden{display:none}
 
 .sess-item{display:flex;align-items:center;gap:8px;padding:9px 10px;margin-bottom:2px;
   border-radius:var(--r-sm);cursor:pointer;transition:all .2s;border:1px solid transparent}
@@ -95,7 +103,7 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 
 .sess-name{flex:1;font-size:13.5px;color:var(--text2);white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis;transition:color .2s}
-.sess-time{font-size:11px;color:var(--text4);flex-shrink:0}
+.sess-time{font-size:11px;color:var(--text3);flex-shrink:0}
 .sess-del{display:none;background:none;border:none;color:var(--text3);
   cursor:pointer;padding:4px;border-radius:4px;flex-shrink:0;line-height:1}
 .sess-item:hover .sess-del{display:flex}
@@ -135,12 +143,13 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 
 #logo-btn{background:transparent;border:none;cursor:pointer;padding:6px;border-radius:10px;
   display:flex;align-items:center;margin-right:8px;transition:background .2s;outline:none}
-#logo-btn:hover{background:var(--surface2)}
 .logo-icon{width:32px;height:32px;background:linear-gradient(135deg,var(--accent),var(--accent-h));
   border-radius:10px;display:flex;align-items:center;justify-content:center;
   color:#000;flex-shrink:0;box-shadow:0 2px 10px var(--accent-d);
-  transition:transform .4s cubic-bezier(.34,1.56,.64,1)}
-#logo-btn:hover .logo-icon{transform:scale(1.15) rotate(10deg)}
+  transition:transform .4s cubic-bezier(.34,1.56,.64,1),box-shadow .25s,filter .25s}
+#logo-btn:hover .logo-icon{transform:scale(1.15) rotate(10deg);
+  box-shadow:0 0 18px var(--accent);filter:brightness(1.12)}
+#logo-btn.btn-press .logo-icon{transform:scale(.88);filter:brightness(.85);transition-duration:.06s}
 
 #sess-title{flex:1;font-size:14px;font-weight:600;color:var(--text2);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -237,7 +246,7 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 .w-icon{width:64px;height:64px;background:var(--surface2);border:1px solid var(--border);
   border-radius:18px;display:flex;align-items:center;justify-content:center;
   color:var(--text);box-shadow:var(--shadow-md)}
-.w-title{font-size:22px;font-weight:700;color:var(--text);letter-spacing:-.5px}
+.w-title{font-size:22px;font-weight:600;color:var(--text);letter-spacing:-.5px}
 .w-sub{font-size:14.5px;color:var(--text2);line-height:1.6;max-width:300px}
 .w-start{padding:10px 24px;background:var(--text);border:none;border-radius:24px;
   color:var(--bg);font-size:14px;font-weight:600;cursor:pointer;margin-top:8px;
@@ -265,7 +274,7 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 #input-container:focus-within{border-color:var(--accent);box-shadow:var(--shadow-lg),0 0 0 3px var(--accent-d)}
 .input-left,.input-right{display:flex;align-items:center;gap:6px;flex-shrink:0}
 
-.inline-think-btn{background:none;border:none;color:var(--text3);cursor:pointer;
+.inline-think-btn{background:none;border:none;color:var(--text2);cursor:pointer;
   padding:8px;border-radius:50%;display:flex;align-items:center;justify-content:center;
   transition:all .2s;flex-shrink:0;position:relative;width:40px;height:40px}
 .inline-think-btn:hover{color:var(--text);background:var(--surface2)}
@@ -276,7 +285,7 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 .think-split:hover{border-color:color-mix(in srgb,var(--accent) 45%,var(--border))}
 .think-split.active{border-color:var(--accent);background:var(--accent-d);box-shadow:0 0 0 1px var(--accent-d)}
 .think-bolt,.think-caret{background:none;border:none;padding:4px;margin:0;display:flex;align-items:center;
-  justify-content:center;cursor:pointer;color:var(--text3);transition:color .2s;border-radius:8px}
+  justify-content:center;cursor:pointer;color:var(--text2);transition:color .2s;border-radius:8px}
 .think-bolt:hover,.think-caret:hover{color:var(--text)}
 .think-split.active .think-bolt,.think-split.active .think-caret{color:var(--accent)}
 .think-divider{width:1px;height:14px;background:var(--border);flex-shrink:0;margin:0 1px}
@@ -343,11 +352,16 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
   font-size:15px;line-height:1.5;padding:8px 0;resize:none;max-height:200px;
   min-height:40px;font-family:inherit;overflow-y:auto}
 #msg-input::placeholder{color:var(--text3)}
-#send-btn{width:40px;height:40px;background:var(--accent);border:none;border-radius:20px;
+#send-btn{width:40px;height:40px;border:none;border-radius:20px;
   color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;
-  flex-shrink:0;transition:all .2s;box-shadow:0 2px 8px var(--accent-d)}
-#send-btn:hover:not(:disabled){transform:scale(1.05);background:var(--accent-h)}
-#send-btn:active:not(:disabled){transform:scale(.95)}
+  flex-shrink:0;transition:all .2s;
+  background:radial-gradient(circle at 30% 25%, rgba(255,255,255,.42), rgba(255,255,255,0) 55%),
+             linear-gradient(145deg, var(--accent), var(--accent-h));
+  box-shadow:0 3px 10px var(--accent-d), inset -2px -3px 6px rgba(0,0,0,.22), inset 1px 2px 4px rgba(255,255,255,.22)}
+#send-btn:hover:not(:disabled){transform:scale(1.06);
+  box-shadow:0 6px 20px var(--accent-d), inset -2px -3px 6px rgba(0,0,0,.18), inset 1px 2px 5px rgba(255,255,255,.3)}
+#send-btn:active:not(:disabled){transform:scale(.93);
+  box-shadow:0 4px 24px var(--accent-d), inset 0 0 14px var(--accent)}
 #send-btn:disabled{background:var(--surface3);color:var(--text4);cursor:not-allowed;box-shadow:none}
 
 /* ── Memory Cards ──────────────────────────────────────────────────────────── */
@@ -635,25 +649,77 @@ body.glass-mode .w-start,
 body.glass-mode .modal-confirm:not(.danger){
   background:linear-gradient(135deg, color-mix(in srgb, var(--accent) 30%, transparent), color-mix(in srgb, var(--accent) 10%, transparent));
   color:var(--text);
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.14), 0 4px 16px color-mix(in srgb, var(--accent) 20%, transparent);
-  backdrop-filter:blur(14px) saturate(150%);
-  -webkit-backdrop-filter:blur(14px) saturate(150%);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.2), 0 4px 18px color-mix(in srgb, var(--accent) 22%, transparent);
+  backdrop-filter:blur(24px) saturate(180%);
+  -webkit-backdrop-filter:blur(24px) saturate(180%);
 }
 body.glass-mode .new-btn:hover,
 body.glass-mode .top-new-btn:hover,
 body.glass-mode .w-start:hover,
 body.glass-mode .modal-confirm:not(.danger):hover{
-  background:linear-gradient(135deg, color-mix(in srgb, var(--accent) 40%, transparent), color-mix(in srgb, var(--accent) 16%, transparent));
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.18), 0 6px 22px color-mix(in srgb, var(--accent) 30%, transparent);
+  background:linear-gradient(135deg, color-mix(in srgb, var(--accent) 42%, transparent), color-mix(in srgb, var(--accent) 17%, transparent));
+  box-shadow:inset 0 2px 0 rgba(255,255,255,.26), 0 8px 30px color-mix(in srgb, var(--accent) 38%, transparent);
   transform:translateY(-1px);
 }
 
-/* Send button: glossy accent */
+/* Send button: tinted glass orb — subtle accent, clean hover glow */
 body.glass-mode #send-btn:not(:disabled){
-  background:linear-gradient(135deg, color-mix(in srgb, var(--accent) 85%, #ffffff 15%), var(--accent));
-  box-shadow:0 4px 18px color-mix(in srgb, var(--accent) 45%, transparent), inset 0 1px 0 rgba(255,255,255,.3);
+  background:linear-gradient(135deg, color-mix(in srgb, var(--accent) 18%, rgba(255,255,255,.08)), color-mix(in srgb, var(--accent) 8%, rgba(255,255,255,.03)));
+  border:1px solid color-mix(in srgb, var(--accent) 20%, rgba(255,255,255,.1));
+  box-shadow:0 2px 8px rgba(0,0,0,.12);
 }
-body.glass-mode #send-btn:hover:not(:disabled){box-shadow:0 6px 26px color-mix(in srgb, var(--accent) 60%, transparent), inset 0 1px 0 rgba(255,255,255,.35)}
+body.glass-mode #send-btn:hover:not(:disabled){
+  background:linear-gradient(135deg, color-mix(in srgb, var(--accent) 28%, rgba(255,255,255,.12)), color-mix(in srgb, var(--accent) 14%, rgba(255,255,255,.06)));
+  border-color:color-mix(in srgb, var(--accent) 35%, rgba(255,255,255,.15));
+  box-shadow:0 0 16px color-mix(in srgb, var(--accent) 30%, transparent), 0 2px 8px rgba(0,0,0,.12);
+}
+body.glass-mode #send-btn:active:not(:disabled){
+  transform:scale(.95);
+  box-shadow:inset 0 0 10px rgba(0,0,0,.12);
+}
+
+/* Logo (menu toggle): no box, just hover glow on icon */
+body.glass-mode #logo-btn:hover .logo-icon{
+  box-shadow:0 0 16px var(--accent), 0 0 32px color-mix(in srgb, var(--accent) 50%, transparent);
+  filter:brightness(1.15)}
+
+/* Subtle accent glow on hover for the small frosted buttons */
+body.glass-mode .inline-think-btn:hover,
+body.glass-mode .tts-btn:hover,
+body.glass-mode .icon-btn:hover,
+body.glass-mode .mem-btn:hover,
+body.glass-mode .sb-compact-toggle:hover{box-shadow:0 0 14px color-mix(in srgb, var(--accent) 30%, transparent)}
+
+/* ── Glass shine sweep on primary CTAs (cheap: pseudo + transform only) */
+body.glass-mode .new-btn,
+body.glass-mode .top-new-btn,
+body.glass-mode .w-start{position:relative;overflow:hidden}
+body.glass-mode .new-btn::after,
+body.glass-mode .top-new-btn::after,
+body.glass-mode .w-start::after{
+  content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  background:linear-gradient(115deg, transparent 35%, rgba(255,255,255,.08) 50%, transparent 65%);
+  transform:translateX(-135%);transition:transform .55s ease}
+body.glass-mode .new-btn:hover::after,
+body.glass-mode .top-new-btn:hover::after,
+body.glass-mode .w-start:hover::after{transform:translateX(135%)}
+
+/* Glass press: quick scale-down + accent glow burst */
+body.glass-mode .new-btn:active,
+body.glass-mode .top-new-btn:active,
+body.glass-mode .w-start:active,
+body.glass-mode #logo-btn:active,
+body.glass-mode .icon-btn:active,
+body.glass-mode .inline-think-btn:active,
+body.glass-mode .sb-compact-toggle:active,
+body.glass-mode .sess-del:active{
+  transform:scale(.95);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.18),
+             0 0 24px color-mix(in srgb, var(--accent) 70%, transparent)}
+body.glass-mode .mem-btn:active,
+body.glass-mode .settings-btn:active{
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.14),
+             0 0 18px color-mix(in srgb, var(--accent) 40%, transparent)}
 
 /* Modal backdrop gets deeper frost */
 body.glass-mode .modal-backdrop{background:rgba(5,5,9,.55);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
@@ -663,15 +729,20 @@ body.glass-mode ::-webkit-scrollbar-thumb{background:color-mix(in srgb, var(--ac
 body.glass-mode ::selection{background:color-mix(in srgb, var(--accent) 35%, transparent)}
 
 /* Mobile (touch) glass: backdrop-filter is GPU-heavy on phones — keep the look,
-   drop the per-element blur compositing that causes jank */
+   strip everything we can */
 @media (hover:none){
-  body.glass-mode #topbar,
-  body.glass-mode #input-container,
+  body.glass-mode #topbar{
+    backdrop-filter:blur(12px) saturate(140%);-webkit-backdrop-filter:blur(12px) saturate(140%)
+  }
   body.glass-mode .modal-box,
   body.glass-mode .settings-box,
   body.glass-mode .settings-appearance{
-    backdrop-filter:blur(12px) saturate(140%);-webkit-backdrop-filter:blur(12px) saturate(140%)
+    backdrop-filter:none;-webkit-backdrop-filter:none;
+    background-color:var(--surface)
   }
+  body.glass-mode #input-container{
+    backdrop-filter:blur(16px) saturate(150%);-webkit-backdrop-filter:blur(16px) saturate(150%);
+    background:rgba(17,17,22,.88);box-shadow:0 -4px 20px rgba(0,0,0,.5)}
   body.glass-mode .msg-group.user .bubble,
   body.glass-mode .mem-card,
   body.glass-mode .code-wrapper,
@@ -700,11 +771,13 @@ body.glass-mode ::selection{background:color-mix(in srgb, var(--accent) 35%, tra
   body.glass-mode .new-btn,
   body.glass-mode .top-new-btn,
   body.glass-mode .w-start,
-  body.glass-mode .modal-confirm:not(.danger){
+  body.glass-mode #logo-btn,
+  body.glass-mode .modal-confirm:not(.danger),
+  body.glass-mode #send-btn:not(:disabled){
     backdrop-filter:none;-webkit-backdrop-filter:none
   }
-  body.glass-mode .modal-backdrop{backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
-  body.glass-mode #send-btn:not(:disabled){backdrop-filter:none;-webkit-backdrop-filter:none}
+  body.glass-mode .modal-backdrop{backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+  body.glass-mode .welcome::before{display:none}
 }
 
 
@@ -730,8 +803,10 @@ body.glass-mode ::selection{background:color-mix(in srgb, var(--accent) 35%, tra
   <div class="sb-head">
     <div class="sb-top-controls">
       <span class="sb-brand-text">PISYNAPSE</span>
-      <span class="model-label" id="model-label"></span>
       <div class="logo-controls">
+        <button class="icon-btn" id="settings-btn" onclick="openSettings()" aria-label="Settings" title="Ayarlar">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        </button>
         <div class="status-dot" id="status-dot"></div>
       </div>
     </div>
@@ -742,14 +817,29 @@ body.glass-mode ::selection{background:color-mix(in srgb, var(--accent) 35%, tra
   </div>
 
   <div id="sidebar-scroll-container">
-    <div class="sb-search">
-      <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-      <input type="text" id="sess-search" placeholder="Search..." oninput="filterSessions(this.value)">
+    <div class="sb-label sb-chats-label" id="sb-chats-label">
+      <span id="lbl-chats"></span>
+      <span class="sb-label-controls">
+        <button class="icon-btn" id="search-toggle" onclick="toggleSearch()" aria-label="Search" title="Ara">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        </button>
+        <button class="icon-btn" id="compact-toggle" onclick="toggleCompact()" aria-label="Dar" title="Dar">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+        </button>
+      </span>
     </div>
-    <div class="sb-label"><span id="lbl-chats"></span><button class="sb-compact-toggle" id="compact-toggle" onclick="toggleCompact()"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg> <span id="lbl-compact"></span></button></div>
+    <div class="sb-search" id="sb-search">
+      <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+      <input type="text" id="sess-search" placeholder="Ara..." oninput="filterSessions(this.value)">
+    </div>
     <div id="session-list"></div>
 
-    <div class="sb-label" id="sidebar-mem-section"></div>
+    <div class="sb-label sb-mem-head" id="sb-mem-head">
+      <span id="sidebar-mem-section"></span>
+      <button class="icon-btn sb-mem-back" id="mem-back" onclick="closeMem()" aria-label="Sohbetler" title="Sohbetler">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+      </button>
+    </div>
     <div id="sidebar-mem-list"></div>
   </div>
 
@@ -757,10 +847,6 @@ body.glass-mode ::selection{background:color-mix(in srgb, var(--accent) 35%, tra
     <button class="mem-btn" id="mem-toggle-btn" onclick="toggleMem()">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="15" x2="23" y2="15"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="15" x2="4" y2="15"></line></svg>
       <span id="lbl-mem"></span>
-    </button>
-    <button class="settings-btn" id="settings-btn" onclick="openSettings()">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-      <span id="lbl-settings"></span>
     </button>
     <div id="ticker">
       <div class="marquee-container" id="ticker-text-inner"></div>
@@ -874,12 +960,12 @@ body.glass-mode ::selection{background:color-mix(in srgb, var(--accent) 35%, tra
       </div>
       <div class="appearance-group">
         <label id="lbl-glass-label"></label>
-        <div class="switch-row">
-          <span id="lbl-glass-hint" style="font-size:12.5px;color:var(--text3)"></span>
+        <div class="switch-wrap">
           <label class="switch">
             <input type="checkbox" id="glass-toggle" onchange="applyGlass(this.checked)">
             <span class="track"></span>
           </label>
+          <span id="lbl-glass-hint"></span>
         </div>
       </div>
     </div>
@@ -938,7 +1024,7 @@ const STRINGS = {
      settingsRestart:'Bazı ayarlar sunucu yeniden başlatıldığında tam etkili olur.',
     settingsCancel:'İptal', settingsSave:'Kaydet',
     themeLabel:'Tema Rengi', langLabel:'Dil',
-    glassLabel:'Buzlu Cam Görünüm', glassHint:'Açık', glassHintOff:'Kapalı',
+    glassLabel:'Cam Efekti', glassHint:'Buzlu cam arka plan aktif', glassHintOff:'Cam efekti kapalı',
     advanced:'Gelişmiş Ayarlar',
     micDenied:'Mikrofon izni reddedildi', transcribeErr:'Ses tanıma başarısız oldu',
     micHttps:'Mikrofon HTTPS gerektirir. HTTPS ile erişin veya localhost kullanın.',
@@ -948,7 +1034,7 @@ const STRINGS = {
     micNoEngine:'Ses tanıma kullanılamıyor',
     ttsErr:'Sesli çıkış başarısız oldu',
     apiKeyPrompt:'API anahtarını girin (sunucu .env dosyasındaki API_KEY değeri):',
-    searchPlaceholder:'Ara…',
+    searchPlaceholder:'Ara…', search:'Ara',
     compact:'Dar',
     thinkTitle:'Think modu',
     thinkNone:'Kapalı', thinkMin:'Min', thinkLow:'Düşük', thinkMed:'Orta', thinkHigh:'Yüksek', thinkMax:'Maks',
@@ -983,7 +1069,7 @@ const STRINGS = {
     settingsRestart:'Some settings take full effect only after server restart.',
     settingsCancel:'Cancel', settingsSave:'Save',
     themeLabel:'Theme Color', langLabel:'Language',
-    glassLabel:'Frosted glass', glassHint:'On', glassHintOff:'Off',
+    glassLabel:'Glass Effect', glassHint:'Frosted glass background on', glassHintOff:'Glass effect off',
     advanced:'Advanced Settings',
     micDenied:'Microphone permission denied', transcribeErr:'Transcription failed',
     micHttps:'Microphone requires HTTPS. Use HTTPS or localhost.',
@@ -993,7 +1079,7 @@ const STRINGS = {
     micNoEngine:'Speech recognition unavailable',
     ttsErr:'Text-to-speech failed',
     apiKeyPrompt:'Enter API key (the API_KEY value from the server .env file):',
-    searchPlaceholder:'Search…',
+    searchPlaceholder:'Search…', search:'Search',
     compact:'Compact',
     thinkTitle:'Think mode',
     thinkNone:'Off', thinkMin:'Min', thinkLow:'Low', thinkMed:'Med', thinkHigh:'High', thinkMax:'Max',
@@ -1210,14 +1296,11 @@ function applyTheme(name){
 }
 
 function applyGlass(on){
-  glass = !!on;
-  document.body.classList.toggle('glass-mode', glass);
-  localStorage.setItem('ps_glass', glass ? '1' : '');
-  const toggle = document.getElementById('glass-toggle');
-  if(toggle){
-    toggle.checked = glass;
-    toggle.parentElement.parentElement.querySelector('span').textContent = glass ? t('glassHint') : t('glassHintOff');
-  }
+  glass = on;
+  document.body.classList.toggle('glass-mode', on);
+  localStorage.setItem('ps_glass', on ? '1' : '0');
+  const gl = document.getElementById('lbl-glass-hint');
+  if(gl) gl.textContent = on ? t('glassHint') : t('glassHintOff');
 }
 
 function renderThemeGrid(){
@@ -1236,7 +1319,8 @@ function applyLang(l){
   if(newBtnLabel) newBtnLabel.textContent = t('newChat');
   document.getElementById('lbl-chats').textContent = t('chats');
   document.getElementById('lbl-mem').textContent = t('mem');
-  document.getElementById('lbl-settings').textContent = t('settings');
+  const stBtn = document.getElementById('settings-btn');
+  if(stBtn) stBtn.title = t('settings');
   document.getElementById('sidebar-mem-section').textContent = t('memTitle');
   document.getElementById('msg-input').placeholder = t('ph');
   document.getElementById('m-cancel').textContent = t('cancel');
@@ -1252,12 +1336,16 @@ function applyLang(l){
   const glassLabel = document.getElementById('lbl-glass-label');
   if(glassLabel) glassLabel.textContent = t('glassLabel');
   const glassToggle = document.getElementById('glass-toggle');
-  if(glassToggle){ glassToggle.checked = glass; glassToggle.parentElement.parentElement.querySelector('span').textContent = glass ? t('glassHint') : t('glassHintOff'); }
+  if(glassToggle){ glassToggle.checked = glass; document.getElementById('lbl-glass-hint').textContent = glass ? t('glassHint') : t('glassHintOff'); }
 
   const searchInput = document.getElementById('sess-search');
   if(searchInput) searchInput.placeholder = t('searchPlaceholder');
-
-  document.getElementById('lbl-compact').textContent = t('compact');
+  const searchToggle = document.getElementById('search-toggle');
+  if(searchToggle) searchToggle.title = t('search');
+  const compactToggle = document.getElementById('compact-toggle');
+  if(compactToggle) compactToggle.title = t('compact');
+  const memBack = document.getElementById('mem-back');
+  if(memBack) memBack.title = t('chats');
   document.getElementById('inline-think-btn').title = t('thinkTitle');
   const tpTitle = document.getElementById('tp-title');
   if(tpTitle) tpTitle.textContent = t('thinkEffortTitle');
@@ -1883,8 +1971,6 @@ document.addEventListener('DOMContentLoaded', async ()=>{
     }
   }
   if(window._beacon) window._beacon({t:'init', step:'config-done'});
-  const modelLabel = document.getElementById('model-label');
-  if(modelLabel && config.model) modelLabel.textContent = config.model;
   // Preload settings so TTS/STT engines work without opening Settings panel
   try {
     const s = await api('GET','/config/settings');
@@ -2011,7 +2097,10 @@ async function sendMsg(){
   el.value=''; el.style.height='auto'; pendingImages=[]; renderImagePreview();
   addMsg('user',text,true,null,images); showTyping(); setLoading(true);
   let bubble=null, fullText='', thinkBox=null, fullReasoning='';
-  let gotReply=false, emptyWarningShown=false;
+  let gotReply=false, terminated=false;
+  // ⚠️ YENİ DAL EKLEME: done/confirm/error/catch — hepsi terminal durumdur.
+  // Yeni bir son durum dalı eklersen, return'den ÖNCE `terminated=true` ekle.
+  // Aksi halde finally bloğu gereksiz "boş yanıt" mesajı ekler.
   try{
     const headers={'Content-Type':'application/json'};
     const _k=getApiKey(); if(_k) headers['X-API-Key']=_k;
@@ -2041,10 +2130,11 @@ async function sendMsg(){
             head.querySelector('.lab').textContent = t('thinkingTitle');
             head.onclick = e => { e.stopPropagation(); toggleThinkBox(thinkBox); };
           }
-          if(!gotReply && !emptyWarningShown){
-            emptyWarningShown=true;
+          if(!gotReply && !terminated){
+            terminated=true;
             if(bubble) bubble.textContent='\u26A0\uFE0F '+t('emptyReply'); else addMsg('assistant','\u26A0\uFE0F '+t('emptyReply'));
           }
+          terminated=true;
           if(currentSid === sid){
             await saveSessionName(text);
           }
@@ -2060,9 +2150,9 @@ async function sendMsg(){
           thinkBox.querySelector('.think-body').textContent=fullReasoning;
           scrollEnd(false);
         } else if(data.confirm){
-          hideTyping(); showConfirmModal(data.confirm); setLoading(false); _pendingStream=null; return;
+          terminated=true; hideTyping(); showConfirmModal(data.confirm); setLoading(false); _pendingStream=null; return;
         } else if(data.error){
-          hideTyping();
+          terminated=true; hideTyping();
           const eMsg = /connection error/i.test(data.error) ? t('errConnLost')
             : /context too long/i.test(data.error) ? t('errContextTooLong')
             : data.error;
@@ -2072,13 +2162,13 @@ async function sendMsg(){
       }
     }
   } catch{
+    terminated=true;
     if(currentSid === sid){
       hideTyping(); if(bubble) bubble.textContent='\u26A0\uFE0F '+t('connErr'); else addMsg('assistant','\u26A0\uFE0F '+t('connErr')); toast(t('connErr'),true);
     }
   } finally{
     if(_pendingStream?.sid === sid) _pendingStream=null;
-    if(!gotReply && !emptyWarningShown){
-      emptyWarningShown=true;
+    if(!gotReply && !terminated){
       if(currentSid === sid){
         if(bubble) bubble.textContent='\u26A0\uFE0F '+t('emptyReply');
         else addMsg('assistant','\u26A0\uFE0F '+t('emptyReply'));
@@ -2248,15 +2338,25 @@ async function confirmAction(){
 }
 
 // ── Memory Panel ────────────────────────────────────────────────────────────────
-function toggleMem(){
-  memOpen=!memOpen;
-  const sessListEl = document.getElementById('session-list'), memSectionEl = document.getElementById('sidebar-mem-section'), memListEl = document.getElementById('sidebar-mem-list'), memBtnEl = document.getElementById('mem-toggle-btn');
-  if(memOpen) {
-    sessListEl.classList.add('compressed-list'); memSectionEl.style.display = 'block'; memListEl.style.display = 'flex'; memBtnEl.classList.add('active'); loadMem();
+function setMemView(open){
+  memOpen = !!open;
+  const chatsLabel = document.getElementById('sb-chats-label');
+  const searchEl = document.getElementById('sb-search');
+  const sessListEl = document.getElementById('session-list');
+  const memHeadEl = document.getElementById('sb-mem-head');
+  const memListEl = document.getElementById('sidebar-mem-list');
+  const memBtnEl = document.getElementById('mem-toggle-btn');
+  sessListEl.classList.toggle('hidden', memOpen);
+  if(chatsLabel) chatsLabel.style.display = memOpen ? 'none' : '';
+  if(searchEl) searchEl.classList.remove('open');
+  if(memOpen){
+    memHeadEl.style.display = 'flex'; memListEl.style.display = 'flex'; memBtnEl.classList.add('active'); loadMem();
   } else {
-    sessListEl.classList.remove('compressed-list'); memSectionEl.style.display = 'none'; memListEl.style.display = 'none'; memBtnEl.classList.remove('active');
+    memHeadEl.style.display = 'none'; memListEl.style.display = 'none'; memBtnEl.classList.remove('active');
   }
 }
+function toggleMem(){ setMemView(!memOpen); }
+function closeMem(){ if(memOpen) setMemView(false); }
 
 async function loadMem(){
   const list=document.getElementById('sidebar-mem-list'); list.innerHTML=`<div class="mem-empty">${t('loading')}</div>`;
@@ -2402,7 +2502,7 @@ async function openSettings(){
   const glassLabel = document.getElementById('lbl-glass-label');
   if(glassLabel) glassLabel.textContent = t('glassLabel');
   const glassToggle = document.getElementById('glass-toggle');
-  if(glassToggle){ glassToggle.checked = glass; glassToggle.parentElement.parentElement.querySelector('span').textContent = glass ? t('glassHint') : t('glassHintOff'); }
+  if(glassToggle){ glassToggle.checked = glass; document.getElementById('lbl-glass-hint').textContent = glass ? t('glassHint') : t('glassHintOff'); }
   document.getElementById('lang-select').value = lang;
   renderThemeGrid();
 
@@ -2558,6 +2658,9 @@ function rebuildTickerFromCache(){
 // Client-side only: drops events whose start time has already passed, using the
 // cached /widget/calendar data. No extra network requests.
 function freshEvents(events){
+  // Bu fonksiyon yalnızca /widget/calendar'ın SADECE bugünün etkinliklerini
+  // döndürdüğü varsayımına dayanır — çok günlük etkinlik desteği eklenirse
+  // burada tarih karşılaştırması da gerekir.
   const now = new Date();
   const nowMin = now.getHours() * 60 + now.getMinutes();
   return (events || []).filter(ev => {
@@ -2582,7 +2685,7 @@ function startStalenessScan(){
 
 function showTickerItem(idx){
   const item = tickerItems[idx] || tickerItems[0]; if(!item) return;
-  const singleContent = `<div style="display:inline-flex;align-items:center;gap:8px;padding-left:8px;padding-right:30px;font-size:12.5px;color:var(--text2);">${item.icon} <span style="font-weight:500;">${item.text}</span></div>`;
+  const singleContent = `<div style="display:inline-flex;align-items:center;gap:8px;padding-left:8px;padding-right:30px;font-size:12.5px;color:var(--text2);">${item.icon} <span style="font-weight:500;">${esc(item.text)}</span></div>`;
   const botInner = document.getElementById('ticker-text-inner'); if(botInner) applySeamlessMarquee(botInner, singleContent);
   const topInner = document.getElementById('top-ticker-text-inner'); if(topInner) applySeamlessMarquee(topInner, singleContent);
 }
@@ -2616,6 +2719,16 @@ function filterSessions(q){
   renderSessions(filtered);
 }
 
+function toggleSearch(){
+  const box = document.getElementById('sb-search'), toggle = document.getElementById('search-toggle');
+  if(!box) return;
+  const open = box.classList.toggle('open');
+  if(toggle) toggle.classList.toggle('on', open);
+  const inp = document.getElementById('sess-search');
+  if(open && inp) inp.focus();
+  else if(!open){ _searchQuery = ''; renderSessions(sessionList); }
+}
+
 function toggleCompact(){
   document.body.classList.toggle('sidebar-compact');
   localStorage.setItem('ps_compact', document.body.classList.contains('sidebar-compact') ? '1' : '');
@@ -2628,10 +2741,20 @@ function applyStagger(){
 }
 
 // ── Sidebar Controls ────────────────────────────────────────────────────────────
+let _sidebarToggleTimer = null;
 function toggleSidebar(){
   if(window.innerWidth <= 768) {
-    const isMobileOpen = document.body.classList.toggle('sidebar-mobile-open'); document.getElementById('overlay').classList.toggle('show', isMobileOpen);
-    if(!isMobileOpen && memOpen) toggleMem();
+    if(document.body.classList.contains('sidebar-mobile-open')){
+      closeSidebar(); return;
+    }
+    const btn = document.getElementById('logo-btn');
+    btn.classList.add('btn-press');
+    if(navigator.vibrate) navigator.vibrate(12);
+    _sidebarToggleTimer = setTimeout(() => {
+      btn.classList.remove('btn-press');
+      document.body.classList.add('sidebar-mobile-open');
+      document.getElementById('overlay').classList.add('show');
+    }, 90);
   } else {
     document.body.classList.toggle('sidebar-closed'); if(document.body.classList.contains('sidebar-closed') && memOpen) toggleMem();
   }
@@ -2654,21 +2777,25 @@ function relTime(ts){
 let toastTimer; function toast(msg, err=false){ const el=document.getElementById('toast'); el.textContent=msg; el.classList.toggle('err',err); el.classList.add('show'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>el.classList.remove('show'), 3000); }
 
 // ── Sidebar Swipe Gesture (mobile) ────────────────────────────────
-let _swipeStartX = 0, _swipeStartY = 0, _swipeOnThink = false;
+let _swipeStartX = 0, _swipeStartY = 0, _swipeOnThink = false, _swipeInScrollable = false;
+function _resetSwipe(){ _swipeStartX = 0; _swipeStartY = 0; _swipeOnThink = false; _swipeInScrollable = false; }
 document.addEventListener('touchstart', e => {
   const touch = e.touches[0];
   _swipeStartX = touch.clientX;
   _swipeStartY = touch.clientY;
   _swipeOnThink = !!(e.target && e.target.closest && e.target.closest('#think-popover'));
+  _swipeInScrollable = !!(e.target && e.target.closest && e.target.closest('.code-wrapper,pre,bubble,textarea,#msg-input,.sess-list'));
 }, {passive: true});
+document.addEventListener('touchend', _resetSwipe, {passive: true});
+document.addEventListener('touchcancel', _resetSwipe, {passive: true});
 
 document.addEventListener('touchmove', e => {
-  if(window.innerWidth > 768 || _swipeOnThink) return;
+  if(window.innerWidth > 768 || _swipeOnThink || _swipeInScrollable) return;
   const touch = e.touches[0];
   const dx = touch.clientX - _swipeStartX;
   const dy = touch.clientY - _swipeStartY;
   if(Math.abs(dx) < 30 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-  if(dx > 60 && !document.body.classList.contains('sidebar-mobile-open')){
+  if(dx > 60 && !document.body.classList.contains('sidebar-mobile-open') && _swipeStartX < 48){
     document.body.classList.add('sidebar-mobile-open');
     document.getElementById('overlay').classList.add('show');
   } else if(dx < -60 && document.body.classList.contains('sidebar-mobile-open')){
@@ -2738,26 +2865,34 @@ if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.s
   .sess-item{opacity:0;animation:msgSlideIn .25s ease-out forwards}
 
   /* ── Glow on send ─────────────────────────────────────────────── */
-  @keyframes subtleGlow{0%,100%{box-shadow:0 0 8px var(--accent-d)}50%{box-shadow:0 0 20px var(--accent-d)}}
-  #send-btn:not(:disabled){animation:subtleGlow 3s ease-in-out infinite}
-  #send-btn:hover:not(:disabled){animation:none;box-shadow:0 0 25px var(--accent-d)}
+  @keyframes subtleGlow{
+    0%,100%{box-shadow:0 0 8px var(--accent-d), inset -2px -3px 6px rgba(0,0,0,.22), inset 1px 2px 4px rgba(255,255,255,.22)}
+    50%{box-shadow:0 0 20px var(--accent-d), inset -2px -3px 6px rgba(0,0,0,.22), inset 1px 2px 4px rgba(255,255,255,.22)}
+  }
+  body:not(.glass-mode) #send-btn:not(:disabled){animation:subtleGlow 3s ease-in-out infinite}
+  body:not(.glass-mode) #send-btn:hover:not(:disabled){animation:none;box-shadow:0 6px 24px var(--accent-d), inset -2px -3px 6px rgba(0,0,0,.18), inset 1px 2px 5px rgba(255,255,255,.32)}
 
   /* ── Hover Effects ────────────────────────────────────────────── */
   .new-btn:hover{transform:scale(1.02)}
+  .new-btn:active{transform:scale(.97);box-shadow:0 6px 18px rgba(0,0,0,.28)}
+  .inline-think-btn:active,.tts-btn:active{transform:scale(.94)}
+  body:not(.glass-mode) #send-btn:active:not(:disabled){transform:scale(.93);box-shadow:0 4px 24px var(--accent-d), inset 0 0 14px var(--accent)}
+  #logo-btn:active{transform:scale(.94)}
   .sess-item{border:1px solid transparent;transition:all .2s,border-color .25s,box-shadow .25s}
   .sess-item:hover{background:var(--surface2);border-color:rgba(255,255,255,.04)}
   .sess-item.active{background:var(--accent-d);border-color:rgba(124,108,240,.25);box-shadow:inset 3px 0 0 var(--accent),0 0 20px rgba(240,148,58,.06)}
 
-  /* ── Search Box ───────────────────────────────────────────────── */
-  .sb-search{padding:6px 10px;position:relative}
+  /* ── Search Box (hidden; slides open below the SOHBETLER label) ─ */
+  .sb-search{max-height:0;overflow:hidden;opacity:0;padding:0 12px;position:relative;
+    transition:max-height .25s ease,opacity .2s ease,padding .25s ease}
+  .sb-search.open{max-height:64px;opacity:1;padding:2px 12px 8px}
   .sb-search input{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);padding:7px 10px 7px 30px;color:var(--text);font-size:13px;font-family:inherit;outline:none;transition:border-color .2s}
   .sb-search input:focus{border-color:var(--accent)}
-  .sb-search input::placeholder{color:var(--text4)}
-  .sb-search .search-icon{position:absolute;left:18px;top:50%;transform:translateY(-50%);color:var(--text4);pointer-events:none}
+  .sb-search input::placeholder{color:var(--text3)}
+  .sb-search .search-icon{position:absolute;left:22px;top:50%;transform:translateY(-50%);color:var(--text4);pointer-events:none}
 
   /* ── Compact Mode ─────────────────────────────────────────────── */
-  .sb-compact-wrap{display:flex;align-items:center;justify-content:space-between;padding:0 12px 4px}
-  .sb-compact-toggle{background:none;border:none;color:var(--text4);cursor:pointer;padding:4px 6px;border-radius:6px;display:flex;align-items:center;gap:4px;transition:all .2s;font-family:inherit;font-size:11px;font-weight:600}
+  .sb-compact-toggle{background:none;border:none;color:var(--text4);cursor:pointer;padding:3px;border-radius:6px;display:flex;align-items:center;gap:4px;transition:all .2s;font-family:inherit;font-size:11px;font-weight:600}
   .sb-compact-toggle:hover{color:var(--text);background:var(--surface2)}
   body.sidebar-compact .sess-item{padding:5px 8px;margin-bottom:1px}
   body.sidebar-compact .sess-time{display:none}
