@@ -279,13 +279,18 @@ class TestNotesTools:
 
     async def test_read_note_invalid_id(self):
         result = await run_tool("read_note", {"note_id": "abc"})
-        assert result == "ERROR: Invalid note_id 'abc'. Must be a number (e.g. 284)."
+        assert "ERROR: Note 'abc' not found" in result
 
     async def test_read_note_calls_handler(self):
-        with patch("nextcloud_notes.get_note", new=AsyncMock(return_value="note")) as gn:
-            result = await run_tool("read_note", {"note_id": "42"})
+        with patch("prompt.get_notes_context", new=AsyncMock(return_value=[{"id": 42, "title": "T"}])):
+            with patch("nextcloud_notes.get_note", new=AsyncMock(return_value="note")) as gn:
+                result = await run_tool("read_note", {"note_id": "1"})
         gn.assert_awaited_once_with(42)
         assert result == "note"
+
+    async def test_read_note_unlisted_id(self):
+        result = await run_tool("read_note", {"note_id": "999"})
+        assert "ERROR: Note '999' not found" in result
 
     async def test_update_note_requires_id(self):
         result = await run_tool("update_note", {"title": "T"})
@@ -293,7 +298,7 @@ class TestNotesTools:
 
     async def test_update_note_invalid_id(self):
         result = await run_tool("update_note", {"note_id": "x", "title": "T"})
-        assert "ERROR: Invalid note_id 'x'" in result
+        assert "ERROR: Note 'x' not found" in result
 
     async def test_delete_note_requires_id(self):
         result = await run_tool("delete_note", {})

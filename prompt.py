@@ -221,3 +221,26 @@ async def clear_email_context(session_id: str):
     """Drop the persisted email listing for a session."""
     from db import clear_email_map
     await clear_email_map(session_id)
+
+
+# -- Notes Context --
+# Same pattern as email: model sees numbered lists, we map to real Nextcloud IDs.
+
+async def cache_notes_context(session_id: str, notes: list[dict]):
+    """Persist the recent note listing for a session."""
+    if not session_id:
+        return
+    from db import save_notes_map
+    await save_notes_map(session_id, notes)
+
+
+async def get_notes_context(session_id: str) -> list[dict]:
+    """Retrieve the persisted note listing for a session."""
+    from db import get_notes_map
+    return await get_notes_map(session_id)
+
+
+async def clear_notes_context(session_id: str):
+    """Drop the persisted note listing for a session."""
+    from db import clear_notes_map
+    await clear_notes_map(session_id)
