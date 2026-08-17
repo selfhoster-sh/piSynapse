@@ -196,6 +196,8 @@ async def _run_notes_tool(name: str, params: dict, session_id: str = "") -> str:
                 resolved,
                 title=params.get("title"),
                 content=params.get("content"),
+                category=params.get("category"),
+                tags=params.get("tags"),
             )
         elif name == "delete_note":
             nid = params.get("note_id")

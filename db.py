@@ -593,6 +593,9 @@ async def clear_history(session_id: str):
     await db.execute("DELETE FROM conversations WHERE session_id = ?", (session_id,))
     await db.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
     await db.execute("DELETE FROM email_session_map WHERE session_id = ?", (session_id,))
+    await db.execute("DELETE FROM notes_session_map WHERE session_id = ?", (session_id,))
+    await db.execute("DELETE FROM tasks_session_map WHERE session_id = ?", (session_id,))
+    await db.execute("DELETE FROM calendar_session_map WHERE session_id = ?", (session_id,))
     await db.commit()
 
 
