@@ -12,11 +12,14 @@ only (1) feeds the tool schemas to the model, (2) returns tool_calls when the
 model asks for one, and (3) accepts tool-result messages in later turns.
 
 Config: config.json next to this file (see DEFAULT_CONFIG). CLI flags override.
+Hot reload: POST /v1/admin/reload or send SIGHUP to re-read config.json
+and recreate the engine (handles max_num_tokens, model switch, etc.).
 """
 import argparse
-import base64
 import json
 import logging
+import signal
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -45,6 +48,15 @@ REASONING_BUDGET = {
     "high": 2048,
     "xhigh": 4096,
 }
+
+# Mutable state for hot-reload
+_cfg: dict = {}
+_config_path: Path | None = None
+_reload_lock = threading.Lock()
+_active_requests = 0
+_active_lock = threading.Lock()
+_reload_event = threading.Event()
+_reload_event.set()
 
 
 class RawSchemaTool(Tool):
@@ -110,6 +122,83 @@ def _convert_content(msg: dict) -> dict:
     return {**msg, "content": converted}
 
 
+def _create_engine(cfg: dict) -> Engine:
+    """Create a new Engine from config dict."""
+    LOG.info(
+        "creating engine: model=%s max_num_tokens=%d speculative_decoding=%s ringbuffers=%s ynnpack=%s",
+        cfg["model_path"], cfg["max_num_tokens"], cfg["speculative_decoding"],
+        cfg["use_ringbuffers_local_attention"], cfg["enable_ynnpack"],
+    )
+    return Engine(
+        model_path=cfg["model_path"],
+        max_num_tokens=cfg["max_num_tokens"],
+        enable_speculative_decoding=bool(cfg["speculative_decoding"]),
+        use_ringbuffers_local_attention=bool(cfg["use_ringbuffers_local_attention"]),
+        enable_ynnpack=bool(cfg["enable_ynnpack"]),
+    )
+
+
+def reload_engine() -> dict:
+    """Reload config.json and recreate the engine. Thread-safe.
+
+    Waits for in-flight requests to finish, then swaps the engine.
+    Returns status dict.
+    """
+    global _cfg, Handler, _active_requests
+
+    if not _config_path or not _config_path.exists():
+        return {"ok": False, "error": "config.json not found"}
+
+    with _reload_lock:
+        try:
+            new_cfg = dict(DEFAULT_CONFIG)
+            new_cfg.update(json.loads(_config_path.read_text(encoding="utf-8")))
+        except Exception as e:
+            return {"ok": False, "error": f"config parse error: {e}"}
+
+        # Compare with current config
+        engine_keys = ("model_path", "max_num_tokens", "speculative_decoding",
+                        "use_ringbuffers_local_attention", "enable_ynnpack")
+        changed = {k: (old, new_cfg[k]) for k in engine_keys
+                   if _cfg.get(k) != new_cfg.get(k)}
+
+        if not changed and _cfg.get("model_id") == new_cfg.get("model_id"):
+            return {"ok": True, "changed": False, "message": "no engine-level changes"}
+
+        # Wait for in-flight requests to drain
+        LOG.info("reload: waiting for in-flight requests to drain...")
+        _reload_event.clear()
+        with _active_lock:
+            while _active_requests > 0:
+                _active_lock.release()
+                time.sleep(0.1)
+                _active_lock.acquire()
+        LOG.info("reload: all requests drained, swapping engine")
+
+        old_engine = Handler.engine
+        try:
+            new_engine = _create_engine(new_cfg)
+            Handler.engine = new_engine
+            Handler.model_id = new_cfg.get("model_id", Handler.model_id)
+            _cfg = new_cfg
+        except Exception as e:
+            _reload_event.set()
+            return {"ok": False, "error": f"engine creation failed: {e}"}
+
+    # Close old engine outside the lock (may take a moment)
+    _reload_event.set()
+    if old_engine:
+        try:
+            old_engine.close()
+            LOG.info("reload: old engine closed")
+        except Exception:
+            LOG.warning("reload: old engine close failed", exc_info=True)
+
+    return {"ok": True, "changed": True, "config": {
+        k: new_cfg[k] for k in engine_keys
+    }}
+
+
 class Handler(BaseHTTPRequestHandler):
     engine = None
     model_id = "gemma4-e2b"
@@ -141,7 +230,8 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.flush()
 
     def do_GET(self):
-        if self.path.split("?")[0].rstrip("/") == "/v1/models":
+        path = self.path.split("?")[0].rstrip("/")
+        if path == "/v1/models":
             self._send_json(200, {
                 "object": "list",
                 "data": [{
@@ -152,19 +242,41 @@ class Handler(BaseHTTPRequestHandler):
                 }],
             })
             return
+        if path == "/v1/admin/config":
+            self._send_json(200, {
+                "model_id": _cfg.get("model_id"),
+                "model_path": _cfg.get("model_path"),
+                "max_num_tokens": _cfg.get("max_num_tokens"),
+                "speculative_decoding": _cfg.get("speculative_decoding"),
+                "use_ringbuffers_local_attention": _cfg.get("use_ringbuffers_local_attention"),
+                "enable_ynnpack": _cfg.get("enable_ynnpack"),
+                "port": _cfg.get("port"),
+            })
+            return
         self._error(404, "Not found")
 
     def do_POST(self):
-        if self.path.split("?")[0].rstrip("/") != "/v1/chat/completions":
-            self._error(404, "Not found")
-            return
+        path = self.path.split("?")[0].rstrip("/")
         try:
             length = int(self.headers.get("Content-Length") or 0)
-            body = json.loads(self.rfile.read(length).decode("utf-8"))
+            body = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
         except Exception as e:
             self._error(400, f"Invalid request body: {e}")
             return
+
+        if path == "/v1/admin/reload":
+            result = reload_engine()
+            self._send_json(200 if result.get("ok") else 500, result)
+            return
+        if path != "/v1/chat/completions":
+            self._error(404, "Not found")
+            return
         try:
+            _active_lock.acquire()
+            global _active_requests
+            _active_requests += 1
+            _active_lock.release()
+            _reload_event.wait()
             self._chat(body)
         except Exception as e:
             LOG.exception("chat request failed")
@@ -172,6 +284,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._error(500, str(e))
             except Exception:
                 pass
+        finally:
+            _active_lock.acquire()
+            _active_requests -= 1
+            _active_lock.release()
 
     def _chat(self, body):
         messages = body.get("messages")
@@ -286,6 +402,8 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
+    global _cfg, _config_path
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=None)
     parser.add_argument("--max-num-tokens", type=int, default=None)
@@ -301,9 +419,9 @@ def main():
     )
 
     cfg = dict(DEFAULT_CONFIG)
-    config_path = Path(__file__).resolve().parent / "config.json"
-    if config_path.exists():
-        cfg.update(json.loads(config_path.read_text(encoding="utf-8")))
+    _config_path = Path(__file__).resolve().parent / "config.json"
+    if _config_path.exists():
+        cfg.update(json.loads(_config_path.read_text(encoding="utf-8")))
     if args.port is not None:
         cfg["port"] = args.port
     if args.max_num_tokens is not None:
@@ -317,25 +435,25 @@ def main():
     if args.ynnpack is not None:
         cfg["enable_ynnpack"] = args.ynnpack
 
-    LOG.info(
-        "creating engine: model=%s max_num_tokens=%d speculative_decoding=%s ringbuffers=%s ynnpack=%s",
-        cfg["model_path"], cfg["max_num_tokens"], cfg["speculative_decoding"],
-        cfg["use_ringbuffers_local_attention"], cfg["enable_ynnpack"],
-    )
-    engine = Engine(
-        model_path=cfg["model_path"],
-        max_num_tokens=cfg["max_num_tokens"],
-        enable_speculative_decoding=bool(cfg["speculative_decoding"]),
-        use_ringbuffers_local_attention=bool(cfg["use_ringbuffers_local_attention"]),
-        enable_ynnpack=bool(cfg["enable_ynnpack"]),
-    )
+    engine = _create_engine(cfg)
+    _cfg = cfg
 
     Handler.engine = engine
     Handler.model_id = cfg["model_id"]
 
+    def _sighup_handler(signum, frame):
+        LOG.info("SIGHUP received — reloading config.json")
+        result = reload_engine()
+        if result.get("ok"):
+            LOG.info("reload: %s", result.get("message") or "engine reloaded")
+        else:
+            LOG.error("reload failed: %s", result.get("error"))
+
+    signal.signal(signal.SIGHUP, _sighup_handler)
+
     server = ThreadingHTTPServer((cfg["host"], int(cfg["port"])), Handler)
     server.daemon_threads = True
-    LOG.info("piserve listening on http://%s:%d", cfg["host"], int(cfg["port"]))
+    LOG.info("piserve listening on http://%s:%d (SIGHUP=reload)", cfg["host"], int(cfg["port"]))
     try:
         server.serve_forever()
     except KeyboardInterrupt:
