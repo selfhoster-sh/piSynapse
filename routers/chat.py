@@ -185,7 +185,7 @@ async def chat_endpoint(req: ChatRequest, background_tasks: BackgroundTasks):
         raise
     except Exception as e:
         logger.error("Chat endpoint error: %s\n%s", e, traceback.format_exc())
-        raise HTTPException(status_code=500, detail="Internal error")
+        raise HTTPException(status_code=500, detail="Something went wrong. Please try again.")
 
 
 @router.post("/stream")
@@ -221,7 +221,7 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
             logger.info(f"Contextual follow-up detected (email): {req.message!r}")
     except Exception as e:
         logger.error("Chat stream setup error: %s\n%s", e, traceback.format_exc())
-        raise HTTPException(status_code=500, detail="Internal error")
+        raise HTTPException(status_code=500, detail="Something went wrong. Please try again.")
 
     reply_parts: list[str] = []
     reply_saved = False
@@ -304,7 +304,7 @@ async def execute_action(req: ExecuteRequest):
         raise
     except Exception as e:
         logger.error("Execute action error: %s\n%s", e, traceback.format_exc())
-        raise HTTPException(status_code=500, detail="Internal error")
+        raise HTTPException(status_code=500, detail="Something went wrong. Please try again.")
 
 
 # -- Sessions --

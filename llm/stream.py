@@ -392,6 +392,30 @@ async def chat_with_ollama_stream(
                         preview = "; ".join(f"'{m['summary']}' at {m['start']}" for m in matches)
                 except Exception as e:
                     logger.warning(f"Preview lookup for {tn} failed: {e}")
+            elif tn == "delete_note":
+                try:
+                    from prompt import get_notes_context
+                    notes = await get_notes_context(session_id)
+                    ref = params.get("note_id")
+                    if notes and ref:
+                        is_num = isinstance(ref, int) or (isinstance(ref, str) and ref.isdigit())
+                        if is_num and 1 <= int(ref) <= len(notes):
+                            n = notes[int(ref) - 1]
+                            preview = f"{n.get('title', 'Untitled')}"
+                except Exception as e:
+                    logger.warning(f"Preview lookup for {tn} failed: {e}")
+            elif tn in ("complete_task", "delete_task"):
+                try:
+                    from prompt import get_tasks_context
+                    tasks = await get_tasks_context(session_id)
+                    ref = params.get("uid", "")
+                    if tasks and ref:
+                        is_num = isinstance(ref, int) or (isinstance(ref, str) and ref.isdigit())
+                        if is_num and 1 <= int(ref) <= len(tasks):
+                            t_item = tasks[int(ref) - 1]
+                            preview = f"{t_item.get('summary', 'Untitled')}"
+                except Exception as e:
+                    logger.warning(f"Preview lookup for {tn} failed: {e}")
 
             action = {"tool": tn, "params": params}
             if preview:

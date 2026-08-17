@@ -239,6 +239,7 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
   animation:bounce .8s infinite alternate}
 .typing span:nth-child(2){animation-delay:.2s}
 .typing span:nth-child(3){animation-delay:.4s}
+.typing-label{font-size:12px;color:var(--text3);margin-top:-4px;padding-left:2px}
 @keyframes bounce{0%{transform:translateY(0);opacity:.4}100%{transform:translateY(-6px);opacity:1}}
 
 .welcome{flex:1;display:flex;flex-direction:column;align-items:center;
@@ -1016,7 +1017,7 @@ const STRINGS = {
     emptyReply:'Yanıt alınamadı — model boş cevap döndürdü, lütfen tekrar dene.',
     delConfirm:'Etkinliği Sil', chatDelConfirm:'Sohbeti Sil', memDelConfirm:'Hafızayı Sil',
     updateEventConfirm:'Etkinliği Güncelle', noteDelConfirm:'Notu Sil', taskDoneConfirm:'Görevi Tamamla', taskDelConfirm:'Görevi Sil',
-    noteId:'Not ID', taskUid:'Görev', eventNewSummary:'Yeni Başlık', eventNewTime:'Yeni Başlangıç Saati', eventNewDur:'Yeni Süre (dk)',
+    noteId:'Not ID', taskUid:'Görev', noteName:'Not Adı', taskName:'Görev Adı', eventNewSummary:'Yeni Başlık', eventNewTime:'Yeni Başlangıç Saati', eventNewDur:'Yeni Süre (dk)',
     confirmAction:'Onayla',
     emailTo:'Kime', emailSubj:'Konu', emailBody:'İçerik', emailCc:'Cc', emailBcc:'Bcc', delEventName:'Etkinlik',
     chatDelName:'Silinecek Sohbet', memDelContent:'Silinecek Bilgi', warnEmail:'Bu işlem geri alınamaz.',
@@ -1061,7 +1062,7 @@ const STRINGS = {
     emptyReply:'No response received — the model returned an empty reply, please try again.',
     delConfirm:'Delete Event', chatDelConfirm:'Delete Chat', memDelConfirm:'Delete Memory',
     updateEventConfirm:'Update Event', noteDelConfirm:'Delete Note', taskDoneConfirm:'Complete Task', taskDelConfirm:'Delete Task',
-    noteId:'Note ID', taskUid:'Task', eventNewSummary:'New Title', eventNewTime:'New Start Time', eventNewDur:'New Duration (min)',
+    noteId:'Note ID', taskUid:'Task', noteName:'Note Name', taskName:'Task Name', eventNewSummary:'New Title', eventNewTime:'New Start Time', eventNewDur:'New Duration (min)',
     confirmAction:'Confirm',
     emailTo:'To', emailSubj:'Subject', emailBody:'Content', emailCc:'Cc', emailBcc:'Bcc', delEventName:'Event',
     chatDelName:'Chat to Delete', memDelContent:'Record to Delete', warnEmail:'This action cannot be undone.',
@@ -2255,7 +2256,7 @@ function setLoading(v){ loading=v; const dot=document.getElementById('status-dot
 
 function showTyping(){
   const g=document.createElement('div'); g.className='msg-group assistant'; g.id='typing-row';
-  g.innerHTML='<div class="typing"><span></span><span></span><span></span></div>';
+  g.innerHTML='<div class="typing"><span></span><span></span><span></span></div><div class="typing-label">'+t('thinkingLive')+'</div>';
   document.getElementById('messages').appendChild(g); scrollEnd(true); typingEl=g;
 }
 function hideTyping(){ typingEl?.remove(); typingEl=null; }
@@ -2291,20 +2292,29 @@ function showConfirmModal(action){
     fields.innerHTML=mField(t('memDelContent'), action.params.content||''); warn.style.display='flex'; warn.innerHTML=`${alertSvg} <span>${t('warnMemDel')}</span>`; btn.textContent=t('confirmDel'); btn.className='modal-confirm danger';
   } else if(action.tool==='update_calendar_event'){
     iconBox.innerHTML=alertSvg; document.getElementById('m-title').textContent=t('updateEventConfirm');
-    fields.innerHTML=mInput(t('delEventName'), action.params.summary||'', 'summary')
+    let previewHtml = '';
+    if(action.preview) {
+      const items = action.preview.split('; ');
+      previewHtml = `<div class="modal-field"><label>Eşleşen etkinlikler (${items.length})</label><div class="val" style="font-size:12px;max-height:80px;overflow-y:auto">${items.map(p => esc(p)).join('<br>')}</div></div>`;
+    }
+    fields.innerHTML=previewHtml
+      + mInput(t('delEventName'), action.params.summary||'', 'summary')
       + mInput(t('eventNewSummary'), action.params.new_summary||'', 'new_summary')
       + mInput(t('eventNewTime'), action.params.new_start_time||'', 'new_start_time')
       + mInput(t('eventNewDur'), action.params.new_duration_minutes||'', 'new_duration_minutes');
     warn.style.display='flex'; warn.innerHTML=`${alertSvg} <span>${t('warnDel')}</span>`; btn.textContent=t('confirmAction'); btn.className='modal-confirm';
   } else if(action.tool==='delete_note'){
     iconBox.innerHTML=trashSvg; document.getElementById('m-title').textContent=t('noteDelConfirm');
-    fields.innerHTML=mField(t('noteId'), action.params.note_id||''); warn.style.display='flex'; warn.innerHTML=`${alertSvg} <span>${t('warnDel')}</span>`; btn.textContent=t('confirmDel'); btn.className='modal-confirm danger';
+    let previewHtml = action.preview ? `<div class="modal-field"><label>${t('noteName')}</label><div class="val" style="font-weight:600">${esc(action.preview)}</div></div>` : '';
+    fields.innerHTML=previewHtml + mField(t('noteId'), action.params.note_id||''); warn.style.display='flex'; warn.innerHTML=`${alertSvg} <span>${t('warnDel')}</span>`; btn.textContent=t('confirmDel'); btn.className='modal-confirm danger';
   } else if(action.tool==='complete_task'){
     iconBox.innerHTML=alertSvg; document.getElementById('m-title').textContent=t('taskDoneConfirm');
-    fields.innerHTML=mField(t('taskUid'), action.params.uid||''); warn.style.display='flex'; warn.innerHTML=`${alertSvg} <span>${t('warnDel')}</span>`; btn.textContent=t('confirmAction'); btn.className='modal-confirm';
+    let previewHtml = action.preview ? `<div class="modal-field"><label>${t('taskName')}</label><div class="val" style="font-weight:600">${esc(action.preview)}</div></div>` : '';
+    fields.innerHTML=previewHtml + mField(t('taskUid'), action.params.uid||''); warn.style.display='flex'; warn.innerHTML=`${alertSvg} <span>${t('warnDel')}</span>`; btn.textContent=t('confirmAction'); btn.className='modal-confirm';
   } else if(action.tool==='delete_task'){
     iconBox.innerHTML=trashSvg; document.getElementById('m-title').textContent=t('taskDelConfirm');
-    fields.innerHTML=mField(t('taskUid'), action.params.uid||''); warn.style.display='flex'; warn.innerHTML=`${alertSvg} <span>${t('warnDel')}</span>`; btn.textContent=t('confirmDel'); btn.className='modal-confirm danger';
+    let previewHtml = action.preview ? `<div class="modal-field"><label>${t('taskName')}</label><div class="val" style="font-weight:600">${esc(action.preview)}</div></div>` : '';
+    fields.innerHTML=previewHtml + mField(t('taskUid'), action.params.uid||''); warn.style.display='flex'; warn.innerHTML=`${alertSvg} <span>${t('warnDel')}</span>`; btn.textContent=t('confirmDel'); btn.className='modal-confirm danger';
   } else {
     iconBox.innerHTML=alertSvg; document.getElementById('m-title').textContent=action.tool||'Confirm';
     fields.innerHTML=Object.entries(action.params||{}).map(([k,v])=>mField(k, String(v))).join('');
