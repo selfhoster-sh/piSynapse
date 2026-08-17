@@ -66,18 +66,18 @@ def test_create_and_delete_session(monkeypatch):
     from fastapi.testclient import TestClient
 
     from main import app
-    c = TestClient(app)
-    # create
-    r = c.post("/chat/sessions", json={"name": "Test Session"}, headers={"X-API-Key": mainmod.API_KEY or ""})
-    assert r.status_code == 200
-    sid = r.json()["session_id"]
-    assert r.json()["name"] == "Test Session"
-    # list includes it
-    r2 = c.get("/chat/sessions", headers={"X-API-Key": mainmod.API_KEY or ""})
-    assert any(s["session_id"] == sid for s in r2.json()["sessions"])
-    # delete
-    r3 = c.delete(f"/chat/sessions/{sid}", headers={"X-API-Key": mainmod.API_KEY or ""})
-    assert r3.status_code == 200 and r3.json()["ok"]
+    with TestClient(app, raise_server_exceptions=False) as c:
+        # create
+        r = c.post("/chat/sessions", json={"name": "Test Session"}, headers={"X-API-Key": mainmod.API_KEY or ""})
+        assert r.status_code == 200
+        sid = r.json()["session_id"]
+        assert r.json()["name"] == "Test Session"
+        # list includes it
+        r2 = c.get("/chat/sessions", headers={"X-API-Key": mainmod.API_KEY or ""})
+        assert any(s["session_id"] == sid for s in r2.json()["sessions"])
+        # delete
+        r3 = c.delete(f"/chat/sessions/{sid}", headers={"X-API-Key": mainmod.API_KEY or ""})
+        assert r3.status_code == 200 and r3.json()["ok"]
 
 
 # -- Embedding cosine --
