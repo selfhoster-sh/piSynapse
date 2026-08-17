@@ -75,6 +75,14 @@ def _get_primary_calendar(client):
         return _dav_calendar
 
 
+def _get_calendar():
+    """Return the primary CalDAV calendar, or raise if unavailable."""
+    client = _get_nextcloud_client()
+    if not client:
+        raise Exception("Nextcloud credentials missing. Set NEXTCLOUD_URL and NEXTCLOUD_PASSWORD.")
+    return _get_primary_calendar(client)
+
+
 def _get_uid(d) -> str:
     uid = getattr(d, "uid", None)
     if uid and hasattr(uid, "value"):
@@ -102,10 +110,7 @@ def _ical_escape_text(value: str) -> str:
 def _find_events(search_window_days_back: int = 30, search_window_days_ahead: int = 90):
     """Return all events in the search window."""
     try:
-        client = _get_nextcloud_client()
-        if not client:
-            return None
-        calendar = _get_primary_calendar(client)
+        calendar = _get_calendar()
         events = calendar.date_search(
             datetime.now() - timedelta(days=search_window_days_back),
             datetime.now() + timedelta(days=search_window_days_ahead),
@@ -158,10 +163,7 @@ def _match_event(events, summary: str, event_uid: str = "") -> tuple:
 @retry(attempts=2, delay=1.0)
 def create_event(summary: str, start_time_str: str, duration_minutes: int = 60) -> str:
     try:
-        client = _get_nextcloud_client()
-        if not client:
-            return "ERROR: Nextcloud credentials missing."
-        calendar = _get_primary_calendar(client)
+        calendar = _get_calendar()
         start_dt = datetime.fromisoformat(start_time_str)
         end_dt = start_dt + timedelta(minutes=duration_minutes)
         ical = "\r\n".join([
@@ -184,10 +186,7 @@ def create_event(summary: str, start_time_str: str, duration_minutes: int = 60) 
 @retry(attempts=2, delay=1.0)
 def list_events(days_ahead: int = 7) -> str:
     try:
-        client = _get_nextcloud_client()
-        if not client:
-            return "ERROR: Nextcloud credentials missing."
-        calendar = _get_primary_calendar(client)
+        calendar = _get_calendar()
         start = datetime.now()
         end = start + timedelta(days=days_ahead)
         events = calendar.date_search(start, end)
@@ -223,10 +222,10 @@ def list_events_today() -> list[dict]:
             return cached
     try:
         from datetime import date
-        client = _get_nextcloud_client()
-        if not client:
+        try:
+            calendar = _get_calendar()
+        except Exception:
             return []
-        calendar = _get_primary_calendar(client)
         today = datetime.combine(date.today(), datetime.min.time())
         tomorrow = today + timedelta(days=1)
         events = calendar.date_search(today, tomorrow)
@@ -249,10 +248,10 @@ def list_events_today() -> list[dict]:
 def find_events_by_summary(summary: str, days_back: int = 30, days_ahead: int = 90) -> list[dict]:
     """Find calendar events matching summary substring. Returns list of {summary, start, uid} dicts."""
     try:
-        client = _get_nextcloud_client()
-        if not client:
+        try:
+            calendar = _get_calendar()
+        except Exception:
             return []
-        calendar = _get_primary_calendar(client)
         events = calendar.date_search(
             datetime.now() - timedelta(days=days_back),
             datetime.now() + timedelta(days=days_ahead),
@@ -274,9 +273,7 @@ def find_events_by_summary(summary: str, days_back: int = 30, days_ahead: int = 
 @retry(attempts=2, delay=1.0)
 def delete_event(summary: str, event_uid: str = "") -> str:
     try:
-        client = _get_nextcloud_client()
-        if not client:
-            return "ERROR: Nextcloud credentials missing."
+        _get_nextcloud_client()  # fail fast if no credentials
         events = _find_events()
         if not events:
             return f"ERROR: '{summary}' not found."
@@ -298,9 +295,7 @@ def delete_event(summary: str, event_uid: str = "") -> str:
 @retry(attempts=2, delay=1.0)
 def update_event(summary: str, new_summary: str = "", new_start_time: str = "", new_duration_minutes: int = 0, event_uid: str = "") -> str:
     try:
-        client = _get_nextcloud_client()
-        if not client:
-            return "ERROR: Nextcloud credentials missing."
+        _get_nextcloud_client()  # fail fast if no credentials
         events = _find_events()
         if not events:
             return f"ERROR: '{summary}' not found."
