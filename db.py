@@ -209,6 +209,22 @@ async def init_db():
     await db.execute("CREATE INDEX IF NOT EXISTS idx_tool_audit_rollup ON tool_audit_log(is_summary, created_at)")
     await db.execute("CREATE INDEX IF NOT EXISTS idx_email_session_map_session ON email_session_map(session_id, seq)")
 
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS notes_session_map (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            seq        INTEGER NOT NULL,
+            note_id    INTEGER NOT NULL,
+            title      TEXT DEFAULT '',
+            category   TEXT DEFAULT '',
+            preview    TEXT DEFAULT '',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(session_id, seq)
+        )
+    """)
+
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_notes_session_map_session ON notes_session_map(session_id, seq)")
+
     await _apply_migrations(db)
 
     await cleanup_expired_data()
@@ -601,6 +617,58 @@ async def clear_email_map(session_id: str):
         return
     db = await get_db()
     await _write_with_retry(db, "DELETE FROM email_session_map WHERE session_id = ?", (session_id,))
+
+
+# -- Notes Session Map --
+# Same pattern as email_session_map: the model sees numbered note lists
+# ("1., 2., ...") and this table maps list positions to real Nextcloud note
+# IDs per session, so "read note 3" resolves correctly.
+
+async def save_notes_map(session_id: str, notes: list[dict]):
+    """Replace the stored note listing for a session with a new one."""
+    if not session_id or not notes:
+        return
+    db = await get_db()
+    await _write_with_retry(db, "DELETE FROM notes_session_map WHERE session_id = ?", (session_id,))
+    for seq, n in enumerate(notes, 1):
+        await _write_with_retry(
+            db,
+            "INSERT INTO notes_session_map (session_id, seq, note_id, title, category, preview) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                session_id,
+                seq,
+                int(n.get("id", 0)),
+                n.get("title", "")[:200],
+                n.get("category", "")[:100],
+                (n.get("content", "") or "")[:200],
+            ),
+        )
+
+
+async def get_notes_map(session_id: str) -> list[dict]:
+    """Return the persisted note listing for a session (list-number order)."""
+    if not session_id:
+        return []
+    db = await get_db()
+    async with db.execute(
+        """SELECT note_id, title, category, preview FROM notes_session_map
+           WHERE session_id = ? ORDER BY seq ASC""",
+        (session_id,),
+    ) as cur:
+        rows = await cur.fetchall()
+    return [
+        {"id": r[0], "title": r[1], "category": r[2], "preview": r[3]}
+        for r in rows
+    ]
+
+
+async def clear_notes_map(session_id: str):
+    """Drop the stored note listing for a session (used on history clear)."""
+    if not session_id:
+        return
+    db = await get_db()
+    await _write_with_retry(db, "DELETE FROM notes_session_map WHERE session_id = ?", (session_id,))
 
 
 # -- Sessions --
