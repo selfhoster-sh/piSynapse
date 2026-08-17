@@ -134,9 +134,15 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> str:
         if not content:
             return "ERROR: content required."
         from db import save_memory
+        importance = params.get("importance", 5)
+        try:
+            importance = max(1, min(10, int(importance)))
+        except (ValueError, TypeError):
+            importance = 5
         await save_memory(
             content=content,
             category=params.get("category", "general"),
+            importance=importance,
             user_id=context.get("user_id"),
         )
         return "Memory saved."

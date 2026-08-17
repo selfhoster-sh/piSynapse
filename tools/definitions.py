@@ -206,6 +206,12 @@ TOOLS = [
                         "enum": ["personal", "preference", "habit", "work", "general"],
                         "description": "Best-fitting category for this memory.",
                     },
+                    "importance": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 10,
+                        "description": "How important this memory is (1=trivial, 10=critical). Default: 5.",
+                    },
                 },
                 "required": ["content"],
             },
