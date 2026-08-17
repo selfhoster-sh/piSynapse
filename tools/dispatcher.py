@@ -40,6 +40,29 @@ async def _resolve_email_id(session_id: str, ref) -> str | None:
     return ref
 
 
+async def _resolve_note_id(session_id: str, ref) -> int | None:
+    """Resolve a 1-based list position to the real Nextcloud note ID for this session.
+
+    The model only ever sees numbered list items (never raw IDs). If ``ref``
+    is a number that fits the persisted listing, map it to the stored note ID.
+    A numeric reference that does NOT fit the listing is refused (None):
+    guessing a raw ID could silently read the wrong note. Raw non-numeric
+    IDs (legacy direct calls) pass through unchanged.
+    """
+    from prompt import get_notes_context
+
+    notes = await get_notes_context(session_id)
+    is_num = isinstance(ref, int) or (isinstance(ref, str) and ref.isdigit())
+    if is_num:
+        if notes and 1 <= int(ref) <= len(notes):
+            return notes[int(ref) - 1].get("id")
+        return None
+    try:
+        return int(ref)
+    except (ValueError, TypeError):
+        return None
+
+
 async def run_tool(name: str, params: dict, context: dict | None = None) -> str:
     """Route a tool call to the appropriate handler and return the result string."""
     context = context or {}
@@ -108,7 +131,7 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> str:
         return "Memory saved."
 
     if name in {"create_note", "list_notes", "read_note", "update_note", "delete_note", "search_notes"}:
-        return await _run_notes_tool(name, params)
+        return await _run_notes_tool(name, params, context.get("session_id", ""))
 
     if name in {"create_task", "list_tasks", "complete_task", "delete_task", "search_tasks"}:
         return await _run_tasks_tool(name, params)
@@ -116,9 +139,16 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> str:
     return "ERROR: Tool not found."
 
 
-async def _run_notes_tool(name: str, params: dict) -> str:
-    """Dispatch note tool calls."""
-    from nextcloud_notes import create_note, delete_note, get_note, list_notes, search_notes, update_note
+async def _run_notes_tool(name: str, params: dict, session_id: str = "") -> str:
+    """Dispatch note tool calls with session-aware ID resolution."""
+    from nextcloud_notes import (
+        create_note,
+        delete_note,
+        get_note,
+        list_notes as _list_notes_raw,
+        search_notes as _search_notes_raw,
+        update_note,
+    )
 
     try:
         if name == "create_note":
@@ -131,26 +161,28 @@ async def _run_notes_tool(name: str, params: dict) -> str:
                 category=params.get("category", ""),
             )
         elif name == "list_notes":
-            return await list_notes()
+            raw = await _list_notes_raw()
+            if not raw.startswith("ERROR") and session_id:
+                from prompt import cache_notes_context
+                await cache_notes_context(session_id, _parse_note_listing(raw))
+            return raw
         elif name == "read_note":
             nid = params.get("note_id")
             if not nid:
                 return "ERROR: note_id required."
-            try:
-                nid = int(nid)
-            except (ValueError, TypeError):
-                return f"ERROR: Invalid note_id '{nid}'. Must be a number (e.g. 284)."
-            return await get_note(nid)
+            resolved = await _resolve_note_id(session_id, nid)
+            if resolved is None:
+                return f"ERROR: Note '{nid}' not found. Run list_notes first to see available notes."
+            return await get_note(resolved)
         elif name == "update_note":
             nid = params.get("note_id")
             if not nid:
                 return "ERROR: note_id required."
-            try:
-                nid = int(nid)
-            except (ValueError, TypeError):
-                return f"ERROR: Invalid note_id '{nid}'. Must be a number (e.g. 284)."
+            resolved = await _resolve_note_id(session_id, nid)
+            if resolved is None:
+                return f"ERROR: Note '{nid}' not found. Run list_notes first to see available notes."
             return await update_note(
-                nid,
+                resolved,
                 title=params.get("title"),
                 content=params.get("content"),
             )
@@ -158,21 +190,58 @@ async def _run_notes_tool(name: str, params: dict) -> str:
             nid = params.get("note_id")
             if not nid:
                 return "ERROR: note_id required."
-            try:
-                nid = int(nid)
-            except (ValueError, TypeError):
-                return f"ERROR: Invalid note_id '{nid}'. Must be a number (e.g. 284)."
-            return await delete_note(nid)
+            resolved = await _resolve_note_id(session_id, nid)
+            if resolved is None:
+                return f"ERROR: Note '{nid}' not found. Run list_notes first to see available notes."
+            return await delete_note(resolved)
         elif name == "search_notes":
             q = params.get("query", "").strip()
             if not q:
                 return "ERROR: query required."
-            return await search_notes(q)
+            raw = await _search_notes_raw(q)
+            if not raw.startswith("ERROR") and session_id:
+                from prompt import cache_notes_context
+                await cache_notes_context(session_id, _parse_note_listing(raw))
+            return raw
     except Exception as e:
         logger.error(f"Notes Error: {e}")
         return "ERROR: Notes operation failed. Check server logs."
 
     return "ERROR: Tool not found."
+
+
+def _parse_note_listing(text: str) -> list[dict]:
+    """Extract note IDs from a numbered listing returned by list_notes/search_notes.
+
+    Looks for lines like ``1. Title`` followed by ``ID: 284`` to build
+    the same ordered list that the model sees, mapping positions to real IDs.
+    """
+    import re
+    notes: list[dict] = []
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        m = re.match(r"\s*\*?\s*(\d+)\.\s+(.+)", lines[i])
+        if m:
+            seq = int(m.group(1))
+            title = m.group(2).strip()
+            preview = ""
+            category = ""
+            note_id = 0
+            for j in range(i + 1, min(i + 4, len(lines))):
+                if "ID:" in lines[j]:
+                    try:
+                        note_id = int(lines[j].split("ID:")[-1].strip())
+                    except (ValueError, TypeError):
+                        pass
+                elif "Category:" in lines[j]:
+                    category = lines[j].split("Category:")[-1].strip()
+                elif "Preview:" in lines[j]:
+                    preview = lines[j].split("Preview:")[-1].strip()
+            if note_id:
+                notes.append({"id": note_id, "title": title, "category": category, "preview": preview})
+        i += 1
+    return notes
 
 
 async def _run_tasks_tool(name: str, params: dict) -> str:
