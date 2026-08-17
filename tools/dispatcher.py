@@ -10,6 +10,17 @@ from .definitions import _as_bool, _safe_int
 logger = logging.getLogger("piSynapse")
 
 
+def _get_context_fn(name: str):
+    """Return the context getter function for a given tool category."""
+    from prompt import get_email_context, get_notes_context, get_tasks_context, get_calendar_context
+    return {
+        "email": get_email_context,
+        "notes": get_notes_context,
+        "tasks": get_tasks_context,
+        "calendar": get_calendar_context,
+    }[name]
+
+
 def is_tool_success(result: str) -> bool:
     """Classify a tool result string for audit logging.
 
@@ -20,86 +31,31 @@ def is_tool_success(result: str) -> bool:
     return bool(result) and not result.startswith("ERROR")
 
 
-async def _resolve_email_id(session_id: str, ref) -> str | None:
-    """Resolve a 1-based list position to the real email ID for this session.
+async def _resolve_id(session_id: str, ref, context_fn, id_field: str = "uid", coerce: bool = False):
+    """Resolve a 1-based list position to the real ID for this session.
 
     The model only ever sees numbered list items (never raw IDs). If ``ref``
     is a number that fits the persisted listing, map it to the stored ID.
     A numeric reference that does NOT fit the listing is refused (None):
-    guessing a raw IMAP UID could silently read the wrong message. Raw
-    non-numeric IDs (legacy direct calls) pass through unchanged.
-    """
-    from prompt import get_email_context
-
-    emails = await get_email_context(session_id)
-    is_num = isinstance(ref, int) or (isinstance(ref, str) and ref.isdigit())
-    if is_num:
-        if emails and 1 <= int(ref) <= len(emails):
-            return emails[int(ref) - 1].get("id")
-        return None
-    return ref
-
-
-async def _resolve_note_id(session_id: str, ref) -> int | None:
-    """Resolve a 1-based list position to the real Nextcloud note ID for this session.
-
-    The model only ever sees numbered list items (never raw IDs). If ``ref``
-    is a number that fits the persisted listing, map it to the stored note ID.
-    A numeric reference that does NOT fit the listing is refused (None):
-    guessing a raw ID could silently read the wrong note. Raw non-numeric
+    guessing a raw ID could silently affect the wrong record. Raw non-numeric
     IDs (legacy direct calls) pass through unchanged.
-    """
-    from prompt import get_notes_context
 
-    notes = await get_notes_context(session_id)
+    Args:
+        context_fn: async callable that returns the session's listing (e.g. get_email_context).
+        id_field: key to extract from each listing item (default "uid").
+        coerce: if True, try int(ref) for legacy raw-ID calls (e.g. Nextcloud note IDs).
+    """
+    items = await context_fn(session_id)
     is_num = isinstance(ref, int) or (isinstance(ref, str) and ref.isdigit())
     if is_num:
-        if notes and 1 <= int(ref) <= len(notes):
-            return notes[int(ref) - 1].get("id")
+        if items and 1 <= int(ref) <= len(items):
+            return items[int(ref) - 1].get(id_field)
         return None
-    try:
-        return int(ref)
-    except (ValueError, TypeError):
-        return None
-
-
-async def _resolve_task_uid(session_id: str, ref) -> str | None:
-    """Resolve a 1-based list position to the real task UID for this session.
-
-    The model only ever sees numbered list items (never raw UIDs). If ``ref``
-    is a number that fits the persisted listing, map it to the stored UID.
-    A numeric reference that does NOT fit the listing is refused (None):
-    guessing a raw UID could silently affect the wrong task. Raw non-numeric
-    UIDs (legacy direct calls) pass through unchanged.
-    """
-    from prompt import get_tasks_context
-
-    tasks = await get_tasks_context(session_id)
-    is_num = isinstance(ref, int) or (isinstance(ref, str) and ref.isdigit())
-    if is_num:
-        if tasks and 1 <= int(ref) <= len(tasks):
-            return tasks[int(ref) - 1].get("uid")
-        return None
-    return ref
-
-
-async def _resolve_event_uid(session_id: str, ref) -> str | None:
-    """Resolve a 1-based list position to the real calendar event UID for this session.
-
-    The model only ever sees numbered list items (never raw UIDs). If ``ref``
-    is a number that fits the persisted listing, map it to the stored UID.
-    A numeric reference that does NOT fit the listing is refused (None):
-    guessing a raw UID could silently affect the wrong event. Raw non-numeric
-    UIDs (legacy direct calls) pass through unchanged.
-    """
-    from prompt import get_calendar_context
-
-    events = await get_calendar_context(session_id)
-    is_num = isinstance(ref, int) or (isinstance(ref, str) and ref.isdigit())
-    if is_num:
-        if events and 1 <= int(ref) <= len(events):
-            return events[int(ref) - 1].get("uid")
-        return None
+    if coerce:
+        try:
+            return int(ref)
+        except (ValueError, TypeError):
+            return None
     return ref
 
 
@@ -116,6 +72,7 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> str:
 
     if name in {"create_calendar_event", "list_calendar_events", "update_calendar_event", "delete_calendar_event"}:
         session_id = context.get("session_id", "")
+        from prompt import cache_calendar_context
         try:
             if name == "create_calendar_event":
                 from calendar_ops import create_event
@@ -134,7 +91,6 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> str:
                 days = _safe_int(params.get("days_ahead", 7), 7, "days_ahead", min_value=1)
                 raw = await asyncio.to_thread(list_events, days)
                 if not raw.startswith("ERROR") and session_id:
-                    from prompt import cache_calendar_context
                     await cache_calendar_context(session_id, _parse_calendar_listing(raw))
                 return raw
             elif name == "update_calendar_event":
@@ -146,9 +102,8 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> str:
                 new_t = params.get("new_start_time", "")
                 new_d = _safe_int(params.get("new_duration_minutes", 0), 0, "new_duration_minutes")
                 uid = params.get("event_uid", "")
-                # If event_uid is a number, resolve it to real UID
                 if uid:
-                    resolved = await _resolve_event_uid(session_id, uid)
+                    resolved = await _resolve_id(session_id, uid, _get_context_fn("calendar"))
                     if resolved is None:
                         return f"ERROR: Event '{uid}' not found. Run list_calendar_events first to see available events."
                     uid = resolved
@@ -159,9 +114,8 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> str:
                 if not s:
                     return "ERROR: Event name required."
                 uid = params.get("event_uid", "")
-                # If event_uid is a number, resolve it to real UID
                 if uid:
-                    resolved = await _resolve_event_uid(session_id, uid)
+                    resolved = await _resolve_id(session_id, uid, _get_context_fn("calendar"))
                     if resolved is None:
                         return f"ERROR: Event '{uid}' not found. Run list_calendar_events first to see available events."
                     uid = resolved
@@ -227,7 +181,7 @@ async def _run_notes_tool(name: str, params: dict, session_id: str = "") -> str:
             nid = params.get("note_id")
             if not nid:
                 return "ERROR: note_id required."
-            resolved = await _resolve_note_id(session_id, nid)
+            resolved = await _resolve_id(session_id, nid, _get_context_fn("notes"), id_field="id", coerce=True)
             if resolved is None:
                 return f"ERROR: Note '{nid}' not found. Run list_notes first to see available notes."
             return await get_note(resolved)
@@ -235,7 +189,7 @@ async def _run_notes_tool(name: str, params: dict, session_id: str = "") -> str:
             nid = params.get("note_id")
             if not nid:
                 return "ERROR: note_id required."
-            resolved = await _resolve_note_id(session_id, nid)
+            resolved = await _resolve_id(session_id, nid, _get_context_fn("notes"), id_field="id", coerce=True)
             if resolved is None:
                 return f"ERROR: Note '{nid}' not found. Run list_notes first to see available notes."
             return await update_note(
@@ -247,7 +201,7 @@ async def _run_notes_tool(name: str, params: dict, session_id: str = "") -> str:
             nid = params.get("note_id")
             if not nid:
                 return "ERROR: note_id required."
-            resolved = await _resolve_note_id(session_id, nid)
+            resolved = await _resolve_id(session_id, nid, _get_context_fn("notes"), id_field="id", coerce=True)
             if resolved is None:
                 return f"ERROR: Note '{nid}' not found. Run list_notes first to see available notes."
             return await delete_note(resolved)
@@ -334,7 +288,7 @@ async def _run_tasks_tool(name: str, params: dict, session_id: str = "") -> str:
             uid = params.get("uid", "").strip()
             if not uid:
                 return "ERROR: uid required."
-            resolved = await _resolve_task_uid(session_id, uid)
+            resolved = await _resolve_id(session_id, uid, _get_context_fn("tasks"))
             if resolved is None:
                 return f"ERROR: Task '{uid}' not found. Run list_tasks first to see available tasks."
             return await complete_task(resolved)
@@ -342,7 +296,7 @@ async def _run_tasks_tool(name: str, params: dict, session_id: str = "") -> str:
             uid = params.get("uid", "").strip()
             if not uid:
                 return "ERROR: uid required."
-            resolved = await _resolve_task_uid(session_id, uid)
+            resolved = await _resolve_id(session_id, uid, _get_context_fn("tasks"))
             if resolved is None:
                 return f"ERROR: Task '{uid}' not found. Run list_tasks first to see available tasks."
             return await delete_task(resolved)
@@ -460,7 +414,7 @@ async def _run_mail_tool(name: str, params: dict, session_id: str = "") -> str:
             mid = params.get("message_id") or params.get("id")
             if not mid:
                 return "ERROR: message_id required."
-            resolved = await _resolve_email_id(session_id, mid)
+            resolved = await _resolve_id(session_id, mid, _get_context_fn("email"), id_field="id")
             if resolved is None:
                 return "ERROR: Email not found. Run list_emails first to get the current listing."
             m = await mc.get_message(account_id, mailbox_id, resolved)
