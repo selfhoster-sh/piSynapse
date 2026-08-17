@@ -33,7 +33,7 @@ from retrieval import merge_history, retrieve_relevant_history
 
 logger = logging.getLogger("piSynapse")
 
-router = APIRouter(prefix="/chat", tags=["chat"])
+router = APIRouter(prefix="/chat", tags=["chat", "sessions", "memories"])
 
 # -- Session ID validation --
 # Allow: alphanumeric, hyphens, underscores. Max 64 chars.
@@ -134,9 +134,9 @@ async def chat_endpoint(req: ChatRequest, background_tasks: BackgroundTasks):
 
     # Per-session rate limit (20 req/min per session)
     from main import _session_limiter
-    if not _session_limiter.allow(req.session_id):
+    allowed, _ = _session_limiter.allow(req.session_id)
+    if not allowed:
         raise HTTPException(status_code=429, detail="Session rate limit exceeded. Try again later.")
-        raise HTTPException(status_code=400, detail="Message or image is required.")
 
     try:
         await save_message(req.session_id, "user", req.message, images=req.images or None)
@@ -196,7 +196,8 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
 
     # Per-session rate limit (20 req/min per session)
     from main import _session_limiter
-    if not _session_limiter.allow(req.session_id):
+    allowed, _ = _session_limiter.allow(req.session_id)
+    if not allowed:
         raise HTTPException(status_code=429, detail="Session rate limit exceeded. Try again later.")
 
     try:
@@ -322,6 +323,30 @@ async def rename_session(session_id: str, req: RenameRequest):
     return {"ok": True}
 
 
+@router.delete("/sessions/{session_id}")
+async def delete_session(session_id: str):
+    """Delete a session and all its messages, maps, and metadata."""
+    _validate_session_id(session_id)
+    await clear_history(session_id)
+    return {"ok": True, "message": f"Session '{session_id}' deleted."}
+
+
+@router.post("/sessions")
+async def create_session(req: RenameRequest | None = None):
+    """Explicitly create a new session with an optional name."""
+    import uuid
+    session_id = str(uuid.uuid4())[:12]
+    name = (req.name.strip()[:100] if req and req.name else "New Chat") or "New Chat"
+    from db import get_db
+    db = await get_db()
+    await db.execute(
+        "INSERT OR IGNORE INTO sessions (id, name, created_at, last_active) VALUES (?, ?, datetime('now'), datetime('now'))",
+        (session_id, name),
+    )
+    await db.commit()
+    return {"ok": True, "session_id": session_id, "name": name}
+
+
 # -- History --
 
 @router.get("/history")
@@ -372,4 +397,86 @@ async def export_data(user_id: str = Query("default")):
         "session_count": len(sessions),
         "memory_count": len(mems),
     }
+
+
+# -- Image Upload (multipart, for mobile clients) --
+
+@router.post("/upload", tags=["media"])
+async def upload_image(file: bytes = Query(...)):
+    """Upload an image as multipart/form-data. Returns base64 string for use in chat."""
+    import base64
+    from config import get as cfg
+    max_mb = cfg("MEDIA_MAX_MB", 100)
+    if len(file) > max_mb * 1024 * 1024:
+        raise HTTPException(status_code=413, detail=f"File too large (max {max_mb} MB).")
+    b64 = base64.b64encode(file).decode("utf-8")
+    return {"ok": True, "base64": b64, "size_bytes": len(file)}
+
+
+# -- Offline Sync (mobile) --
+
+class SyncCommand(BaseModel):
+    tool: str
+    params: dict
+    timestamp: str
+    session_id: str = "default_session"
+
+
+class SyncRequest(BaseModel):
+    commands: list[SyncCommand]
+
+
+@router.post("/sync", tags=["sync"])
+async def sync_commands(req: SyncRequest, background_tasks: BackgroundTasks):
+    """Process batched offline commands from mobile client.
+
+    Each command is executed sequentially. Safe tools run immediately;
+    confirm tools are queued and returned for user approval.
+
+    Returns results for each command in order.
+    """
+    from tools import run_tool, is_tool_success, CONFIRM_TOOLS, OFFLINE_SAFE_TOOLS
+    from tool_verification import run_verification
+
+    results = []
+    for i, cmd in enumerate(req.commands):
+        if cmd.tool in CONFIRM_TOOLS and cmd.tool not in OFFLINE_SAFE_TOOLS:
+            results.append({
+                "index": i,
+                "status": "needs_confirm",
+                "tool": cmd.tool,
+                "params": cmd.params,
+                "session_id": cmd.session_id,
+            })
+            continue
+
+        import time
+        t0 = time.perf_counter()
+        try:
+            result = await run_tool(
+                cmd.tool, cmd.params,
+                context={"user_id": "default", "session_id": cmd.session_id},
+            )
+            success = is_tool_success(result)
+            duration_ms = (time.perf_counter() - t0) * 1000
+            await run_verification(cmd.tool, cmd.params, result, success, duration_ms=duration_ms)
+            results.append({
+                "index": i,
+                "status": "ok" if success else "error",
+                "tool": cmd.tool,
+                "result": result if not success else None,
+            })
+        except Exception as e:
+            logger.error(f"Sync command {i} failed: {e}")
+            results.append({
+                "index": i,
+                "status": "error",
+                "tool": cmd.tool,
+                "result": str(e),
+            })
+
+    ok_count = sum(1 for r in results if r["status"] == "ok")
+    confirm_count = sum(1 for r in results if r["status"] == "needs_confirm")
+    error_count = sum(1 for r in results if r["status"] == "error")
+    return {"ok": True, "total": len(req.commands), "ok": ok_count, "needs_confirm": confirm_count, "errors": error_count, "results": results}
 

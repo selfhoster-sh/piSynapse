@@ -17,25 +17,25 @@ from llm import chat as lc
 
 def test_rate_limiter_allows_burst_then_blocks():
     rl = mainmod._RateLimiter(rpm=3)
-    assert all(rl.allow("1.2.3.4") for _ in range(3))
-    assert not rl.allow("1.2.3.4")
-    assert rl.allow("5.6.7.8")  # different IP unaffected
+    assert all(rl.allow("1.2.3.4")[0] for _ in range(3))
+    assert not rl.allow("1.2.3.4")[0]
+    assert rl.allow("5.6.7.8")[0]  # different IP unaffected
 
 
 def test_rate_limiter_expires_old_requests():
     rl = mainmod._RateLimiter(rpm=2)
-    assert rl.allow("ip") and rl.allow("ip")
-    assert not rl.allow("ip")
+    assert rl.allow("ip")[0] and rl.allow("ip")[0]
+    assert not rl.allow("ip")[0]
     rl._buckets["ip"] = [time.time() - 61.0]  # falls out of the 60s window
-    assert rl.allow("ip")
+    assert rl.allow("ip")[0]
 
 
 def test_rate_limiter_rejects_new_ip_when_bucket_table_full():
     rl = mainmod._RateLimiter(rpm=5, max_buckets=2)
-    assert rl.allow("a") and rl.allow("a")
-    assert rl.allow("b") and rl.allow("b")
-    assert not rl.allow("c")  # table full and new IP → rejected
-    assert rl.allow("a")  # existing IP still passes
+    assert rl.allow("a")[0] and rl.allow("a")[0]
+    assert rl.allow("b")[0] and rl.allow("b")[0]
+    assert not rl.allow("c")[0]  # table full and new IP → rejected
+    assert rl.allow("a")[0]  # existing IP still passes
 
 
 def test_rate_limiter_cleanup_drops_stale_buckets():
@@ -47,6 +47,36 @@ def test_rate_limiter_cleanup_drops_stale_buckets():
     rl._cleanup(time.time())
     assert "stale" not in rl._buckets
     assert "fresh" in rl._buckets
+
+
+def test_rate_limiter_remaining():
+    rl = mainmod._RateLimiter(rpm=3)
+    assert rl.remaining("1.2.3.4") == 3
+    rl.allow("1.2.3.4")
+    assert rl.remaining("1.2.3.4") == 2
+    rl.allow("1.2.3.4")
+    rl.allow("1.2.3.4")
+    assert rl.remaining("1.2.3.4") == 0
+
+
+# -- Session CRUD (new endpoints) --
+
+def test_create_and_delete_session(monkeypatch):
+    monkeypatch.setattr(mainmod, "TRUSTED_HOSTS", {"*"})
+    from fastapi.testclient import TestClient
+    from main import app
+    c = TestClient(app)
+    # create
+    r = c.post("/chat/sessions", json={"name": "Test Session"}, headers={"X-API-Key": mainmod.API_KEY or ""})
+    assert r.status_code == 200
+    sid = r.json()["session_id"]
+    assert r.json()["name"] == "Test Session"
+    # list includes it
+    r2 = c.get("/chat/sessions", headers={"X-API-Key": mainmod.API_KEY or ""})
+    assert any(s["session_id"] == sid for s in r2.json()["sessions"])
+    # delete
+    r3 = c.delete(f"/chat/sessions/{sid}", headers={"X-API-Key": mainmod.API_KEY or ""})
+    assert r3.status_code == 200 and r3.json()["ok"]
 
 
 # -- Embedding cosine --
