@@ -101,7 +101,7 @@ class TestMemory:
                 {"content": "  loves coffee  ", "category": "pref"},
                 context={"user_id": 7},
             )
-        sm.assert_awaited_once_with(content="loves coffee", category="pref", user_id=7)
+        sm.assert_awaited_once_with(content="loves coffee", category="pref", importance=5, user_id=7)
         assert result == "Memory saved."
 
 

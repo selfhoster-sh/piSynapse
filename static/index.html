@@ -366,7 +366,11 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 
 /* ── Memory Cards ──────────────────────────────────────────────────────────── */
 .mem-card{padding:12px;background:var(--surface2);position:relative;border:1px solid var(--border);
-  border-radius:12px;transition:border-color .2s;padding-right:34px}
+  border-radius:12px;transition:border-color .2s;padding-right:34px;border-left:3px solid var(--text4)}
+.mem-card[data-imp="1"],.mem-card[data-imp="2"],.mem-card[data-imp="3"]{border-left-color:var(--text4)}
+.mem-card[data-imp="4"],.mem-card[data-imp="5"],.mem-card[data-imp="6"]{border-left-color:var(--success)}
+.mem-card[data-imp="7"],.mem-card[data-imp="8"]{border-left-color:var(--warning,#f59e0b)}
+.mem-card[data-imp="9"],.mem-card[data-imp="10"]{border-left-color:var(--danger,#ef4444)}
 .mem-card:hover{border-color:var(--text4)}
 .mem-card:hover .mem-del-btn{display:flex}
 .mem-cat{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.05em;
@@ -1117,7 +1121,7 @@ let lastThinkEffort = thinkMode ? thinkEffort : 'medium';
 let _cachedWeatherSummary = null; let _cachedWeatherRaw = null; let _cachedEvents = null;
 
 // ── Markdown, LaTeX & Copy (local parser) ─────────────────────────────────────
-function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
 function parseMath(s) {
   const dict = {
@@ -2367,8 +2371,8 @@ async function loadMem(){
       return;
     }
     list.innerHTML=mems.map(m=>{
-      const cat=m.category||'general', mid=m.id || m.content;
-      return `<div class="mem-card"><div class="mem-cat cat-${esc(cat)}">${esc(cat)}</div><div class="mem-content">${esc(m.content)}</div><div class="mem-date">${relTime(m.created_at)}</div><button class="mem-del-btn" onclick="triggerDelMemory('${esc(mid)}', '${esc(m.content)}')" title="${t('del')}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button></div>`;
+      const cat=m.category||'general', mid=m.id || m.content, imp=m.importance||5;
+      return `<div class="mem-card" data-imp="${imp}"><div class="mem-cat cat-${esc(cat)}">${esc(cat)}</div><div class="mem-content">${esc(m.content)}</div><div class="mem-date">${relTime(m.created_at)} · importance: ${imp}</div><button class="mem-del-btn" onclick="triggerDelMemory('${esc(mid)}', '${esc(m.content)}')" title="${t('del')}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button></div>`;
     }).join('');
   } catch{ list.innerHTML=`<div class="mem-empty">${t('connErr')}</div>`; }
 }
