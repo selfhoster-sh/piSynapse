@@ -93,6 +93,7 @@ _rate_limiter = _RateLimiter(rpm=30)
 
 class _SessionRateLimiter(_RateLimiter):
     """Per-session rate limiter — same token-bucket, keyed by session_id."""
+
     def allow(self, session_id: str) -> tuple[bool, int]:
         return super().allow(session_id)
 

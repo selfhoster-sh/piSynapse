@@ -64,6 +64,7 @@ def test_rate_limiter_remaining():
 def test_create_and_delete_session(monkeypatch):
     monkeypatch.setattr(mainmod, "TRUSTED_HOSTS", {"*"})
     from fastapi.testclient import TestClient
+
     from main import app
     c = TestClient(app)
     # create
@@ -110,6 +111,7 @@ def test_widget_weather_missing_city(monkeypatch):
 
     monkeypatch.setattr(config, "DEFAULT_CITY", "")
     result = asyncio.run(widgets.widget_weather())
+    assert result["ok"] is False
     assert result["error"]
     assert result["summary"] == ""
 
@@ -123,6 +125,7 @@ def test_widget_calendar_returns_events(monkeypatch):
         lambda: [{"time": "09:00", "title": "Standup", "uid": "u1"}],
     )
     result = asyncio.run(widgets.widget_calendar())
+    assert result["ok"] is True
     assert result["events"] == [{"time": "09:00", "title": "Standup", "uid": "u1"}]
 
 
@@ -135,6 +138,7 @@ def test_widget_calendar_error_returns_empty(monkeypatch):
 
     monkeypatch.setattr(calendar_ops, "list_events_today", boom)
     result = asyncio.run(widgets.widget_calendar())
+    assert result["ok"] is False
     assert result["events"] == []
 
 

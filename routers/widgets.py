@@ -18,14 +18,14 @@ router = APIRouter(tags=["widgets"])
 async def widget_weather():
     city = config.DEFAULT_CITY
     if not city:
-        return {"error": "DEFAULT_CITY is not set", "city": "", "summary": ""}
+        return {"ok": False, "error": "DEFAULT_CITY is not set", "city": "", "summary": ""}
     try:
         from weather import get_weather
         summary = await get_weather(city)
-        return {"city": city, "summary": summary}
+        return {"ok": True, "city": city, "summary": summary}
     except Exception as e:
         logger.error(f"Weather widget error: {e}")
-        return {"error": "Widget error", "city": city, "summary": ""}
+        return {"ok": False, "error": "Weather service unavailable", "city": city, "summary": ""}
 
 
 @router.get("/widget/calendar")
@@ -33,7 +33,7 @@ async def widget_calendar():
     try:
         from calendar_ops import list_events_today
         events = await asyncio.to_thread(list_events_today)
-        return {"events": events}
+        return {"ok": True, "events": events}
     except Exception as e:
         logger.warning(f"Calendar widget error: {e}")
-        return {"events": []}
+        return {"ok": False, "error": "Calendar unavailable", "events": []}

@@ -405,6 +405,7 @@ async def export_data(user_id: str = Query("default")):
 async def upload_image(file: bytes = Query(...)):
     """Upload an image as multipart/form-data. Returns base64 string for use in chat."""
     import base64
+
     from config import get as cfg
     max_mb = cfg("MEDIA_MAX_MB", 100)
     if len(file) > max_mb * 1024 * 1024:
@@ -435,8 +436,8 @@ async def sync_commands(req: SyncRequest, background_tasks: BackgroundTasks):
 
     Returns results for each command in order.
     """
-    from tools import run_tool, is_tool_success, CONFIRM_TOOLS, OFFLINE_SAFE_TOOLS
     from tool_verification import run_verification
+    from tools import CONFIRM_TOOLS, OFFLINE_SAFE_TOOLS, is_tool_success, run_tool
 
     results = []
     for i, cmd in enumerate(req.commands):
@@ -478,5 +479,5 @@ async def sync_commands(req: SyncRequest, background_tasks: BackgroundTasks):
     ok_count = sum(1 for r in results if r["status"] == "ok")
     confirm_count = sum(1 for r in results if r["status"] == "needs_confirm")
     error_count = sum(1 for r in results if r["status"] == "error")
-    return {"ok": True, "total": len(req.commands), "ok": ok_count, "needs_confirm": confirm_count, "errors": error_count, "results": results}
+    return {"ok": True, "total": len(req.commands), "executed": ok_count, "needs_confirm": confirm_count, "errors": error_count, "results": results}
 
