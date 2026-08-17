@@ -14,6 +14,7 @@ model asks for one, and (3) accepts tool-result messages in later turns.
 Config: config.json next to this file (see DEFAULT_CONFIG). CLI flags override.
 """
 import argparse
+import base64
 import json
 import logging
 import threading
@@ -75,6 +76,38 @@ def _text_of(resp: dict) -> str:
             if isinstance(b, dict) and b.get("type") == "text"
         )
     return str(content)
+
+
+def _convert_content(msg: dict) -> dict:
+    """Convert OpenAI content blocks to LiteRT-LM format.
+
+    OpenAI sends:  {"type": "input_audio", "input_audio": {"data": "..."}}
+                   {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,..."}}
+    LiteRT-LM:    {"type": "audio", "blob": "..."}
+                   {"type": "image", "blob": "..."}
+    """
+    content = msg.get("content")
+    if not isinstance(content, list):
+        return msg
+    converted = []
+    for block in content:
+        if not isinstance(block, dict):
+            converted.append(block)
+            continue
+        btype = block.get("type", "")
+        if btype == "input_audio":
+            data = (block.get("input_audio") or {}).get("data", "")
+            converted.append({"type": "audio", "blob": data})
+        elif btype == "image_url":
+            url = (block.get("image_url") or {}).get("url", "")
+            if url.startswith("data:"):
+                blob = url.split(",", 1)[1] if "," in url else ""
+                converted.append({"type": "image", "blob": blob})
+            else:
+                converted.append(block)
+        else:
+            converted.append(block)
+    return {**msg, "content": converted}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -172,8 +205,8 @@ class Handler(BaseHTTPRequestHandler):
                 thinking_token_budget=REASONING_BUDGET.get(effort, 1024),
             )
 
-        current = messages[-1]
-        prelude = messages[:-1]
+        current = _convert_content(messages[-1])
+        prelude = [_convert_content(m) for m in messages[:-1]]
 
         with self._lock:
             conv = self.engine.create_conversation(
