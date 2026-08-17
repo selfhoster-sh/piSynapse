@@ -63,6 +63,26 @@ async def _resolve_note_id(session_id: str, ref) -> int | None:
         return None
 
 
+async def _resolve_task_uid(session_id: str, ref) -> str | None:
+    """Resolve a 1-based list position to the real task UID for this session.
+
+    The model only ever sees numbered list items (never raw UIDs). If ``ref``
+    is a number that fits the persisted listing, map it to the stored UID.
+    A numeric reference that does NOT fit the listing is refused (None):
+    guessing a raw UID could silently affect the wrong task. Raw non-numeric
+    UIDs (legacy direct calls) pass through unchanged.
+    """
+    from prompt import get_tasks_context
+
+    tasks = await get_tasks_context(session_id)
+    is_num = isinstance(ref, int) or (isinstance(ref, str) and ref.isdigit())
+    if is_num:
+        if tasks and 1 <= int(ref) <= len(tasks):
+            return tasks[int(ref) - 1].get("uid")
+        return None
+    return ref
+
+
 async def run_tool(name: str, params: dict, context: dict | None = None) -> str:
     """Route a tool call to the appropriate handler and return the result string."""
     context = context or {}
@@ -134,7 +154,7 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> str:
         return await _run_notes_tool(name, params, context.get("session_id", ""))
 
     if name in {"create_task", "list_tasks", "complete_task", "delete_task", "search_tasks"}:
-        return await _run_tasks_tool(name, params)
+        return await _run_tasks_tool(name, params, context.get("session_id", ""))
 
     return "ERROR: Tool not found."
 
@@ -244,9 +264,15 @@ def _parse_note_listing(text: str) -> list[dict]:
     return notes
 
 
-async def _run_tasks_tool(name: str, params: dict) -> str:
-    """Dispatch task tool calls."""
-    from nextcloud_tasks import complete_task, create_task, delete_task, list_tasks, search_tasks
+async def _run_tasks_tool(name: str, params: dict, session_id: str = "") -> str:
+    """Dispatch task tool calls with session-aware UID resolution."""
+    from nextcloud_tasks import (
+        complete_task,
+        create_task,
+        delete_task,
+        list_tasks as _list_tasks_raw,
+        search_tasks as _search_tasks_raw,
+    )
 
     try:
         if name == "create_task":
@@ -262,22 +288,36 @@ async def _run_tasks_tool(name: str, params: dict) -> str:
             )
         elif name == "list_tasks":
             show_completed = _as_bool(params.get("show_completed", False))
-            return await list_tasks(show_completed=show_completed)
+            raw = await _list_tasks_raw(show_completed=show_completed)
+            if not raw.startswith("ERROR") and session_id:
+                from prompt import cache_tasks_context
+                await cache_tasks_context(session_id, _parse_task_listing(raw))
+            return raw
         elif name == "complete_task":
             uid = params.get("uid", "").strip()
             if not uid:
                 return "ERROR: uid required."
-            return await complete_task(uid)
+            resolved = await _resolve_task_uid(session_id, uid)
+            if resolved is None:
+                return f"ERROR: Task '{uid}' not found. Run list_tasks first to see available tasks."
+            return await complete_task(resolved)
         elif name == "delete_task":
             uid = params.get("uid", "").strip()
             if not uid:
                 return "ERROR: uid required."
-            return await delete_task(uid)
+            resolved = await _resolve_task_uid(session_id, uid)
+            if resolved is None:
+                return f"ERROR: Task '{uid}' not found. Run list_tasks first to see available tasks."
+            return await delete_task(resolved)
         elif name == "search_tasks":
             q = params.get("query", "").strip()
             if not q:
                 return "ERROR: query required."
-            return await search_tasks(q)
+            raw = await _search_tasks_raw(q)
+            if not raw.startswith("ERROR") and session_id:
+                from prompt import cache_tasks_context
+                await cache_tasks_context(session_id, _parse_task_listing(raw))
+            return raw
     except ValueError as e:
         return f"ERROR: {e}"
     except Exception as e:
@@ -285,6 +325,41 @@ async def _run_tasks_tool(name: str, params: dict) -> str:
         return f"ERROR: {name} failed"
 
     return "ERROR: Tool not found."
+
+
+def _parse_task_listing(text: str) -> list[dict]:
+    """Extract task UIDs from a numbered listing returned by list_tasks/search_tasks.
+
+    Looks for lines like ``1. [o] Buy groceries`` followed by ``UID: abc123def012...``
+    to build the same ordered list that the model sees, mapping positions to real UIDs.
+    """
+    import re
+    tasks: list[dict] = []
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        m = re.match(r"\s*(\d+)\.\s+\[([ox])\]\s+(.+)", lines[i])
+        if m:
+            seq = int(m.group(1))
+            completed = m.group(2) == "x"
+            summary = m.group(3).strip()
+            uid = ""
+            due = ""
+            priority = 0
+            for j in range(i + 1, min(i + 4, len(lines))):
+                if "UID:" in lines[j]:
+                    uid = lines[j].split("UID:")[-1].strip().rstrip(".")
+                elif "Due:" in lines[j]:
+                    due = lines[j].split("Due:")[-1].strip()
+                elif "P:" in lines[j]:
+                    try:
+                        priority = int(lines[j].split("P:")[-1].strip())
+                    except (ValueError, TypeError):
+                        pass
+            if uid:
+                tasks.append({"uid": uid, "summary": summary, "due": due, "priority": priority, "completed": completed})
+        i += 1
+    return tasks
 
 
 async def _run_mail_tool(name: str, params: dict, session_id: str = "") -> str:
