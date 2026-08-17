@@ -244,3 +244,26 @@ async def clear_notes_context(session_id: str):
     """Drop the persisted note listing for a session."""
     from db import clear_notes_map
     await clear_notes_map(session_id)
+
+
+# -- Tasks Context --
+# Same pattern as email/notes: model sees numbered lists, we map to real UIDs.
+
+async def cache_tasks_context(session_id: str, tasks: list[dict]):
+    """Persist the recent task listing for a session."""
+    if not session_id:
+        return
+    from db import save_tasks_map
+    await save_tasks_map(session_id, tasks)
+
+
+async def get_tasks_context(session_id: str) -> list[dict]:
+    """Retrieve the persisted task listing for a session."""
+    from db import get_tasks_map
+    return await get_tasks_map(session_id)
+
+
+async def clear_tasks_context(session_id: str):
+    """Drop the persisted task listing for a session."""
+    from db import clear_tasks_map
+    await clear_tasks_map(session_id)

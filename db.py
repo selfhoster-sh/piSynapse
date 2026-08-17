@@ -225,6 +225,23 @@ async def init_db():
 
     await db.execute("CREATE INDEX IF NOT EXISTS idx_notes_session_map_session ON notes_session_map(session_id, seq)")
 
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS tasks_session_map (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            seq        INTEGER NOT NULL,
+            uid        TEXT NOT NULL,
+            summary    TEXT DEFAULT '',
+            due        TEXT DEFAULT '',
+            priority   INTEGER DEFAULT 0,
+            completed  INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(session_id, seq)
+        )
+    """)
+
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_tasks_session_map_session ON tasks_session_map(session_id, seq)")
+
     await _apply_migrations(db)
 
     await cleanup_expired_data()
@@ -669,6 +686,57 @@ async def clear_notes_map(session_id: str):
         return
     db = await get_db()
     await _write_with_retry(db, "DELETE FROM notes_session_map WHERE session_id = ?", (session_id,))
+
+
+# -- Tasks Session Map --
+# Same pattern as email/notes: model sees numbered list, we map to real UIDs.
+
+async def save_tasks_map(session_id: str, tasks: list[dict]):
+    """Replace the stored task listing for a session with a new one."""
+    if not session_id or not tasks:
+        return
+    db = await get_db()
+    await _write_with_retry(db, "DELETE FROM tasks_session_map WHERE session_id = ?", (session_id,))
+    for seq, t in enumerate(tasks, 1):
+        await _write_with_retry(
+            db,
+            "INSERT INTO tasks_session_map (session_id, seq, uid, summary, due, priority, completed) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                session_id,
+                seq,
+                str(t.get("uid", "")),
+                t.get("summary", "")[:200],
+                t.get("due", "")[:50],
+                int(t.get("priority", 0)),
+                1 if t.get("completed") else 0,
+            ),
+        )
+
+
+async def get_tasks_map(session_id: str) -> list[dict]:
+    """Return the persisted task listing for a session (list-number order)."""
+    if not session_id:
+        return []
+    db = await get_db()
+    async with db.execute(
+        """SELECT uid, summary, due, priority, completed FROM tasks_session_map
+           WHERE session_id = ? ORDER BY seq ASC""",
+        (session_id,),
+    ) as cur:
+        rows = await cur.fetchall()
+    return [
+        {"uid": r[0], "summary": r[1], "due": r[2], "priority": r[3], "completed": bool(r[4])}
+        for r in rows
+    ]
+
+
+async def clear_tasks_map(session_id: str):
+    """Drop the stored task listing for a session (used on history clear)."""
+    if not session_id:
+        return
+    db = await get_db()
+    await _write_with_retry(db, "DELETE FROM tasks_session_map WHERE session_id = ?", (session_id,))
 
 
 # -- Sessions --
