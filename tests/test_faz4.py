@@ -182,11 +182,13 @@ def test_deserialize_raw_float32_starting_with_0x80():
     np.testing.assert_allclose(_deserialize(blob), vec)
 
 
-def test_deserialize_legacy_pickle():
+def test_deserialize_legacy_pickle_rejected():
+    """Legacy pickle format is rejected for security (arbitrary code execution risk)."""
     vec = np.array([0.25, 1.5], dtype="float32")
     blob = pickle.dumps(vec)
     assert blob.startswith(b"\x80")
-    np.testing.assert_allclose(_deserialize(blob), vec)
+    with pytest.raises(ValueError, match="Unrecognized embedding format"):
+        _deserialize(blob)
 
 
 def test_deserialize_legacy_npy():
