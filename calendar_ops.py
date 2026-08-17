@@ -194,18 +194,18 @@ def list_events(days_ahead: int = 7) -> str:
         if not events:
             return f"Next {days_ahead} days: no events."
         lines = []
-        for ev in events:
+        for i, ev in enumerate(events, 1):
             d = ev.vobject_instance.vevent
             s = getattr(d, "summary", getattr(d, "description", "Untitled")).value
             st = d.dtstart.value
             ts = st.strftime("%Y-%m-%d %H:%M") if hasattr(st, "strftime") else str(st)
             uid = _get_uid(d)
-            line = f"- {ts} | {s}"
+            line = f"   {i}. {ts} | {s}"
             if uid:
-                line += f"\n     UID: {uid[:20]}..."
+                line += f"\n      UID: {uid[:20]}..."
             desc = getattr(d, "description", None)
             if desc and hasattr(desc, "value") and desc.value and desc.value != s:
-                line += f"\n     {desc.value[:100]}"
+                line += f"\n      {desc.value[:100]}"
             lines.append(line)
         return "Events:\n" + "\n".join(lines)
     except Exception as e:

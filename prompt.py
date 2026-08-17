@@ -270,3 +270,26 @@ async def clear_tasks_context(session_id: str):
     """Drop the persisted task listing for a session."""
     from db import clear_tasks_map
     await clear_tasks_map(session_id)
+
+
+# -- Calendar Context --
+# Same pattern as email/notes/tasks: model sees numbered lists, we map to real UIDs.
+
+async def cache_calendar_context(session_id: str, events: list[dict]):
+    """Persist the recent calendar listing for a session."""
+    if not session_id:
+        return
+    from db import save_calendar_map
+    await save_calendar_map(session_id, events)
+
+
+async def get_calendar_context(session_id: str) -> list[dict]:
+    """Retrieve the persisted calendar listing for a session."""
+    from db import get_calendar_map
+    return await get_calendar_map(session_id)
+
+
+async def clear_calendar_context(session_id: str):
+    """Drop the persisted calendar listing for a session."""
+    from db import clear_calendar_map
+    await clear_calendar_map(session_id)

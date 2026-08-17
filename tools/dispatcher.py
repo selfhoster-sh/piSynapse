@@ -83,6 +83,26 @@ async def _resolve_task_uid(session_id: str, ref) -> str | None:
     return ref
 
 
+async def _resolve_event_uid(session_id: str, ref) -> str | None:
+    """Resolve a 1-based list position to the real calendar event UID for this session.
+
+    The model only ever sees numbered list items (never raw UIDs). If ``ref``
+    is a number that fits the persisted listing, map it to the stored UID.
+    A numeric reference that does NOT fit the listing is refused (None):
+    guessing a raw UID could silently affect the wrong event. Raw non-numeric
+    UIDs (legacy direct calls) pass through unchanged.
+    """
+    from prompt import get_calendar_context
+
+    events = await get_calendar_context(session_id)
+    is_num = isinstance(ref, int) or (isinstance(ref, str) and ref.isdigit())
+    if is_num:
+        if events and 1 <= int(ref) <= len(events):
+            return events[int(ref) - 1].get("uid")
+        return None
+    return ref
+
+
 async def run_tool(name: str, params: dict, context: dict | None = None) -> str:
     """Route a tool call to the appropriate handler and return the result string."""
     context = context or {}
@@ -95,6 +115,7 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> str:
         return await get_weather(params.get("city", ""))
 
     if name in {"create_calendar_event", "list_calendar_events", "update_calendar_event", "delete_calendar_event"}:
+        session_id = context.get("session_id", "")
         try:
             if name == "create_calendar_event":
                 from calendar_ops import create_event
@@ -111,7 +132,11 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> str:
             elif name == "list_calendar_events":
                 from calendar_ops import list_events
                 days = _safe_int(params.get("days_ahead", 7), 7, "days_ahead", min_value=1)
-                return await asyncio.to_thread(list_events, days)
+                raw = await asyncio.to_thread(list_events, days)
+                if not raw.startswith("ERROR") and session_id:
+                    from prompt import cache_calendar_context
+                    await cache_calendar_context(session_id, _parse_calendar_listing(raw))
+                return raw
             elif name == "update_calendar_event":
                 from calendar_ops import update_event
                 s = params.get("summary", "")
@@ -121,6 +146,12 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> str:
                 new_t = params.get("new_start_time", "")
                 new_d = _safe_int(params.get("new_duration_minutes", 0), 0, "new_duration_minutes")
                 uid = params.get("event_uid", "")
+                # If event_uid is a number, resolve it to real UID
+                if uid:
+                    resolved = await _resolve_event_uid(session_id, uid)
+                    if resolved is None:
+                        return f"ERROR: Event '{uid}' not found. Run list_calendar_events first to see available events."
+                    uid = resolved
                 return await asyncio.to_thread(update_event, s, new_summary=new_s, new_start_time=new_t, new_duration_minutes=new_d, event_uid=uid)
             elif name == "delete_calendar_event":
                 from calendar_ops import delete_event
@@ -128,6 +159,12 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> str:
                 if not s:
                     return "ERROR: Event name required."
                 uid = params.get("event_uid", "")
+                # If event_uid is a number, resolve it to real UID
+                if uid:
+                    resolved = await _resolve_event_uid(session_id, uid)
+                    if resolved is None:
+                        return f"ERROR: Event '{uid}' not found. Run list_calendar_events first to see available events."
+                    uid = resolved
                 return await asyncio.to_thread(delete_event, s, event_uid=uid)
         except ValueError as e:
             return f"ERROR: {e}"
@@ -360,6 +397,34 @@ def _parse_task_listing(text: str) -> list[dict]:
                 tasks.append({"uid": uid, "summary": summary, "due": due, "priority": priority, "completed": completed})
         i += 1
     return tasks
+
+
+def _parse_calendar_listing(text: str) -> list[dict]:
+    """Extract event UIDs from a numbered listing returned by list_calendar_events.
+
+    Looks for lines like ``1. 2026-08-20 10:00 | Meeting`` followed by ``UID: abc123...``
+    to build the same ordered list that the model sees, mapping positions to real UIDs.
+    """
+    import re
+    events: list[dict] = []
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        m = re.match(r"\s*(\d+)\.\s+(.+?\|.+)", lines[i])
+        if m:
+            seq = int(m.group(1))
+            rest = m.group(2).strip()
+            parts = rest.split("|", 1)
+            start_time = parts[0].strip() if len(parts) > 1 else ""
+            summary = parts[1].strip() if len(parts) > 1 else rest
+            uid = ""
+            for j in range(i + 1, min(i + 4, len(lines))):
+                if "UID:" in lines[j]:
+                    uid = lines[j].split("UID:")[-1].strip().rstrip(".")
+            if uid:
+                events.append({"uid": uid, "summary": summary, "start": start_time})
+        i += 1
+    return events
 
 
 async def _run_mail_tool(name: str, params: dict, session_id: str = "") -> str:
