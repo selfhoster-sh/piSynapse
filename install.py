@@ -894,7 +894,7 @@ def step_llm_backend() -> None:
             if r.returncode != 0:
                 warn("Import failed — retry later with:")
                 warn(f"  {litert_bin} import --from-huggingface-repo={hf_repo} {hf_file} {import_id}")
-            elif not _litert_model_imported(import_id):
+            elif not _litert_model_imported(import_id, litert_bin):
                 warn(f"Import reported success but '{import_id}' not found in registry — check: {litert_bin} list")
             else:
                 ok(f"Model imported as '{import_id}'")
