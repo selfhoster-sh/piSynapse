@@ -21,7 +21,6 @@ import secrets
 import shutil
 import subprocess
 import sys
-import tempfile
 import time
 import urllib.request
 from pathlib import Path
@@ -74,6 +73,7 @@ def _parse_args() -> None:
 
 class _Distro:
     """Detected Linux distribution info."""
+
     id: str = ""            # ubuntu, fedora, arch, alpine, ...
     pm: str = ""            # apt, dnf, pacman, zypper, apk, brew, unknown
     pm_install: list[str] = []  # command prefix for installing packages
@@ -465,7 +465,7 @@ def step_venv() -> None:
                 error("Install the venv package for your distro:")
                 error(f"  Debian/Ubuntu:  sudo apt install python{sys.version_info[0]}.{sys.version_info[1]}-venv")
                 error(f"  Fedora/RHEL:    sudo dnf install python{sys.version_info[0]}.{sys.version_info[1]}-devel")
-                error(f"  Arch:           sudo pacman -S python (includes venv)")
+                error("  Arch:           sudo pacman -S python (includes venv)")
                 error(f"  openSUSE:       sudo zypper install python{sys.version_info[0]}.{sys.version_info[1]}-venv")
                 sys.exit(1)
 
