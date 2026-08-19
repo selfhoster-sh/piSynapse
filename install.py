@@ -21,6 +21,9 @@ import secrets
 import shutil
 import subprocess
 import sys
+import tempfile
+import time
+import urllib.request
 from pathlib import Path
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
@@ -31,6 +34,169 @@ IS_WIN = sys.platform == "win32"
 
 # Shared state passed between steps so no question is asked twice.
 STATE: dict = {}
+
+# ── CLI flags ────────────────────────────────────────────────────────────────
+
+BATCH_MODE = False     # --yes : accept all defaults, no prompts
+SKIP_LLM = False       # --skip-llm : skip LLM backend setup
+SKIP_TTS = False       # --skip-tts : skip TTS voice download
+SKIP_SYSTEMD = False   # --skip-systemd : skip systemd service creation
+
+
+def _parse_args() -> None:
+    global BATCH_MODE, SKIP_LLM, SKIP_TTS, SKIP_SYSTEMD
+    args = sys.argv[1:]
+    if "--yes" in args or "-y" in args:
+        BATCH_MODE = True
+    if "--skip-llm" in args:
+        SKIP_LLM = True
+    if "--skip-tts" in args:
+        SKIP_TTS = True
+    if "--skip-systemd" in args:
+        SKIP_SYSTEMD = True
+    if "--help" in args or "-h" in args:
+        print("""
+  piSynapse Installer
+
+  Usage: python install.py [options]
+
+  Options:
+    -y, --yes         Non-interactive mode (accept all defaults)
+    --skip-llm        Skip LLM backend setup (model download, server start)
+    --skip-tts        Skip TTS voice download
+    --skip-systemd    Skip systemd service creation
+    -h, --help        Show this help
+""")
+        sys.exit(0)
+
+
+# ── Distro / package manager detection ───────────────────────────────────────
+
+class _Distro:
+    """Detected Linux distribution info."""
+    id: str = ""            # ubuntu, fedora, arch, alpine, ...
+    pm: str = ""            # apt, dnf, pacman, zypper, apk, brew, unknown
+    pm_install: list[str] = []  # command prefix for installing packages
+    pm_sudo: bool = True   # needs sudo?
+
+    @property
+    def is_debian(self) -> bool:
+        return self.pm == "apt"
+
+    @property
+    def is_redhat(self) -> bool:
+        return self.pm in ("dnf", "yum")
+
+    @property
+    def is_arch(self) -> bool:
+        return self.pm == "pacman"
+
+
+DISTRO = _Distro()
+
+
+def _detect_distro() -> None:
+    """Detect the Linux distribution and set DISTRO.pm (package manager)."""
+    if IS_WIN or sys.platform == "darwin":
+        DISTRO.pm = "brew" if sys.platform == "darwin" else "unknown"
+        return
+
+    # 1. Check /etc/os-release (standard on all modern distros)
+    os_release: dict[str, str] = {}
+    try:
+        for line in Path("/etc/os-release").read_text().splitlines():
+            if "=" in line:
+                k, v = line.split("=", 1)
+                os_release[k.strip()] = v.strip().strip('"')
+    except Exception:
+        pass
+    DISTRO.id = os_release.get("ID", "").lower()
+
+    # 2. Detect package manager by checking what's on PATH
+    if shutil.which("apt") or shutil.which("apt-get"):
+        DISTRO.pm = "apt"
+    elif shutil.which("dnf"):
+        DISTRO.pm = "dnf"
+    elif shutil.which("pacman"):
+        DISTRO.pm = "pacman"
+    elif shutil.which("zypper"):
+        DISTRO.pm = "zypper"
+    elif shutil.which("apk"):
+        DISTRO.pm = "apk"
+    elif shutil.which("brew"):
+        DISTRO.pm = "brew"
+    else:
+        DISTRO.pm = "unknown"
+
+
+def _pkg_install(*packages: str, extra_args: list[str] | None = None) -> bool:
+    """Install packages using the detected package manager. Returns True on success."""
+    args = extra_args or []
+    if DISTRO.pm == "apt":
+        cmd = ["sudo", "apt-get", "install", "-y"] + args + list(packages)
+    elif DISTRO.pm == "dnf":
+        cmd = ["sudo", "dnf", "install", "-y"] + args + list(packages)
+    elif DISTRO.pm == "yum":
+        cmd = ["sudo", "yum", "install", "-y"] + args + list(packages)
+    elif DISTRO.pm == "pacman":
+        cmd = ["sudo", "pacman", "-S", "--noconfirm"] + args + list(packages)
+    elif DISTRO.pm == "zypper":
+        cmd = ["sudo", "zypper", "--non-interactive", "install"] + args + list(packages)
+    elif DISTRO.pm == "apk":
+        cmd = ["sudo", "apk", "add"] + args + list(packages)
+    elif DISTRO.pm == "brew":
+        cmd = ["brew", "install"] + list(packages)
+    else:
+        warn(f"Unknown package manager — install manually: {' '.join(packages)}")
+        return False
+
+    r = subprocess.run(cmd)
+    return r.returncode == 0
+
+
+def _pkg_build_essential() -> str | None:
+    """Return the build-essential equivalent package name for this distro, or None."""
+    if DISTRO.pm == "apt":
+        return "build-essential"
+    elif DISTRO.pm in ("dnf", "yum"):
+        return "gcc"  # groupinstall "Development Tools" or just gcc
+    elif DISTRO.pm == "pacman":
+        return "base-devel"
+    elif DISTRO.pm == "zypper":
+        return "patterns-devel-base-devel_basis"
+    elif DISTRO.pm == "apk":
+        return "build-base"
+    return None
+
+
+def _pkg_python_venv() -> str | None:
+    """Return the python3-venv package name for this distro, or None if not needed."""
+    major, minor = sys.version_info[:2]
+    ver = f"{major}.{minor}"
+
+    if DISTRO.pm == "apt":
+        return f"python{ver}-venv"
+    elif DISTRO.pm in ("dnf", "yum"):
+        # On Fedora/RHEL, venv module is included in the main python3 package.
+        # But if ensurepip is missing, we need python3-pip or python3-virtualenv.
+        # Check if ensurepip module exists first.
+        try:
+            r = subprocess.run(
+                [sys.executable, "-c", "import ensurepip"],
+                capture_output=True, timeout=5,
+            )
+            if r.returncode == 0:
+                return None  # ensurepip works, no extra package needed
+        except Exception:
+            pass
+        return "python3-pip"  # provides ensurepip on Fedora/RHEL
+    elif DISTRO.pm == "pacman":
+        return None  # Arch python includes venv by default
+    elif DISTRO.pm == "zypper":
+        return f"python{ver}-venv"
+    elif DISTRO.pm == "apk":
+        return None  # Alpine python3 includes venv
+    return None
 
 
 # ── Terminal helpers ──────────────────────────────────────────────────────────
@@ -52,19 +218,25 @@ def ok(m: str) -> None:                 print(green(f"  {OK_SYM} {m}"))
 def warn(m: str) -> None:               print(yellow(f"  {WARN_SYM}  {m}"))
 def error(m: str) -> None:              print(red(f"  {ERR_SYM} {m}"))
 def header(m: str) -> None:             print(f"\n{blue(LINE * 56)}\n  {m}\n{blue(LINE * 56)}")
-
 def ask(prompt: str, default: str = "") -> str:
+    if BATCH_MODE:
+        return default
     suffix = f" [{default}]" if default else ""
     val = input(f"     {prompt}{suffix}: ").strip()
     return val or default
 
+
 def ask_secret(prompt: str) -> str:
+    if BATCH_MODE:
+        return ""
     try:
         return getpass.getpass(f"     {prompt}: ").strip()
     except Exception:
         return input(f"     {prompt} (visible): ").strip()
 
 def ask_yesno(prompt: str, default: bool = True) -> bool:
+    if BATCH_MODE:
+        return default
     hint = "Y/n" if default else "y/N"
     val = input(f"     {prompt} [{hint}]: ").strip().lower()
     if not val:
@@ -131,8 +303,11 @@ def step_python() -> None:
 
 def step_system_deps() -> None:
     header("2 / 7  System dependencies")
+    if DISTRO.pm != "unknown":
+        info(f"Detected: {DISTRO.id or DISTRO.pm} ({DISTRO.pm})")
     missing: list[str] = []
 
+    # ffmpeg
     if shutil.which("ffmpeg"):
         ok("ffmpeg found")
     else:
@@ -140,11 +315,14 @@ def step_system_deps() -> None:
         if IS_WIN:
             info("Download from: https://ffmpeg.org/download.html")
         elif sys.platform == "darwin":
-            info("Install with: brew install ffmpeg")
+            if ask_yesno("Install ffmpeg now? (brew install ffmpeg)"):
+                if _pkg_install("ffmpeg"):
+                    ok("ffmpeg installed")
+                else:
+                    missing.append("ffmpeg")
         else:
-            if ask_yesno("Install ffmpeg now? (sudo apt install ffmpeg)"):
-                r = subprocess.run(["sudo", "apt-get", "install", "-y", "ffmpeg"])
-                if r.returncode == 0:
+            if ask_yesno(f"Install ffmpeg now? ({DISTRO.pm} install ffmpeg)"):
+                if _pkg_install("ffmpeg"):
                     ok("ffmpeg installed")
                 else:
                     warn("ffmpeg install failed — install manually later")
@@ -152,10 +330,11 @@ def step_system_deps() -> None:
             else:
                 missing.append("ffmpeg")
 
+    # curl
     if not shutil.which("curl"):
         warn("curl not found (needed for model downloads and health checks)")
         if not IS_WIN:
-            subprocess.run(["sudo", "apt-get", "install", "-y", "curl"])
+            _pkg_install("curl")
             if shutil.which("curl"):
                 ok("curl installed")
             else:
@@ -163,21 +342,63 @@ def step_system_deps() -> None:
         else:
             missing.append("curl")
 
-    if not IS_WIN and not _build_tools_installed():
-        if ask_yesno("Install build-essential (recommended for pip packages)?"):
-            subprocess.run(["sudo", "apt-get", "install", "-y", "build-essential"])
+    # python3-venv (needed before venv creation)
+    if not IS_WIN and sys.platform != "darwin":
+        venv_pkg = _pkg_python_venv()
+        if venv_pkg:
+            # Quick check: can we actually create a venv?
+            if not _venv_works():
+                warn(f"python3-venv not functional — installing {venv_pkg}")
+                if _pkg_install(venv_pkg):
+                    ok(f"{venv_pkg} installed")
+                else:
+                    warn(f"Could not install {venv_pkg} — venv creation may fail")
+
+    # build tools
+    if not IS_WIN and sys.platform != "darwin":
+        if not _build_tools_installed():
+            be_pkg = _pkg_build_essential()
+            if be_pkg and ask_yesno(f"Install build tools ({be_pkg}, recommended for pip packages)?"):
+                _pkg_install(be_pkg)
 
     if not missing:
         ok("All system dependencies satisfied")
 
 
-def _build_tools_installed() -> bool:
-    """Return True when a C toolchain is already present.
+def _venv_works() -> bool:
+    """Check if venv creation with ensurepip actually works."""
+    test_dir = Path(".venv_test")
+    try:
+        r = subprocess.run(
+            [sys.executable, "-m", "venv", "--without-pip", str(test_dir)],
+            capture_output=True, timeout=10,
+        )
+        # Even --without-pip should work; if it fails, venv is broken
+        if r.returncode != 0:
+            return False
+        # Now test ensurepip
+        pip_path = test_dir / "bin" / "pip"
+        if not pip_path.exists():
+            # Try bootstrapping
+            r2 = subprocess.run(
+                [str(test_dir / "bin" / "python3"), "-m", "ensurepip", "--upgrade"],
+                capture_output=True, timeout=30,
+            )
+            return r2.returncode == 0
+        return True
+    except Exception:
+        return False
+    finally:
+        shutil.rmtree(test_dir, ignore_errors=True)
 
-    Debian/Ubuntu: query the build-essential meta-package via dpkg. On systems
-    without dpkg (non-apt distros) fall back to checking for compilers on PATH;
-    if neither can be confirmed, report False so the installer asks again.
-    """
+
+def _build_tools_installed() -> bool:
+    """Return True when a C toolchain is already present."""
+    # Check for compilers on PATH (universal)
+    if shutil.which("gcc") and shutil.which("make"):
+        return True
+
+    # Debian/Ubuntu: query build-essential via dpkg
     if shutil.which("dpkg"):
         try:
             r = subprocess.run(
@@ -188,7 +409,32 @@ def _build_tools_installed() -> bool:
                 return True
         except Exception:
             pass
-    return shutil.which("gcc") is not None and shutil.which("make") is not None
+
+    # Fedora/RHEL: check for gcc via rpm
+    if shutil.which("rpm"):
+        try:
+            r = subprocess.run(
+                ["rpm", "-q", "gcc"],
+                capture_output=True, timeout=15,
+            )
+            if r.returncode == 0:
+                return True
+        except Exception:
+            pass
+
+    # Arch: base-devel group
+    if shutil.which("pacman"):
+        try:
+            r = subprocess.run(
+                ["pacman", "-Qi", "base-devel"],
+                capture_output=True, timeout=15,
+            )
+            if r.returncode == 0:
+                return True
+        except Exception:
+            pass
+
+    return False
 
 
 # ── Step 3: Virtual env + Python packages ────────────────────────────────────
@@ -196,16 +442,77 @@ def _build_tools_installed() -> bool:
 def step_venv() -> None:
     header("3 / 7  Virtual environment & dependencies")
 
+    pip = venv_bin("pip")
+
+    # Check if existing venv is functional
+    if os.path.exists(VENV_DIR):
+        if os.path.isfile(pip):
+            ok(f"{VENV_DIR}/ already exists")
+        else:
+            # venv exists but pip is missing — broken venv (e.g. ensurepip was unavailable)
+            warn(f"{VENV_DIR}/ exists but is broken (no pip) — recreating")
+            shutil.rmtree(VENV_DIR, ignore_errors=True)
+
     if not os.path.exists(VENV_DIR):
         info(f"Creating {VENV_DIR}/...")
-        if subprocess.run([sys.executable, "-m", "venv", VENV_DIR]).returncode != 0:
-            error("Failed to create virtual environment.")
-            sys.exit(1)
-        ok(f"{VENV_DIR}/ created")
-    else:
-        ok(f"{VENV_DIR}/ already exists")
+        r = subprocess.run([sys.executable, "-m", "venv", VENV_DIR])
+        if r.returncode != 0:
+            # ensurepip might have failed; try without-pip and bootstrap
+            warn("Standard venv creation failed — trying without pip")
+            r2 = subprocess.run([sys.executable, "-m", "venv", "--without-pip", VENV_DIR])
+            if r2.returncode != 0:
+                error("Failed to create virtual environment.")
+                error("Install the venv package for your distro:")
+                error(f"  Debian/Ubuntu:  sudo apt install python{sys.version_info[0]}.{sys.version_info[1]}-venv")
+                error(f"  Fedora/RHEL:    sudo dnf install python{sys.version_info[0]}.{sys.version_info[1]}-devel")
+                error(f"  Arch:           sudo pacman -S python (includes venv)")
+                error(f"  openSUSE:       sudo zypper install python{sys.version_info[0]}.{sys.version_info[1]}-venv")
+                sys.exit(1)
 
-    pip = venv_bin("pip")
+            # Bootstrap pip manually via get-pip.py
+            info("Bootstrapping pip via get-pip.py...")
+            bootstrap_ok = False
+            for cmd in [
+                [sys.executable, "-m", "ensurepip", "--upgrade"],
+            ]:
+                r3 = subprocess.run(cmd, cwd=VENV_DIR, capture_output=True, text=True)
+                if r3.returncode == 0:
+                    bootstrap_ok = True
+                    break
+
+            if not bootstrap_ok:
+                # Last resort: download get-pip.py
+                info("Downloading get-pip.py...")
+                try:
+                    get_pip = os.path.join(VENV_DIR, "get-pip.py")
+                    urllib.request.urlretrieve("https://bootstrap.pypa.io/get-pip.py", get_pip)
+                    venv_python = venv_bin("python3")
+                    r4 = subprocess.run([venv_python, get_pip], capture_output=True, text=True)
+                    os.remove(get_pip)
+                    bootstrap_ok = r4.returncode == 0
+                except Exception as e:
+                    warn(f"get-pip.py download failed: {e}")
+
+            if not bootstrap_ok:
+                error("Could not install pip into the virtual environment.")
+                sys.exit(1)
+
+            ok(f"{VENV_DIR}/ created (pip bootstrapped)")
+        else:
+            ok(f"{VENV_DIR}/ created")
+
+    # Verify pip exists now
+    if not os.path.isfile(pip):
+        # Try to find pip3 as fallback
+        pip3 = venv_bin("pip3")
+        if os.path.isfile(pip3):
+            pip = pip3
+        else:
+            error(f"pip not found at {pip}")
+            error("The virtual environment may be broken. Delete it and re-run:")
+            error(f"  rm -rf {VENV_DIR}")
+            sys.exit(1)
+
     info("Upgrading pip...")
     subprocess.run([pip, "install", "--quiet", "--upgrade", "pip"])
 
@@ -244,10 +551,24 @@ def _ensure_uv() -> str | None:
     if exe:
         return exe
     info("uv not found — installing...")
-    r = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "--user", "--quiet", "uv"],
-        capture_output=True, text=True,
-    )
+    # Try pip install first (into venv)
+    pip = venv_bin("pip")
+    if os.path.isfile(pip):
+        r = subprocess.run(
+            [pip, "install", "--quiet", "uv"],
+            capture_output=True, text=True,
+        )
+    elif shutil.which("pipx"):
+        r = subprocess.run(
+            ["pipx", "install", "uv"],
+            capture_output=True, text=True,
+        )
+    else:
+        # Fallback: try pip install --user
+        r = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--user", "--quiet", "uv"],
+            capture_output=True, text=True,
+        )
     exe = shutil.which("uv")
     if r.returncode == 0 and exe:
         ok("uv installed")
@@ -323,9 +644,9 @@ def _install_litertlm(uv_bin: str | None) -> str | None:
     return None
 
 
-def _litert_model_imported(import_id: str) -> bool:
+def _litert_model_imported(import_id: str, litert_bin: str = "litert-lm") -> bool:
     """Check whether a model is already in litert-lm's local registry."""
-    r = subprocess.run(["litert-lm", "list"], capture_output=True, text=True, timeout=15)
+    r = subprocess.run([litert_bin, "list"], capture_output=True, text=True, timeout=15)
     if r.returncode != 0:
         return False
     return any(line.strip().startswith(import_id) for line in r.stdout.splitlines())
@@ -369,8 +690,6 @@ def _litert_python() -> str:
     uv_python = os.path.expanduser("~/.local/share/uv/tools/litert-lm/bin/python3")
     if os.path.isfile(uv_python):
         return uv_python
-    if os.path.isfile(venv_bin("python3")):
-        return venv_bin("python3")
     return venv_bin("python3")
 
 
@@ -457,6 +776,7 @@ def _start_litert_server(litert_bin: str) -> bool:
         )
     except Exception as e:
         error(f"Could not start piServe: {e}")
+        logf.close()
         return False
     ok(f"Server starting — logs: {log_path}")
     return _wait_litert_ready()
@@ -464,7 +784,6 @@ def _start_litert_server(litert_bin: str) -> bool:
 
 def _wait_litert_ready(timeout_s: int = 120) -> bool:
     """Poll the LiteRT health endpoint until it responds or times out."""
-    import time
     info(f"Waiting for LiteRT server on :{LITERT_PORT}...")
     for _ in range(timeout_s // 2):
         if _litert_is_running():
@@ -560,7 +879,7 @@ def step_llm_backend() -> None:
 
         # Import the model into the local registry if not present.
         import_id = model_id.replace(":", "-")          # app requests gemma4-e2b
-        if _litert_model_imported(import_id):
+        if _litert_model_imported(import_id, litert_bin):
             ok(f"Model '{import_id}' already imported")
         else:
             hf_repo, hf_file, size_hint = _LITERT_MODEL_REGISTRY[model_id]
@@ -618,7 +937,6 @@ def step_llm_backend() -> None:
                 subprocess.Popen(["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
             else:
                 info("Skipping — start it later with: ollama serve")
-        import time
         for _ in range(15):
             if _ollama_is_running():
                 ok("Ollama server is ready")
@@ -1087,19 +1405,33 @@ def print_summary() -> None:
 # ── Entry ─────────────────────────────────────────────────────────────────────
 
 def main() -> None:
+    _parse_args()
     print(blue("\n  piSynapse Installer\n"))
+
+    if BATCH_MODE:
+        info("Non-interactive mode (--yes)")
 
     if not os.path.isfile("main.py"):
         error("main.py not found — run this script from the piSynapse project directory.")
         sys.exit(1)
 
+    _detect_distro()
     step_python()
     step_system_deps()
     step_venv()
-    step_llm_backend()
-    step_tts_voices()
+    if not SKIP_LLM:
+        step_llm_backend()
+    else:
+        header("4 / 7  LLM backend — skipped")
+    if not SKIP_TTS:
+        step_tts_voices()
+    else:
+        header("5 / 7  TTS voices — skipped")
     step_env()
-    step_systemd()
+    if not SKIP_SYSTEMD:
+        step_systemd()
+    else:
+        header("7 / 7  Systemd — skipped")
     print_summary()
 
 
