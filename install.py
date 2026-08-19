@@ -803,7 +803,7 @@ def _create_piserve_service(server_py: Path) -> bool:
         return False
 
     user = os.environ.get("SUDO_USER") or os.environ.get("USER") or "pi"
-    python = _litert_python()
+    python = os.path.abspath(_litert_python())
     user_home = os.path.expanduser(f"~{user}")
 
     unit = f"""[Unit]
