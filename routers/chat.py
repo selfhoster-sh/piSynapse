@@ -33,6 +33,20 @@ from retrieval import merge_history, retrieve_relevant_history
 
 logger = logging.getLogger("piSynapse")
 
+
+def _clean_assistant_reply(text: str) -> str:
+    """Sanitize an assistant reply before it reaches history.
+
+    Strips leaked tool-call fragments (`call:name{{...}}`, mangled channel
+    tags) so the model can never imitate its own leaked syntax on later
+    turns — that self-poisoning caused a tool-call loop (2026-08-22).
+    Returns "" when nothing but leak fragments remain, signalling callers
+    to skip persisting entirely.
+    """
+    from llm.utils import strip_tool_leaks
+
+    return strip_tool_leaks(strip_prefix(text or ""))
+
 router = APIRouter(prefix="/chat", tags=["chat", "sessions", "memories"])
 
 # Per-session abort flags: session_id -> asyncio.Event (set = abort requested).
@@ -179,11 +193,15 @@ async def chat_endpoint(req: ChatRequest, background_tasks: BackgroundTasks):
                 retrieved_count=len(retrieved_msgs), retrieval_ms=round(ret_stats["latency_ms"]),
             )
 
-        await save_message(req.session_id, "assistant", result["reply"], reasoning=result.get("thinking"))
+        reply_text = _clean_assistant_reply(result["reply"])
+        if reply_text:
+            await save_message(req.session_id, "assistant", reply_text, reasoning=result.get("thinking"))
+        else:
+            logger.warning("Non-stream assistant reply empty after sanitization — not saved (session %s)", req.session_id)
         background_tasks.add_task(_update_summary, req.session_id)
 
         return ChatResponse(
-            reply=result["reply"], session_id=req.session_id,
+            reply=reply_text or result["reply"], session_id=req.session_id,
             history_length=len(history), memories_saved=result["memories_saved"],
             thinking=result.get("thinking"),
             retrieved_count=len(retrieved_msgs), retrieval_ms=round(ret_stats["latency_ms"]),
@@ -251,9 +269,12 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
                     reply_parts.append(event["token"])
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                 elif event.get("done"):
-                    full = strip_prefix("".join(reply_parts))
-                    await save_message(req.session_id, "assistant", full, reasoning=event.get("reasoning") or None)
-                    reply_saved = True
+                    full = _clean_assistant_reply("".join(reply_parts))
+                    reply_saved = True  # also when skipped — never let finally re-save raw parts
+                    if full:
+                        await save_message(req.session_id, "assistant", full, reasoning=event.get("reasoning") or None)
+                    else:
+                        logger.info("Streamed assistant reply empty after sanitization — not saved (session %s)", req.session_id)
                     yield f"data: {json.dumps({'done': True, 'session_id': req.session_id, 'memories_saved': event.get('memories_saved', 0), 'retrieved_count': len(retrieved_msgs), 'retrieval_ms': round(ret_stats['latency_ms'])})}\n\n"
                 elif "reasoning" in event:
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
@@ -270,9 +291,13 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
             _abort_events.pop(req.session_id, None)
             if not reply_saved and reply_parts:
                 try:
-                    await save_message(req.session_id, "assistant", strip_prefix("".join(reply_parts)))
+                    partial = _clean_assistant_reply("".join(reply_parts))
+                    if partial:
+                        await save_message(req.session_id, "assistant", partial)
+                        logger.info("Saved partial assistant reply after stream interruption")
+                    else:
+                        logger.info("Partial assistant reply empty after sanitization — not saved")
                     reply_saved = True
-                    logger.info("Saved partial assistant reply after stream interruption")
                 except Exception as e:
                     logger.error("Failed to save partial reply: %s\n%s", e, traceback.format_exc())
 
