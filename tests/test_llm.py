@@ -219,6 +219,38 @@ class _FakeTextStreamClient:
         return _FakeTextStreamResp(self._text)
 
 
+class _LeakThenRetryClient(_FakeTextStreamClient):
+    """Streams leak-text; captures think-retry POSTs and answers them with a
+    real tool_calls object in the backend's non-stream format."""
+
+    def __init__(self, text):
+        super().__init__(text)
+        self.posts = []
+
+    async def post(self, url, json=None):
+        self.posts.append((url, json))
+
+        class _R:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {
+                    "choices": [{
+                        "message": {
+                            "content": "",
+                            "tool_calls": [{
+                                "id": "c1",
+                                "type": "function",
+                                "function": {"name": "get_datetime", "arguments": "{}"},
+                            }],
+                        },
+                    }],
+                }
+
+        return _R()
+
+
 def _collect_stream_events(messages, **kwargs):
     llm_stream = __import__("llm.stream", fromlist=["chat_with_ollama_stream"])
     return asyncio.run(
@@ -392,6 +424,81 @@ def test_chat_plain_text_cannot_fire_tool(monkeypatch, caplog):
     assert any("tool leak" in r.message for r in caplog.records)
 
 
+def test_chat_think_retry_preserves_reasoning_effort(monkeypatch):
+    """Unified retry design: the non-stream retry fires on leak-text and must
+    forward reasoning_effort so litert keeps its thinking budget."""
+    import llm.chat as llm_chat
+
+    seen = {}
+
+    async def fake_llm_request(msgs, *, use_think=False, use_tools=True, tool_list=None, reasoning_effort=None):
+        seen["use_think"] = use_think
+        seen["effort"] = reasoning_effort
+        content = '<|tool_call|>send_email {"to": "a@b.c"}'
+        return ({"choices": [{"message": {"content": content}}]}, {"content": content}, None)
+
+    monkeypatch.setattr(config, "LLM_BACKEND", "litert")
+    monkeypatch.setattr(llm_chat, "_llm_request", fake_llm_request)
+    asyncio.run(
+        llm_chat.chat_with_ollama(
+            [{"role": "user", "content": "email gönder"}],
+            intent="action", reasoning_effort="high",
+        )
+    )
+    assert seen["use_think"] is True
+    assert seen["effort"] == "high"
+
+
+def test_chat_no_retry_on_plain_answer_without_leak(monkeypatch):
+    """A legitimate plain first answer (no leak) must not pay for an extra
+    think-mode LLM call."""
+    import llm.chat as llm_chat
+
+    calls = []
+
+    async def fake_llm_request(msgs, *, use_think=False, **kwargs):
+        calls.append(use_think)
+        return {"done_reason": "stop"}, {"content": "Merhaba!", "tool_calls": []}, None
+
+    monkeypatch.setattr(config, "LLM_BACKEND", "litert")
+    monkeypatch.setattr(llm_chat, "_llm_request", fake_llm_request)
+    result = asyncio.run(llm_chat.chat_with_ollama([{"role": "user", "content": "selam"}], intent="action"))
+    assert calls == [False]
+    assert result["reply"] == "Merhaba!"
+
+
+def test_stream_litert_leak_retry_recovers_tool_calls(monkeypatch):
+    """Parity fix: LiteRT streams get the same think-mode retry as Ollama —
+    the retry POST goes to the litert URL with think/effort preserved and the
+    recovered tool call is actually executed."""
+    import llm.stream as llm_stream
+
+    fake = _LeakThenRetryClient("<|tool_call|>get_current_time")
+    executed = []
+
+    async def fake_run_tool(name, params, context=None):
+        executed.append(name)
+        return "OK Current time"
+
+    async def noop_verification(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(config, "LLM_BACKEND", "litert")
+    monkeypatch.setattr(llm_stream, "_get_client", lambda: fake)
+    monkeypatch.setattr(llm_stream, "run_tool", fake_run_tool)
+    monkeypatch.setattr(llm_stream, "run_verification", noop_verification)
+
+    events = _collect_stream_events([{"role": "user", "content": "saat kaç"}], intent="action")
+
+    assert fake.posts, "think-retry POST never fired for litert"
+    retry_url, retry_payload = fake.posts[0]
+    assert retry_url.endswith("/v1/chat/completions")
+    assert "think" not in retry_payload  # litert format: effort, not think flag
+    assert retry_payload["reasoning_effort"] == "medium"
+    assert executed == ["get_datetime"]
+    assert any(ev.get("done") for ev in events)
+
+
 def test_build_payload_reads_live_sampling_config(monkeypatch):
     monkeypatch.setattr(config, "LLM_TEMPERATURE", 1.2)
     monkeypatch.setattr(config, "LLM_TOP_P", 0.9)
@@ -409,6 +516,22 @@ def test_build_payload_reads_live_max_output(monkeypatch):
     payload = _build_payload([{"role": "user", "content": "hi"}], backend="litert", use_tools=False)
     assert payload["max_tokens"] == 4096
     assert payload["max_completion_tokens"] == 4096
+
+
+def test_ollama_payload_includes_num_predict(monkeypatch):
+    """Parity fix: MAX_OUTPUT_TOKENS must reach Ollama as options.num_predict,
+    not be silently ignored on the main chat path."""
+    monkeypatch.setattr(config, "LLM_MAX_OUTPUT_TOKENS", 777)
+    payload = _build_payload([{"role": "user", "content": "hi"}], backend="ollama", use_tools=False)
+    assert payload["options"]["num_predict"] == 777
+
+
+def test_litert_payload_includes_max_completion_tokens(monkeypatch):
+    """Parity counterpart: the same setting reaches LiteRT via max_completion_tokens."""
+    monkeypatch.setattr(config, "LLM_MAX_OUTPUT_TOKENS", 512)
+    payload = _build_payload([{"role": "user", "content": "hi"}], backend="litert", use_tools=False)
+    assert payload["max_tokens"] == 512
+    assert payload["max_completion_tokens"] == 512
 
 
 def test_contextual_email_followup_positive():
@@ -539,3 +662,34 @@ def test_stream_defaults_tool_group_to_none(monkeypatch):
     _collect_stream_events([{"role": "user", "content": "hi"}], intent="action")
 
     assert captured.get("tool_group") is None
+
+
+def test_stream_ollama_error_line_surfaces_as_error_event(monkeypatch):
+    """Parity fix: Ollama mid-stream {"error": ...} NDJSON lines must surface
+    as an error event instead of being silently ignored."""
+    import llm.stream as llm_stream
+
+    class _ErrResp:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        def raise_for_status(self):
+            return None
+
+        async def aiter_lines(self):
+            yield '{"message":{"content":"par"},"done":false}'
+            yield '{"error":"model runner has unexpectedly stopped"}'
+
+    class _Client:
+        def stream(self, method, url, json=None):
+            return _ErrResp()
+
+    monkeypatch.setattr(config, "LLM_BACKEND", "ollama")
+    monkeypatch.setattr(llm_stream, "_get_client", lambda: _Client())
+
+    events = _collect_stream_events([{"role": "user", "content": "selam"}], intent="action")
+
+    assert any("error" in ev for ev in events)

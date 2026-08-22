@@ -39,13 +39,13 @@ def _build_payload(
     reasoning_effort: str | None = None,
 ) -> dict:
     # Read live values so UI setting changes apply without a restart.
-    from config import get
+    from config import DEFAULT_LLM_MAX_OUTPUT_TOKENS, DEFAULT_LLM_NUM_CTX, get
     backend = (backend or get("LLM_BACKEND", "litert")).lower()
     model_name = get("LLM_MODEL", "gemma4-e2b")
     temperature = get("LLM_TEMPERATURE", 0.6)
     top_p = get("LLM_TOP_P", 0.85)
     top_k = get("LLM_TOP_K", 40)
-    max_output = int(get("LLM_MAX_OUTPUT_TOKENS", 2048) or 2048)
+    max_output = int(get("LLM_MAX_OUTPUT_TOKENS", DEFAULT_LLM_MAX_OUTPUT_TOKENS) or DEFAULT_LLM_MAX_OUTPUT_TOKENS)
 
     if backend == "litert":
         payload = {
@@ -75,8 +75,11 @@ def _build_payload(
             "temperature": temperature,
             "top_p": top_p,
             "top_k": top_k,
-            "num_ctx": get("LLM_NUM_CTX", 6144),
+            "num_ctx": get("LLM_NUM_CTX", DEFAULT_LLM_NUM_CTX),
             "num_batch": get("LLM_NUM_BATCH", 256),
+            # Cap generation length so MAX_OUTPUT_TOKENS behaves the same as
+            # litert's max_completion_tokens (done_reason="length" on cutoff).
+            "num_predict": max_output,
         },
         "keep_alive": get("LLM_KEEP_ALIVE", "4h"),
     }

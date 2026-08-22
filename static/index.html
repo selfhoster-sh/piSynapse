@@ -15,6 +15,9 @@
 @font-face{font-family:'DM Sans';font-style:normal;font-weight:400 700;font-display:swap;src:url('/static/fonts/dm-sans-latin.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
 @font-face{font-family:'DM Sans';font-style:normal;font-weight:400 700;font-display:swap;src:url('/static/fonts/dm-sans-latin-ext.woff2') format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+/* Focus handling: suppress sticky post-click highlight residue, keep keyboard focus visible */
+button:focus{outline:none}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 :root{
   /* WCAG AA: text 4.5:1, text2 5.1:1, text3 4.76:1 on surface; text4 3.16:1 (decorative) */
@@ -39,6 +42,26 @@
 .theme-red{
   --accent:#f05555; --accent-d:rgba(240,85,85,.12); --accent-h:#e03838;
 }
+/* Monochrome: near-white accent on deeper-than-default dark surfaces.
+   Every accent-driven gradient/glow (incl. the glass aurora via color-mix)
+   turns into a faint white wash automatically. Background sits between
+   :root defaults and the amoled switch's pure black. */
+.theme-black{
+  --accent:#f2f2f5; --accent-d:rgba(242,242,245,.13); --accent-h:#d6d6dd;
+  --bg:#060609; --surface:#0c0c11; --surface2:#14141b; --surface3:#1e1e27;
+  --border:#15151e; --user-bg:#101017;
+}
+/* Light text sits on solid accent fills; flip to dark ink ONLY where the
+   fill is actually solid. In glass mode the send button is a translucent
+   dark-tinted surface -> keep its default white icon there. */
+.theme-black .settings-save{color:#141419}
+body.theme-black:not(.glass-mode) #send-btn{color:#141419;
+  box-shadow:0 3px 14px rgba(242,242,245,.22)}
+/* Pure-black (OLED) background variant — pairs with any accent theme */
+body.amoled{
+  --bg:#000000; --surface:#0a0a0e; --surface2:#131319; --surface3:#1d1d26;
+  --border:#16161f; --user-bg:#111118;
+}
 
 html,body{height:100%;height:100svh;overflow:hidden;padding:0;margin:0}
 body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
@@ -48,8 +71,8 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 
 ::-webkit-scrollbar{width:5px;height:5px}
 ::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:var(--surface3);border-radius:10px}
-::-webkit-scrollbar-thumb:hover{background:var(--text4)}
+::-webkit-scrollbar-thumb{background:var(--surface3);border-radius:10px}@media (hover:hover){
+::-webkit-scrollbar-thumb:hover{background:var(--text4)}}
 
 /* ── Sidebar ──────────────────────────────────────────────────────────────── */
 #sidebar{width:264px;min-width:264px;height:100%;background:var(--surface);
@@ -62,8 +85,8 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 .logo-controls{display:flex;align-items:center;gap:4px}
 .icon-btn{background:none;border:none;color:var(--text2);cursor:pointer;
   padding:6px;border-radius:8px;display:flex;align-items:center;justify-content:center;
-  transition:all .2s;font-family:inherit}
-.icon-btn:hover{color:var(--text);background:var(--surface2)}
+  transition:all .2s;font-family:inherit}@media (hover:hover){
+.icon-btn:hover:not(:focus){color:var(--text);background:var(--surface2)}}
  .status-dot{width:8px;height:8px;border-radius:50%;background:var(--success);
    transition:background .3s;flex-shrink:0;margin-left:4px}
  .status-dot.ok{background:var(--success)}
@@ -75,8 +98,8 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 .new-btn{width:100%;padding:10px 14px;background:var(--text);border:none;
   border-radius:var(--r-sm);color:var(--bg);font-size:13.5px;font-weight:600;
   cursor:pointer;text-align:left;font-family:inherit;
-  transition:transform .15s,opacity .15s;display:flex;align-items:center;gap:8px}
-.new-btn:hover{opacity:.9}
+  transition:transform .15s,opacity .15s;display:flex;align-items:center;gap:8px}@media (hover:hover){
+.new-btn:hover:not(:focus){opacity:.9}}
 .new-btn:active{transform:scale(.98)}
 
 #sidebar-scroll-container{flex:1;overflow-y:auto;display:flex;flex-direction:column;padding-bottom:10px}
@@ -85,8 +108,8 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
   display:flex;align-items:center;justify-content:space-between;gap:6px}
 .sb-chats-label{user-select:none}
 .sb-label-controls{display:flex;align-items:center;gap:2px}
-.sb-label .icon-btn{padding:4px;border-radius:7px;width:26px;height:26px;color:var(--text3)}
-.sb-label .icon-btn:hover{color:var(--text);background:var(--surface2)}
+.sb-label .icon-btn{padding:4px;border-radius:7px;width:26px;height:26px;color:var(--text3)}@media (hover:hover){
+.sb-label .icon-btn:hover{color:var(--text);background:var(--surface2)}}
 #search-toggle.on{color:var(--accent);background:var(--surface2)}
 .sb-mem-head{display:none}
 .sb-mem-back{opacity:.85}
@@ -95,8 +118,8 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 #session-list.hidden{display:none}
 
 .sess-item{display:flex;align-items:center;gap:8px;padding:9px 10px;margin-bottom:2px;
-  border-radius:var(--r-sm);cursor:pointer;transition:all .2s;border:1px solid transparent}
-.sess-item:hover{background:var(--surface2)}
+  border-radius:var(--r-sm);cursor:pointer;transition:all .2s;border:1px solid transparent}@media (hover:hover){
+.sess-item:hover:not(:focus){background:var(--surface2)}}
 .sess-item.active{background:var(--accent-d);border-color:rgba(124,108,240,.25);
   box-shadow:inset 3px 0 0 var(--accent)}
 .sess-item.active .sess-name{color:var(--accent);font-weight:600}
@@ -106,8 +129,8 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 .sess-time{font-size:11px;color:var(--text3);flex-shrink:0}
 .sess-del{display:none;background:none;border:none;color:var(--text3);
   cursor:pointer;padding:4px;border-radius:4px;flex-shrink:0;line-height:1}
-.sess-item:hover .sess-del{display:flex}
-.sess-del:hover{color:var(--danger);background:rgba(224,85,85,.1)}
+.sess-item:hover .sess-del{display:flex}@media (hover:hover){
+.sess-del:hover:not(:focus){color:var(--danger);background:rgba(224,85,85,.1)}}
 
 #sidebar-mem-section{display:none;animation:fadeIn .2s ease}
 #sidebar-mem-list{display:none;flex-direction:column;gap:6px;padding:4px 8px;
@@ -118,11 +141,11 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
   display:flex;flex-direction:column;gap:6px}
 .mem-btn,.settings-btn{width:100%;display:flex;align-items:center;gap:10px;padding:10px 12px;
   background:none;border:none;color:var(--text2);font-size:13.5px;cursor:pointer;
-  border-radius:var(--r-sm);transition:all .2s;font-family:inherit;font-weight:500}
-.mem-btn:hover,.settings-btn:hover{background:var(--surface2);color:var(--text)}
+  border-radius:var(--r-sm);transition:all .2s;font-family:inherit;font-weight:500}@media (hover:hover){
+.mem-btn:hover,.settings-btn:hover:not(:focus){background:var(--surface2);color:var(--text)}}
 .mem-btn.active{background:var(--surface2);color:var(--accent)}
-.settings-btn{color:var(--text3)}
-.settings-btn:hover{color:var(--text);background:var(--surface2)}
+.settings-btn{color:var(--text3)}@media (hover:hover){
+.settings-btn:hover:not(:focus){color:var(--text);background:var(--surface2)}}
 
 #ticker,#top-ticker{transition:opacity .4s ease}
 #ticker{height:36px;background:var(--surface2);border:1px solid var(--border);
@@ -146,9 +169,11 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 .logo-icon{width:32px;height:32px;background:linear-gradient(135deg,var(--accent),var(--accent-h));
   border-radius:10px;display:flex;align-items:center;justify-content:center;
   color:#000;flex-shrink:0;box-shadow:0 2px 10px var(--accent-d);
-  transition:transform .4s cubic-bezier(.34,1.56,.64,1),box-shadow .25s,filter .25s}
+  transition:transform .4s cubic-bezier(.34,1.56,.64,1),box-shadow .25s,filter .25s}@media (hover:hover){
 #logo-btn:hover .logo-icon{transform:scale(1.15) rotate(10deg);
-  box-shadow:0 0 18px var(--accent);filter:brightness(1.12)}
+  box-shadow:0 0 18px var(--accent);filter:brightness(1.12)}}
+@media (hover:none){#logo-btn:active .logo-icon{transform:scale(1.15) rotate(10deg);
+  box-shadow:0 0 18px var(--accent);filter:brightness(1.12)}}
 #logo-btn.btn-press .logo-icon{transform:scale(.88);filter:brightness(.85);transition-duration:.06s}
 
 #sess-title{flex:1;font-size:14px;font-weight:600;color:var(--text2);
@@ -159,8 +184,8 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
   border-radius:var(--r-sm);display:flex;align-items:center;width:220px;overflow:hidden}
 .top-new-btn{background:var(--text);border:none;border-radius:var(--r-sm);color:var(--bg);
   font-size:12.5px;font-weight:600;padding:6px 12px;cursor:pointer;
-  display:flex;align-items:center;gap:4px;font-family:inherit;transition:opacity .15s}
-.top-new-btn:hover{opacity:.9}
+  display:flex;align-items:center;gap:4px;font-family:inherit;transition:opacity .15s}@media (hover:hover){
+.top-new-btn:hover:not(:focus){opacity:.9}}
 
 /* ── Messages ──────────────────────────────────────────────────────────────── */
 #messages{flex:1;overflow-y:auto;padding:80px 20px 160px;display:flex;
@@ -173,6 +198,10 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 .msg-meta .who{font-size:13px;font-weight:600;color:var(--text)}
 .msg-group.assistant .msg-meta .who{color:var(--accent)}
 .msg-meta .ts{font-size:11px;color:var(--text4)}
+/* Minimal chat: hide sender name + timestamp above every message */
+body.minimal-chat .msg-meta{display:none}
+/* Black theme taste: user's own sender label a bit fainter */
+body.theme-black .msg-group.user .msg-meta .who{color:var(--text3)}
 
 .bubble{max-width:100%;padding:14px 18px;border-radius:var(--r-chat);font-size:14.5px;
   line-height:1.7;word-break:break-word;box-shadow:var(--shadow-sm)}
@@ -213,8 +242,8 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
   text-transform:uppercase;font-weight:600}
 .code-header .copy-btn{background:none;border:none;color:var(--text3);font-size:11px;
   cursor:pointer;font-family:inherit;transition:color .2s;display:flex;
-  align-items:center;gap:4px}
-.code-header .copy-btn:hover{color:var(--text)}
+  align-items:center;gap:4px}@media (hover:hover){
+.code-header .copy-btn:hover:not(:focus){color:var(--text)}}
 .bubble pre code{display:block;padding:14px;overflow-x:auto;background:none;
   color:var(--text2);font-size:13.5px;border-radius:0}
 
@@ -222,8 +251,8 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
   letter-spacing:-.3px}
 .bubble h1{font-size:20px}.bubble h2{font-size:18px}.bubble h3{font-size:16px}
 .bubble a{color:var(--accent);text-decoration:none;border-bottom:1px solid transparent;
-  transition:border-color .2s}
-.bubble a:hover{border-color:var(--accent)}
+  transition:border-color .2s}@media (hover:hover){
+.bubble a:hover:not(:focus){border-color:var(--accent)}}
 .bubble strong{font-weight:700;color:var(--text)}
 .bubble blockquote{border-left:3px solid var(--accent);padding-left:14px;
   color:var(--text2);margin:10px 0;font-style:italic}
@@ -239,7 +268,6 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
   animation:bounce .8s infinite alternate}
 .typing span:nth-child(2){animation-delay:.2s}
 .typing span:nth-child(3){animation-delay:.4s}
-.typing-label{font-size:12px;color:var(--text3);margin-top:-4px;padding-left:2px}
 @keyframes bounce{0%{transform:translateY(0);opacity:.4}100%{transform:translateY(-6px);opacity:1}}
 
 .welcome{flex:1;display:flex;flex-direction:column;align-items:center;
@@ -251,8 +279,8 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 .w-sub{font-size:14.5px;color:var(--text2);line-height:1.6;max-width:300px}
 .w-start{padding:10px 24px;background:var(--text);border:none;border-radius:24px;
   color:var(--bg);font-size:14px;font-weight:600;cursor:pointer;margin-top:8px;
-  font-family:inherit;transition:all .2s}
-.w-start:hover{transform:translateY(-2px);box-shadow:0 4px 15px rgba(255,255,255,.1)}
+  font-family:inherit;transition:all .2s}@media (hover:hover){
+.w-start:hover:not(:focus){transform:translateY(-2px);box-shadow:0 4px 15px rgba(255,255,255,.1)}}
 
 /* ── Input Area ────────────────────────────────────────────────────────────── */
 .hidden{display:none!important}
@@ -277,17 +305,17 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 
 .inline-think-btn{background:none;border:none;color:var(--text2);cursor:pointer;
   padding:8px;border-radius:50%;display:flex;align-items:center;justify-content:center;
-  transition:all .2s;flex-shrink:0;position:relative;width:40px;height:40px}
-.inline-think-btn:hover{color:var(--text);background:var(--surface2)}
+  transition:all .2s;flex-shrink:0;position:relative;width:40px;height:40px}@media (hover:hover){
+.inline-think-btn:hover:not(:focus){color:var(--text);background:var(--surface2)}}
 .inline-think-btn.active{color:var(--accent);background:var(--accent-d)}
 .think-wrap{position:relative;flex-shrink:0}
 .think-split{display:flex;align-items:center;gap:1px;padding:3px 5px 3px 3px;border:1px solid var(--border);
-  border-radius:12px;background:var(--surface);transition:border-color .2s,background .2s,box-shadow .2s;height:40px}
-.think-split:hover{border-color:color-mix(in srgb,var(--accent) 45%,var(--border))}
+  border-radius:12px;background:var(--surface);transition:border-color .2s,background .2s,box-shadow .2s;height:40px}@media (hover:hover){
+.think-split:hover:not(:focus){border-color:color-mix(in srgb,var(--accent) 45%,var(--border))}}
 .think-split.active{border-color:var(--accent);background:var(--accent-d);box-shadow:0 0 0 1px var(--accent-d)}
 .think-bolt,.think-caret{background:none;border:none;padding:4px;margin:0;display:flex;align-items:center;
-  justify-content:center;cursor:pointer;color:var(--text2);transition:color .2s;border-radius:8px}
-.think-bolt:hover,.think-caret:hover{color:var(--text)}
+  justify-content:center;cursor:pointer;color:var(--text2);transition:color .2s;border-radius:8px}@media (hover:hover){
+.think-bolt:hover:not(:focus),.think-caret:hover:not(:focus){color:var(--text)}}
 .think-split.active .think-bolt,.think-split.active .think-caret{color:var(--accent)}
 .think-divider{width:1px;height:14px;background:var(--border);flex-shrink:0;margin:0 1px}
 .think-split.no-picker .think-divider,
@@ -326,15 +354,15 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
   color:var(--text3);word-break:break-word}
 .think-box.live{border-style:dashed;font-style:italic}
 .think-box .think-head{display:flex;align-items:center;gap:6px;cursor:pointer;
-  user-select:none;font-size:12px;font-weight:600;color:var(--text3);padding:2px 0}
-.think-box .think-head:hover{color:var(--text)}
+  user-select:none;font-size:12px;font-weight:600;color:var(--text3);padding:2px 0}@media (hover:hover){
+.think-box .think-head:hover:not(:focus){color:var(--text)}}
 .think-box .chev{transition:transform .2s;font-size:11px}
 .think-box.open .think-head .chev{transform:rotate(90deg)}
 .think-box .think-body{padding-top:6px;white-space:pre-wrap;max-height:260px;overflow:auto}
 .think-box.collapsed .think-body{display:none}
 .sess-auth-btn{display:block;margin:6px 16px 14px;padding:6px 12px;border:1px solid var(--border);
-  border-radius:8px;background:var(--surface2);color:var(--text);cursor:pointer;font-size:13px;transition:all .2s}
-.sess-auth-btn:hover{border-color:var(--accent);color:var(--accent)}
+  border-radius:8px;background:var(--surface2);color:var(--text);cursor:pointer;font-size:13px;transition:all .2s}@media (hover:hover){
+.sess-auth-btn:hover:not(:focus){border-color:var(--accent);color:var(--accent)}}
 .mic-recording{color:#f05555!important;animation:mic-pulse 1s ease-in-out infinite}
 @keyframes mic-pulse{0%,100%{opacity:1}50%{opacity:.4}}
 .mic-timer{display:none;font-size:11px;font-weight:600;color:#f05555;position:absolute;
@@ -345,8 +373,8 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 .mic-starting .mic-icon{opacity:.4}
 .tts-btn{background:none;border:none;color:var(--text3);cursor:pointer;padding:4px;
   border-radius:6px;display:inline-flex;align-items:center;justify-content:center;
-  transition:all .2s;flex-shrink:0}
-.tts-btn:hover{color:var(--text);background:var(--surface2)}
+  transition:all .2s;flex-shrink:0}@media (hover:hover){
+.tts-btn:hover:not(:focus){color:var(--text);background:var(--surface2)}}
 .tts-btn.tts-playing{color:var(--accent);animation:mic-pulse 1s ease-in-out infinite}
 
 #msg-input{flex:1 1 auto;min-width:0;background:none;border:none;outline:none;color:var(--text);
@@ -358,12 +386,15 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
   flex-shrink:0;transition:all .2s;
   background:radial-gradient(circle at 30% 25%, rgba(255,255,255,.42), rgba(255,255,255,0) 55%),
              linear-gradient(145deg, var(--accent), var(--accent-h));
-  box-shadow:0 3px 10px var(--accent-d), inset -2px -3px 6px rgba(0,0,0,.22), inset 1px 2px 4px rgba(255,255,255,.22)}
-#send-btn:hover:not(:disabled){transform:scale(1.06);
-  box-shadow:0 6px 20px var(--accent-d), inset -2px -3px 6px rgba(0,0,0,.18), inset 1px 2px 5px rgba(255,255,255,.3)}
+  box-shadow:0 3px 10px var(--accent-d), inset -2px -3px 6px rgba(0,0,0,.22), inset 1px 2px 4px rgba(255,255,255,.22)}@media (hover:hover){
+#send-btn:hover:not(:focus):not(:disabled){transform:scale(1.06);
+  box-shadow:0 6px 20px var(--accent-d), inset -2px -3px 6px rgba(0,0,0,.18), inset 1px 2px 5px rgba(255,255,255,.3)}}
 #send-btn:active:not(:disabled){transform:scale(.93);
   box-shadow:0 4px 24px var(--accent-d), inset 0 0 14px var(--accent)}
 #send-btn:disabled{background:var(--surface3);color:var(--text4);cursor:not-allowed;box-shadow:none}
+#send-btn.stop{background:var(--danger);color:#fff;box-shadow:0 4px 14px rgba(224,85,85,.35)}
+#send-btn.stop:active{transform:scale(.93)}
+@media (hover:hover){#send-btn.stop:hover:not(:focus){filter:brightness(1.08)}}
 
 /* ── Memory Cards ──────────────────────────────────────────────────────────── */
 .mem-card{padding:12px;background:var(--surface2);position:relative;border:1px solid var(--border);
@@ -372,8 +403,6 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 .mem-card[data-imp="4"],.mem-card[data-imp="5"],.mem-card[data-imp="6"]{border-left-color:var(--success)}
 .mem-card[data-imp="7"],.mem-card[data-imp="8"]{border-left-color:var(--warning,#f59e0b)}
 .mem-card[data-imp="9"],.mem-card[data-imp="10"]{border-left-color:var(--danger,#ef4444)}
-.mem-card:hover{border-color:var(--text4)}
-.mem-card:hover .mem-del-btn{display:flex}
 .mem-cat{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.05em;
   text-transform:uppercase;padding:3px 6px;border-radius:5px;margin-bottom:6px}
 .cat-personal{background:rgba(124,108,240,.15);color:var(--accent)}
@@ -384,9 +413,9 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 .mem-content{font-size:13.5px;color:var(--text);line-height:1.5;word-break:break-word}
 .mem-date{font-size:11px;color:var(--text4);margin-top:6px}
 .mem-empty{text-align:center;color:var(--text3);font-size:13px;padding:24px 12px;line-height:1.6}
-.mem-del-btn{display:none;position:absolute;top:12px;right:10px;background:none;
-  border:none;color:var(--text4);cursor:pointer;padding:4px;border-radius:4px;transition:all .2s}
-.mem-del-btn:hover{color:var(--danger);background:rgba(224,85,85,.1)}
+.mem-del-btn{display:flex;position:absolute;top:12px;right:10px;background:none;
+  border:none;color:var(--text4);cursor:pointer;padding:4px;border-radius:4px;transition:color .2s,background .2s}@media (hover:hover){
+.mem-del-btn:hover:not(:focus){color:var(--danger);background:rgba(224,85,85,.1)}}
 
 /* ── Confirm Modal ─────────────────────────────────────────────────────────── */
 #confirm-modal{position:fixed;inset:0;z-index:200;display:none;
@@ -419,13 +448,13 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 .modal-actions{display:flex;gap:12px;justify-content:flex-end;margin-top:24px}
 .modal-cancel{padding:10px 20px;background:transparent;border:1px solid var(--border);
   border-radius:10px;color:var(--text2);font-size:14px;font-weight:600;cursor:pointer;
-  font-family:inherit;transition:all .2s}
-.modal-cancel:hover{background:var(--surface2);color:var(--text)}
+  font-family:inherit;transition:all .2s}@media (hover:hover){
+.modal-cancel:hover:not(:focus){background:var(--surface2);color:var(--text)}}
 .modal-confirm{padding:10px 24px;background:var(--text);border:none;border-radius:10px;
-  color:var(--bg);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .2s}
-.modal-confirm:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(255,255,255,.1)}
-.modal-confirm.danger{background:var(--danger);color:#fff}
-.modal-confirm.danger:hover{background:#c94444;box-shadow:0 4px 12px rgba(224,85,85,.2)}
+  color:var(--bg);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .2s}@media (hover:hover){
+.modal-confirm:hover:not(:focus){transform:translateY(-1px);box-shadow:0 4px 12px rgba(255,255,255,.1)}}
+.modal-confirm.danger{background:var(--danger);color:#fff}@media (hover:hover){
+.modal-confirm.danger:hover:not(:focus){background:#c94444;box-shadow:0 4px 12px rgba(224,85,85,.2)}}
 
 /* ── Settings Modal ────────────────────────────────────────────────────────── */
 #settings-modal{position:fixed;inset:0;z-index:200;display:none;
@@ -454,8 +483,8 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 .settings-section-title::after{content:'';flex:1;height:1px;background:var(--border)}
 .settings-section-inner{display:flex;flex-direction:column;gap:2px}
 .setting-item{background:var(--surface2);border:1px solid var(--border);
-  border-radius:var(--r-sm);padding:10px 14px;transition:border-color .2s}
-.setting-item:hover{border-color:var(--text4)}
+  border-radius:var(--r-sm);padding:10px 14px;transition:border-color .2s}@media (hover:hover){
+.setting-item:hover:not(:focus){border-color:var(--text4)}}
 .setting-label{font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px;
   display:flex;justify-content:space-between;align-items:center}
 .setting-label .val-display{font-size:11px;color:var(--accent);font-weight:700;
@@ -470,19 +499,19 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
   background:var(--surface3);border:none;border-radius:2px;cursor:pointer;margin:8px 0}
 .setting-input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
   width:16px;height:16px;border-radius:50%;background:var(--accent);cursor:pointer;
-  box-shadow:0 0 8px var(--accent-d);transition:box-shadow .2s}
-.setting-input[type=range]::-webkit-slider-thumb:hover{box-shadow:0 0 14px var(--accent-d)}
+  box-shadow:0 0 8px var(--accent-d);transition:box-shadow .2s}@media (hover:hover){
+.setting-input[type=range]::-webkit-slider-thumb:hover:not(:focus){box-shadow:0 0 14px var(--accent-d)}}
 .setting-hint{font-size:11px;color:var(--text4);margin-top:4px}
 .setting-desc{font-size:11px;color:var(--text4);margin-top:4px;line-height:1.4}
 .info-btn{flex-shrink:0;width:20px;height:20px;border-radius:50%;border:1px solid var(--border);
   background:var(--surface3);color:var(--text3);font-size:11px;font-weight:700;cursor:pointer;
-  display:inline-flex;align-items:center;justify-content:center;transition:all .2s;padding:0}
-.info-btn:hover{color:var(--accent);border-color:var(--accent)}
+  display:inline-flex;align-items:center;justify-content:center;transition:all .2s;padding:0}@media (hover:hover){
+.info-btn:hover:not(:focus){color:var(--accent);border-color:var(--accent)}}
 .info-btn.on{color:var(--accent);border-color:var(--accent)}
 .setting-label .label-wrap{display:flex;align-items:center;gap:8px;min-width:0}
 .setting-label .label-wrap .info-btn{margin-left:2px}
-.adv-toggle{cursor:pointer;user-select:none}
-.adv-toggle:hover{color:var(--text2)}
+.adv-toggle{cursor:pointer;user-select:none}@media (hover:hover){
+.adv-toggle:hover:not(:focus){color:var(--text2)}}
 .adv-toggle .adv-chev{display:inline-block;transition:transform .2s;font-size:10px}
 .adv-toggle.open .adv-chev{transform:rotate(90deg)}
 .settings-appearance{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px;
@@ -493,15 +522,15 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
   text-transform:uppercase;letter-spacing:.05em;color:var(--text4);margin-bottom:6px}
 .theme-grid{display:flex;gap:6px;flex-wrap:wrap}
 .theme-swatch{width:28px;height:28px;border-radius:8px;border:2px solid transparent;
-  cursor:pointer;transition:all .2s;position:relative;display:flex;align-items:center;justify-content:center}
-.theme-swatch:hover{transform:scale(1.15)}
+  cursor:pointer;transition:all .2s;position:relative;display:flex;align-items:center;justify-content:center}@media (hover:hover){
+.theme-swatch:hover:not(:focus){transform:scale(1.15)}}
 .theme-swatch.active{border-color:var(--text);box-shadow:0 0 0 2px var(--bg),0 0 0 3px currentColor}
 .theme-swatch::after{content:'';width:12px;height:12px;border-radius:50%;background:currentColor}
 .lang-select{width:100%;padding:6px 10px;background:var(--surface);border:1px solid var(--border);
   border-radius:var(--r-sm);color:var(--text);font-size:13px;font-family:inherit;cursor:pointer}
 .settings-save{padding:10px 24px;background:var(--accent);border:none;border-radius:10px;
-  color:#fff;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .2s}
-.settings-save:hover{background:var(--accent-h);transform:translateY(-1px)}
+  color:#fff;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .2s}@media (hover:hover){
+.settings-save:hover:not(:focus){background:var(--accent-h);transform:translateY(-1px)}}
 
 /* ── Overlay & Toast ───────────────────────────────────────────────────────── */
 #overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);
@@ -639,13 +668,17 @@ body.glass-mode .copy-btn,
 body.glass-mode .modal-cancel,
 body.glass-mode .sess-del,
 body.glass-mode .mem-del-btn,
-body.glass-mode .preview-remove{backdrop-filter:blur(12px) saturate(150%);-webkit-backdrop-filter:blur(12px) saturate(150%)}
-body.glass-mode .icon-btn:hover,
-body.glass-mode .inline-think-btn:hover,
-body.glass-mode .tts-btn:hover,
-body.glass-mode .mem-btn:hover,
-body.glass-mode .settings-btn:hover,
-body.glass-mode .sb-compact-toggle:hover{background:color-mix(in srgb, var(--accent) 15%, rgba(255,255,255,.06));color:var(--text)}
+body.glass-mode .preview-remove{backdrop-filter:blur(12px) saturate(150%);-webkit-backdrop-filter:blur(12px) saturate(150%)}@media (hover:hover){
+body.glass-mode .icon-btn:hover:not(:focus),
+body.glass-mode .inline-think-btn:hover:not(:focus),
+body.glass-mode .tts-btn:hover:not(:focus),
+body.glass-mode .settings-btn:hover:not(:focus),
+body.glass-mode .sb-compact-toggle:hover:not(:focus){background:color-mix(in srgb, var(--accent) 15%, rgba(255,255,255,.06));color:var(--text)}
+/* Panel/toggle buttons exempt from :not(:focus): glow must fire on every
+   re-hover even while the button holds focus after a click */
+@media (hover:hover){body.glass-mode .mem-btn:hover,
+body.glass-mode #search-toggle:hover,
+body.glass-mode #compact-toggle:hover{background:color-mix(in srgb, var(--accent) 15%, rgba(255,255,255,.06));color:var(--text)}}}
 
 /* Primary CTAs become accent-tinted glass */
 body.glass-mode .new-btn,
@@ -657,43 +690,45 @@ body.glass-mode .modal-confirm:not(.danger){
   box-shadow:inset 0 1px 0 rgba(255,255,255,.2), 0 4px 18px color-mix(in srgb, var(--accent) 22%, transparent);
   backdrop-filter:blur(24px) saturate(180%);
   -webkit-backdrop-filter:blur(24px) saturate(180%);
-}
-body.glass-mode .new-btn:hover,
-body.glass-mode .top-new-btn:hover,
-body.glass-mode .w-start:hover,
-body.glass-mode .modal-confirm:not(.danger):hover{
+}@media (hover:hover){
+body.glass-mode .new-btn:hover:not(:focus),
+body.glass-mode .top-new-btn:hover:not(:focus),
+body.glass-mode .w-start:hover:not(:focus),
+body.glass-mode .modal-confirm:not(.danger):hover:not(:focus){
   background:linear-gradient(135deg, color-mix(in srgb, var(--accent) 42%, transparent), color-mix(in srgb, var(--accent) 17%, transparent));
   box-shadow:inset 0 2px 0 rgba(255,255,255,.26), 0 8px 30px color-mix(in srgb, var(--accent) 38%, transparent);
   transform:translateY(-1px);
-}
+}}
 
 /* Send button: tinted glass orb — subtle accent, clean hover glow */
 body.glass-mode #send-btn:not(:disabled){
   background:linear-gradient(135deg, color-mix(in srgb, var(--accent) 18%, rgba(255,255,255,.08)), color-mix(in srgb, var(--accent) 8%, rgba(255,255,255,.03)));
   border:1px solid color-mix(in srgb, var(--accent) 20%, rgba(255,255,255,.1));
   box-shadow:0 2px 8px rgba(0,0,0,.12);
-}
-body.glass-mode #send-btn:hover:not(:disabled){
+}@media (hover:hover){
+body.glass-mode #send-btn:hover:not(:focus):not(:disabled){
   background:linear-gradient(135deg, color-mix(in srgb, var(--accent) 28%, rgba(255,255,255,.12)), color-mix(in srgb, var(--accent) 14%, rgba(255,255,255,.06)));
   border-color:color-mix(in srgb, var(--accent) 35%, rgba(255,255,255,.15));
   box-shadow:0 0 16px color-mix(in srgb, var(--accent) 30%, transparent), 0 2px 8px rgba(0,0,0,.12);
-}
+}}
 body.glass-mode #send-btn:active:not(:disabled){
   transform:scale(.95);
   box-shadow:inset 0 0 10px rgba(0,0,0,.12);
 }
 
 /* Logo (menu toggle): no box, just hover glow on icon */
-body.glass-mode #logo-btn:hover .logo-icon{
+@media (hover:hover){body.glass-mode #logo-btn:hover .logo-icon{
   box-shadow:0 0 16px var(--accent), 0 0 32px color-mix(in srgb, var(--accent) 50%, transparent);
-  filter:brightness(1.15)}
+  filter:brightness(1.15)}}
 
 /* Subtle accent glow on hover for the small frosted buttons */
-body.glass-mode .inline-think-btn:hover,
-body.glass-mode .tts-btn:hover,
-body.glass-mode .icon-btn:hover,
+@media (hover:hover){body.glass-mode .inline-think-btn:hover:not(:focus),
+body.glass-mode .tts-btn:hover:not(:focus),
+body.glass-mode .icon-btn:hover:not(:focus),
+body.glass-mode .sb-compact-toggle:hover:not(:focus){box-shadow:0 0 14px color-mix(in srgb, var(--accent) 30%, transparent)}
 body.glass-mode .mem-btn:hover,
-body.glass-mode .sb-compact-toggle:hover{box-shadow:0 0 14px color-mix(in srgb, var(--accent) 30%, transparent)}
+body.glass-mode #search-toggle:hover,
+body.glass-mode #compact-toggle:hover{box-shadow:0 0 14px color-mix(in srgb, var(--accent) 30%, transparent)}}
 
 /* ── Glass shine sweep on primary CTAs (cheap: pseudo + transform only) */
 body.glass-mode .new-btn,
@@ -704,10 +739,10 @@ body.glass-mode .top-new-btn::after,
 body.glass-mode .w-start::after{
   content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;
   background:linear-gradient(115deg, transparent 35%, rgba(255,255,255,.08) 50%, transparent 65%);
-  transform:translateX(-135%);transition:transform .55s ease}
-body.glass-mode .new-btn:hover::after,
-body.glass-mode .top-new-btn:hover::after,
-body.glass-mode .w-start:hover::after{transform:translateX(135%)}
+  transform:translateX(-135%);transition:transform .55s ease}@media (hover:hover){
+body.glass-mode .new-btn:hover:not(:focus)::after,
+body.glass-mode .top-new-btn:hover:not(:focus)::after,
+body.glass-mode .w-start:hover:not(:focus)::after{transform:translateX(135%)}}
 
 /* Glass press: quick scale-down + accent glow burst */
 body.glass-mode .new-btn:active,
@@ -973,6 +1008,16 @@ body.glass-mode ::selection{background:color-mix(in srgb, var(--accent) 35%, tra
           <span id="lbl-glass-hint"></span>
         </div>
       </div>
+      <div class="appearance-group">
+        <label id="lbl-black-label"></label>
+        <div class="switch-wrap">
+          <label class="switch">
+            <input type="checkbox" id="black-toggle" onchange="applyBlack(this.checked)">
+            <span class="track"></span>
+          </label>
+          <span id="lbl-black-hint"></span>
+        </div>
+      </div>
     </div>
     <div id="settings-form"></div>
     </div>
@@ -1030,6 +1075,8 @@ const STRINGS = {
     settingsCancel:'İptal', settingsSave:'Kaydet',
     themeLabel:'Tema Rengi', langLabel:'Dil',
     glassLabel:'Cam Efekti', glassHint:'Buzlu cam arka plan aktif', glassHintOff:'Cam efekti kapalı',
+    blackLabel:'Siyah Arka Plan', blackHint:'Saf siyah (OLED)', blackHintOff:'Standart koyu arka plan',
+    minimalLabel:'Sade Görünüm', minimalDesc:'Mesaj başlarındaki gönderen adı ve zaman etiketi gizlenir.',
     advanced:'Gelişmiş Ayarlar',
     micDenied:'Mikrofon izni reddedildi', transcribeErr:'Ses tanıma başarısız oldu',
     micHttps:'Mikrofon HTTPS gerektirir. HTTPS ile erişin veya localhost kullanın.',
@@ -1044,6 +1091,7 @@ const STRINGS = {
     thinkTitle:'Think modu',
     thinkNone:'Kapalı', thinkMin:'Min', thinkLow:'Düşük', thinkMed:'Orta', thinkHigh:'Yüksek', thinkMax:'Maks',
     thinkingTitle:'Düşünme', thinkingLive:'Düşünüyor…',
+    send:'Gönder', stopGen:'Üretimi durdur', stoppedMsg:'Yanıt durduruldu.', listenTitle:'Sesli oku',
     thinkEffortTitle:'Think seviyesi'
   },
   en:{
@@ -1075,6 +1123,8 @@ const STRINGS = {
     settingsCancel:'Cancel', settingsSave:'Save',
     themeLabel:'Theme Color', langLabel:'Language',
     glassLabel:'Glass Effect', glassHint:'Frosted glass background on', glassHintOff:'Glass effect off',
+    blackLabel:'Black Background', blackHint:'Pure black (OLED)', blackHintOff:'Standard dark background',
+    minimalLabel:'Minimal View', minimalDesc:'Hides sender names and timestamps above messages.',
     advanced:'Advanced Settings',
     micDenied:'Microphone permission denied', transcribeErr:'Transcription failed',
     micHttps:'Microphone requires HTTPS. Use HTTPS or localhost.',
@@ -1089,6 +1139,7 @@ const STRINGS = {
     thinkTitle:'Think mode',
     thinkNone:'Off', thinkMin:'Min', thinkLow:'Low', thinkMed:'Med', thinkHigh:'High', thinkMax:'Max',
     thinkingTitle:'Thinking', thinkingLive:'Thinking…',
+    send:'Send', stopGen:'Stop generating', stoppedMsg:'Response stopped.', listenTitle:'Listen',
     thinkEffortTitle:'Think effort'
   }
 };
@@ -1096,9 +1147,14 @@ const STRINGS = {
 let lang  = localStorage.getItem('ps_lang') || ((navigator.language||'').toLowerCase().startsWith('tr') ? 'tr' : 'en');
 let theme = localStorage.getItem('ps_theme') || 'orange';
 let glass = localStorage.getItem('ps_glass') === '1';
+let black = localStorage.getItem('ps_black') === '1';
+let minimal = localStorage.getItem('ps_minimal') === '1';
 function t(k){ return STRINGS[lang][k] || k; }
 
 let currentSid = null; let sessionList = []; let loading = false; let memOpen = false;
+const SEND_ICON='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>';
+const STOP_ICON='<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="6" width="12" height="12" rx="2"></rect></svg>';
+let userAborted=false;
 let pendingAction = null; let tickerItems = []; let tickerIdx = 0; let typingEl = null;
 const THINK_LEVELS = [
   {effort:'minimal', hint:{tr:'Hafif düşünme, hızlı yanıt.', en:'Light thinking, fast responses.'}},
@@ -1285,6 +1341,7 @@ const THEMES = [
   { id: 'green',  color: '#3dbf65', label: { tr: 'Yesil',   en: 'Green' } },
   { id: 'purple', color: '#9578f5', label: { tr: 'Mor',     en: 'Purple' } },
   { id: 'red',    color: '#f05555', label: { tr: 'Kirmizi', en: 'Red' } },
+  { id: 'black',  color: '#e9e9ec', label: { tr: 'Siyah',   en: 'Black' } },
 ];
 
 function applyTheme(name){
@@ -1294,6 +1351,7 @@ function applyTheme(name){
   document.body.classList.toggle('theme-green', name === 'green');
   document.body.classList.toggle('theme-purple', name === 'purple');
   document.body.classList.toggle('theme-red', name === 'red');
+  document.body.classList.toggle('theme-black', name === 'black');
   localStorage.setItem('ps_theme', name);
   document.querySelectorAll('.theme-swatch').forEach(el => {
     el.classList.toggle('active', el.dataset.theme === name);
@@ -1306,6 +1364,20 @@ function applyGlass(on){
   localStorage.setItem('ps_glass', on ? '1' : '0');
   const gl = document.getElementById('lbl-glass-hint');
   if(gl) gl.textContent = on ? t('glassHint') : t('glassHintOff');
+}
+
+function applyBlack(on){
+  black = on;
+  document.body.classList.toggle('amoled', on);
+  localStorage.setItem('ps_black', on ? '1' : '0');
+  const bl = document.getElementById('lbl-black-hint');
+  if(bl) bl.textContent = on ? t('blackHint') : t('blackHintOff');
+}
+
+function applyMinimal(on){
+  minimal = on;
+  document.body.classList.toggle('minimal-chat', on);
+  localStorage.setItem('ps_minimal', on ? '1' : '0');
 }
 
 function renderThemeGrid(){
@@ -1342,6 +1414,10 @@ function applyLang(l){
   if(glassLabel) glassLabel.textContent = t('glassLabel');
   const glassToggle = document.getElementById('glass-toggle');
   if(glassToggle){ glassToggle.checked = glass; document.getElementById('lbl-glass-hint').textContent = glass ? t('glassHint') : t('glassHintOff'); }
+  const blackLabel = document.getElementById('lbl-black-label');
+  if(blackLabel) blackLabel.textContent = t('blackLabel');
+  const blackToggle = document.getElementById('black-toggle');
+  if(blackToggle){ blackToggle.checked = black; document.getElementById('lbl-black-hint').textContent = black ? t('blackHint') : t('blackHintOff'); }
 
   const searchInput = document.getElementById('sess-search');
   if(searchInput) searchInput.placeholder = t('searchPlaceholder');
@@ -1964,7 +2040,7 @@ let lastInputWasVoice = false;
 
 document.addEventListener('DOMContentLoaded', async ()=>{
   if(window._beacon) window._beacon({t:'init', step:'start'});
-  applyTheme(theme); applyGlass(glass); applyLang(lang); setupInput(); setupMobileKeyboard(); setupHoldToRecord();
+  applyTheme(theme); applyGlass(glass); applyBlack(black); applyMinimal(minimal); applyLang(lang); setupInput(); setupMobileKeyboard(); setupHoldToRecord();
   if(window._beacon) window._beacon({t:'init', step:'prep-done'});
   // Check if API key is needed
   try {
@@ -2076,8 +2152,11 @@ function createStreamBubble(){
 }
 
 function toggleThinkBox(box){
+  const e = document.getElementById('messages');
+  const wasNearBottom = e.scrollHeight - e.scrollTop - e.clientHeight < 150;
   box.classList.toggle('collapsed');
   box.classList.toggle('open');
+  if(!box.classList.contains('collapsed') && wasNearBottom) scrollEnd(true);
 }
 
 function ensureThinkBox(bubble){
@@ -2093,8 +2172,19 @@ function ensureThinkBox(bubble){
   return box;
 }
 
+async function abortStream(){
+  const sid=_pendingStream?.sid || currentSid; if(!sid) return;
+  userAborted=true;
+  try{
+    const h={'Content-Type':'application/json'}; const k=getApiKey(); if(k) h['X-API-Key']=k;
+    await fetch(API+'/chat/abort/'+encodeURIComponent(sid), {method:'POST', headers:h});
+  }catch{}
+}
+
 async function sendMsg(){
-  if(loading) return; const el=document.getElementById('msg-input'); const text=el.value.trim();
+  if(loading){ if(_pendingStream) abortStream(); return; }
+  userAborted=false;
+  const el=document.getElementById('msg-input'); const text=el.value.trim();
   const images=pendingImages.map(i=>i.base64);
   if(!text && !images.length) return; if(!currentSid) currentSid=newSid();
   const sid = currentSid;
@@ -2175,9 +2265,16 @@ async function sendMsg(){
     if(_pendingStream?.sid === sid) _pendingStream=null;
     if(!gotReply && !terminated){
       if(currentSid === sid){
-        if(bubble) bubble.textContent='\u26A0\uFE0F '+t('emptyReply');
-        else addMsg('assistant','\u26A0\uFE0F '+t('emptyReply'));
+        const note = userAborted ? '\u2139\uFE0F '+t('stoppedMsg') : '\u26A0\uFE0F '+t('emptyReply');
+        if(bubble) bubble.textContent=note;
+        else addMsg('assistant',note);
       }
+    }
+    if(userAborted && currentSid === sid){
+      // Abort closes the SSE without a done event — do the light
+      // session bookkeeping here so sidebar/title stay consistent.
+      await saveSessionName(text);
+      await loadSessions();
     }
     if(currentSid === sid){
       // Add TTS button to streamed bubble (createStreamBubble doesn't add one)
@@ -2188,7 +2285,7 @@ async function sendMsg(){
           if(meta){
             const ttsBtn=document.createElement('button');
             ttsBtn.className='tts-btn';
-            ttsBtn.title='Listen';
+            ttsBtn.title=t('listenTitle');
             ttsBtn.innerHTML='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>';
             ttsBtn.onclick=()=>toggleTTS(fullText, ttsBtn);
             meta.appendChild(ttsBtn);
@@ -2220,7 +2317,18 @@ async function saveSessionName(firstMsg){
   }
 }
 
-function setLoading(v){ loading=v; const dot=document.getElementById('status-dot'); document.getElementById('send-btn').disabled=v; if(v){ dot.classList.remove('ok','warn','error'); dot.classList.add('thinking'); } else { dot.classList.remove('thinking'); pollHealth(); } }
+function setLoading(v){
+  loading=v;
+  const dot=document.getElementById('status-dot'), btn=document.getElementById('send-btn');
+  // While a chat stream is running the send button doubles as a stop button
+  // (standard chat UX); other flows keep the plain disabled look.
+  const stoppable=v && !!(_pendingStream && _pendingStream.sid);
+  btn.classList.toggle('stop', stoppable);
+  btn.disabled=v && !stoppable;
+  btn.title=stoppable ? t('stopGen') : t('send');
+  btn.innerHTML=stoppable ? STOP_ICON : SEND_ICON;
+  if(v){ dot.classList.remove('ok','warn','error'); dot.classList.add('thinking'); } else { dot.classList.remove('thinking'); pollHealth(); }
+}
  function addMsg(role, content, forceScroll=true, ts=null, images=null, reasoning=null){
   document.querySelector('.welcome')?.remove();
   const g=document.createElement('div'); g.className='msg-group '+role;
@@ -2246,7 +2354,7 @@ function setLoading(v){ loading=v; const dot=document.getElementById('status-dot
     b.innerHTML+=renderMd(content);
     const ttsBtn=document.createElement('button');
     ttsBtn.className='tts-btn';
-    ttsBtn.title='Listen';
+    ttsBtn.title=t('listenTitle');
     ttsBtn.innerHTML='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>';
     ttsBtn.onclick=()=>toggleTTS(content, ttsBtn);
     g.querySelector('.msg-meta').appendChild(ttsBtn);
@@ -2255,8 +2363,10 @@ function setLoading(v){ loading=v; const dot=document.getElementById('status-dot
 }
 
 function showTyping(){
+  // Neutral activity dots only — no "thinking" label. It showed regardless of
+  // think mode (misleading); real reasoning gets its own collapsible box.
   const g=document.createElement('div'); g.className='msg-group assistant'; g.id='typing-row';
-  g.innerHTML='<div class="typing"><span></span><span></span><span></span></div><div class="typing-label">'+t('thinkingLive')+'</div>';
+  g.innerHTML='<div class="typing"><span></span><span></span><span></span></div>';
   document.getElementById('messages').appendChild(g); scrollEnd(true); typingEl=g;
 }
 function hideTyping(){ typingEl?.remove(); typingEl=null; }
@@ -2517,6 +2627,10 @@ async function openSettings(){
   if(glassLabel) glassLabel.textContent = t('glassLabel');
   const glassToggle = document.getElementById('glass-toggle');
   if(glassToggle){ glassToggle.checked = glass; document.getElementById('lbl-glass-hint').textContent = glass ? t('glassHint') : t('glassHintOff'); }
+  const blackLabel2 = document.getElementById('lbl-black-label');
+  if(blackLabel2) blackLabel2.textContent = t('blackLabel');
+  const blackToggle2 = document.getElementById('black-toggle');
+  if(blackToggle2){ blackToggle2.checked = black; document.getElementById('lbl-black-hint').textContent = black ? t('blackHint') : t('blackHintOff'); }
   document.getElementById('lang-select').value = lang;
   renderThemeGrid();
 
@@ -2550,6 +2664,13 @@ async function openSettings(){
     }
 
     form.innerHTML = html;
+
+    // Frontend-only preference rendered inside the Advanced section
+    const advInner = document.getElementById('advanced-inner');
+    if(advInner){
+      advInner.insertAdjacentHTML('beforeend',
+        `<div class="setting-item advanced"><div class="setting-label"><span class="label-wrap"><span>${esc(t('minimalLabel'))}</span></span><label class="switch"><input type="checkbox" id="minimal-toggle" ${minimal ? 'checked' : ''} onchange="applyMinimal(this.checked)"><span class="track"></span></label></div><div class="setting-desc">${esc(t('minimalDesc'))}</div></div>`);
+    }
   } catch {
     form.innerHTML = `<div style="text-align:center;padding:12px;color:var(--danger)">${t('connErr')}</div>`;
   }
@@ -2739,8 +2860,8 @@ function toggleSearch(){
   const open = box.classList.toggle('open');
   if(toggle) toggle.classList.toggle('on', open);
   const inp = document.getElementById('sess-search');
-  if(open && inp) inp.focus();
-  else if(!open){ _searchQuery = ''; renderSessions(sessionList); }
+  if(open){ if(inp) inp.focus(); }
+  else { if(inp) inp.blur(); _searchQuery = ''; renderSessions(sessionList); }
 }
 
 function toggleCompact(){
@@ -2884,30 +3005,33 @@ if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.s
     50%{box-shadow:0 0 20px var(--accent-d), inset -2px -3px 6px rgba(0,0,0,.22), inset 1px 2px 4px rgba(255,255,255,.22)}
   }
   body:not(.glass-mode) #send-btn:not(:disabled){animation:subtleGlow 3s ease-in-out infinite}
-  body:not(.glass-mode) #send-btn:hover:not(:disabled){animation:none;box-shadow:0 6px 24px var(--accent-d), inset -2px -3px 6px rgba(0,0,0,.18), inset 1px 2px 5px rgba(255,255,255,.32)}
+  body:not(.glass-mode) #send-btn:hover:not(:focus):not(:disabled){animation:none;box-shadow:0 6px 24px var(--accent-d), inset -2px -3px 6px rgba(0,0,0,.18), inset 1px 2px 5px rgba(255,255,255,.32)}
 
   /* ── Hover Effects ────────────────────────────────────────────── */
-  .new-btn:hover{transform:scale(1.02)}
+  .new-btn:hover:not(:focus){transform:scale(1.02)}
   .new-btn:active{transform:scale(.97);box-shadow:0 6px 18px rgba(0,0,0,.28)}
   .inline-think-btn:active,.tts-btn:active{transform:scale(.94)}
   body:not(.glass-mode) #send-btn:active:not(:disabled){transform:scale(.93);box-shadow:0 4px 24px var(--accent-d), inset 0 0 14px var(--accent)}
   #logo-btn:active{transform:scale(.94)}
   .sess-item{border:1px solid transparent;transition:all .2s,border-color .25s,box-shadow .25s}
-  .sess-item:hover{background:var(--surface2);border-color:rgba(255,255,255,.04)}
+  .sess-item:hover:not(:focus){background:var(--surface2);border-color:rgba(255,255,255,.04)}
   .sess-item.active{background:var(--accent-d);border-color:rgba(124,108,240,.25);box-shadow:inset 3px 0 0 var(--accent),0 0 20px rgba(240,148,58,.06)}
 
-  /* ── Search Box (hidden; slides open below the SOHBETLER label) ─ */
-  .sb-search{max-height:0;overflow:hidden;opacity:0;padding:0 12px;position:relative;
-    transition:max-height .25s ease,opacity .2s ease,padding .25s ease}
-  .sb-search.open{max-height:64px;opacity:1;padding:2px 12px 8px}
-  .sb-search input{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);padding:7px 10px 7px 30px;color:var(--text);font-size:13px;font-family:inherit;outline:none;transition:border-color .2s}
+  /* ── Search Box (hidden; opens below the SOHBETLER label) ─────── */
+  /* Instant show/hide + short fade. Icon overlays the input (absolute,
+     container height == input row so top:50% stays centered). No height
+     animation, no overflow clipping. */
+  .sb-search{display:none;padding:0 12px;position:relative}
+  .sb-search.open{display:flex;animation:sbSearchIn .18s ease}
+  @keyframes sbSearchIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+  .sb-search input{width:100%;flex:1;min-width:0;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);padding:7px 10px 7px 30px;color:var(--text);font-size:13px;font-family:inherit;outline:none;transition:border-color .2s;margin:4px 0 8px}
   .sb-search input:focus{border-color:var(--accent)}
   .sb-search input::placeholder{color:var(--text3)}
   .sb-search .search-icon{position:absolute;left:22px;top:50%;transform:translateY(-50%);color:var(--text4);pointer-events:none}
 
   /* ── Compact Mode ─────────────────────────────────────────────── */
   .sb-compact-toggle{background:none;border:none;color:var(--text4);cursor:pointer;padding:3px;border-radius:6px;display:flex;align-items:center;gap:4px;transition:all .2s;font-family:inherit;font-size:11px;font-weight:600}
-  .sb-compact-toggle:hover{color:var(--text);background:var(--surface2)}
+  .sb-compact-toggle:hover:not(:focus){color:var(--text);background:var(--surface2)}
   body.sidebar-compact .sess-item{padding:5px 8px;margin-bottom:1px}
   body.sidebar-compact .sess-time{display:none}
 
@@ -2921,6 +3045,21 @@ if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.s
   .welcome-anim .w-icon svg .inner-wrap{transform-origin:12px 12px;animation:boxPop .35s cubic-bezier(.34,1.56,.64,1) 0s both}
   .welcome-anim .w-icon svg .outer-wrap{transform-origin:12px 12px;animation:boxPopOuter .4s cubic-bezier(.34,1.56,.64,1) .15s both}
   .welcome-anim .w-icon{animation:rippleRing .5s ease-out .35s}
+
+  /* ── Mobile black-density boost ───────────────────────────────── */
+  /* Small/OLED screens read better with deeper backgrounds. Applies to
+     every theme (incl. Siyah, which goes a step further). amoled keeps
+     priority via :not guard + specificity. Desktop (>768px) untouched. */
+  @media(max-width:768px){
+    body{
+      --bg:#060609; --surface:#0b0b10; --surface2:#111117; --surface3:#18181f;
+      --border:#12121a; --user-bg:#0e0e13;
+    }
+    body.theme-black:not(.amoled){
+      --bg:#030304; --surface:#08080b; --surface2:#0d0d12; --surface3:#14141a;
+      --border:#0e0e14; --user-bg:#0a0a0e;
+    }
+  }
 </style>
 </body>
 </html>
