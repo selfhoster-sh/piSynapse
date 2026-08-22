@@ -25,8 +25,21 @@ Test suite grows from 275 to 302 passing tests (+2 documented xfails).
 - Loop-guard test suites for both execution paths plus an intent-pipeline
   suite covering the embedding layer, keyword heuristics and the LLM fallback
   on both backends.
+- **Per-message actions row**: assistant replies get copy-message and
+  listen-to-TTS buttons side by side under the bubble — visible in every
+  theme including the minimal chat view, where the old placement inside the
+  hidden meta row made the TTS button vanish. Copy uses the async clipboard
+  API with an `execCommand` fallback and shows localized copied feedback;
+  service-worker cache bumped so clients pick up the new UI.
 
 ### Changed
+
+- Minimal chat view: slightly more vertical breathing room between messages
+  (24px → 34px).
+- Direct Ollama calls that bypass the shared payload builder (intent LLM
+  fallback, media STT transcription, model warmup) now send `think: false`
+  explicitly — thinking-capable models otherwise burn their tiny
+  `num_predict` budget on hidden reasoning before emitting any content.
 
 - **Summary poisoning defense (3 layers)**: the running-summary prompt now
   instructs the summarizer to ignore tool-call artifacts, never invent details,
@@ -61,14 +74,29 @@ Test suite grows from 275 to 302 passing tests (+2 documented xfails).
   blocks (collapsing now applies only outside ``` fences).
 - Leak-recovery regex handles the doubled-brace `call:name{{}}` variant seen
   in saved history.
+- **Ollama think-mode streaming was invisible**: Ollama ≥0.9 streams
+  reasoning as `message.thinking`, but both chat paths only read the older
+  `reasoning_content` alias, so the frontend never rendered the think flow
+  on the Ollama backend. Both field names are now accepted (live-verified:
+  reasoning deltas stream to the UI).
+- **Intent classification on Ollama returned empty and slow**: without an
+  explicit `think: false` the model spent its whole 20-token budget on
+  hidden thinking (~45 s on CPU) and answered `raw=''`, always falling back
+  to the `question` default. Classification now answers promptly with real
+  content.
+- Chat-path unit tests no longer touch the real SQLite database (fresh
+  checkouts lack the schema), and a session-finish safety net closes any
+  leaked connection so CI runs can no longer hang at interpreter exit with
+  a non-daemon aiosqlite worker thread.
 
 ### Tests
 
-- Suite expanded from 275 to 302 passing tests (+2 xfails documenting known
+- Suite expanded from 275 to 304 passing tests (+2 xfails documenting known
   leak-variant limits): history-hygiene variants with real save-path
   integration, summary hygiene, streaming and non-streaming loop-guard
-  scenarios, intent classification across backends, and settings backend-switch
-  mapping; `ruff check` clean.
+  scenarios, Ollama think-stream parsing (stream and non-stream), intent
+  classification across backends, and settings backend-switch mapping;
+  `ruff check` clean.
 
 ## [1.3.0] - 2026-08-22
 
