@@ -307,10 +307,17 @@ def test_task_create_invalidates_todos_cache(monkeypatch):
     assert nt._todos_cache_ts == 0
 
 
-def test_note_write_invalidates_list_cache():
+def test_note_write_invalidates_list_cache(monkeypatch):
     from unittest.mock import patch
 
+    import config
     import nextcloud_notes as nn
+
+    # Hermetic on purpose: _get_client() gates on credentials before it ever
+    # looks at the patched singleton, so CI (no .env) must see a configured
+    # instance too.
+    monkeypatch.setattr(config, "NEXTCLOUD_URL", "https://cloud.example")
+    monkeypatch.setattr(config, "NEXTCLOUD_PASSWORD", "secret")
 
     client = nn.NextcloudNotesClient()
     client._request = lambda *a, **k: {"id": 9, "title": "T", "etag": "e1"}
