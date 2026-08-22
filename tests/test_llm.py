@@ -362,6 +362,23 @@ def test_parse_leaked_tool_call_recovers_call_text():
     assert call2 is not None
     assert json.loads(call2["function"]["arguments"]) == {"message_id": "3"}
 
+    # Gemma channel-tag variants observed in the wild (think-mode leak,
+    # 2026-08-22): mangled tags + doubled braces + empty payload.
+    call3 = parse_leaked_tool_call("<|tool_call>call:list_notes{{}}<tool_call|>")
+    assert call3 is not None
+    assert call3["function"]["name"] == "list_notes"
+    assert json.loads(call3["function"]["arguments"]) == {}
+
+    # Doubled braces around a real argument payload.
+    call4 = parse_leaked_tool_call('<|tool_call|>call:create_note{{"title":"X"}}<tool_call|>')
+    assert call4 is not None
+    assert json.loads(call4["function"]["arguments"]) == {"title": "X"}
+
+    # Argument payload missing entirely.
+    call5 = parse_leaked_tool_call("<|tool_call|>call:list_notes<tool_call|>")
+    assert call5 is not None
+    assert json.loads(call5["function"]["arguments"]) == {}
+
     assert parse_leaked_tool_call("Tamamen normal bir mesaj") is None
     assert parse_leaked_tool_call("") is None
     assert parse_leaked_tool_call(None) is None
@@ -372,6 +389,7 @@ def test_strip_tool_leaks_removes_fragments():
 
     assert strip_tool_leaks("<|tool_call|>call:read_email{id:5}<tool_call|>") == ""
     assert strip_tool_leaks("Merhaba <|tool_call|>call:read_email{id:5}<tool_call|> gibi") == "Merhaba gibi"
+    assert strip_tool_leaks("<|tool_call>call:list_notes{{}}<tool_call|>") == ""
     assert strip_tool_leaks("") == ""
     assert strip_tool_leaks(None) is None
 
