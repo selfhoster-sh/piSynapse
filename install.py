@@ -27,7 +27,7 @@ from pathlib import Path
 
 # ── Defaults ──────────────────────────────────────────────────────────────────
 
-VENV_DIR = ".venv"
+VENV_DIR = "venv"
 LITERT_PORT = 9379
 IS_WIN = sys.platform == "win32"
 
@@ -645,8 +645,15 @@ def _install_litertlm(uv_bin: str | None) -> str | None:
 
 
 def _litert_model_imported(import_id: str, litert_bin: str = "litert-lm") -> bool:
-    """Check whether a model is already in litert-lm's local registry."""
-    r = subprocess.run([litert_bin, "list"], capture_output=True, text=True, timeout=15)
+    """Check whether a model is already in litert-lm's local registry.
+
+    A hung/hissing CLI must not crash the installer — treat timeouts and any
+    subprocess failure as "not imported" (the caller then offers to import).
+    """
+    try:
+        r = subprocess.run([litert_bin, "list"], capture_output=True, text=True, timeout=15)
+    except (subprocess.TimeoutExpired, OSError):
+        return False
     if r.returncode != 0:
         return False
     return any(line.strip().startswith(import_id) for line in r.stdout.splitlines())
@@ -714,7 +721,8 @@ def _write_piserve_config() -> bool:
     cfg = {
         "model_id": model_id,
         "model_path": os.path.expanduser(f"~/.litert-lm/models/{model_id}/model.litertlm"),
-        "max_num_tokens": 6144,
+        # Must match config.DEFAULT_LLM_NUM_CTX (single source of truth).
+        "max_num_tokens": 8192,
         "speculative_decoding": True,
         "use_ringbuffers_local_attention": False,
         "enable_ynnpack": False,
@@ -752,15 +760,15 @@ def _start_litert_server(litert_bin: str) -> bool:
     if not _write_piserve_config():
         return False
 
-    # Linux with systemd → proper service (auto-start on boot).
+    # Linux with systemd → proper service (auto-start on boot). If the user
+    # declines the service, still ASK before falling back to a background
+    # process instead of silently starting one.
     if shutil.which("systemctl"):
         if ask_yesno("Create & start piServe systemd service (auto-start on boot)?"):
             if _create_piserve_service(server_py):
                 return _wait_litert_ready()
             return False
-    elif ask_yesno(f"Start piServe server now on port {LITERT_PORT}?"):
-        pass
-    else:
+    if not ask_yesno(f"Start piServe server now on port {LITERT_PORT}?"):
         info("Skipping server start. Start it later with:")
         info(f"  {_litert_python()} {server_py}")
         return False
@@ -1029,8 +1037,9 @@ OLLAMA_BASE_URL=http://localhost:11434
 LITERT_BASE_URL=http://localhost:{LITERT_PORT}
 
 # --- Model ---
+# Keep these in sync with config.DEFAULT_LLM_NUM_CTX / DEFAULT_LLM_MAX_OUTPUT_TOKENS.
 LLM_MODEL={LLM_MODEL}
-LLM_NUM_CTX=6144
+LLM_NUM_CTX=8192
 LLM_NUM_BATCH=256
 LLM_TEMPERATURE=0.6
 LLM_TOP_P=0.85
@@ -1040,7 +1049,7 @@ LLM_TIMEOUT=600
 SSE_READ_IDLE_TIMEOUT=300.0
 LLM_MAX_TOOL_ITERATIONS=5
 LLM_REASONING_EFFORT=medium
-LLM_MAX_OUTPUT_TOKENS=2048
+LLM_MAX_OUTPUT_TOKENS=4096
 
 # --- Embedding ---
 EMBED_MODEL=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2

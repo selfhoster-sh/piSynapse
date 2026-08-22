@@ -99,12 +99,12 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "delete_calendar_event",
-            "description": "Delete a calendar event by its title (or part of it), or by its UID (from list_calendar_events). UID provides exact matching when multiple events share the same title.",
+            "description": "Delete a calendar event by its title (or part of it), optionally narrowed down with its list number from the latest list_calendar_events output. Use the number when multiple events share the same title.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "summary": {"type": "string", "description": "Title (or part of it) of the event to delete."},
-                    "event_uid": {"type": "string", "description": "Exact UID of the event (shown in list_calendar_events output). Use this for precise matching when summary alone is ambiguous."},
+                    "event_uid": {"type": "string", "description": "The event's list number (e.g. '2') from the latest list_calendar_events output. Use this when summary alone is ambiguous."},
                 },
                 "required": ["summary"],
             },
@@ -114,7 +114,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "update_calendar_event",
-            "description": "Update an existing calendar event: change its title, time, and/or duration. Provide the current title (or part of it) to identify the event, plus the fields to change. If multiple events match, provide event_uid from list_calendar_events for precise matching.",
+            "description": "Update an existing calendar event: change its title, time, and/or duration. Provide the current title (or part of it) to identify the event, plus the fields to change. If multiple events match, provide the event's list number from list_calendar_events.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -122,7 +122,7 @@ TOOLS = [
                     "new_summary": {"type": "string", "description": "New title. Leave empty to keep current."},
                     "new_start_time": {"type": "string", "description": "New start time in ISO 8601 format (e.g. 2026-07-29T18:40:00). Leave empty to keep current."},
                     "new_duration_minutes": {"type": "integer", "description": "New duration in minutes. Leave 0 to keep current."},
-                    "event_uid": {"type": "string", "description": "Exact UID of the event (shown in list_calendar_events output). Use this for precise matching when summary alone matches multiple events."},
+                    "event_uid": {"type": "string", "description": "The event's list number (e.g. '2') from the latest list_calendar_events output. Use this when summary alone matches multiple events."},
                 },
                 "required": ["summary"],
             },
@@ -238,7 +238,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "list_notes",
-            "description": "List the user's notes stored in Nextcloud Notes — shows title, category, tags, and a content preview. Call this first when the user mentions their notes.",
+            "description": "List the user's notes stored in Nextcloud Notes — a numbered list (1., 2., ...) with title, category, tags, and a content preview. Call this first when the user mentions their notes.",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -246,11 +246,11 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "read_note",
-            "description": "Read a note by its ID. The ID is the actual Nextcloud ID (e.g. 284), NOT the list order number.",
+            "description": "Read a note's full content. Pass the note's list number from the latest list_notes or search_notes output.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "note_id": {"type": "integer", "description": "The note's actual ID from Nextcloud (e.g. 284), as shown in list_notes output."},
+                    "note_id": {"type": "integer", "description": "The note's list position number (e.g. 2) from the latest list_notes/search_notes output."},
                 },
                 "required": ["note_id"],
             },
@@ -260,11 +260,11 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "update_note",
-            "description": "Update an existing note. Only provided fields are changed. The ID is the actual Nextcloud ID (e.g. 284).",
+            "description": "Update an existing note. Only provided fields are changed. Identify the note by its list number from the latest list_notes or search_notes output.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "note_id": {"type": "integer", "description": "The note's actual ID from Nextcloud (e.g. 284)."},
+                    "note_id": {"type": "integer", "description": "The note's list position number (e.g. 2) from the latest list_notes/search_notes output."},
                     "title": {"type": "string", "description": "New title (leave empty to keep current)."},
                     "content": {"type": "string", "description": "New content (leave empty to keep current)."},
                     "category": {"type": "string", "description": "New category (leave empty to keep current)."},
@@ -278,11 +278,11 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "delete_note",
-            "description": "Delete a note by its ID. Requires user confirmation. The ID is the actual Nextcloud ID (e.g. 284).",
+            "description": "Delete a note. Requires user confirmation. Identify the note by its list number from the latest list_notes or search_notes output.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "note_id": {"type": "integer", "description": "The note's actual ID from Nextcloud (e.g. 284)."},
+                    "note_id": {"type": "integer", "description": "The note's list position number (e.g. 2) from the latest list_notes/search_notes output."},
                 },
                 "required": ["note_id"],
             },
@@ -324,7 +324,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "list_tasks",
-            "description": "Show the user's tasks from Nextcloud Tasks — title, due date, priority, and description preview. Call this when the user asks about their tasks or to-dos.",
+            "description": "Show the user's tasks from Nextcloud Tasks — a numbered list (1., 2., ...) with title, due date, priority, and description preview. Call this when the user asks about their tasks or to-dos.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -338,11 +338,11 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "complete_task",
-            "description": "Mark a task as done. Find the UID from list_tasks output under 'UID:'. Requires user confirmation.",
+            "description": "Mark a task as done. Identify the task by its list number from the latest list_tasks output. Requires user confirmation.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "uid": {"type": "string", "description": "Task UID (or unique prefix) from list_tasks output."},
+                    "uid": {"type": "string", "description": "The task's list position number (e.g. '3') from the latest list_tasks or search_tasks output."},
                 },
                 "required": ["uid"],
             },
@@ -352,11 +352,11 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "delete_task",
-            "description": "Delete a task permanently. Find the UID from list_tasks output under 'UID:'. Requires user confirmation.",
+            "description": "Delete a task permanently. Identify the task by its list number from the latest list_tasks output. Requires user confirmation.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "uid": {"type": "string", "description": "Task UID (or unique prefix) from list_tasks output."},
+                    "uid": {"type": "string", "description": "The task's list position number (e.g. '3') from the latest list_tasks or search_tasks output."},
                 },
                 "required": ["uid"],
             },
@@ -417,7 +417,7 @@ def get_combined_tools() -> list[dict]:
 CONFIRM_TOOLS = {"send_email", "delete_calendar_event", "update_calendar_event", "delete_note", "complete_task", "delete_task"}
 
 # Tools that are safe to run offline (no destructive side effects, no network needed)
-OFFLINE_SAFE_TOOLS = {"set_timer", "save_memory", "web_search"}
+OFFLINE_SAFE_TOOLS = {"save_memory"}
 
 # Required params for confirm tools (checked before yielding confirm event)
 CONFIRM_REQUIRED = {

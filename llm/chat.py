@@ -5,6 +5,8 @@ import logging
 import time
 
 from config import (
+    DEFAULT_LLM_MAX_OUTPUT_TOKENS,
+    DEFAULT_LLM_NUM_CTX,
     LITERT_BASE_URL,
     OLLAMA_BASE_URL,
     get,
@@ -153,8 +155,8 @@ async def chat_with_ollama(
         iter_msgs = _normalize_messages_for_backend(full_msgs + current_msgs, backend=get("LLM_BACKEND", "litert"))
         iter_msgs = trim_messages_for_context(
             iter_msgs,
-            context_window=int(get("LLM_NUM_CTX", 6144)),
-            reserved_output=int(get("LLM_MAX_OUTPUT_TOKENS", 2048)),
+            context_window=int(get("LLM_NUM_CTX", DEFAULT_LLM_NUM_CTX)),
+            reserved_output=int(get("LLM_MAX_OUTPUT_TOKENS", DEFAULT_LLM_MAX_OUTPUT_TOKENS)),
             tools_tokens=tools_tokens,
         )
         resp_json, message, err = await _llm_request(
@@ -169,18 +171,24 @@ async def chat_with_ollama(
             return {"reply": "Motor boş yanıt döndürdü. Lütfen tekrar deneyin.", "pending_action": None, "memories_saved": memories_saved, "thinking": None}
 
         if resp_json.get("done_reason") == "length":
-            logger.warning(f"Ollama stopped early (done_reason='length'). Consider raising LLM_NUM_CTX (currently {get('LLM_NUM_CTX', 6144)}).")
+            logger.warning(f"Ollama stopped early (done_reason='length'). Consider raising LLM_NUM_CTX (currently {get('LLM_NUM_CTX', DEFAULT_LLM_NUM_CTX)}).")
 
         tool_calls = message.get("tool_calls") or []
         raw_content = _THINKING_STRIP_RE.sub('', message.get("content", "") or "").strip()
         thinking = clean_reasoning(message.get("reasoning_content") or "")
 
-        if not tool_calls and not think and use_tools and iteration == 0:
-            reason = "tool leak" if _check_tool_leak(raw_content) else "empty tool_calls"
-            logger.info(f"No tool calls produced ({reason}), retrying with think-mode...")
+        # Unified think-mode retry (both backends): only a leaked tool-call
+        # pattern justifies the extra call — a legitimate plain-text answer
+        # must not pay for it. reasoning_effort is preserved so litert's
+        # thinking budget matches the original request.
+        if not tool_calls and not think and use_tools and iteration == 0 and _check_tool_leak(raw_content):
+            logger.info("No tool calls produced (tool leak), retrying with think-mode...")
             think_msgs = await _build_full_messages(messages, memories or [], summary, session_id, tool_group=tool_group)
             think_msgs = _normalize_messages_for_backend(think_msgs + current_msgs, backend=get("LLM_BACKEND", "litert"))
-            resp2, msg2, err2 = await _llm_request(think_msgs, use_think=True, use_tools=use_tools, tool_list=filtered_tools)
+            resp2, msg2, err2 = await _llm_request(
+                think_msgs, use_think=True, use_tools=use_tools, tool_list=filtered_tools,
+                reasoning_effort=reasoning_effort,
+            )
             if not err2 and msg2:
                 tc2 = msg2.get("tool_calls") or []
                 if tc2:
