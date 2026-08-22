@@ -22,7 +22,23 @@ from tools import (
 )
 
 from .payload import _build_full_messages, _build_payload, _normalize_messages_for_backend, trim_messages_for_context
-from .utils import _THINKING_STRIP_RE, _check_tool_leak, _get_client, clean_reasoning, strip_prefix, strip_tool_leaks
+from .utils import (
+    _THINKING_STRIP_RE,
+    _check_tool_leak,
+    _get_client,
+    clean_reasoning,
+    strip_prefix,
+    strip_tool_leaks,
+)
+from .utils import (
+    EMPTY_ANSWER_FALLBACK as _EMPTY_ANSWER_FALLBACK,
+)
+from .utils import (
+    FINALIZE_NUDGE as _FINALIZE_NUDGE,
+)
+from .utils import (
+    MAX_IDENTICAL_EXECUTIONS as _MAX_IDENTICAL_EXECUTIONS,
+)
 
 logger = logging.getLogger("piSynapse")
 
@@ -177,11 +193,16 @@ async def chat_with_ollama(
             logger.info(f"No specific group — sending combined tools ({len(filtered_tools)} tools)")
 
     executed_tool_sigs: set[str] = set()
+    sig_exec_counts: dict[str, int] = {}
+    final_nudge_used = False
     tools_tokens = 0
     if use_tools and filtered_tools:
         tools_tokens = len(json.dumps(filtered_tools, ensure_ascii=False)) // 4
 
     for iteration in range(get("LLM_MAX_TOOL_ITERATIONS", 5)):
+        if final_nudge_used:
+            use_tools = False
+            filtered_tools = None
         iter_msgs = _normalize_messages_for_backend(full_msgs + current_msgs, backend=get("LLM_BACKEND", "litert"))
         iter_msgs = trim_messages_for_context(
             iter_msgs,
@@ -238,7 +259,17 @@ async def chat_with_ollama(
         }
         if current_sigs and current_sigs.issubset(executed_tool_sigs):
             logger.info(f"All {len(tool_calls)} tool call(s) already executed previously — returning accumulated text as final answer")
-            return {"reply": strip_prefix(raw_content), "pending_action": None, "memories_saved": memories_saved, "thinking": thinking}
+            if not raw_content.strip() and not final_nudge_used:
+                # Repeat with nothing accumulated: force one text-only round
+                # instead of returning an empty reply (2026-08-22 incident).
+                logger.info("Dedup hit with empty accumulated text — nudging a text-only final answer")
+                final_nudge_used = True
+                current_msgs.append({"role": "user", "content": _FINALIZE_NUDGE})
+                continue
+            reply = strip_prefix(raw_content)
+            if not reply.strip():
+                reply = _EMPTY_ANSWER_FALLBACK
+            return {"reply": reply, "pending_action": None, "memories_saved": memories_saved, "thinking": thinking}
 
         if non_confirm_calls:
             current_msgs.append({"role": "assistant", "content": message.get("content", ""), "tool_calls": non_confirm_calls})
@@ -247,6 +278,28 @@ async def chat_with_ollama(
                 tn = fn.get("name", "")
                 args: dict = {}
                 t0 = time.perf_counter()
+                probe_sig = f"{tn}({json.dumps(parse_tool_args(fn.get('arguments')), sort_keys=True)})"
+                if sig_exec_counts.get(probe_sig, 0) >= _MAX_IDENTICAL_EXECUTIONS:
+                    # Side-effect safety: never run the exact same call more
+                    # than _MAX_IDENTICAL_EXECUTIONS times per request.
+                    logger.warning(
+                        f"Tool {tn} identical signature already executed "
+                        f"{_MAX_IDENTICAL_EXECUTIONS}x — refusing re-execution"
+                    )
+                    tool_msg = {
+                        "role": "tool",
+                        "tool_name": tn,
+                        "content": (
+                            "[Refused: this exact tool call has already been "
+                            f"executed {_MAX_IDENTICAL_EXECUTIONS} times. Its "
+                            "result is in the messages above — do not call it "
+                            "again, answer from the existing result.]"
+                        ),
+                    }
+                    if call.get("id"):
+                        tool_msg["tool_call_id"] = call["id"]
+                    current_msgs.append(tool_msg)
+                    continue
                 try:
                     args = parse_tool_args(fn.get("arguments"))
                     result = await run_tool(tn, args, context)
@@ -270,6 +323,7 @@ async def chat_with_ollama(
                 args = parse_tool_args(fn.get("arguments"))
                 sig = f"{tn}({json.dumps(args, sort_keys=True)})"
                 executed_tool_sigs.add(sig)
+                sig_exec_counts[sig] = sig_exec_counts.get(sig, 0) + 1
 
         for call in confirm_calls:
             tn = call.get("function", {}).get("name", "")
