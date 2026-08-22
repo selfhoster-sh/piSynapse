@@ -221,7 +221,8 @@ class _FakeTextStreamClient:
 
 class _LeakThenRetryClient(_FakeTextStreamClient):
     """Streams leak-text; captures think-retry POSTs and answers them with a
-    real tool_calls object in the backend's non-stream format."""
+    real tool_calls object in the backend's non-stream format.
+    """
 
     def __init__(self, text):
         super().__init__(text)
@@ -426,7 +427,8 @@ def test_chat_plain_text_cannot_fire_tool(monkeypatch, caplog):
 
 def test_chat_think_retry_preserves_reasoning_effort(monkeypatch):
     """Unified retry design: the non-stream retry fires on leak-text and must
-    forward reasoning_effort so litert keeps its thinking budget."""
+    forward reasoning_effort so litert keeps its thinking budget.
+    """
     import llm.chat as llm_chat
 
     seen = {}
@@ -451,7 +453,8 @@ def test_chat_think_retry_preserves_reasoning_effort(monkeypatch):
 
 def test_chat_no_retry_on_plain_answer_without_leak(monkeypatch):
     """A legitimate plain first answer (no leak) must not pay for an extra
-    think-mode LLM call."""
+    think-mode LLM call.
+    """
     import llm.chat as llm_chat
 
     calls = []
@@ -470,7 +473,8 @@ def test_chat_no_retry_on_plain_answer_without_leak(monkeypatch):
 def test_stream_litert_leak_retry_recovers_tool_calls(monkeypatch):
     """Parity fix: LiteRT streams get the same think-mode retry as Ollama —
     the retry POST goes to the litert URL with think/effort preserved and the
-    recovered tool call is actually executed."""
+    recovered tool call is actually executed.
+    """
     import llm.stream as llm_stream
 
     fake = _LeakThenRetryClient("<|tool_call|>get_current_time")
@@ -520,7 +524,8 @@ def test_build_payload_reads_live_max_output(monkeypatch):
 
 def test_ollama_payload_includes_num_predict(monkeypatch):
     """Parity fix: MAX_OUTPUT_TOKENS must reach Ollama as options.num_predict,
-    not be silently ignored on the main chat path."""
+    not be silently ignored on the main chat path.
+    """
     monkeypatch.setattr(config, "LLM_MAX_OUTPUT_TOKENS", 777)
     payload = _build_payload([{"role": "user", "content": "hi"}], backend="ollama", use_tools=False)
     assert payload["options"]["num_predict"] == 777
@@ -666,7 +671,8 @@ def test_stream_defaults_tool_group_to_none(monkeypatch):
 
 def test_stream_ollama_error_line_surfaces_as_error_event(monkeypatch):
     """Parity fix: Ollama mid-stream {"error": ...} NDJSON lines must surface
-    as an error event instead of being silently ignored."""
+    as an error event instead of being silently ignored.
+    """
     import llm.stream as llm_stream
 
     class _ErrResp:

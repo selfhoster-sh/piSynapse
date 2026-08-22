@@ -334,7 +334,8 @@ class Handler(BaseHTTPRequestHandler):
     def _validate_model(self, body) -> bool:
         """Model field gate: empty/missing silently falls back to the loaded
         model; an explicit unknown model is rejected with 409 + allowed list.
-        Returns False when an error response was already sent."""
+        Returns False when an error response was already sent.
+        """
         requested = str(body.get("model") or "").strip()
         if not requested:
             body["model"] = self.model_id
