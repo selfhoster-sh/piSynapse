@@ -116,6 +116,19 @@ def _shrink_tool_responses(current_msgs: list[dict]) -> None:
             m["content"] = m["content"][:600] + "\n[content truncated]"
 
 
+# Anti-loop guards (2026-08-22 notes tool-call loop incident): a small model
+# may keep re-emitting the same tool call instead of summarizing its result.
+_FINALIZE_NUDGE = (
+    "[System note: your previous tool call was already executed and its full "
+    "result is in the conversation above. Do NOT call any tool again — "
+    "summarize that result for the user in plain text now.]"
+)
+_EMPTY_ANSWER_FALLBACK = (
+    "İşlem tamamlandı ancak özet oluşturulamadı. Lütfen isteğini tekrar dener misin?"
+)
+_MAX_IDENTICAL_EXECUTIONS = 2
+
+
 async def chat_with_ollama_stream(
     messages: list[dict],
     *,
@@ -150,11 +163,13 @@ async def chat_with_ollama_stream(
             logger.info(f"No specific group — sending combined tools ({len(filtered_tools)} tools)")
 
     executed_tool_sigs: set[str] = set()
+    sig_exec_counts: dict[str, int] = {}
     truncation_retried = False
     overflow_retried = False
+    final_nudge_used = False
 
     for iteration in range(get("LLM_MAX_TOOL_ITERATIONS", 5)):
-        if truncation_retried:
+        if truncation_retried or final_nudge_used:
             use_tools = False
             filtered_tools = None
         tools_tokens = 0
@@ -361,8 +376,14 @@ async def chat_with_ollama_stream(
         }
         if current_sigs and current_sigs.issubset(executed_tool_sigs):
             logger.info(f"All {len(tool_calls_acc)} tool call(s) already executed previously — yielding accumulated text as final answer")
-            if buf:
-                yield {"token": buf}
+            if not buf.strip() and not final_nudge_used:
+                # Repeat with nothing accumulated: force one text-only round
+                # instead of yielding an empty reply (2026-08-22 incident).
+                logger.info("Dedup hit with empty accumulated text — nudging a text-only final answer")
+                final_nudge_used = True
+                current_msgs.append({"role": "user", "content": _FINALIZE_NUDGE})
+                continue
+            yield {"token": buf.strip() or _EMPTY_ANSWER_FALLBACK}
             yield {"done": True, "memories_saved": memories_saved, "reasoning": clean_reasoning(full_reasoning)}
             return
 
@@ -373,6 +394,28 @@ async def chat_with_ollama_stream(
                 tn = fn.get("name", "")
                 args: dict = {}
                 t0 = time.perf_counter()
+                probe_sig = f"{tn}({json.dumps(parse_tool_args(fn.get('arguments')), sort_keys=True)})"
+                if sig_exec_counts.get(probe_sig, 0) >= _MAX_IDENTICAL_EXECUTIONS:
+                    # Side-effect safety: never run the exact same call more
+                    # than _MAX_IDENTICAL_EXECUTIONS times per request.
+                    logger.warning(
+                        f"Tool {tn} identical signature already executed "
+                        f"{_MAX_IDENTICAL_EXECUTIONS}x — refusing re-execution"
+                    )
+                    tool_msg = {
+                        "role": "tool",
+                        "tool_name": tn,
+                        "content": (
+                            "[Refused: this exact tool call has already been "
+                            f"executed {_MAX_IDENTICAL_EXECUTIONS} times. Its "
+                            "result is in the messages above — do not call it "
+                            "again, answer from the existing result.]"
+                        ),
+                    }
+                    if call.get("id"):
+                        tool_msg["tool_call_id"] = call["id"]
+                    current_msgs.append(tool_msg)
+                    continue
                 try:
                     args = parse_tool_args(fn.get("arguments"))
                     result = await run_tool(tn, args, context)
@@ -396,6 +439,7 @@ async def chat_with_ollama_stream(
                 args = parse_tool_args(fn.get("arguments"))
                 sig = f"{tn}({json.dumps(args, sort_keys=True)})"
                 executed_tool_sigs.add(sig)
+                sig_exec_counts[sig] = sig_exec_counts.get(sig, 0) + 1
 
         for call in confirm_calls:
             tn = call.get("function", {}).get("name", "")
