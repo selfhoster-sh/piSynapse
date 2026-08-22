@@ -322,6 +322,7 @@ async def transcribe_gemma4(
                     "images": [audio_b64],
                 }],
                 "stream": False,
+                "think": False,
                 # num_ctx cap is required: audio embeddings overflow the
                 # Ollama runner's default context memory (community limit ~8k).
                 "options": {"temperature": 0.1, "num_predict": num_predict, "num_ctx": 8192},

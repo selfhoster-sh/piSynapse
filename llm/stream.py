@@ -252,7 +252,9 @@ async def chat_with_ollama_stream(
                             raise RuntimeError(f"ollama stream error: {err}")
                         msg = data.get("message", {})
                         token = msg.get("content", "")
-                        reasoning_token = msg.get("reasoning_content", "") or ""
+                        # Ollama >=0.9 emits thinking as `message.thinking`;
+                        # accept the older reasoning_content alias too.
+                        reasoning_token = msg.get("thinking") or msg.get("reasoning_content") or ""
                         tc = msg.get("tool_calls")
                         done = data.get("done", False)
                         if done:
