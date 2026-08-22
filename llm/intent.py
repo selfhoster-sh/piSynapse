@@ -214,6 +214,10 @@ async def _classify_intent(message: str, query_embedding: bytes | None = None) -
         if backend == "litert":
             url = f"{LITERT_BASE_URL}/v1/chat/completions"
         else:
+            # Explicit think=False: thinking-capable models (gemma4) otherwise
+            # burn the tiny num_predict budget on hidden reasoning -> slow,
+            # always-empty classification.
+            payload["think"] = False
             payload["options"] = {"temperature": 0, "num_predict": 20, "num_ctx": 512}
             payload["keep_alive"] = get("LLM_KEEP_ALIVE", "4h")
             url = f"{OLLAMA_BASE_URL}/api/chat"

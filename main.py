@@ -162,6 +162,7 @@ async def lifespan(app: FastAPI):
                             "model": LLM_MODEL,
                             "messages": [{"role": "user", "content": "hi"}],
                             "stream": False,
+                            "think": False,
                             "keep_alive": os.getenv("LLM_KEEP_ALIVE", "4h"),
                             "tools": TOOLS,
                             "options": {

@@ -200,6 +200,8 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 .msg-meta .ts{font-size:11px;color:var(--text4)}
 /* Minimal chat: hide sender name + timestamp above every message */
 body.minimal-chat .msg-meta{display:none}
+/* Minimal mode: keep a little more air between consecutive messages */
+body.minimal-chat .msg-group{margin-bottom:34px}
 /* Black theme taste: user's own sender label a bit fainter */
 body.theme-black .msg-group.user .msg-meta .who{color:var(--text3)}
 
@@ -376,6 +378,8 @@ body.theme-black .msg-group.user .msg-meta .who{color:var(--text3)}
   transition:all .2s;flex-shrink:0}@media (hover:hover){
 .tts-btn:hover:not(:focus){color:var(--text);background:var(--surface2)}}
 .tts-btn.tts-playing{color:var(--accent);animation:mic-pulse 1s ease-in-out infinite}
+.msg-actions{display:flex;gap:4px;margin-top:6px}
+.copy-btn.copied{color:var(--accent)}
 
 #msg-input{flex:1 1 auto;min-width:0;background:none;border:none;outline:none;color:var(--text);
   font-size:15px;line-height:1.5;padding:8px 0;resize:none;max-height:200px;
@@ -1092,6 +1096,7 @@ const STRINGS = {
     thinkNone:'Kapalı', thinkMin:'Min', thinkLow:'Düşük', thinkMed:'Orta', thinkHigh:'Yüksek', thinkMax:'Maks',
     thinkingTitle:'Düşünme', thinkingLive:'Düşünüyor…',
     send:'Gönder', stopGen:'Üretimi durdur', stoppedMsg:'Yanıt durduruldu.', listenTitle:'Sesli oku',
+    copyTitle:'Mesajı kopyala', copiedTitle:'Kopyalandı',
     thinkEffortTitle:'Think seviyesi'
   },
   en:{
@@ -1140,6 +1145,7 @@ const STRINGS = {
     thinkNone:'Off', thinkMin:'Min', thinkLow:'Low', thinkMed:'Med', thinkHigh:'High', thinkMax:'Max',
     thinkingTitle:'Thinking', thinkingLive:'Thinking…',
     send:'Send', stopGen:'Stop generating', stoppedMsg:'Response stopped.', listenTitle:'Listen',
+    copyTitle:'Copy message', copiedTitle:'Copied',
     thinkEffortTitle:'Think effort'
   }
 };
@@ -2277,21 +2283,8 @@ async function sendMsg(){
       await loadSessions();
     }
     if(currentSid === sid){
-      // Add TTS button to streamed bubble (createStreamBubble doesn't add one)
-      if(bubble && fullText){
-        const group = bubble.closest('.msg-group');
-        if(group && !group.querySelector('.tts-btn')){
-          const meta = group.querySelector('.msg-meta');
-          if(meta){
-            const ttsBtn=document.createElement('button');
-            ttsBtn.className='tts-btn';
-            ttsBtn.title=t('listenTitle');
-            ttsBtn.innerHTML='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>';
-            ttsBtn.onclick=()=>toggleTTS(fullText, ttsBtn);
-            meta.appendChild(ttsBtn);
-          }
-        }
-      }
+      // Add copy/TTS actions to the streamed message (createStreamBubble adds none)
+      if(bubble && fullText) attachMsgActions(bubble.closest('.msg-group'), fullText);
       setLoading(false); el.focus();
       // Auto-speak response if voice input + auto-TTS enabled
       if(lastInputWasVoice && config.auto_tts_on_voice === 'on' && fullText){
@@ -2329,7 +2322,49 @@ function setLoading(v){
   btn.innerHTML=stoppable ? STOP_ICON : SEND_ICON;
   if(v){ dot.classList.remove('ok','warn','error'); dot.classList.add('thinking'); } else { dot.classList.remove('thinking'); pollHealth(); }
 }
- function addMsg(role, content, forceScroll=true, ts=null, images=null, reasoning=null){
+ const _SPEAKER_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>';
+const _CLIPBOARD_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+const _CHECK_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+
+async function copyMessage(text, btn){
+  let ok = true;
+  try{
+    await navigator.clipboard.writeText(text);
+  }catch(e){
+    // Clipboard API unavailable (non-secure context) — execCommand fallback.
+    try{
+      const ta=document.createElement('textarea');
+      ta.value=text; ta.style.position='fixed'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.select();
+      ok=document.execCommand('copy'); ta.remove();
+    }catch(e2){ ok=false; }
+  }
+  if(btn && ok){
+    btn.classList.add('copied');
+    const prev=btn.innerHTML;
+    btn.innerHTML=_CHECK_SVG; btn.title=t('copiedTitle');
+    setTimeout(()=>{ btn.classList.remove('copied'); btn.innerHTML=prev; btn.title=t('copyTitle'); },1400);
+  }
+}
+
+function attachMsgActions(group, text){
+  // Copy + listen buttons under assistant messages — survives minimal mode
+  // (they used to live in .msg-meta, which minimal mode hides).
+  if(!group || group.querySelector('.msg-actions')) return;
+  const row=document.createElement('div'); row.className='msg-actions';
+  const copyBtn=document.createElement('button');
+  copyBtn.className='tts-btn copy-btn'; copyBtn.title=t('copyTitle');
+  copyBtn.innerHTML=_CLIPBOARD_SVG;
+  copyBtn.onclick=()=>copyMessage(text,copyBtn);
+  const ttsBtn=document.createElement('button');
+  ttsBtn.className='tts-btn'; ttsBtn.title=t('listenTitle');
+  ttsBtn.innerHTML=_SPEAKER_SVG;
+  ttsBtn.onclick=()=>toggleTTS(text,ttsBtn);
+  row.appendChild(copyBtn); row.appendChild(ttsBtn);
+  group.appendChild(row);
+}
+
+function addMsg(role, content, forceScroll=true, ts=null, images=null, reasoning=null){
   document.querySelector('.welcome')?.remove();
   const g=document.createElement('div'); g.className='msg-group '+role;
   const who=role==='user' ? (config.username||t('you')) : 'piSynapse';
@@ -2352,12 +2387,7 @@ function setLoading(v){
   }
   if(role==='assistant'){
     b.innerHTML+=renderMd(content);
-    const ttsBtn=document.createElement('button');
-    ttsBtn.className='tts-btn';
-    ttsBtn.title=t('listenTitle');
-    ttsBtn.innerHTML='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>';
-    ttsBtn.onclick=()=>toggleTTS(content, ttsBtn);
-    g.querySelector('.msg-meta').appendChild(ttsBtn);
+    attachMsgActions(g, content);
   } else if(content) b.appendChild(document.createTextNode(content));
   document.getElementById('messages').appendChild(g); scrollEnd(forceScroll);
 }
