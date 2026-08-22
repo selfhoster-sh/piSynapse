@@ -88,15 +88,20 @@ Test suite grows from 275 to 302 passing tests (+2 documented xfails).
   checkouts lack the schema), and a session-finish safety net closes any
   leaked connection so CI runs can no longer hang at interpreter exit with
   a non-daemon aiosqlite worker thread.
+- The two remaining leak-variant blind spots (previously pinned as xfail)
+  now sanitize correctly: mangled `<tool|call>` delimiter tags are consumed
+  entirely, and standalone JSON echoes of tool_calls objects are removed at
+  save time — strictly line-exact and known-tool-names-only, so legitimate
+  JSON inside prose is never touched (regression-tested).
 
 ### Tests
 
-- Suite expanded from 275 to 304 passing tests (+2 xfails documenting known
-  leak-variant limits): history-hygiene variants with real save-path
-  integration, summary hygiene, streaming and non-streaming loop-guard
-  scenarios, Ollama think-stream parsing (stream and non-stream), intent
-  classification across backends, and settings backend-switch mapping;
-  `ruff check` clean.
+- Suite expanded from 275 to 308 passing tests (zero xfails — both
+  previously documented leak-variant limitations are fixed): history-hygiene
+  variants with real save-path integration, summary hygiene, streaming and
+  non-streaming loop-guard scenarios, Ollama think-stream parsing (stream and
+  non-stream), intent classification across backends, settings backend-switch
+  mapping, plus over-stripping regression tests; `ruff check` clean.
 
 ## [1.3.0] - 2026-08-22
 
