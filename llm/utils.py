@@ -34,7 +34,8 @@ _TOOL_NAMES_ALTERNATION = "|".join(re.escape(n) for n in sorted(TOOL_NAMES, key=
 # 1. Tool name followed by an argument payload, e.g. `get_datetime {"..."}` / `send_email(to=...)`
 _TOOL_LEAK_RE = re.compile(r'\b(' + _TOOL_NAMES_ALTERNATION + r')\s*[\{\(]')
 # 2. Literal tool-call tag the model may emit as text: <|tool_call|>, <tool_call>, </tool_call>
-_TOOL_TAG_RE = re.compile(r'<\|?/?tool_call\|?>', re.IGNORECASE)
+#    Tolerates pipe-vs-underscore mangling inside the tag itself (<tool|call>).
+_TOOL_TAG_RE = re.compile(r'<\|?/?tool[|_]call\|?>', re.IGNORECASE)
 # 3. JSON echo of a tool_calls object: "name": "send_email" in the reply text
 _TOOL_JSON_NAME_RE = re.compile(r'"name"\s*:\s*"(' + _TOOL_NAMES_ALTERNATION + r')"')
 # Defensive strip: Qwen-style <think>...</think> and Gemma 4 channel tags.
@@ -55,7 +56,7 @@ _REASONING_WRAP_RE = re.compile(r'<\|channel>.*?\n|<channel\|>|</?think>', re.DO
 # through think mode) and a missing argument payload entirely.
 # Group 1 = tool name, group 2 = `key:value` argument payload (optional).
 _TOOL_CALL_TAG_RE = re.compile(
-    r'<\|?/?tool_call\|?>\s*call:(\w+)\s*(?:\{\{?([^{}]*)\}?\})?\s*<\|?/?tool_call\|?>',
+    r'<\|?/?tool[|_]call\|?>\s*call:(\w+)\s*(?:\{\{?([^{}]*)\}?\})?\s*<\|?/?tool[|_]call\|?>',
     re.DOTALL,
 )
 
@@ -113,6 +114,49 @@ def _collapse_spaces_outside_fences(text: str) -> str:
     )
 
 
+def _is_tool_call_json(candidate: str) -> bool:
+    """True when ``candidate`` parses as JSON and every item is a
+    tool-call-shaped object referencing a KNOWN tool name.
+    """
+    try:
+        data = json.loads(candidate)
+    except (ValueError, TypeError):
+        return False
+    items = data if isinstance(data, list) else [data]
+    if not items:
+        return False
+    return all(
+        isinstance(it, dict)
+        and isinstance(it.get("name"), str)
+        and it["name"] in TOOL_NAMES
+        and "arguments" in it
+        for it in items
+    )
+
+
+def _strip_json_tool_echo(text: str) -> str:
+    """Remove standalone JSON echoes of tool_calls objects (per line).
+
+    Only lines that are EXACTLY one JSON object/array of known tool calls
+    are removed — JSON embedded inside prose or unknown tool names survive,
+    so legitimate content is never touched. Pretty-printed multi-line echoes
+    are deliberately left alone (conservative).
+    """
+    kept = []
+    for line in text.splitlines():
+        s = line.strip()
+        if (
+            len(s) > 1
+            and s[0] in "[{"
+            and s[-1] in "]}"
+            and '"name"' in s
+            and _is_tool_call_json(s)
+        ):
+            continue
+        kept.append(line)
+    return "\n".join(kept)
+
+
 def strip_tool_leaks(text: str) -> str:
     """Remove leaked <|tool_call|> fragments from assistant text."""
     if not text:
@@ -120,6 +164,7 @@ def strip_tool_leaks(text: str) -> str:
     text = _TOOL_CALL_TAG_RE.sub("", text)
     text = _TOOL_CALL_BARE_RE.sub("", text)
     text = _TOOL_TAG_RE.sub("", text)
+    text = _strip_json_tool_echo(text)
     return _collapse_spaces_outside_fences(text).strip()
 
 

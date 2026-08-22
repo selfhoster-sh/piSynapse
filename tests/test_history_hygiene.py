@@ -16,7 +16,6 @@ import json
 import sys
 import types
 
-import pytest
 from fastapi import BackgroundTasks
 
 import routers.chat as rc
@@ -171,24 +170,26 @@ def test_stream_pure_leak_reply_is_not_persisted(monkeypatch):
     assert ("user", "notlarımı listele") in cap.calls
     assert any('"done"' in c for c in chunks)
 
+# ------------------------------------------------- former known limitations --
+# Both blind spots are fixed now; kept as regression tests plus negative
+# cases proving legitimate content is never over-stripped.
 
-# ------------------------------------------------------ known limitations --
-# Deliberately UNFIXED: pin today's blind spots as xfail. When the parser
-# learns these formats the tests flip green (strict=False allows xpass).
 
-@pytest.mark.xfail(
-    reason="known limitation: alternate <tool|call> delimiter unrecognized; "
-    "only the bare call: body is stripped, delimiter shells remain",
-    strict=False,
-)
-def test_known_limitation_alternate_delimiter():
+def test_alternate_delimiter_variant_stripped():
     assert rc._clean_assistant_reply("<tool|call>call:list_notes{{}}<tool|call>") == ""
 
 
-@pytest.mark.xfail(
-    reason="known limitation: JSON tool_calls echo is detected upstream "
-    "(_check_tool_leak) but strip_tool_leaks has no remover for it",
-    strict=False,
-)
-def test_known_limitation_json_echo_survives_strip():
+def test_json_echo_survivor_stripped():
     assert rc._clean_assistant_reply('[{"name": "list_notes", "arguments": {}}]') == ""
+
+
+def test_json_echo_unknown_tool_preserved():
+    # Not a known tool name -> not a leak, must survive untouched.
+    text = '[{"name": "unknown_tool", "arguments": {}}]'
+    assert rc._clean_assistant_reply(text) == text
+
+
+def test_inline_json_mention_preserved():
+    # JSON inside prose (not standalone) must never be stripped.
+    text = 'Bunu dene: [{"name": "list_notes", "arguments": {}}] ister misin?'
+    assert rc._clean_assistant_reply(text) == text
