@@ -238,10 +238,11 @@ def test_tasks_list_raises_on_fetch_error(monkeypatch):
     monkeypatch.setattr(utilsmod.time, "sleep", lambda s: None)
 
     class BoomCal:
-        def todos(self):
+        def todos(self, include_completed=False):
             raise RuntimeError("network unreachable")
 
     monkeypatch.setattr(nt, "_get_task_calendar", lambda: BoomCal())
+    monkeypatch.setattr(nt, "_todos_cache", None)
     with pytest.raises(RuntimeError):
         nt._list_tasks_sync(show_completed=False)
 
@@ -257,6 +258,76 @@ def test_tasks_complete_raises_on_fetch_error(monkeypatch):
     monkeypatch.setattr(nt, "_get_task_calendar", lambda: BoomCal())
     with pytest.raises(RuntimeError):
         nt._complete_task_sync("abc")
+
+
+# -- list_tasks(show_completed=True) must actually fetch completed todos (A3) --
+
+def test_tasks_list_requests_completed_flag_and_caches_per_flag(monkeypatch):
+    import nextcloud_tasks as nt
+
+    calls = []
+
+    class FakeCal:
+        def todos(self, include_completed=False):
+            calls.append(include_completed)
+            return []
+
+    monkeypatch.setattr(nt, "_get_task_calendar", lambda: FakeCal())
+    monkeypatch.setattr(nt, "_todos_cache", None)
+
+    text, items = nt._list_tasks_sync(show_completed=True)
+    assert calls == [True]
+    assert text == "No tasks found."
+
+    # Same flag within TTL → served from cache; flag change → refetch
+    nt._list_tasks_sync(show_completed=True)
+    assert calls == [True]
+    nt._list_tasks_sync(show_completed=False)
+    assert calls == [True, False]
+
+
+# -- Writes must invalidate listing caches so the next list is fresh (B5) --
+
+def test_task_create_invalidates_todos_cache(monkeypatch):
+    import nextcloud_tasks as nt
+
+    saved = []
+
+    class FakeCal:
+        def save_todo(self, todo):
+            saved.append(todo)
+
+    monkeypatch.setattr(nt, "_get_task_calendar", lambda: FakeCal())
+    monkeypatch.setattr(nt, "_todos_cache", (False, ["stale"]))
+    monkeypatch.setattr(nt, "_todos_cache_ts", 123.0)
+
+    result = nt._create_task_sync("Buy milk", "", 0, "")
+    assert result.startswith("OK")
+    assert nt._todos_cache is None
+    assert nt._todos_cache_ts == 0
+
+
+def test_note_write_invalidates_list_cache():
+    from unittest.mock import patch
+
+    import nextcloud_notes as nn
+
+    client = nn.NextcloudNotesClient()
+    client._request = lambda *a, **k: {"id": 9, "title": "T", "etag": "e1"}
+    client._list_cache = [{"id": 1, "title": "old"}]
+    client._list_cache_ts = 999.0
+
+    with patch.object(nn, "_notes_client", client):
+        assert asyncio.run(nn.create_note("New", "body")) == "OK Note 'New' created."
+        assert client._list_cache is None
+
+        client._list_cache = [{"id": 1, "title": "old"}]
+        assert asyncio.run(nn.update_note(9, title="U")) == "OK Note updated."
+        assert client._list_cache is None
+
+        client._list_cache = [{"id": 1, "title": "old"}]
+        assert asyncio.run(nn.delete_note(9)) == "OK Note deleted."
+        assert client._list_cache is None
 
 
 # -- Nextcloud notes: NotFound vs network error (bulgu 25, 26) --

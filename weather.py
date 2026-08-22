@@ -62,7 +62,7 @@ async def get_weather(city: str = "") -> str:
             "https://api.open-meteo.com/v1/forecast",
             params={
                 "latitude": lat, "longitude": lon,
-                "current": "temperature_2m,apparent_temperature,weathercode",
+                "current": "temperature_2m,apparent_temperature",
                 "timezone": "auto",
             },
             headers={"User-Agent": "piSynapse/1.0"},

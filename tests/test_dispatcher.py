@@ -49,7 +49,7 @@ class TestCalendarTools:
         assert result == "ERROR: 'duration_minutes' must be a valid number, got: 'abc'"
 
     async def test_list_defaults_to_seven_days(self):
-        with patch("calendar_ops.list_events", return_value="no events") as le:
+        with patch("calendar_ops.list_events", return_value=("no events", [])) as le:
             result = await run_tool("list_calendar_events", {})
         le.assert_called_once_with(7)
         assert result == "no events"
@@ -58,30 +58,45 @@ class TestCalendarTools:
         result = await run_tool("update_calendar_event", {"new_summary": "X"})
         assert result == "ERROR: Event name required."
 
-    async def test_update_passes_kwargs(self):
-        with patch("calendar_ops.update_event", return_value="Updated.") as ue:
+    async def test_update_resolves_list_number_to_uid(self):
+        cached = [{"uid": "uid-real-1", "summary": "Meet", "start": "2026-08-17 10:00"}]
+        with patch("calendar_ops.update_event", return_value="Updated.") as ue, \
+             patch("prompt.get_calendar_context", new=AsyncMock(return_value=cached)):
             result = await run_tool(
                 "update_calendar_event",
-                {"summary": "Meet", "new_summary": "Meet 2", "event_uid": "uid-1", "new_duration_minutes": 45},
+                {"summary": "Meet", "new_summary": "Meet 2", "event_uid": "1"},
+                context={"session_id": "s9"},
             )
         assert result == "Updated."
-        assert ue.call_args.args == ("Meet",)
-        assert ue.call_args.kwargs == {
-            "new_summary": "Meet 2",
-            "new_start_time": "",
-            "new_duration_minutes": 45,
-            "event_uid": "uid-1",
-        }
+        assert ue.call_args.kwargs["event_uid"] == "uid-real-1"
+
+    async def test_update_rejects_out_of_range_number(self):
+        cached = [{"uid": "uid-real-1", "summary": "Meet", "start": ""}]
+        with patch("calendar_ops.update_event", return_value="Updated.") as ue, \
+             patch("prompt.get_calendar_context", new=AsyncMock(return_value=cached)):
+            result = await run_tool(
+                "update_calendar_event",
+                {"summary": "Meet", "event_uid": "5"},
+                context={"session_id": "s9"},
+            )
+        assert result.startswith("ERROR: Event '5' not found")
+        ue.assert_not_called()
 
     async def test_delete_requires_summary(self):
         result = await run_tool("delete_calendar_event", {})
         assert result == "ERROR: Event name required."
 
-    async def test_delete_passes_uid(self):
-        with patch("calendar_ops.delete_event", return_value="Deleted.") as de:
-            result = await run_tool("delete_calendar_event", {"summary": "Meet", "event_uid": "uid-1"})
+    async def test_delete_resolves_list_number_to_uid(self):
+        cached = [{"uid": "uid-real-2", "summary": "Meet", "start": ""}]
+        with patch("calendar_ops.delete_event", return_value="Deleted.") as de, \
+             patch("prompt.get_calendar_context", new=AsyncMock(return_value=cached)):
+            result = await run_tool(
+                "delete_calendar_event",
+                {"summary": "Meet", "event_uid": "1"},
+                context={"session_id": "s9"},
+            )
         assert result == "Deleted."
-        de.assert_called_once_with("Meet", event_uid="uid-1")
+        de.assert_called_once_with("Meet", event_uid="uid-real-2")
 
     async def test_calendar_exception_is_sanitized(self):
         with patch("calendar_ops.list_events", side_effect=RuntimeError("boom")):
@@ -209,6 +224,14 @@ class TestMailTools:
         mc.get_message.assert_not_awaited()
         assert result.startswith("ERROR: Email not found.")
 
+    async def test_read_email_rejects_non_numeric_reference(self):
+        """Raw IMAP IDs / garbage strings are refused — positions only."""
+        mc = _mail_client(message={"from": "a@x.com", "body": "secret"})
+        with patch("mail.get_active_mail_client", return_value=mc), patch("prompt.get_email_context", new=AsyncMock(return_value=[{"id": "77", "from": "a@x.com"}])):
+            result = await run_tool("read_email", {"message_id": "77"}, context={"session_id": "s1"})
+        mc.get_message.assert_not_awaited()
+        assert result == "ERROR: Email not found. Run list_emails first to get the current listing."
+
     async def test_send_requires_all_fields(self):
         with patch("mail.get_active_mail_client", return_value=_mail_client()):
             result = await run_tool("send_email", {"to": "a@x.com"})
@@ -225,7 +248,9 @@ class TestMailTools:
         mc = _mail_client(sent=False)
         with patch("mail.get_active_mail_client", return_value=mc):
             result = await run_tool("send_email", {"to": "a@x.com", "subject": "S", "body": "B"})
-        assert result == "Failed to send."
+        assert result == "ERROR: Failed to send."
+        from tools.dispatcher import is_tool_success
+        assert not is_tool_success(result)
 
     async def test_search_requires_query(self):
         with patch("mail.get_active_mail_client", return_value=_mail_client()):
@@ -268,10 +293,22 @@ class TestNotesTools:
         assert result == "created"
 
     async def test_list_notes(self):
-        with patch("nextcloud_notes.list_notes", new=AsyncMock(return_value="[]")) as ln:
+        with patch("nextcloud_notes.list_notes", new=AsyncMock(return_value=("[]", []))) as ln:
             result = await run_tool("list_notes", {})
         ln.assert_awaited_once()
         assert result == "[]"
+
+    async def test_list_notes_caches_structured_items_not_parsed_text(self):
+        """The session map is built from the structured items returned by the
+        listing function — real IDs never appear in the displayed text.
+        """
+        items = [{"id": 42, "title": "T", "category": "", "preview": ""}]
+        with patch("nextcloud_notes.list_notes", new=AsyncMock(return_value=(" Notes:\n\n   1. T\n", items))), \
+             patch("prompt.cache_notes_context", new=AsyncMock()) as cache:
+            result = await run_tool("list_notes", {}, context={"session_id": "s1"})
+        cache.assert_awaited_once_with("s1", items)
+        assert "ID:" not in result
+        assert "42" not in result
 
     async def test_read_note_requires_id(self):
         result = await run_tool("read_note", {})
@@ -300,6 +337,22 @@ class TestNotesTools:
         result = await run_tool("update_note", {"note_id": "x", "title": "T"})
         assert "ERROR: Note 'x' not found" in result
 
+    async def test_delete_note_resolves_list_number(self):
+        cached = [{"id": 7, "title": "Old"}]
+        with patch("prompt.get_notes_context", new=AsyncMock(return_value=cached)), \
+             patch("nextcloud_notes.delete_note", new=AsyncMock(return_value="OK Note deleted.")) as dn:
+            result = await run_tool("delete_note", {"note_id": 1}, context={"session_id": "s1"})
+        dn.assert_awaited_once_with(7)
+        assert result == "OK Note deleted."
+
+    async def test_delete_note_out_of_range_refused(self):
+        cached = [{"id": 7, "title": "Old"}]
+        with patch("prompt.get_notes_context", new=AsyncMock(return_value=cached)), \
+             patch("nextcloud_notes.delete_note", new=AsyncMock()) as dn:
+            result = await run_tool("delete_note", {"note_id": "3"}, context={"session_id": "s1"})
+        assert "ERROR: Note '3' not found" in result
+        dn.assert_not_awaited()
+
     async def test_delete_note_requires_id(self):
         result = await run_tool("delete_note", {})
         assert result == "ERROR: note_id required."
@@ -309,7 +362,7 @@ class TestNotesTools:
         assert result == "ERROR: query required."
 
     async def test_search_notes_calls_handler(self):
-        with patch("nextcloud_notes.search_notes", new=AsyncMock(return_value="found")) as sn:
+        with patch("nextcloud_notes.search_notes", new=AsyncMock(return_value=("found", []))) as sn:
             result = await run_tool("search_notes", {"query": "  travel  "})
         sn.assert_awaited_once_with("travel")
         assert result == "found"
@@ -336,17 +389,46 @@ class TestTasksTools:
         assert result == "ERROR: 'priority' must be a valid number, got: 'high'"
 
     async def test_list_tasks_show_completed_flag(self):
-        with patch("nextcloud_tasks.list_tasks", new=AsyncMock(return_value="[]")) as lt:
+        with patch("nextcloud_tasks.list_tasks", new=AsyncMock(return_value=("[]", []))) as lt:
             result = await run_tool("list_tasks", {"show_completed": True})
         lt.assert_awaited_once_with(show_completed=True)
         assert result == "[]"
 
     async def test_list_tasks_string_false_is_false(self):
         """bool('false') would wrongly enable show_completed."""
-        with patch("nextcloud_tasks.list_tasks", new=AsyncMock(return_value="[]")) as lt:
+        with patch("nextcloud_tasks.list_tasks", new=AsyncMock(return_value=("[]", []))) as lt:
             result = await run_tool("list_tasks", {"show_completed": "false"})
         lt.assert_awaited_once_with(show_completed=False)
         assert result == "[]"
+
+    async def test_complete_task_resolves_list_number_to_uid(self):
+        cached = [{"uid": "uid-abc-123", "summary": "Buy milk"}]
+        with patch("prompt.get_tasks_context", new=AsyncMock(return_value=cached)), \
+             patch("nextcloud_tasks.complete_task", new=AsyncMock(return_value="OK 'Buy milk' marked as done.")) as ct:
+            result = await run_tool("complete_task", {"uid": "1"}, context={"session_id": "s1"})
+        ct.assert_awaited_once_with("uid-abc-123")
+        assert result.startswith("OK")
+
+    async def test_complete_task_rejects_truncated_uid_string(self):
+        """A truncated UID copied from old-style output must be refused."""
+        cached = [{"uid": "uid-abc-123", "summary": "Buy milk"}]
+        with patch("prompt.get_tasks_context", new=AsyncMock(return_value=cached)), \
+             patch("nextcloud_tasks.complete_task", new=AsyncMock()) as ct:
+            result = await run_tool("complete_task", {"uid": "uid-abc-123..."}, context={"session_id": "s1"})
+        assert "ERROR: Task 'uid-abc-123...' not found" in result
+        ct.assert_not_awaited()
+
+    async def test_delete_task_requires_uid(self):
+        result = await run_tool("delete_task", {})
+        assert result == "ERROR: uid required."
+
+    async def test_delete_task_out_of_range_refused(self):
+        cached = [{"uid": "uid-abc-123", "summary": "Buy milk"}]
+        with patch("prompt.get_tasks_context", new=AsyncMock(return_value=cached)), \
+             patch("nextcloud_tasks.delete_task", new=AsyncMock()) as dt:
+            result = await run_tool("delete_task", {"uid": 4}, context={"session_id": "s1"})
+        assert "ERROR: Task '4' not found" in result
+        dt.assert_not_awaited()
 
     async def test_list_emails_negative_limit_rejected(self):
         mc = _mail_client()
@@ -359,16 +441,12 @@ class TestTasksTools:
         result = await run_tool("complete_task", {})
         assert result == "ERROR: uid required."
 
-    async def test_delete_task_requires_uid(self):
-        result = await run_tool("delete_task", {})
-        assert result == "ERROR: uid required."
-
     async def test_search_tasks_requires_query(self):
         result = await run_tool("search_tasks", {})
         assert result == "ERROR: query required."
 
     async def test_search_tasks_calls_handler(self):
-        with patch("nextcloud_tasks.search_tasks", new=AsyncMock(return_value="found")) as st:
+        with patch("nextcloud_tasks.search_tasks", new=AsyncMock(return_value=("found", []))) as st:
             result = await run_tool("search_tasks", {"query": "milk"})
         st.assert_awaited_once_with("milk")
         assert result == "found"
@@ -377,3 +455,45 @@ class TestTasksTools:
         with patch("nextcloud_tasks.list_tasks", new=AsyncMock(side_effect=RuntimeError("boom"))):
             result = await run_tool("list_tasks", {})
         assert result == "ERROR: list_tasks failed"
+
+
+class TestUpdateNoteRealPath:
+    """A1 regression: update_note must forward category/tags through the REAL
+    async wrapper to the API client instead of raising TypeError.
+    """
+
+    def _fake_client(self):
+        client = MagicMock()
+        client.update_note = MagicMock(return_value={"id": 42, "title": "T"})
+        return client
+
+    async def test_wrapper_accepts_category_and_tags(self):
+        import nextcloud_notes as nn
+        client = self._fake_client()
+        with patch.object(nn, "_get_client", return_value=client):
+            result = await nn.update_note(42, title="T", content="C", category="work", tags=["a"])
+        assert result == "OK Note updated."
+        client.update_note.assert_called_once_with(42, "T", "C", "work", ["a"])
+
+    async def test_wrapper_not_found(self):
+        import nextcloud_notes as nn
+        client = self._fake_client()
+        client.update_note = MagicMock(return_value=None)
+        with patch.object(nn, "_get_client", return_value=client):
+            result = await nn.update_note(42, title="T")
+        assert result == "ERROR: Note not found."
+
+    async def test_dispatcher_end_to_end_passes_category_tags(self):
+        """Full chain: run_tool → positional resolution → wrapper → client."""
+        import nextcloud_notes as nn
+        client = self._fake_client()
+        cached = [{"id": 42, "title": "Old"}]
+        with patch.object(nn, "_get_client", return_value=client), \
+             patch("prompt.get_notes_context", new=AsyncMock(return_value=cached)):
+            result = await run_tool(
+                "update_note",
+                {"note_id": 1, "title": "Yeni", "category": "kişisel", "tags": ["a", "b"]},
+                context={"session_id": "s1"},
+            )
+        assert result == "OK Note updated."
+        client.update_note.assert_called_once_with(42, "Yeni", None, "kişisel", ["a", "b"])

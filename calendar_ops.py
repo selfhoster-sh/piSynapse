@@ -194,15 +194,23 @@ def create_event(summary: str, start_time_str: str, duration_minutes: int = 60) 
 
 
 @retry(attempts=2, delay=1.0)
-def list_events(days_ahead: int = 7) -> str:
+def list_events(days_ahead: int = 7) -> tuple[str, list[dict]]:
+    """List upcoming events.
+
+    Returns ``(display_text, items)`` where ``items`` are
+    ``{"uid": ..., "summary": ..., "start": ...}`` dicts in the exact order
+    they are numbered in ``display_text`` (the model only sees list
+    positions; real UIDs never appear in tool output).
+    """
     try:
         calendar = _get_calendar()
         start = datetime.now()
         end = start + timedelta(days=days_ahead)
         events = calendar.date_search(start, end)
         if not events:
-            return f"Next {days_ahead} days: no events."
+            return f"Next {days_ahead} days: no events.", []
         lines = []
+        items: list[dict] = []
         for i, ev in enumerate(events, 1):
             d = ev.vobject_instance.vevent
             s = getattr(d, "summary", getattr(d, "description", "Untitled")).value
@@ -210,16 +218,15 @@ def list_events(days_ahead: int = 7) -> str:
             ts = st.strftime("%Y-%m-%d %H:%M") if hasattr(st, "strftime") else str(st)
             uid = _get_uid(d)
             line = f"   {i}. {ts} | {s}"
-            if uid:
-                line += f"\n      UID: {uid[:20]}..."
             desc = getattr(d, "description", None)
             if desc and hasattr(desc, "value") and desc.value and desc.value != s:
                 line += f"\n      {desc.value[:100]}"
             lines.append(line)
-        return "Events:\n" + "\n".join(lines)
+            items.append({"uid": uid, "summary": s, "start": ts})
+        return "Events:\n" + "\n".join(lines), items
     except Exception as e:
         logger.error("Failed to list calendar events: %s", e)
-        return "ERROR: Could not load calendar events."
+        return "ERROR: Could not load calendar events.", []
 
 
 @retry(attempts=2, delay=1.0)

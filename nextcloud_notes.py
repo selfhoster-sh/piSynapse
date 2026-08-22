@@ -162,20 +162,33 @@ def _get_client() -> NextcloudNotesClient | None:
     return _notes_client
 
 
+def _invalidate_list_cache() -> None:
+    """Drop the 30s listing cache after a successful write (create/update/delete),
+    so the next listing reflects the change immediately.
+    """
+    if _notes_client is not None:
+        _notes_client._list_cache = None
+        _notes_client._list_cache_ts = 0.0
+
+
 # -- Async wrappers for FastAPI/tool dispatcher compatibility --
 
-async def list_notes() -> str:
-    """List all notes."""
+async def list_notes() -> tuple[str, list[dict]]:
+    """List all notes.
+
+    Returns ``(display_text, items)`` where ``items`` are the raw note dicts
+    in the exact order they are numbered in ``display_text`` (the model only
+    sees list positions; real IDs never appear in tool output).
+    """
     client = _get_client()
     if not client:
-        return "ERROR: Nextcloud credentials missing."
+        return "ERROR: Nextcloud credentials missing.", []
     try:
         notes = await asyncio.to_thread(client.list_notes)
         if not notes:
-            return "No notes found."
+            return "No notes found.", []
         lines = [" Notes:\n"]
         for i, n in enumerate(notes, 1):
-            nid = n.get("id", "?")
             title = n.get("title", "Untitled")
             category = n.get("category", "")
             tags = n.get("tags", [])
@@ -188,15 +201,15 @@ async def list_notes() -> str:
                 meta.append(f"Category: {category}")
             if tags:
                 meta.append(f"Tags: {', '.join(tags)}")
-            meta.append(f"ID: {nid}")
-            lines.append(f"      {' | '.join(meta)}")
+            if meta:
+                lines.append(f"      {' | '.join(meta)}")
             if content:
                 lines.append(f"      Preview: {content[:80].replace(chr(10), ' ')}")
             lines.append("")
-        return "\n".join(lines)
+        return "\n".join(lines), notes
     except Exception as e:
         logger.error(f"Nextcloud Notes Error: {e}")
-        return "ERROR: Failed to list notes."
+        return "ERROR: Failed to list notes.", []
 
 
 async def get_note(note_id: int) -> str:
@@ -207,7 +220,7 @@ async def get_note(note_id: int) -> str:
     try:
         note = await asyncio.to_thread(client.get_note, note_id)
         if not note:
-            return f"ERROR: Note {note_id} not found."
+            return "ERROR: Note not found."
         title = note.get("title", "Untitled")
         content = note.get("content", "")
         category = note.get("category", "")
@@ -222,15 +235,15 @@ async def get_note(note_id: int) -> str:
             meta.append(f"Category: {category}")
         if tags:
             meta.append(f"Tags: {', '.join(tags)}")
-        meta.append(f"ID: {note_id}")
         if modified:
             meta.append(f"Modified: {modified}")
-        lines.append(f"      {' | '.join(meta)}")
+        if meta:
+            lines.append(f"      {' | '.join(meta)}")
         lines.append("")
         lines.append(content)
         return "\n".join(lines)
     except NotFoundError:
-        return f"Note {note_id} not found."
+        return "Note not found."
     except Exception as e:
         logger.error(f"Nextcloud Notes Error: {e}")
         return "ERROR: Failed to get note."
@@ -242,26 +255,28 @@ async def create_note(title: str, content: str = "", category: str = "") -> str:
     if not client:
         return "ERROR: Nextcloud credentials missing."
     try:
-        result = await asyncio.to_thread(client.create_note, title, content, category)
-        nid = result.get("id", "?")
-        return f"OK Note '{title}' created (ID: {nid})."
+        await asyncio.to_thread(client.create_note, title, content, category)
+        _invalidate_list_cache()
+        return f"OK Note '{title}' created."
     except Exception as e:
         logger.error(f"Nextcloud Notes Error: {e}")
         return "ERROR: Failed to create note."
 
 
-async def update_note(note_id: int, title: str | None = None, content: str | None = None) -> str:
-    """Update an existing note."""
+async def update_note(note_id: int, title: str | None = None, content: str | None = None,
+                      category: str | None = None, tags: list[str] | None = None) -> str:
+    """Update an existing note. Only fields passed are forwarded to Nextcloud."""
     client = _get_client()
     if not client:
         return "ERROR: Nextcloud credentials missing."
     try:
-        result = await asyncio.to_thread(client.update_note, note_id, title, content)
+        result = await asyncio.to_thread(client.update_note, note_id, title, content, category, tags)
         if not result:
-            return f"ERROR: Note {note_id} not found."
-        return f"OK Note {note_id} updated."
+            return "ERROR: Note not found."
+        _invalidate_list_cache()
+        return "OK Note updated."
     except NotFoundError:
-        return f"Note {note_id} not found."
+        return "Note not found."
     except Exception as e:
         logger.error(f"Nextcloud Notes Error: {e}")
         return "ERROR: Failed to update note."
@@ -274,19 +289,24 @@ async def delete_note(note_id: int) -> str:
         return "ERROR: Nextcloud credentials missing."
     try:
         ok = await asyncio.to_thread(client.delete_note, note_id)
-        return f"OK Note {note_id} deleted." if ok else f"Note {note_id} not found."
+        if ok:
+            _invalidate_list_cache()
+        return "OK Note deleted." if ok else "Note not found."
     except NotFoundError:
-        return f"Note {note_id} not found."
+        return "Note not found."
     except Exception as e:
         logger.error(f"Nextcloud Notes Error: {e}")
         return "ERROR: Failed to delete note."
 
 
-async def search_notes(query: str) -> str:
-    """Search notes by title or content."""
+async def search_notes(query: str) -> tuple[str, list[dict]]:
+    """Search notes by title or content.
+
+    Returns ``(display_text, items)`` — same contract as ``list_notes``.
+    """
     client = _get_client()
     if not client:
-        return "ERROR: Nextcloud credentials missing."
+        return "ERROR: Nextcloud credentials missing.", []
     try:
         notes = await asyncio.to_thread(client.list_notes)
         q = query.lower()
@@ -295,18 +315,16 @@ async def search_notes(query: str) -> str:
             if q in (n.get("title", "") + " " + n.get("content", "")).lower()
         ]
         if not matches:
-            return f"'{query}' not found in notes."
+            return f"'{query}' not found in notes.", []
         lines = [f" Search Results for '{query}':\n"]
         for i, n in enumerate(matches[:10], 1):
-            nid = n.get("id", "?")
             title = n.get("title", "Untitled")
             preview = n.get("content", "")[:100].replace("\n", " ")
             lines.append(f"   {i}. {title}")
-            lines.append(f"      ID: {nid}")
             if preview:
                 lines.append(f"      Preview: {preview}...")
             lines.append("")
-        return "\n".join(lines)
+        return "\n".join(lines), matches[:10]
     except Exception as e:
         logger.error(f"Nextcloud Notes Error: {e}")
-        return "ERROR: Failed to search notes."
+        return "ERROR: Failed to search notes.", []

@@ -18,6 +18,7 @@ and recreate the engine (handles max_num_tokens, model switch, etc.).
 import argparse
 import json
 import logging
+import os
 import signal
 import threading
 import time
@@ -28,6 +29,12 @@ from litert_lm.engine import Engine
 from litert_lm.interfaces import Backend, SamplerConfig, ThinkingConfig, Tool
 
 LOG = logging.getLogger("piserve")
+
+# Optional shared-secret guard for the /v1/admin/* endpoints. piServe binds to
+# 127.0.0.1 only, so by default the endpoints are open to local processes; set
+# PISERVE_ADMIN_TOKEN to require an "X-Admin-Token" header on admin calls
+# (e.g. before ever exposing the port beyond loopback).
+ADMIN_TOKEN = os.environ.get("PISERVE_ADMIN_TOKEN", "")
 
 DEFAULT_CONFIG = {
     "model_id": "gemma4-e2b",
@@ -200,6 +207,27 @@ def reload_engine() -> dict:
     }}
 
 
+# Engine-reported reasons that mean the generation was cut off by
+# max_completion_tokens. Clients (e.g. llm/stream.py truncation retry) depend
+# on finish_reason="length" to distinguish this from a natural stop.
+_TRUNCATION_REASONS = {"length", "max_tokens", "token_limit", "truncated"}
+
+
+def _finish_reason(resp: dict | None = None, *, saw_tool_calls: bool = False) -> str:
+    """Map an engine result to an OpenAI-style finish_reason.
+
+    Falls back to "stop" when the engine exposes no recognizable reason key,
+    matching the pre-audit behaviour.
+    """
+    if saw_tool_calls or (resp or {}).get("tool_calls"):
+        return "tool_calls"
+    r = resp or {}
+    for key in ("finish_reason", "stop_reason", "done_reason", "reason"):
+        if str(r.get(key) or "").strip().lower() in _TRUNCATION_REASONS:
+            return "length"
+    return "stop"
+
+
 class Handler(BaseHTTPRequestHandler):
     engine = None
     model_id = "gemma4-e2b"
@@ -230,6 +258,11 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(b"data: [DONE]\n\n")
         self.wfile.flush()
 
+    def _admin_authorized(self) -> bool:
+        if not ADMIN_TOKEN:
+            return True
+        return self.headers.get("X-Admin-Token", "") == ADMIN_TOKEN
+
     def do_GET(self):
         path = self.path.split("?")[0].rstrip("/")
         if path == "/v1/models":
@@ -244,6 +277,9 @@ class Handler(BaseHTTPRequestHandler):
             })
             return
         if path == "/v1/admin/config":
+            if not self._admin_authorized():
+                self._error(401, "Admin token required")
+                return
             self._send_json(200, {
                 "model_id": _cfg.get("model_id"),
                 "model_path": _cfg.get("model_path"),
@@ -266,11 +302,16 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/v1/admin/reload":
+            if not self._admin_authorized():
+                self._error(401, "Admin token required")
+                return
             result = reload_engine()
             self._send_json(200 if result.get("ok") else 500, result)
             return
         if path != "/v1/chat/completions":
             self._error(404, "Not found")
+            return
+        if not self._validate_model(body):
             return
         try:
             _active_lock.acquire()
@@ -289,6 +330,24 @@ class Handler(BaseHTTPRequestHandler):
             _active_lock.acquire()
             _active_requests -= 1
             _active_lock.release()
+
+    def _validate_model(self, body) -> bool:
+        """Model field gate: empty/missing silently falls back to the loaded
+        model; an explicit unknown model is rejected with 409 + allowed list.
+        Returns False when an error response was already sent."""
+        requested = str(body.get("model") or "").strip()
+        if not requested:
+            body["model"] = self.model_id
+            return True
+        if requested != self.model_id:
+            self._send_json(409, {
+                "error": {
+                    "message": f"Unknown model '{requested}'",
+                    "allowed_models": [self.model_id],
+                },
+            })
+            return False
+        return True
 
     def _chat(self, body):
         messages = body.get("messages")
@@ -360,7 +419,7 @@ class Handler(BaseHTTPRequestHandler):
             "choices": [{
                 "index": 0,
                 "message": message,
-                "finish_reason": "tool_calls" if resp.get("tool_calls") else "stop",
+                "finish_reason": _finish_reason(resp),
             }],
         })
 
@@ -372,10 +431,12 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.flush()
         saw_tool_calls = False
+        last_chunk: dict | None = None
         try:
             for chunk in conv.send_message_async(
                 current, max_output_tokens=max_output, thinking_config=thinking
             ):
+                last_chunk = chunk
                 delta = {}
                 if chunk.get("reasoning_content"):
                     delta["reasoning_content"] = chunk["reasoning_content"]
@@ -391,7 +452,7 @@ class Handler(BaseHTTPRequestHandler):
             self._sse({"choices": [{
                 "index": 0,
                 "delta": {},
-                "finish_reason": "tool_calls" if saw_tool_calls else "stop",
+                "finish_reason": _finish_reason(last_chunk, saw_tool_calls=saw_tool_calls),
             }]})
             self._sse_done()
         except Exception as e:

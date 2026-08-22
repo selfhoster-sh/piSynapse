@@ -11,7 +11,7 @@ except ImportError:
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from config import ENV_PATH, PROTECTED_SETTINGS, RESTART_REQUIRED_KEYS, SETTINGS_SCHEMA, get_llm_model_options
+from config import ENV_PATH, PROTECTED_SETTINGS, RESTART_REQUIRED_KEYS, SETTINGS_SCHEMA, get, get_llm_model_options
 
 logger = logging.getLogger("piSynapse")
 
@@ -22,14 +22,14 @@ router = APIRouter(prefix="/config", tags=["config"])
 async def get_config():
     """Returns .env configurations needed by the UI on startup."""
     return {
-        "username": os.getenv("ASSISTANT_USER", "User"),
-        "default_city": os.getenv("DEFAULT_CITY", ""),
-        "model": os.getenv("LLM_MODEL", "gemma4-e2b"),
-        "llm_backend": os.getenv("LLM_BACKEND", "litert"),
-        "stt_engine": os.getenv("STT_ENGINE", "whisper"),
-        "tts_engine": os.getenv("TTS_ENGINE", "piper"),
-        "auto_send_on_voice": os.getenv("AUTO_SEND_ON_VOICE", "off"),
-        "auto_tts_on_voice": os.getenv("AUTO_TTS_ON_VOICE", "off"),
+        "username": get("ASSISTANT_USER", "User"),
+        "default_city": get("DEFAULT_CITY", ""),
+        "model": get("LLM_MODEL", "gemma4-e2b"),
+        "llm_backend": get("LLM_BACKEND", "litert"),
+        "stt_engine": get("STT_ENGINE", "whisper"),
+        "tts_engine": get("TTS_ENGINE", "piper"),
+        "auto_send_on_voice": get("AUTO_SEND_ON_VOICE", "off"),
+        "auto_tts_on_voice": get("AUTO_TTS_ON_VOICE", "off"),
     }
 
 

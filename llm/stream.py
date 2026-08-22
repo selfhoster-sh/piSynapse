@@ -6,6 +6,8 @@ import re
 import time
 
 from config import (
+    DEFAULT_LLM_MAX_OUTPUT_TOKENS,
+    DEFAULT_LLM_NUM_CTX,
     LITERT_BASE_URL,
     OLLAMA_BASE_URL,
     get,
@@ -162,8 +164,8 @@ async def chat_with_ollama_stream(
             payload = _build_payload(
                 trim_messages_for_context(
                     _normalize_messages_for_backend(full_msgs + current_msgs, backend="litert"),
-                    context_window=int(get("LLM_NUM_CTX", 6144)),
-                    reserved_output=int(get("LLM_MAX_OUTPUT_TOKENS", 2048)),
+                    context_window=int(get("LLM_NUM_CTX", DEFAULT_LLM_NUM_CTX)),
+                    reserved_output=int(get("LLM_MAX_OUTPUT_TOKENS", DEFAULT_LLM_MAX_OUTPUT_TOKENS)),
                     tools_tokens=tools_tokens,
                 ),
                 stream=True, think=think, use_tools=use_tools, tool_list=filtered_tools, backend="litert",
@@ -174,8 +176,8 @@ async def chat_with_ollama_stream(
             payload = _build_payload(
                 trim_messages_for_context(
                     full_msgs + current_msgs,
-                    context_window=int(get("LLM_NUM_CTX", 6144)),
-                    reserved_output=int(get("LLM_MAX_OUTPUT_TOKENS", 2048)),
+                    context_window=int(get("LLM_NUM_CTX", DEFAULT_LLM_NUM_CTX)),
+                    reserved_output=int(get("LLM_MAX_OUTPUT_TOKENS", DEFAULT_LLM_MAX_OUTPUT_TOKENS)),
                     tools_tokens=tools_tokens,
                 ),
                 stream=True, think=think, use_tools=use_tools, tool_list=filtered_tools, reasoning_effort=reasoning_effort,
@@ -226,6 +228,11 @@ async def chat_with_ollama_stream(
                             data = json.loads(raw)
                         except json.JSONDecodeError:
                             continue
+                        if data.get("error"):
+                            err = data["error"]
+                            if isinstance(err, dict):
+                                err = err.get("message", str(err))
+                            raise RuntimeError(f"ollama stream error: {err}")
                         msg = data.get("message", {})
                         token = msg.get("content", "")
                         reasoning_token = msg.get("reasoning_content", "") or ""
@@ -286,18 +293,35 @@ async def chat_with_ollama_stream(
             return
 
         if done_reason == "length":
-            logger.warning(f"Model stopped early (done_reason='length'). Consider raising LLM_NUM_CTX (currently {get('LLM_NUM_CTX', 6144)}).")
+            logger.warning(f"Model stopped early (done_reason='length'). Consider raising LLM_NUM_CTX (currently {get('LLM_NUM_CTX', DEFAULT_LLM_NUM_CTX)}).")
 
-        if not tool_calls_acc and not think and backend != "litert" and _check_tool_leak(full_text):
+        if not tool_calls_acc and not think and use_tools and _check_tool_leak(full_text):
+            # Unified think-mode retry (both backends): the model leaked a
+            # tool-call pattern as plain text instead of emitting real
+            # tool_calls. reasoning_effort is preserved so litert's thinking
+            # budget matches the original request.
             logger.info("Tool leak detected in stream buffer, retrying with think-mode...")
             try:
-                retry_payload = _build_payload(
-                    await _build_full_messages(messages, memories or [], summary, session_id) + current_msgs,
-                    stream=False, think=True, use_tools=True, tool_list=filtered_tools,
-                )
-                resp2 = await client.post(f"{OLLAMA_BASE_URL}/api/chat", json=retry_payload)
+                retry_msgs = await _build_full_messages(messages, memories or [], summary, session_id, tool_group=tool_group) + current_msgs
+                if backend == "litert":
+                    retry_payload = _build_payload(
+                        _normalize_messages_for_backend(retry_msgs, backend="litert"),
+                        stream=False, think=True, use_tools=True, tool_list=filtered_tools,
+                        backend="litert", reasoning_effort=reasoning_effort,
+                    )
+                    retry_url = f"{LITERT_BASE_URL}/v1/chat/completions"
+                else:
+                    retry_payload = _build_payload(
+                        retry_msgs,
+                        stream=False, think=True, use_tools=True, tool_list=filtered_tools,
+                        backend="ollama", reasoning_effort=reasoning_effort,
+                    )
+                    retry_url = f"{OLLAMA_BASE_URL}/api/chat"
+                resp2 = await client.post(retry_url, json=retry_payload)
                 resp2.raise_for_status()
-                tc2 = resp2.json()["message"].get("tool_calls") or []
+                rj2 = resp2.json()
+                msg2 = rj2["choices"][0]["message"] if backend == "litert" else (rj2.get("message") or {})
+                tc2 = msg2.get("tool_calls") or []
                 if tc2:
                     logger.info("Recovered tool calls via think-mode retry (streaming)")
                     tool_calls_acc = tc2

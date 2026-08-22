@@ -1,7 +1,6 @@
 """Intent classification: embedding + keyword heuristics, optional LLM fallback."""
 import asyncio
 import logging
-import os
 import re
 
 from config import LITERT_BASE_URL, OLLAMA_BASE_URL, get
@@ -198,8 +197,8 @@ async def _classify_intent(message: str, query_embedding: bytes | None = None) -
         return "action", "memory"
 
     # Optional LLM fallback — improves accuracy but adds ~15s delay before streaming starts.
-    if os.getenv("INTENT_LLM_FALLBACK", "off") == "on":
-        backend = (os.environ.get("LLM_BACKEND") or "litert").strip().lower()
+    if get("INTENT_LLM_FALLBACK", "off") == "on":
+        backend = (get("LLM_BACKEND", "litert") or "litert").strip().lower()
         client = _get_client()
         model_name = get("LLM_MODEL", "gemma4-e2b")
         payload = {

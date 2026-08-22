@@ -179,6 +179,20 @@ _GEMMA4_ASR_EMOTION_PROMPT = (
 )
 
 
+async def _run_whisper(model, transcribe_path: str, lang: str):
+    """Shared Whisper core for /transcribe and the gemma4 fallback path."""
+    if _whisper_backend == "openai_whisper":
+        kwargs = {"beam_size": 5, "condition_on_previous_text": False, "fp16": False}
+        if lang:
+            kwargs["language"] = lang
+        result = await asyncio.to_thread(model.transcribe, transcribe_path, **kwargs)
+        return result["text"].strip(), result.get("language", "unknown")
+    kwargs = {"beam_size": 5, "condition_on_previous_text": False}
+    if lang:
+        kwargs["language"] = lang
+    return await asyncio.to_thread(_transcribe_faster, model, transcribe_path, kwargs)
+
+
 @router.post("/transcribe")
 async def transcribe_audio(
     audio: UploadFile = File(...),
@@ -217,28 +231,7 @@ async def transcribe_audio(
             transcribe_path = tmp_path
 
         try:
-            if _whisper_backend == "openai_whisper":
-                import asyncio as _aio
-                kwargs = {
-                    "beam_size": 5,
-                    "condition_on_previous_text": False,
-                    "fp16": False,
-                }
-                if whisper_lang:
-                    kwargs["language"] = whisper_lang
-                result = await _aio.to_thread(model.transcribe, transcribe_path, **kwargs)
-                text = result["text"].strip()
-                lang_out = result.get("language", "unknown")
-            else:
-                kwargs = {
-                    "beam_size": 5,
-                    "condition_on_previous_text": False,
-                }
-                if whisper_lang:
-                    kwargs["language"] = whisper_lang
-                text, lang_out = await asyncio.to_thread(
-                    _transcribe_faster, model, transcribe_path, kwargs
-                )
+            text, lang_out = await _run_whisper(model, transcribe_path, whisper_lang)
         finally:
             if os.path.exists(wav_path):
                 os.unlink(wav_path)
@@ -274,7 +267,10 @@ async def transcribe_gemma4(
 
     wav_path = tmp_path + ".wav"
     try:
-        conv = await asyncio.to_thread(_convert_to_wav, tmp_path, wav_path, True)
+        # LiteRT wants f32le; the Ollama/llama.cpp audio path routes WAV to the
+        # encoder via RIFF magic bytes and expects classic 16-bit PCM (s16le).
+        use_f32 = LLM_BACKEND != "ollama"
+        conv = await asyncio.to_thread(_convert_to_wav, tmp_path, wav_path, use_f32)
         if conv.returncode != 0:
             logger.error(f"ffmpeg conversion failed: {conv.stderr.decode()[:200]}")
             raise HTTPException(status_code=500, detail="Audio conversion failed")
@@ -326,15 +322,32 @@ async def transcribe_gemma4(
                     "images": [audio_b64],
                 }],
                 "stream": False,
-                "options": {"temperature": 0.1, "num_predict": num_predict},
+                # num_ctx cap is required: audio embeddings overflow the
+                # Ollama runner's default context memory (community limit ~8k).
+                "options": {"temperature": 0.1, "num_predict": num_predict, "num_ctx": 8192},
             }
-            async with httpx.AsyncClient(timeout=60) as client:
-                resp = await client.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload)
-                resp.raise_for_status()
-                data = resp.json()
-            text = data.get("message", {}).get("content", "").strip()
+            try:
+                async with httpx.AsyncClient(timeout=60) as client:
+                    resp = await client.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload)
+                    resp.raise_for_status()
+                    data = resp.json()
+                text = data.get("message", {}).get("content", "").strip()
+            except Exception as e:
+                logger.warning(f"Gemma4 transcription via Ollama failed ({e}); falling back to Whisper")
+                text = ""
 
         logger.info(f"Gemma4 transcription ({lang_name}): {text[:100]!r}" if text else "Gemma4 transcription: empty response")
+        if not text and LLM_BACKEND == "ollama":
+            # Known-intermittent Ollama audio-runner crashes: degrade to
+            # Whisper instead of failing the request.
+            wmodel = await asyncio.to_thread(_get_whisper)
+            if wmodel is None:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Gemma4 transcription unavailable and Whisper not installed",
+                )
+            text, _wlang = await _run_whisper(wmodel, wav_path, lang)
+            logger.info("Whisper fallback used for gemma4 endpoint" if text else "Whisper fallback: empty transcription")
         if not text:
             raise HTTPException(status_code=422, detail="Gemma4 returned empty transcription")
 
