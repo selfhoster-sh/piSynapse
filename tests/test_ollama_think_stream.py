@@ -8,8 +8,21 @@ think flow on the ollama backend.
 
 import asyncio
 
+import pytest
+
 import config as _cfg
+import llm.chat as llm_chat
 import llm.stream as llm_stream
+
+
+@pytest.fixture(autouse=True)
+def _no_email_db(monkeypatch):
+    # Chat paths read the per-session email cache from SQLite; keep these
+    # unit tests off the real DB (CI has no schema initialized).
+    async def _empty(_session_id):
+        return []
+
+    monkeypatch.setattr("prompt.get_email_context", _empty)
 
 
 class _NdjsonResp:
@@ -91,7 +104,6 @@ def test_ollama_thinking_streams_to_frontend(monkeypatch):
 
 
 def test_ollama_nonstream_thinking_field(monkeypatch):
-    import llm.chat as llm_chat
 
     async def fake_llm_request(msgs, **kwargs):
         message = {"content": "Cevap.", "thinking": "Kısa içses."}

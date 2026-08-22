@@ -9,8 +9,20 @@ MAX_IDENTICAL_EXECUTIONS times per request (side-effect safety).
 
 import logging
 
+import pytest
+
 import config as _cfg
 import llm.chat as llm_chat
+
+
+@pytest.fixture(autouse=True)
+def _no_email_db(monkeypatch):
+    # Chat paths read the per-session email cache from SQLite; keep these
+    # unit tests off the real DB (CI has no schema initialized).
+    async def _empty(_session_id):
+        return []
+
+    monkeypatch.setattr("prompt.get_email_context", _empty)
 
 
 def _tc(name, args="{}", cid="c1"):
