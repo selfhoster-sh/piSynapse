@@ -4,6 +4,72 @@ All notable changes to piSynapse will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 uses [Semantic Versioning](https://semver.org/).
 
+## [1.4.0] - 2026-08-22
+
+This cycle hardens conversation integrity against small-model quirks: leaked
+tool-call fragments no longer poison saved history or summaries, tool-call
+repeat loops end in a real answer instead of an empty reply, and switching
+between the LiteRT and Ollama backends keeps the configured model id in sync.
+Test suite grows from 275 to 302 passing tests (+2 documented xfails).
+
+### Added
+
+- **Backend switch with model auto-mapping**: `LLM_BACKEND` is now selectable
+  from the Settings UI (previously protected/edit-only). Switching engines
+  validates `LLM_MODEL` against the NEW daemon's registry and, when the request
+  does not pick a model explicitly, auto-maps separator variants (LiteRT
+  `gemma4-e2b` ↔ Ollama `gemma4:e2b`). Previously a backend switch left the
+  old id in place and every LLM call failed against the new daemon.
+- `get_llm_model_options(backend=...)` override so model listings can target a
+  daemon other than the currently running one.
+- Loop-guard test suites for both execution paths plus an intent-pipeline
+  suite covering the embedding layer, keyword heuristics and the LLM fallback
+  on both backends.
+
+### Changed
+
+- **Summary poisoning defense (3 layers)**: the running-summary prompt now
+  instructs the summarizer to ignore tool-call artifacts, never invent details,
+  prefer newer information on contradictions, and compress to ~3–5 sentences;
+  the transcript fed to the summarizer is sanitized input-side (assistant
+  messages stripped of leak fragments, fully-leaked lines dropped); the stored
+  output passes through `strip_tool_leaks()`. Empty transcripts skip the LLM
+  call entirely and keep the previous summary.
+- Anti-loop guard constants (`finalize nudge`, fallback message, identical-
+  execution cap) live in `llm/utils.py` and are shared by both chat paths.
+
+### Fixed
+
+- **History self-poisoning**: assistant replies containing leaked tool-call
+  syntax (`<|tool_call|>` tags, bare `call:name{{}}` residues) were persisted
+  verbatim and re-entered later prompts, triggering repeat loops and blank
+  answers. Replies are now sanitized with `strip_tool_leaks()` before
+  persisting on all save paths (stream completion/fallback and non-stream);
+  replies that are entirely leak are not saved at all. A one-time database
+  sweep removed previously poisoned rows.
+- **Tool-call repeat loops** (streaming and non-streaming): when the model
+  re-emits an already-executed tool call without producing any answer text,
+  the loop now forces one text-only finalize round (a system nudge is appended
+  and tools are disabled) instead of yielding an empty reply; if that round
+  still produces nothing, a friendly retry prompt is returned instead of
+  silence.
+- **Identical-execution cap**: the exact same tool signature (name + sorted
+  arguments) runs at most twice per request; further repeats are refused to
+  the model via its tool-result channel while distinct calls in the same batch
+  still execute — protecting side-effectful tools from runaway duplicates.
+- `strip_tool_leaks()` whitespace collapsing no longer mangles fenced code
+  blocks (collapsing now applies only outside ``` fences).
+- Leak-recovery regex handles the doubled-brace `call:name{{}}` variant seen
+  in saved history.
+
+### Tests
+
+- Suite expanded from 275 to 302 passing tests (+2 xfails documenting known
+  leak-variant limits): history-hygiene variants with real save-path
+  integration, summary hygiene, streaming and non-streaming loop-guard
+  scenarios, intent classification across backends, and settings backend-switch
+  mapping; `ruff check` clean.
+
 ## [1.3.0] - 2026-08-22
 
 This release hardens the whole stack after two independent audits: five
@@ -384,7 +450,7 @@ First full release — an offline-first, self-hosted personal AI assistant.
 - Intent classification (embeddings + optional LLM fallback)
 - PWA (installable, offline caching)
 - API-key auth, rate limiting, trusted-host enforcement
-- Interactive installer (`python install.py`) with systemd service support
+- Interactive installer (`python3 install.py`) with systemd service support
 - Unit tests (pytest)
 
 ### Fixed

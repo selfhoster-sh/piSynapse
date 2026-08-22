@@ -56,7 +56,7 @@ When you disable all external integrations, **zero data leaves your device**. No
 | Component | Technology |
 |-----------|-----------|
 | **API** | FastAPI (async Python) |
-| **LLM** | LiteRT-LM or Ollama (configurable via `LLM_BACKEND`) |
+| **LLM Serving** | **piServe** — OpenAI-compatible LiteRT server (`litert_serve/`); Ollama as the alternative backend |
 | **Tool Calling** | LLM-native function calling (JSON schema) |
 | **Intent Classification** | Lightweight LLM call (5 tokens) + embedding similarity |
 | **Storage** | SQLite + aiosqlite |
@@ -101,6 +101,9 @@ piSynapse/
 ├── weather.py           # Open-Meteo + Nominatim geocoding
 ├── utils.py             # Retry decorator, text helpers
 ├── install.py           # Interactive setup wizard
+├── litert_serve/        # piServe — OpenAI-compatible LiteRT-LM server
+│   ├── server.py        # SSE streaming, tool-schema passthrough, MTP decoding
+│   └── config.json      # Installed model + context settings
 ├── example.env          # Configuration template
 ├── requirements.txt
 ├── LICENSE
@@ -139,7 +142,7 @@ piSynapse/
 ```bash
 git clone https://github.com/selfhoster-sh/piSynapse.git
 cd piSynapse
-python install.py
+python3 install.py
 ```
 
 The installer:
@@ -150,15 +153,16 @@ The installer:
 4. Lets you choose an LLM backend: **LiteRT-LM** (recommended — imports models from HuggingFace) or **Ollama** (downloads via `ollama pull`).
 5. Downloads Piper TTS voices (optional — Turkish and English).
 6. Walks you through `.env` configuration: email (choose **ProtonMail via ProtonBridge** or **Gmail with App Password**), Nextcloud, weather, voice, and personalization.
-7. Optionally creates systemd services for auto-start on boot.
+7. Optionally creates systemd services for auto-start on boot (`pisynapse.service`, plus `piserve.service` when you pick the LiteRT backend).
 
 ### Manual Setup
 
 ```bash
 # 1. Install LLM backend (pick one)
-#    LiteRT-LM:
-#      pip install litert-lm && litert-lm serve --port 9379
+#    LiteRT-LM (served via piServe, see below):
+#      pip install litert-lm
 #      litert-lm import --from-huggingface-repo litert-community/gemma-4-E2B-it-litert-lm gemma-4-E2B-it.litertlm gemma4-e2b
+#      python3 litert_serve/server.py          # OpenAI-compatible server on :9379
 #
 #    Or Ollama:
 #      curl https://ollama.com/install.sh | sh && ollama pull gemma4:e2b
@@ -185,7 +189,7 @@ pip install -r requirements.txt
 nano .env
 
 # 5. Run
-python -m uvicorn main:app --host 0.0.0.0 --port 8765
+python3 -m uvicorn main:app --host 0.0.0.0 --port 8765
 ```
 
 Then open `http://<your-pi-ip>:8765` in your browser. The installer can also create a `pisynapse.service` systemd unit that runs on port 8765 and starts on boot.

@@ -183,20 +183,22 @@ OLLAMA_MODEL_OPTIONS = [
 _MODEL_OPTIONS_CACHE: dict = {"data": [], "ts": 0.0, "backend": ""}
 
 
-async def get_llm_model_options() -> dict:
+async def get_llm_model_options(backend: str | None = None) -> dict:
     """Return LLM_MODEL options dict keyed by backend (async).
 
     Queries the live backend (curl/ollama list) off the event loop via
     to_thread; results cached 30s. Falls back to static lists on failure.
+    ``backend`` overrides the current process backend — used when a settings
+    update switches LLM_BACKEND and models must be listed for the NEW daemon.
     """
     import asyncio
-    return await asyncio.to_thread(_query_model_options_sync)
+    target = (backend or os.getenv("LLM_BACKEND") or "litert").strip().lower()
+    return await asyncio.to_thread(_query_model_options_sync, target)
 
 
-def _query_model_options_sync() -> dict:
+def _query_model_options_sync(backend: str) -> dict:
     """Blocking backend query — always call via get_llm_model_options()."""
     import time as _time
-    backend = os.getenv("LLM_BACKEND", "litert").strip().lower()
     now = _time.time()
     if _MODEL_OPTIONS_CACHE["backend"] == backend and (now - _MODEL_OPTIONS_CACHE["ts"]) < 30:
         return _MODEL_OPTIONS_CACHE["data"]
@@ -264,6 +266,11 @@ SETTINGS_SCHEMA: dict = {
     "CONVERSATION_RETENTION_DAYS": {"type": "int", "default": "0", "label": {"tr": "Sohbet Saklama (Gün, 0=kapalı)", "en": "Chat Retention (days, 0=off)"}, "min": 0, "max": 3650, "step": 1},
     "MEMORY_RETENTION_DAYS":       {"type": "int", "default": "0", "label": {"tr": "Bellek Saklama (Gün, 0=kapalı)", "en": "Memory Retention (days, 0=off)"}, "min": 0, "max": 3650, "step": 1},
     "SUMMARY_BATCH_SIZE": {"type": "int",   "default": "5",    "label": {"tr": "Özetleme Batch Boyutu",       "en": "Summary Batch Size"},     "min": 2, "max": 20, "step": 1},
+    "LLM_BACKEND":        {"type": "select", "default": "litert", "label": {"tr": "LLM Motoru",                 "en": "LLM Engine"},
+    "options": [
+        {"value": "litert", "label": {"tr": "LiteRT (yerel, hızlı)", "en": "LiteRT (local, fast)"}},
+        {"value": "ollama", "label": {"tr": "Ollama (yerel)", "en": "Ollama (local)"}},
+    ]},
     "LLM_MODEL":          {"type": "select", "default": "gemma4-e2b", "label": {"tr": "LLM Model",              "en": "LLM Model"}},
     "LLM_REASONING_EFFORT": {"type": "select", "default": "medium", "label": {"tr": "Düşünce Seviyesi (Gemma4)", "en": "Thinking Level (Gemma4)"}, "options": [
         {"value": "none",     "label": {"tr": "Kapalı (düşünme yok)",   "en": "Off (no thinking)"}},
@@ -309,10 +316,13 @@ SETTINGS_SCHEMA: dict = {
 }
 
 # Settings that require a server restart to take effect
-RESTART_REQUIRED_KEYS = {"LLM_NUM_BATCH"}
+RESTART_REQUIRED_KEYS = {"LLM_NUM_BATCH", "LLM_BACKEND"}
 
-# Settings that must NEVER be changed via the API (security-sensitive)
-PROTECTED_SETTINGS = {"OLLAMA_BASE_URL", "LITERT_BASE_URL", "LLM_BACKEND", "API_KEY", "CORS_ORIGINS", "TRUSTED_HOSTS", "TRUST_X_FORWARDED_FOR", "MEDIA_MAX_MB"}
+# Settings that must NEVER be changed via the API (security-sensitive).
+# LLM_BACKEND is intentionally NOT here: switching engines via PATCH
+# /config/settings triggers model auto-mapping (routers/config.py) so the
+# stored LLM_MODEL always matches the active daemon's registry format.
+PROTECTED_SETTINGS = {"OLLAMA_BASE_URL", "LITERT_BASE_URL", "API_KEY", "CORS_ORIGINS", "TRUSTED_HOSTS", "TRUST_X_FORWARDED_FOR", "MEDIA_MAX_MB"}
 
 # All integer/float config keys that should be re-synced after .env updates
 _NUMERIC_KEYS = {

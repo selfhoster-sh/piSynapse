@@ -12,6 +12,19 @@ logger = logging.getLogger("piSynapse")
 
 _http_client: httpx.AsyncClient | None = None
 
+# Anti-loop guards (2026-08-22 notes tool-call loop incident): a small model
+# may keep re-emitting the same tool call instead of summarizing its result.
+# Shared by the streaming (llm/stream.py) and non-streaming (llm/chat.py) loops.
+FINALIZE_NUDGE = (
+    "[System note: your previous tool call was already executed and its full "
+    "result is in the conversation above. Do NOT call any tool again — "
+    "summarize that result for the user in plain text now.]"
+)
+EMPTY_ANSWER_FALLBACK = (
+    "İşlem tamamlandı ancak özet oluşturulamadı. Lütfen isteğini tekrar dener misin?"
+)
+MAX_IDENTICAL_EXECUTIONS = 2
+
 # Detect when the model emits a tool call within plain text (leak).
 # Historical failure mode (E4B server): the model emitted a literal
 # <|tool_call|> tag (or echoed "name": "send_email" JSON) as plain text
