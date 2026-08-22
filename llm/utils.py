@@ -37,9 +37,12 @@ _REASONING_WRAP_RE = re.compile(r'<\|channel>.*?\n|<channel\|>|</?think>', re.DO
 
 # Literal leaked tool call the model may write as plain text instead of a
 # structured tool_calls object, e.g. `<|tool_call|>call:read_email{id:5}<tool_call|>`.
-# Group 1 = tool name, group 2 = `key:value` argument payload.
+# Tolerates Gemma's mangled channel-tag variants (`<|tool_call>` / `<tool_call|>`),
+# doubled braces (`call:list_notes{{}}` — seen when the native call template leaks
+# through think mode) and a missing argument payload entirely.
+# Group 1 = tool name, group 2 = `key:value` argument payload (optional).
 _TOOL_CALL_TAG_RE = re.compile(
-    r'<\|?/?tool_call\|?>\s*call:(\w+)\s*\{([^{}]*)\}\s*<\|?/?tool_call\|?>',
+    r'<\|?/?tool_call\|?>\s*call:(\w+)\s*(?:\{\{?([^{}]*)\}?\})?\s*<\|?/?tool_call\|?>',
     re.DOTALL,
 )
 
@@ -56,7 +59,7 @@ def parse_leaked_tool_call(text: str) -> dict | None:
     m = _TOOL_CALL_TAG_RE.search(text)
     if not m:
         return None
-    name, args_src = m.group(1), m.group(2)
+    name, args_src = m.group(1), m.group(2) or ""
     args: dict = {}
     for kq, ku, val in re.findall(r'(?:"(\w+)"|(\w+))\s*:\s*("(?:\\.|[^"])*"|[^,}\s]+)', args_src):
         key = kq or ku
