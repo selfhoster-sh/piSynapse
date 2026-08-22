@@ -226,7 +226,9 @@ async def chat_with_ollama(
 
         tool_calls = message.get("tool_calls") or []
         raw_content = _THINKING_STRIP_RE.sub('', message.get("content", "") or "").strip()
-        thinking = clean_reasoning(message.get("reasoning_content") or "")
+        # Ollama >=0.9 emits thinking as `message.thinking`; accept the older
+        # reasoning_content alias too.
+        thinking = clean_reasoning(message.get("thinking") or message.get("reasoning_content") or "")
 
         # Unified think-mode retry (both backends): only a leaked tool-call
         # pattern justifies the extra call — a legitimate plain-text answer
@@ -245,7 +247,7 @@ async def chat_with_ollama(
                 if tc2:
                     logger.info("Recovered tool calls via think-mode retry")
                     tool_calls, message, resp_json = tc2, msg2, resp2
-                    thinking = clean_reasoning(message.get("reasoning_content") or "")
+                    thinking = clean_reasoning(message.get("thinking") or message.get("reasoning_content") or "")
 
         if not tool_calls:
             return {"reply": strip_prefix(raw_content), "pending_action": None, "memories_saved": memories_saved, "thinking": thinking}
