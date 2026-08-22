@@ -9,7 +9,7 @@ import logging
 import re
 import traceback
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -34,6 +34,13 @@ from retrieval import merge_history, retrieve_relevant_history
 logger = logging.getLogger("piSynapse")
 
 router = APIRouter(prefix="/chat", tags=["chat", "sessions", "memories"])
+
+# Per-session abort flags: session_id -> asyncio.Event (set = abort requested).
+# Known limitation (accepted): two concurrent streams on the SAME session
+# overwrite each other's event, so an abort targets the newest stream only.
+# Single-user deployment + the UI's stop button always targets the current
+# stream, so this race has no practical impact.
+_abort_events: dict[str, asyncio.Event] = {}
 
 # -- Session ID validation --
 # Allow: alphanumeric, hyphens, underscores. Max 64 chars.
@@ -226,6 +233,8 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
 
     reply_parts: list[str] = []
     reply_saved = False
+    abort_event = asyncio.Event()
+    _abort_events[req.session_id] = abort_event
 
     async def generate():
         nonlocal reply_saved
@@ -235,6 +244,9 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
                 summary=meta["summary"], user_id=req.user_id, session_id=req.session_id,
                 intent=intent, tool_group=tool_group, reasoning_effort=req.reasoning_effort,
             ):
+                if abort_event.is_set():
+                    logger.info("Stream aborted for session %s", req.session_id)
+                    break
                 if "token" in event:
                     reply_parts.append(event["token"])
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
@@ -255,6 +267,7 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
             logger.error("Chat stream generate error: %s\n%s", e, traceback.format_exc())
             yield f"data: {json.dumps({'error': 'Stream error'})}\n\n"
         finally:
+            _abort_events.pop(req.session_id, None)
             if not reply_saved and reply_parts:
                 try:
                     await save_message(req.session_id, "assistant", strip_prefix("".join(reply_parts)))
@@ -272,6 +285,17 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
         background=summary_bg,
     )
+
+
+@router.post("/abort/{session_id}")
+async def abort_generation(session_id: str):
+    _validate_session_id(session_id)
+    event = _abort_events.get(session_id)
+    if event:
+        event.set()
+        logger.info("Abort requested for session %s", session_id)
+        return {"ok": True, "aborted": True}
+    return {"ok": True, "aborted": False}
 
 
 @router.post("/execute", response_model=ChatResponse)
@@ -402,16 +426,27 @@ async def export_data(user_id: str = Query("default")):
 # -- Image Upload (multipart, for mobile clients) --
 
 @router.post("/upload", tags=["media"])
-async def upload_image(file: bytes = Query(...)):
+async def upload_image(file: UploadFile = File(...)):
     """Upload an image as multipart/form-data. Returns base64 string for use in chat."""
     import base64
 
     from config import get as cfg
-    max_mb = cfg("MEDIA_MAX_MB", 100)
-    if len(file) > max_mb * 1024 * 1024:
-        raise HTTPException(status_code=413, detail=f"File too large (max {max_mb} MB).")
-    b64 = base64.b64encode(file).decode("utf-8")
-    return {"ok": True, "base64": b64, "size_bytes": len(file)}
+    max_mb = int(cfg("MEDIA_MAX_MB", 100))
+    max_bytes = max_mb * 1024 * 1024
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(1024 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            await file.close()
+            raise HTTPException(status_code=413, detail=f"File too large (max {max_mb} MB).")
+        chunks.append(chunk)
+    await file.close()
+    data = b"".join(chunks)
+    return {"ok": True, "base64": base64.b64encode(data).decode("utf-8"), "size_bytes": len(data)}
 
 
 # -- Offline Sync (mobile) --

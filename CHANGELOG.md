@@ -4,6 +4,105 @@ All notable changes to piSynapse will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 uses [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] - 2026-08-22
+
+This release hardens the whole stack after two independent audits: five
+critical security fixes, a position-based tool-call architecture that removes
+raw IDs from the model's view, full Ollama ↔ LiteRT backend parity for token
+limits / retries / truncation signals, a mobile-ready API surface, and a
+large frontend polish wave (touch-friendly hover handling, a monochrome
+"Siyah" theme, an OLED black switch, a stop button for streaming replies and
+a minimal chat view). Test suite grows from 242 to 275 passing tests.
+
+### Added
+
+- **Stop button for streaming replies** (`POST /chat/abort/{session_id}` +
+  UI): the send button turns into a red stop control during an active SSE
+  stream; aborting keeps the partial answer, updates the sidebar session
+  name and shows a localized "stopped" notice instead of an empty-reply
+  warning.
+- **Chat API surface expansion**: documented OpenAPI contract for the chat
+  endpoints, full session CRUD (create/rename/delete), multipart file
+  upload, a `/sync` endpoint and rate-limit headers.
+- **Backup/export endpoint** (`GET /chat/export`) and **memory pagination**
+  (`limit`/`offset` on memory listing).
+- **Per-session rate limiting** in addition to the existing per-IP limiter.
+- **piServe admin protection**: `/v1/admin/config` and `/v1/admin/reload`
+  require an `X-Admin-Token` header when `PISERVE_ADMIN_TOKEN` is set;
+  loopback-only access remains the fallback when it is unset. Admin reload
+  can also be triggered via SIGHUP.
+- **Monochrome "Siyah" accent theme**: near-white accent on deeper-than-
+  default dark surfaces; every accent-driven gradient (including the glass
+  aurora) automatically turns into a faint white wash. Send/Save buttons get
+  dark ink on solid fills while keeping white icons on glass-mode's
+  translucent fills.
+- **OLED black background switch** in the appearance settings: pure-black
+  background/surface palette that composes with any accent theme; persisted
+  separately from the theme choice.
+- **Minimal view mode** ("Sade Görünüm") under advanced settings: hides the
+  sender name and timestamp above every message for a cleaner chat.
+- **Touch feedback parity**: all `:hover` rules are gated behind
+  `@media (hover:hover)` so mobile no longer suffers sticky highlights;
+  the logo glow gets an `:active` counterpart on touch devices.
+
+### Changed
+
+- **Position-based tool access (architecture)**: notes, tasks and calendar
+  listings no longer leak database IDs/UIDs to the model. Tools now accept
+  positional references (`_resolve_position`), ID lines are stripped from
+  listings, and prompts/tool descriptions were rewritten accordingly. This
+  removes the whole class of wrong-record edits caused by stale or truncated
+  IDs.
+- **Backend parity fixes (Ollama ↔ LiteRT)**:
+  - Ollama payloads now honor `LLM_MAX_OUTPUT_TOKENS` via `num_predict`
+    (previously silently ignored in main chat).
+  - Think-mode retry on leaked tool calls works identically on both backends,
+    is conditional on an actual leak (legit plain answers no longer pay an
+    extra call), forwards `reasoning_effort` and preserves the tool group.
+  - Ollama NDJSON error lines are raised instead of being swallowed as empty
+    responses.
+- **piServe model validation**: requests naming an unknown model return
+  HTTP 409 with `allowed_models`; an empty/missing model silently falls back
+  to the loaded one. Truncation is now reported as OpenAI-style
+  `finish_reason: "length"` by scanning engine reason keys.
+- **Voice transcription hardening** (`/transcribe-gemma4`): WAV codec is
+  backend-aware (`pcm_s16le` for Ollama), context capped at 8192 for audio
+  embedding, and failed/empty Ollama transcriptions fall back to local
+  Whisper automatically.
+- **Single-source numeric config**: `DEFAULT_LLM_NUM_CTX` (8192) and
+  `DEFAULT_LLM_MAX_OUTPUT_TOKENS` (4096) constants feed settings schema,
+  payload builders, trim budgets and the piServe installer template.
+- **Focus management in the web UI**: hover styles carry `:not(:focus)` so a
+  clicked button does not stay lit until you click elsewhere; keyboard users
+  get a visible `:focus-visible` outline. Panel toggles (memory, menu,
+  search, compact) are exempt so their glow fires on every re-hover.
+- **Installer robustness**: cross-distro support, recovery from broken venvs,
+  non-interactive mode, absolute `ExecStart` paths, and a fixed flow when
+  systemd exists but the user declines it.
+- Mobile screens use a deeper background palette across all themes (the
+  Siyah theme goes one step further); desktop rendering is unchanged.
+
+### Fixed
+
+- Security: IMAP search injection (whitelist sanitization), unauthenticated
+  `/debug` endpoint when `API_KEY` is empty, removal of the unsafe
+  `pickle.loads` fallback for embeddings, sanitization of external content
+  injected into prompts, and elimination of credential-leaking debug logs.
+- `update_note` TypeError (category/tags were accepted by the schema but not
+  forwarded); task listing cache no longer mixes completed/hidden views;
+  note/task/calendar list caches are invalidated on create/update/delete;
+  failed email sends report "ERROR: Failed to send." instead of silent
+  success.
+- Search box in the sidebar: replaced the fragile animated-collapse with an
+  instant open + fade; nothing clips regardless of font zoom or device, and
+  the magnifier icon sits inside the field again.
+- Expanding a live think box now auto-scrolls to keep the revealed reasoning
+  in view (when already near the bottom).
+- In black theme + glass mode the send icon stays visible (white) instead of
+  dark-on-dark.
+- Performance: N+1 session count query, embedding backfill moved off the
+  search path, calendar date-search caching and a two-phase memory search.
+
 ## [1.2.0] - 2026-08-16
 
 This release replaces the stock `litert-lm serve` with a purpose-built
