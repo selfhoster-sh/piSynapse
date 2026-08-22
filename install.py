@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """piSynapse Installer — offline-first personal AI assistant.
 Platforms: Linux, macOS, Windows (experimental).
-Run with: python install.py
+Run with: python3 install.py
 
 Flow:
   1. Python version check
@@ -57,7 +57,7 @@ def _parse_args() -> None:
         print("""
   piSynapse Installer
 
-  Usage: python install.py [options]
+  Usage: python3 install.py [options]
 
   Options:
     -y, --yes         Non-interactive mode (accept all defaults)

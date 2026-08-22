@@ -23,7 +23,22 @@ from tools import (
 )
 
 from .payload import _build_full_messages, _build_payload, _normalize_messages_for_backend, trim_messages_for_context
-from .utils import _check_tool_leak, _get_client, clean_reasoning, parse_leaked_tool_call, strip_tool_leaks
+from .utils import (
+    EMPTY_ANSWER_FALLBACK as _EMPTY_ANSWER_FALLBACK,
+)
+from .utils import (
+    FINALIZE_NUDGE as _FINALIZE_NUDGE,
+)
+from .utils import (
+    MAX_IDENTICAL_EXECUTIONS as _MAX_IDENTICAL_EXECUTIONS,
+)
+from .utils import (
+    _check_tool_leak,
+    _get_client,
+    clean_reasoning,
+    parse_leaked_tool_call,
+    strip_tool_leaks,
+)
 
 logger = logging.getLogger("piSynapse")
 
@@ -114,19 +129,6 @@ def _shrink_tool_responses(current_msgs: list[dict]) -> None:
     for m in current_msgs:
         if m.get("role") == "tool" and isinstance(m.get("content"), str) and len(m["content"]) > 600:
             m["content"] = m["content"][:600] + "\n[content truncated]"
-
-
-# Anti-loop guards (2026-08-22 notes tool-call loop incident): a small model
-# may keep re-emitting the same tool call instead of summarizing its result.
-_FINALIZE_NUDGE = (
-    "[System note: your previous tool call was already executed and its full "
-    "result is in the conversation above. Do NOT call any tool again — "
-    "summarize that result for the user in plain text now.]"
-)
-_EMPTY_ANSWER_FALLBACK = (
-    "İşlem tamamlandı ancak özet oluşturulamadı. Lütfen isteğini tekrar dener misin?"
-)
-_MAX_IDENTICAL_EXECUTIONS = 2
 
 
 async def chat_with_ollama_stream(

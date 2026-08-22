@@ -71,6 +71,15 @@ async def update_settings(body: SettingsUpdate):
 
     updated_keys: list[str] = []
 
+    # Backend switch in the same request? Model validation and auto-mapping
+    # must target the NEW backend's daemon, not the currently running one.
+    current_backend = (os.getenv("LLM_BACKEND") or "litert").strip().lower()
+    new_backend = None
+    if "LLM_BACKEND" in body.values:
+        candidate = body.values["LLM_BACKEND"].strip().lower()
+        if candidate != current_backend:
+            new_backend = candidate
+
     # Validate + apply each value to os.environ
     validated: dict[str, str] = {}
     for key, value in body.values.items():
@@ -85,7 +94,7 @@ async def update_settings(body: SettingsUpdate):
             elif schema["type"] == "select":
                 allowed = [o["value"] for o in schema.get("options", [])]
                 if key == "LLM_MODEL":
-                    allowed = [o["value"] for o in await get_llm_model_options()]
+                    allowed = [o["value"] for o in await get_llm_model_options(new_backend or current_backend)]
                 if allowed and value not in allowed:
                     raise HTTPException(status_code=400, detail=f"Invalid option for {key}: {value}. Allowed: {allowed}")
         except (ValueError, TypeError):
@@ -105,6 +114,31 @@ async def update_settings(body: SettingsUpdate):
     # Applying os.environ inside the loop would leave a partial update if a
     # later key raised HTTPException (os.environ changed, .env + module
     # attributes stale → three-way divergence).
+    if new_backend and "LLM_MODEL" not in validated:
+        # Auto-map the current model to the new backend's registry by
+        # separator-insensitive match (litert "gemma4-e2b" ↔ ollama
+        # "gemma4:e2b"). Without this, switching backends leaves the old
+        # model id in place and every LLM call 404s on the new daemon.
+        old_model = os.getenv("LLM_MODEL", "")
+        try:
+            options = await get_llm_model_options(new_backend)
+
+            def norm(s: str) -> str:
+                return s.replace(":", "-").strip().lower()
+
+            match = next((o["value"] for o in options if norm(o["value"]) == norm(old_model)), None)
+            if match:
+                validated["LLM_MODEL"] = match
+                updated_keys.append("LLM_MODEL")
+                logger.info(f"Backend switch {current_backend}→{new_backend}: mapped LLM_MODEL {old_model!r} → {match!r}")
+            else:
+                logger.warning(
+                    f"Backend switch {current_backend}→{new_backend}: no equivalent "
+                    f"model for {old_model!r} — manual model selection required"
+                )
+        except Exception as e:
+            logger.warning(f"Backend switch: model auto-map failed ({e}) — keeping {old_model!r}")
+
     for key, value in validated.items():
         os.environ[key] = value
 
