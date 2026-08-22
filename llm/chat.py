@@ -22,7 +22,7 @@ from tools import (
 )
 
 from .payload import _build_full_messages, _build_payload, _normalize_messages_for_backend, trim_messages_for_context
-from .utils import _THINKING_STRIP_RE, _check_tool_leak, _get_client, clean_reasoning, strip_prefix
+from .utils import _THINKING_STRIP_RE, _check_tool_leak, _get_client, clean_reasoning, strip_prefix, strip_tool_leaks
 
 logger = logging.getLogger("piSynapse")
 
@@ -72,16 +72,43 @@ SUMMARY_SYSTEM_PROMPT = (
     "You maintain a short running summary of an ongoing conversation between a "
     "user and an AI assistant. Update the existing summary with the new messages "
     "below, keeping only information useful for future context: facts about the "
-    "user, ongoing tasks, decisions and preferences. Keep it to a short paragraph "
-    "(max 300 tokens). If the existing summary is already long, COMPRESS it by "
-    "merging redundant details and dropping outdated information. "
+    "user, ongoing tasks, decisions and preferences. "
+    "Ignore and do not include any raw tool-call syntax, malformed tags, or system "
+    "artifacts that appear in the messages — these are bugs, not user content. "
+    "Only include information explicitly present in the messages — do not infer or "
+    "invent details. If new messages contradict the existing summary (e.g. the user "
+    "changed their mind or a decision was reversed), the newer information takes "
+    "priority — drop the outdated version rather than keeping both. "
+    "Keep it to a short paragraph, roughly 3-5 sentences. If the existing summary is "
+    "already long, COMPRESS it by merging redundant details and dropping outdated "
+    "information. "
     "Reply in the same language as the conversation. Output ONLY the updated "
     "summary text, with no preamble or extra commentary."
 )
 
 
+def _summary_transcript(messages: list[dict]) -> str:
+    """Build the summarizer transcript with poisoning defense.
+
+    Assistant messages are stripped of leaked tool-call fragments before they
+    ever reach the model (prompt instructions alone are not enough for small
+    models), and messages that become empty after stripping are dropped.
+    """
+    cleaned: list[dict] = []
+    for m in messages:
+        content = m.get("content", "")
+        if m.get("role") == "assistant":
+            content = strip_tool_leaks(content)
+        if content.strip():
+            cleaned.append({**m, "content": content})
+    return "\n".join(f"{m['role']}: {m['content']}" for m in cleaned)
+
+
 async def summarize_conversation(messages: list[dict], previous_summary: str = "") -> str:
-    transcript = "\n".join(f"{m['role']}: {m['content']}" for m in messages)
+    transcript = _summary_transcript(messages)
+    if not transcript.strip():
+        logger.info("Summarization skipped: nothing left after leak sanitization")
+        return previous_summary
     user_content = (
         f"Existing summary:\n{previous_summary or '(none yet)'}\n\n"
         f"New messages:\n{transcript}\n\n"
@@ -107,9 +134,12 @@ async def summarize_conversation(messages: list[dict], previous_summary: str = "
         resp = await client.post(url, json=payload)
         resp.raise_for_status()
         rj = resp.json()
-        if backend == "litert":
-            return rj["choices"][0]["message"]["content"].strip()
-        return rj["message"]["content"].strip()
+        raw = (
+            rj["choices"][0]["message"]["content"]
+            if backend == "litert" else rj["message"]["content"]
+        )
+        # Output guard: the summarizer may echo artifacts it was told to ignore.
+        return strip_tool_leaks(raw.strip())
     except Exception as e:
         logger.error(f"Summarization failed: {e}")
         return previous_summary

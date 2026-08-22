@@ -87,6 +87,19 @@ def parse_leaked_tool_call(text: str) -> dict | None:
     }
 
 
+_FENCE_RE = re.compile(r"(```.*?```)", re.DOTALL)
+
+
+def _collapse_spaces_outside_fences(text: str) -> str:
+    """Collapse runs of spaces/tabs, but never inside ``` code fences —
+    collapsing there would corrupt indentation in code-containing replies.
+    """
+    parts = _FENCE_RE.split(text)
+    return "".join(
+        p if p.startswith("```") else re.sub(r"[ \t]{2,}", " ", p) for p in parts
+    )
+
+
 def strip_tool_leaks(text: str) -> str:
     """Remove leaked <|tool_call|> fragments from assistant text."""
     if not text:
@@ -94,7 +107,7 @@ def strip_tool_leaks(text: str) -> str:
     text = _TOOL_CALL_TAG_RE.sub("", text)
     text = _TOOL_CALL_BARE_RE.sub("", text)
     text = _TOOL_TAG_RE.sub("", text)
-    return re.sub(r"[ \t]{2,}", " ", text).strip()
+    return _collapse_spaces_outside_fences(text).strip()
 
 
 def _get_client() -> httpx.AsyncClient:
