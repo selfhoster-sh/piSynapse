@@ -46,6 +46,15 @@ _TOOL_CALL_TAG_RE = re.compile(
     re.DOTALL,
 )
 
+# Tag-less residue: a leak whose channel tags were already stripped surfaces
+# as a bare `call:name{{...}}` fragment (observed in saved history). Restricted
+# to known tool names so ordinary prose containing "call:" is never touched.
+# Closing braces are optional inside the payload so truncated-stream variants
+# like `call:read_email{id:` (no closing brace/tag) are consumed entirely.
+_TOOL_CALL_BARE_RE = re.compile(
+    r'\bcall:(' + _TOOL_NAMES_ALTERNATION + r')\s*(?:\{\{?([^{}]*)(?:\}?\})?)?'
+)
+
 
 def parse_leaked_tool_call(text: str) -> dict | None:
     """Recover a tool call the model emitted as plain text.
@@ -56,7 +65,7 @@ def parse_leaked_tool_call(text: str) -> dict | None:
     """
     if not text:
         return None
-    m = _TOOL_CALL_TAG_RE.search(text)
+    m = _TOOL_CALL_TAG_RE.search(text) or _TOOL_CALL_BARE_RE.search(text)
     if not m:
         return None
     name, args_src = m.group(1), m.group(2) or ""
@@ -83,6 +92,7 @@ def strip_tool_leaks(text: str) -> str:
     if not text:
         return text
     text = _TOOL_CALL_TAG_RE.sub("", text)
+    text = _TOOL_CALL_BARE_RE.sub("", text)
     text = _TOOL_TAG_RE.sub("", text)
     return re.sub(r"[ \t]{2,}", " ", text).strip()
 
