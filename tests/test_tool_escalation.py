@@ -127,6 +127,86 @@ def test_escalation_happens_once(monkeypatch):
     assert reasons.count("tools_escalated") == 1
 
 
+def test_marker_escalation_synced_on_both_backends(monkeypatch):
+    """Hatch must behave identically on litert SSE and ollama NDJSON."""
+    import json as _json
+
+    import config as _cfg
+    from tests.test_ollama_think_stream import _chunk
+
+    def _o_tool(name):
+        return _json.dumps({"message": {"content": "", "tool_calls": [
+            {"function": {"name": name, "arguments": {}}}]}, "done": False})
+
+    def _o_done():
+        return _json.dumps({"message": {"content": ""}, "done": True, "done_reason": "stop"})
+
+    def run(backend, marker_round, tool_round, text_round):
+        async def fake_verify(*a, **k):
+            pass
+
+        executed: list[str] = []
+
+        async def fake_run_tool(name, params, context=None):
+            executed.append(name)
+            return "OK"
+
+        rounds = [marker_round, tool_round, text_round]
+        holder = {"rounds": list(rounds), "payloads": []}
+
+        class C:
+            def stream(self, method, url, json=None):
+                holder["payloads"].append(json or {})
+                return _SeqResp(holder["rounds"].pop(0))
+
+            async def post(self, url, json=None):
+                raise AssertionError("non-stream retry not expected")
+
+        monkeypatch.setattr(_cfg, "LLM_BACKEND", backend)
+        monkeypatch.setattr(llm_stream, "_get_client", lambda: C())
+        monkeypatch.setattr(llm_stream, "run_verification", fake_verify)
+        monkeypatch.setattr(llm_stream, "run_tool", fake_run_tool)
+
+        async def drain():
+            events = []
+            async for ev in llm_stream.chat_with_ollama_stream(
+                [{"role": "user", "content": "1. notu oku"}],
+                memories=[], think=False, summary="", user_id="t",
+                session_id=f"s-{backend}", intent="question", tool_group=None,
+                reasoning_effort="",
+            ):
+                events.append(ev)
+            return events
+
+        return asyncio.run(drain()), holder["payloads"], executed
+
+    scenarios = {
+        "litert": (
+            [_tok("TOOL_NEEDED"), _fin("stop"), _DONE_LINE],
+            [_tc("list_notes"), _fin("tool_calls"), _DONE_LINE],
+            [_tok("tamam."), _fin("stop"), _DONE_LINE],
+        ),
+        "ollama": (
+            [_chunk(content="TOOL_NEEDED"), _chunk(done=True, reason="stop")],
+            [_o_tool("list_notes"), _o_done()],
+            [_chunk(content="tamam."), _chunk(done=True, reason="stop")],
+        ),
+    }
+    from llm.stream import _TOOL_ASK_HINT as HINT
+
+    for backend, (mr, tr, xr) in scenarios.items():
+        events, payloads, executed = run(backend, mr, tr, xr)
+        reasons = [ev["gen_retry"]["reason"] for ev in events if "gen_retry" in ev]
+        assert reasons == ["tools_escalated"], backend
+        assert executed == ["list_notes"], backend
+        assert any(ev.get("done") for ev in events), backend
+        # hint injected pre-escalation, gone after; tools attached after
+        assert not payloads[0].get("tools"), backend
+        assert any(m.get("content") == HINT for m in payloads[0]["messages"]), backend
+        assert len(payloads[1].get("tools") or []) > 0, backend
+        assert all(m.get("content") != HINT for m in payloads[1]["messages"]), backend
+
+
 class _CountingResp:
     """_SeqResp that remembers how many SSE lines the loop consumed."""
 
