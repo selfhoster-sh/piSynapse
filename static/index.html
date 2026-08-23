@@ -1202,7 +1202,9 @@ const STRINGS = {
     copyTitle:'Mesajı kopyala', copiedTitle:'Kopyalandı',
     thinkEffortTitle:'Think seviyesi',
     toolAttempt:'deneme', toolCap:'tekrar sınırı',
-    genRetryLabel:'Araç yanıtları sıkıştırılıp yeniden deneniyor…'
+    genRetryLabel:'Araç yanıtları sıkıştırılıp yeniden deneniyor…',
+    genRetryLeak:'Araç çağrısı düzeltiliyor…',
+    genRetryEscalate:'Gerekli araçlar etkinleştiriliyor…'
   },
   en:{
     newChat:'New chat', chats:'Chats', mem:'Memory', memTitle:'Memory',
@@ -1252,7 +1254,9 @@ const STRINGS = {
     copyTitle:'Copy message', copiedTitle:'Copied',
     thinkEffortTitle:'Think effort',
     toolAttempt:'attempt', toolCap:'retry cap',
-    genRetryLabel:'Compressing tool responses and retrying…'
+    genRetryLabel:'Compressing tool responses and retrying…',
+    genRetryLeak:'Fixing a tool call…',
+    genRetryEscalate:'Enabling the required tools…'
   }
 };
 
@@ -2423,7 +2427,7 @@ async function sendMsg(){
           else { toolRow=showToolStatus(data.tool, toolRow); }
         } else if(data.gen_retry){
           if(currentSid !== sid) continue;
-          toolRow=showGenRetry(toolRow);
+          toolRow=showGenRetry(toolRow, data.gen_retry.reason);
         } else if(data.confirm){
           terminated=true; hideTyping(); showConfirmModal(data.confirm); setLoading(false); _pendingStream=null; return;
         } else if(data.error){
@@ -2643,19 +2647,24 @@ function endToolStatus(row, ok){
   return row;
 }
 
-function showGenRetry(row){
+function genRetryText(reason){
+  if(reason==='tool_leak') return t('genRetryLeak');
+  if(reason==='tools_escalated') return t('genRetryEscalate');
+  return t('genRetryLabel'); // overflow / empty / unknown
+}
+function showGenRetry(row, reason){
   if(row && row.isConnected){
     // Retry often lands right after a tool end (✓ state) — revive the pill
     // so the retry label + spinner actually replace the stale "done" look.
     resetPill(row);
-    row.querySelector('.tlab').textContent=t('genRetryLabel');
+    row.querySelector('.tlab').textContent=genRetryText(reason);
     scrollEnd(false);
     return row;
   }
   row=document.createElement('div'); row.className='tool-status';
   row.innerHTML='<span class="tspin"></span><span class="tlab"></span>';
   placePill(row);
-  row.querySelector('.tlab').textContent=t('genRetryLabel');
+  row.querySelector('.tlab').textContent=genRetryText(reason);
   scrollEnd(false);
   return row;
 }
