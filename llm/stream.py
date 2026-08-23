@@ -24,7 +24,7 @@ from tools import (
 
 from .payload import _build_full_messages, _build_payload, _normalize_messages_for_backend, trim_messages_for_context
 from .utils import (
-    EMPTY_ANSWER_FALLBACK as _EMPTY_ANSWER_FALLBACK,
+    EMPTY_ANSWER_FALLBACK as _EMPTY_ANSWER_FALLBACK,  # noqa: F401 -- legacy alias, referenced by tests
 )
 from .utils import (
     FINALIZE_NUDGE as _FINALIZE_NUDGE,
@@ -38,6 +38,9 @@ from .utils import (
     clean_reasoning,
     parse_leaked_tool_call,
     strip_tool_leaks,
+)
+from .utils import (
+    empty_answer_fallback as _empty_answer_fallback,
 )
 
 logger = logging.getLogger("piSynapse")
@@ -387,7 +390,7 @@ async def chat_with_ollama_stream(
                 final_nudge_used = True
                 current_msgs.append({"role": "user", "content": _FINALIZE_NUDGE})
                 continue
-            yield {"token": buf.strip() or _EMPTY_ANSWER_FALLBACK}
+            yield {"token": buf.strip() or _empty_answer_fallback()}
             yield {"done": True, "memories_saved": memories_saved, "reasoning": clean_reasoning(full_reasoning)}
             return
 

@@ -2062,6 +2062,11 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   try {
     const s = await api('GET','/config/settings');
     if(s) Object.assign(_settingsData, s);
+    // Adopt the instance's assistant language unless the user picked one.
+    if(!localStorage.getItem('ps_lang')){
+      const srv = String((_settingsData.UI_LANGUAGE||{}).value||'').toLowerCase();
+      if((srv==='tr'||srv==='en') && srv!==lang) applyLang(srv);
+    }
   } catch {}
   await loadSessions(); showWelcome(); startTicker(); startHealthPoll();
   if(window._beacon) window._beacon({t:'init', step:'all-done'});
