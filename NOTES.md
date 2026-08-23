@@ -13,6 +13,14 @@ Project diary + architecture reference. **Reverse chronological: newest entries 
 - Journal policy: entries are strictly reverse chronological (newest first) and record project work only.
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 
+## 2026-08-23 (17) — Pill removal on thinking-stream + contrast hardening
+
+Second live-test round:
+
+- **Pill lingered into streaming:** the token branch removed it, but litert streams `reasoning` FIRST after tool rounds — bubble+thinkbox appear (= visible streaming) while the pill sat above. Removal now fires on reasoning events too ("thinking IS streaming"). Any content event kills the pill.
+- **Contrast audit (WCAG AA):** base label text2/surface2 = **5.47 ✓**; BUT `.tool-status.ok{opacity:.7}` blended to **3.29 ✗ FAIL** — opacity-dimming was the culprit the user sensed. Replaced with restyling: ok label → var(--text) = **14.34 ✓**, accent-filled dot carries the done cue. Glass mode pill gets its own backdrop `rgba(15,15,21,.94)+blur(12px)`: **4.63 ✓** even over a pathological pure-white backdrop, 5.43 over the real dark one. Verified with the luminance script, not eyeballed.
+- SW v19.
+
 ## 2026-08-23 (16) — Pill state revival on retry / multi-tool reuse
 
 Tracing the pill lifecycle surfaced two stale-state gaps in entry 15's persistence model, both fixed with a `resetPill()` helper called on every REUSE of an existing pill:
