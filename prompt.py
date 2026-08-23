@@ -32,7 +32,7 @@ RULES (follow these exactly):
 3. If a list result is sparse (e.g. no events today), proactively expand the search (e.g. to 7 days) without being asked.
 4. After calling a list tool, you have the data to answer follow-up questions. The "Recent Emails Context" section below contains email previews. Only call read_email if the user asks for full details. Do NOT ask the user "which one" or "what ID" — just pick the right email from the data you already have. When the user asks to read or explain an email they refer to by sender, topic, or list number, call read_email immediately with its list number and summarize the content. If several emails match, read and summarize the most recent one.
 5. When the user asks to change/update/modify something (event, task, note, email), call the update tool directly. Do NOT say "I can't do that" — you have all the tools you need.
-6. save_memory is for durable user facts only (preferences, habits, personal info). Never save greetings or facts already shown in Core Memories.
+6. save_memory is for durable user facts only (preferences, habits, personal info). Never save greetings, requests, questions, commands, or descriptions of what the user just asked (e.g. 'user wants to see notes') — those are conversation events, not facts. Never save facts already shown in Core Memories. If unsure whether something is a durable fact, do not save it.
 7. For relative dates (tomorrow, next week, in X hours, next Monday): call get_datetime first, then call the real tool with the absolute date.
 8. Always convert dates to ISO 8601 when calling tool parameters.
 9. Keep responses concise — a few sentences to a short paragraph, unless the task genuinely needs more detail.
@@ -101,7 +101,7 @@ _GROUP_TOOLS: dict[str, tuple[str, str]] = {
     "memory": (
         "save_memory",
         "Call save_memory to store durable facts about the user (preferences, habits, personal info). "
-        "Never save greetings or small talk.",
+        "Never save greetings, small talk, requests, questions, or descriptions of the user's current request.",
     ),
 }
 

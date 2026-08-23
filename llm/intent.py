@@ -133,6 +133,23 @@ async def _get_tool_embeddings() -> list[tuple[str | None, str, bytes]]:
         return _tool_embed_cache
 
 
+def _keyword_group(message: str) -> str | None:
+    """Cheap substring heuristics. Order matters: first hit wins."""
+    ml = message.lower()
+    checks = (
+        (["hava", "derece", "sıcaklık", "sicaklik", "tahmini", "yağmur", "yagmur", "rüzgar", "ruzgar", "kar", "bulut"], "weather"),
+        (["etkinlik", "takvim", "randevu", "toplantı", "olay"], "calendar"),
+        (["email", "e-posta", "posta", "gelen kutusu", "ileti", "mesaj", "mail"], "email"),
+        (["görev", "gorev", "yapılacak", "yapilacak", "task", "todo", "yapmam gereken"], "tasks"),
+        (["not", "notlar", "not defteri"], "notes"),
+        (["hatırla", "hatirla", "unutma", "sakla", "kaydet", "remember", "don't forget", "save"], "memory"),
+    )
+    for kws, group in checks:
+        if any(kw in ml for kw in kws):
+            return group
+    return None
+
+
 async def _classify_intent(message: str, query_embedding: bytes | None = None) -> tuple[str, str | None]:
     try:
         from embedding import cosine_similarity, embed_async
@@ -156,43 +173,29 @@ async def _classify_intent(message: str, query_embedding: bytes | None = None) -
             margin = best_sim - second_sim
             if best_sim >= 0.50 and margin >= 0.05:
                 if best_group is not None:
-                    logger.info(f"Intent=action group={best_group} via embedding (sim={best_sim:.2f}, margin={margin:.2f})")
+                    # Thin margins flip easily on near-neighbour phrases; when a
+                    # keyword fires for a DIFFERENT group, trust it.
+                    # (Real-world case: a notes request routed to memory at margin .06.)
+                    if margin < 0.10:
+                        kw_group = _keyword_group(message)
+                        if kw_group and kw_group != best_group:
+                            logger.info(
+                                f"Embedding chose {best_group} but keyword says {kw_group} "
+                                f"(sim={best_sim:.2f}, margin={margin:.2f}) -> keyword wins (message={message!r})"
+                            )
+                            return "action", kw_group
+                    logger.info(f"Intent=action group={best_group} via embedding (sim={best_sim:.2f}, margin={margin:.2f}, message={message!r})")
                     return "action", best_group
-                logger.info(f"Intent=question via embedding (sim={best_sim:.2f}, margin={margin:.2f})")
+                logger.info(f"Intent=question via embedding (sim={best_sim:.2f}, margin={margin:.2f}, message={message!r})")
                 return "question", None
             logger.info(f"Embedding uncertain (sim={best_sim:.2f}, margin={margin:.2f}), trying keyword heuristics")
     except Exception as e:
         logger.warning(f"Embedding intent routing failed: {e}")
 
-    weather_kw = ["hava", "derece", "sıcaklık", "sicaklik", "tahmini", "yağmur", "yagmur", "rüzgar", "ruzgar", "kar", "bulut"]
-    if any(kw in message.lower() for kw in weather_kw):
-        logger.info(f"Intent=action group=weather via keyword (message={message!r})")
-        return "action", "weather"
-
-    cal_kw = ["etkinlik", "takvim", "randevu", "toplantı", "olay"]
-    if any(kw in message.lower() for kw in cal_kw):
-        logger.info(f"Intent=action group=calendar via keyword (message={message!r})")
-        return "action", "calendar"
-
-    email_kw = ["email", "e-posta", "posta", "gelen kutusu", "ileti", "mesaj", "mail"]
-    if any(kw in message.lower() for kw in email_kw):
-        logger.info(f"Intent=action group=email via keyword (message={message!r})")
-        return "action", "email"
-
-    task_kw = ["görev", "gorev", "yapılacak", "yapilacak", "task", "todo", "yapmam gereken"]
-    if any(kw in message.lower() for kw in task_kw):
-        logger.info(f"Intent=action group=tasks via keyword (message={message!r})")
-        return "action", "tasks"
-
-    note_kw = ["not", "notlar", "not defteri"]
-    if any(kw in message.lower() for kw in note_kw):
-        logger.info(f"Intent=action group=notes via keyword (message={message!r})")
-        return "action", "notes"
-
-    memory_kw = ["hatırla", "hatirla", "unutma", "sakla", "kaydet", "remember", "don't forget", "save"]
-    if any(kw in message.lower() for kw in memory_kw):
-        logger.info(f"Intent=action group=memory via keyword (message={message!r})")
-        return "action", "memory"
+    kw_group = _keyword_group(message)
+    if kw_group:
+        logger.info(f"Intent=action group={kw_group} via keyword (message={message!r})")
+        return "action", kw_group
 
     # Optional LLM fallback — improves accuracy but adds ~15s delay before streaming starts.
     if get("INTENT_LLM_FALLBACK", "off") == "on":

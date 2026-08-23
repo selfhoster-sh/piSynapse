@@ -119,6 +119,27 @@ class TestMemory:
         sm.assert_awaited_once_with(content="loves coffee", category="pref", importance=5, user_id=7)
         assert result == "Memory saved."
 
+    async def test_save_memory_rejects_meta_requests(self):
+        """Descriptions of the user's request are conversation events, not facts."""
+        with patch("db.save_memory", new=AsyncMock()) as sm:
+            for content in (
+                "Kullanıcının notlarını gösterme isteği.",
+                "The user's request to list notes",
+                "User wants to see their notes",
+                "User asked that we remember his coffee order",
+            ):
+                result = await run_tool("save_memory", {"content": content})
+            assert "ERROR" in result
+            assert "Do not retry" in result
+        sm.assert_not_awaited()
+
+    async def test_save_memory_allows_real_facts(self):
+        with patch("db.save_memory", new=AsyncMock()) as sm:
+            for content in ("Kullanıcı Python sever", "Sabah kahve içmeyi tercih ediyor"):
+                result = await run_tool("save_memory", {"content": content})
+            assert result == "Memory saved."
+        assert sm.await_count == 2
+
 
 def _mail_client(messages=None, message=None, sent=True, results=None):
     mc = MagicMock()
