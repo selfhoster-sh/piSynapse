@@ -285,9 +285,12 @@ body.theme-black .msg-group.user .msg-meta .who{color:var(--text3)}
 .typing.tool-pending{opacity:.25;transition:opacity .2s}
 .tool-status{display:flex;align-items:center;gap:9px;width:fit-content;max-width:90%;padding:8px 14px;margin:6px 0;border-radius:999px;background:var(--surface2);border:1px solid var(--border);font-size:13px;color:var(--text2)}
 .tool-status .tspin{flex:none;width:12px;height:12px;border-radius:50%;border:2px solid var(--border);border-top-color:var(--accent);animation:tspin .9s linear infinite}
-.tool-status.ok{opacity:.7}
+/* Contrast: text2 on surface2 = 5.5:1 (AA ✓). NEVER dim the whole pill via
+   opacity — .7 alpha over surface2 measured 3.3:1 (AA fail); restyle instead. */
+.tool-status.ok .tlab{color:var(--text)}
 .tool-status.ok .tspin{animation:none;border-color:var(--accent);background:var(--accent)}
 .tool-status .tspin.dead{animation:none;border-color:var(--border);opacity:.7}
+body.glass-mode .tool-status{background:rgba(15,15,21,.94);backdrop-filter:blur(12px)}
 @keyframes tspin{to{transform:rotate(360deg)}}
 @keyframes bounce{0%{transform:translateY(0);opacity:.4}100%{transform:translateY(-6px);opacity:1}}
 
@@ -2404,6 +2407,7 @@ async function sendMsg(){
           // If the user navigated away during streaming, loadSessions() updates the sidebar.
         } else if('reasoning' in data){
           if(currentSid !== sid) continue;
+          if(toolRow){ toolRow.remove(); toolRow=null; } // thinking IS streaming — pill's job done
           if(!bubble) bubble=createStreamBubble();
           if(!thinkBox){ thinkBox=ensureThinkBox(bubble); }
           fullReasoning+=data.reasoning;
