@@ -4,239 +4,116 @@ Project diary + architecture reference. **Reverse chronological: newest entries 
 
 ## READ FIRST — AFTER EVERY SESSION/COMPACTION
 
-- The project IS a git repo (since Aug 13, 2026). Commit changes one by one
-  (rule: one item = one commit + py_compile + pytest). Before risky architectural
-  work, take a backup: `backups/piSynapse-*.tar.gz` (gitignored). ASK THE USER
-  whether a backup should be taken — never assume "I took a backup" on your own.
-- No architectural changes without user approval (new folders/packages, new
-  infrastructure like Docker/WebSocket, framework swaps). Don't widen scope on
-  your own initiative.
-- Before writing "the user approved/accepted" ANYTHING, make sure that approval
-  was really, explicitly given in this conversation. If unsure, write honestly
-  "the user did not approve, I assumed" — never fabricate an approval.
-- The services/ layer was REMOVED (July 30, 2026) — legacy modules (db.py, llm/,
-  tools/, embedding.py) do all the work. Don't propose a DI/service layer again
-  unless the user explicitly asks.
-- Docker and WebSocket (/chat/ws) were removed — the frontend uses SSE only
-  (/chat/stream); do not reintroduce them.
-- The Ollama service is stopped/disabled — LLM_BACKEND=litert is active. Don't
-  restart Ollama or add dependencies on it unless the user asks.
-- Journal policy: entries are strictly reverse chronological (newest first)
-  and record project work only.
-- Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/
-  dispatcher untested). A dedicated hardening pass has been running since
-  August; suite size is tracked in the entries below.
+- The project IS a git repo (since Aug 13, 2026). Commit changes one by one (rule: one item = one commit + py_compile + pytest). Before risky architectural work, take a backup: `backups/piSynapse-*.tar.gz` (gitignored). ASK THE USER whether a backup should be taken — never assume "I took a backup" on your own.
+- No architectural changes without user approval (new folders/packages, new infrastructure like Docker/WebSocket, framework swaps). Don't widen scope on your own initiative.
+- Before writing "the user approved/accepted" ANYTHING, make sure that approval was really, explicitly given in this conversation. If unsure, write honestly "the user did not approve, I assumed" — never fabricate an approval.
+- The services/ layer was REMOVED (July 30, 2026) — legacy modules (db.py, llm/, tools/, embedding.py) do all the work. Don't propose a DI/service layer again unless the user explicitly asks.
+- Docker and WebSocket (/chat/ws) were removed — the frontend uses SSE only (/chat/stream); do not reintroduce them.
+- The Ollama service is stopped/disabled — LLM_BACKEND=litert is active. Don't restart Ollama or add dependencies on it unless the user asks.
+- Journal policy: entries are strictly reverse chronological (newest first) and record project work only.
+- Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 
 ## 2026-08-23 (13) — Chip random distribution
 
-- shuffleChips(): Fisher-Yates + anti-clump constraints (same chip may not sit
-  across the loop seam, the two lanes may not start with the same chip), 60
-  attempts; verified 2000/2000 via node. Fresh layout on every showWelcome().
+- shuffleChips(): Fisher-Yates + anti-clump constraints (same chip may not sit across the loop seam, the two lanes may not start with the same chip), 60 attempts; verified 2000/2000 via node. Fresh layout on every showWelcome().
 - SW v15.
 
 ## 2026-08-23 (12) — Draggable marquee
 
-- JS rAF model replaces CSS keyframes: each track owns a controller (x, half,
-  vx, drag). Horizontal finger/mouse dragging (touch-action:pan-y keeps vertical
-  scroll intact), taps under 6px still count as clicks (chipSend works), beyond
-  that it's a fling: velocity measured and inherited as vx, decays with
-  exp(-3t); auto-resume after 450ms (no need to click elsewhere). Hover-pause
-  removed.
-- Wrapping loops x within (-half, 0] → perfectly seamless infinity. half is
-  re-measured on resize. reduced-motion: no auto flow, free manual drag. rAF
-  cleanup on page detach (isConnected).
+- JS rAF model replaces CSS keyframes: each track owns a controller (x, half, vx, drag). Horizontal finger/mouse dragging (touch-action:pan-y keeps vertical scroll intact), taps under 6px still count as clicks (chipSend works), beyond that it's a fling: velocity measured and inherited as vx, decays with exp(-3t); auto-resume after 450ms (no need to click elsewhere). Hover-pause removed.
+- Wrapping loops x within (-half, 0] → perfectly seamless infinity. half is re-measured on resize. reduced-motion: no auto flow, free manual drag. rAF cleanup on page detach (isConnected).
 - SW v14. node ✓.
 
 ## 2026-08-23 (11) — Marquee chips + menu opacity + deeper mask
 
 - #messages bottom fade: flat 96px → 128px + partial alpha stops (rgba .55 @
   -52px) = cinematic dissolve, both modes.
-- .sel-menu stayed translucent over glass and blended with underlying text:
-  layered background (surface gradient over solid --bg) + backdrop-blur 18px →
-  readable in every theme.
-- Chips went dual-marquee: two lanes moving in opposite directions (chipMq
-  38s/46s linear infinite), mask fade at edges ('|shadow|'), pause on hover,
-  send on click. Track = set×2, translateX(-50%) loop. Static under the global
-  reduced-motion kill (halves identical → identical look).
+- .sel-menu stayed translucent over glass and blended with underlying text: layered background (surface gradient over solid --bg) + backdrop-blur 18px → readable in every theme.
+- Chips went dual-marquee: two lanes moving in opposite directions (chipMq 38s/46s linear infinite), mask fade at edges ('|shadow|'), pause on hover, send on click. Track = set×2, translateX(-50%) loop. Static under the global reduced-motion kill (halves identical → identical look).
 - SW v13. Frontend only → no service restart needed.
 
 ## 2026-08-23 (10) — Ambient standards round (full authority while user slept)
 
-- Research (aurora UI write-ups + dark-mode gradient practice): the color field
-  is visible AT ALL TIMES; idle = calm frozen scene, text panel lit, background
-  quiet, motion slow. 60-30-10 rule.
-- FREEZE+RESUME FIX (the real bug): animations were bound to .generating → when
-  the class left, the animation itself left → jump back to frame 0. Correct
-  pattern: keyframes permanently attached, default play-state:paused;
-  generating only flips running + opacity 1. On finish the frame freezes, next
-  reply resumes from where it stopped.
-- Faint corner washes returned to ::before (11/7/8/5% mixes) → idle is never
-  empty black (@supports fallback added too). Blob idle opacities .5-.62.
-- Chip #7: +Create a note (TR keyword ✓, EN corpus contains 'create note'
-  verbatim).
+- Research (aurora UI write-ups + dark-mode gradient practice): the color field is visible AT ALL TIMES; idle = calm frozen scene, text panel lit, background quiet, motion slow. 60-30-10 rule.
+- FREEZE+RESUME FIX (the real bug): animations were bound to .generating → when the class left, the animation itself left → jump back to frame 0. Correct pattern: keyframes permanently attached, default play-state:paused; generating only flips running + opacity 1. On finish the frame freezes, next reply resumes from where it stopped.
+- Faint corner washes returned to ::before (11/7/8/5% mixes) → idle is never empty black (@supports fallback added too). Blob idle opacities .5-.62.
+- Chip #7: +Create a note (TR keyword ✓, EN corpus contains 'create note' verbatim).
 - SW v12. 314 tests ✓ ruff ✓ node ✓. Service restarted, healthy.
 
 ## 2026-08-23 (9) — Aurora freeze fix + 4 blobs + memory meta-save root cause
 
-- Aurora "pitch black" issue: idle opacity:0 left only the vignette behind. New
-  model: blobs always visible (idle .45-.55), animation always defined but
-  animation-play-state:paused while idle = FREEZES IN PLACE mid-frame, no snap.
-  While generating: running + opacity .95.
-- Blob count 2→4 (ab3 center-right 19s, ab4 accent-hue upper-right 27s; lavaC /
-  lavaD multi-point keyframes).
-- MEMORY BUG ROOT CAUSE (log-proven): at 05:40:28 'show my notes' had been
-  routed to memory via embedding (sim .73, MARGIN .06 — threshold .05!). The
-  memory-group LLM then called save_memory treating the request itself as a
-  fact: 'User request to show their notes.' Layers fixed: (1) the generic
-  'değiştirir misin'-style patterns were already purged from the corpus but
-  that wasn't enough → intent.py now lets keywords win when margin<0.10 and the
-  keyword group disagrees, plus the message is logged on the embedding path
-  (visibility). (2) prompt.py rule 6 + tool description + group blurb: requests/
-  questions/commands are forbidden. (3) dispatcher save_memory guard: regex
-  rejects meta-content (isteği/talebi/request to/wants to/asked that...) while
-  real facts like 'User likes Python' still pass (8 cases tested). DB: junk row
-  id=17 deleted from assistant.db.
+- Aurora "pitch black" issue: idle opacity:0 left only the vignette behind. New model: blobs always visible (idle .45-.55), animation always defined but animation-play-state:paused while idle = FREEZES IN PLACE mid-frame, no snap. While generating: running + opacity .95.
+- Blob count 2→4 (ab3 center-right 19s, ab4 accent-hue upper-right 27s; lavaC / lavaD multi-point keyframes).
+- MEMORY BUG ROOT CAUSE (log-proven): at 05:40:28 'show my notes' had been routed to memory via embedding (sim .73, MARGIN .06 — threshold .05!). The memory-group LLM then called save_memory treating the request itself as a fact: 'User request to show their notes.' Layers fixed: (1) the generic 'değiştirir misin'-style patterns were already purged from the corpus but that wasn't enough → intent.py now lets keywords win when margin<0.10 and the keyword group disagrees, plus the message is logged on the embedding path (visibility). (2) prompt.py rule 6 + tool description + group blurb: requests/ questions/commands are forbidden. (3) dispatcher save_memory guard: regex rejects meta-content (isteği/talebi/request to/wants to/asked that...) while real facts like 'User likes Python' still pass (8 cases tested). DB: junk row id=17 deleted from assistant.db.
 - Chip: 'Notlarımı göster'→'Notları listele' / EN 'List my notes'.
-- Tests: 314 (+2 save_memory regressions). ruff ✓ node ✓ SW v11. Service
-  restarted, healthy.
+- Tests: 314 (+2 save_memory regressions). ruff ✓ node ✓ SW v11. Service restarted, healthy.
 
 ## 2026-08-23 (8) — Lava-lamp aurora + clock position + intent corpus fix + custom select
 
-- Aurora fully rewritten: #aurora layer (blobs, --glow-tokened radials, no
-  color-mix dependency → @supports aurora duplicates deleted). During
-  generating lavaA 17s/lavaB 23s large drift+scale; idle fades out and freezes
-  (no snap). ::before now carries only the vignette.
-- Clock position restored: .sess-del absolutely positioned right (hover swaps
-  time↔trash Discord-style), padding-right:20px on the name. Time always flush
-  right.
-- Chip: joke replaced with 'Görevlerimi listele'/'List my tasks' (task_kw
-  'görev' ✓). TR/EN rows mirrored.
-- INTENT BUG FOUND: the calendar corpus contained generic patterns without any
-  domain word ("değiştirir misin..." and DE/FR/ES equivalents) pulling every
-  "could you change X" into calendar; tasks had no update examples. Purged +
-  update/postpone anchors added to tasks. 7/7 correct with real embeddings
-  (before: task-change drifted to calendar).
-- applyLang instant: full welcome rebuild (chips included) + openSettings()
-  re-invoked if the modal is open. This was why a hard refresh seemed required
-  (a modal stuck in the old language made it look like nothing changed).
-- Custom dropdown (.sel-wrap/.sel-btn/.sel-menu): native <select> hidden,
-  esc()'d menu; enhanceAllSelects after boot+openSettings; closes on
-  outside-click/Esc; change event dispatched to inline handlers.
+- Aurora fully rewritten: #aurora layer (blobs, --glow-tokened radials, no color-mix dependency → @supports aurora duplicates deleted). During generating lavaA 17s/lavaB 23s large drift+scale; idle fades out and freezes (no snap). ::before now carries only the vignette.
+- Clock position restored: .sess-del absolutely positioned right (hover swaps time↔trash Discord-style), padding-right:20px on the name. Time always flush right.
+- Chip: joke replaced with 'Görevlerimi listele'/'List my tasks' (task_kw 'görev' ✓). TR/EN rows mirrored.
+- INTENT BUG FOUND: the calendar corpus contained generic patterns without any domain word ("değiştirir misin..." and DE/FR/ES equivalents) pulling every "could you change X" into calendar; tasks had no update examples. Purged + update/postpone anchors added to tasks. 7/7 correct with real embeddings (before: task-change drifted to calendar).
+- applyLang instant: full welcome rebuild (chips included) + openSettings() re-invoked if the modal is open. This was why a hard refresh seemed required (a modal stuck in the old language made it look like nothing changed).
+- Custom dropdown (.sel-wrap/.sel-btn/.sel-menu): native `<select>` hidden, esc()'d menu; enhanceAllSelects after boot+openSettings; closes on outside-click/Esc; change event dispatched to inline handlers.
 - SW v10. Tests 312 ✓ ruff ✓ node ✓
 
 ## 2026-08-23 (7) — Pure black default + hover fix + typography + living aurora
 
-- Pure black is no longer an option, it's the default: body.amoled values
-  folded into :root, toggle+applyBlack+ps_black+i18n keys deleted. theme-black
-  remains as deepest tier (bg still #000). Mobile density boost simplified.
-- Sidebar jitter root cause: hover toggled .sess-del display:none→flex =
-  layout shift. Fix: opacity+pointer-events (slot reserved),
-  transition:all→background-color/border-color. Stronger hover: surface2→
-  surface3 + rgba(255,255,255,.05) border.
+- Pure black is no longer an option, it's the default: body.amoled values folded into :root, toggle+applyBlack+ps_black+i18n keys deleted. theme-black remains as deepest tier (bg still #000). Mobile density boost simplified.
+- Sidebar jitter root cause: hover toggled .sess-del display:none→flex = layout shift. Fix: opacity+pointer-events (slot reserved), transition:all→background-color/border-color. Stronger hover: surface2→ surface3 + rgba(255,255,255,.05) border.
 - Typography standardized: body+bubble 14.5→15px, sess-name 13.5→14px.
-- Chips 4→6: +weather ('Bugün hava nasıl?'), +joke ('Komik bir şey söyle' —
-  embedding corpus has a 'tell me a joke' example, safe).
-- Aurora lives during replies: setLoading→body.generating; auroraDrift 14s
-  transform-only (inset:-9% oversize, GPU-friendly) + grainBreathe. The global
-  reduced-motion kill already covers it. Mobile: compositor-only, no repaint.
-- Glass feel: mask fade bottom 64→96px (text melts into the glass), subtle
-  elevation shadow on user bubbles in glass-mode.
-- User question "does this meet glassmorphism standards": yes — translucency+
-  blur+1px light border+inset highlight+vignette+decoration all present; what
-  was missing was motion, now added.
+- Chips 4→6: +weather ('Bugün hava nasıl?'), +joke ('Komik bir şey söyle' — embedding corpus has a 'tell me a joke' example, safe).
+- Aurora lives during replies: setLoading→body.generating; auroraDrift 14s transform-only (inset:-9% oversize, GPU-friendly) + grainBreathe. The global reduced-motion kill already covers it. Mobile: compositor-only, no repaint.
+- Glass feel: mask fade bottom 64→96px (text melts into the glass), subtle elevation shadow on user bubbles in glass-mode.
+- User question "does this meet glassmorphism standards": yes — translucency+ blur+1px light border+inset highlight+vignette+decoration all present; what was missing was motion, now added.
 
 ## 2026-08-23 (6) — Sidebar redraw fix + chip send + glass tuning
 
-- Bug: every render gave .sess-item opacity:0+slide-in → redraw flash on stream
-  end/search close. Fix: renderSessions(list,animate) + #session-list.no-anim;
-  loadSessions(animate) pass-through. Silent calls: stream done, abort finally,
-  non-stream reply, search-restore (restore only when a filter is applied).
-- Chips now SEND directly (chipSend→sendMsg); content keyword-aligned with
-  intent: özetle/e-posta (email-read), etkinlik (calendar), görev (tasks),
-  notlarımı göster (notes exact). The old 'reminder' chip could slip into
-  memory because of memory_kw('hatırla') → became 'görev oluştur'.
-- Glass decisions: grain .07→.09; aurora mixes 30/20/22/13→24/15/16/9 + vignette
-  .28→.32 (@supports fallback updated too); inner white hairlines kept (glass
-  affordance).
+- Bug: every render gave .sess-item opacity:0+slide-in → redraw flash on stream end/search close. Fix: renderSessions(list,animate) + #session-list.no-anim; loadSessions(animate) pass-through. Silent calls: stream done, abort finally, non-stream reply, search-restore (restore only when a filter is applied).
+- Chips now SEND directly (chipSend→sendMsg); content keyword-aligned with intent: özetle/e-posta (email-read), etkinlik (calendar), görev (tasks), notlarımı göster (notes exact). The old 'reminder' chip could slip into memory because of memory_kw('hatırla') → became 'görev oluştur'.
+- Glass decisions: grain .07→.09; aurora mixes 30/20/22/13→24/15/16/9 + vignette .28→.32 (@supports fallback updated too); inner white hairlines kept (glass affordance).
 
 ## 2026-08-23 (5) — Visual polish round
 
-- #messages mask-image edge fade: 64px bottom, 28px top softening; works in
-  glass mode too (background-independent).
-- Streaming caret: withStreamCaret() places it inside the last closed block tag
-  (doesn't fall to a new line), cleared on done; caretBlink keyframes.
-- Suggestion chips on welcome (WELCOME_CHIPS tr/en, chipFill fills the input);
-  .w-chip styles. text-wrap:pretty.
-- WCAG audit script (/tmp/opencode/wcag_audit.py): single failure text3/surface2
-  4.37 → --text3 #7e7e96→#83839c (4.69). Every other pair passes AA.
-- User note: nested-squares logo = chat screen center, toggle-menu pattern =
-  link to future ecosystem tools — DO NOT TOUCH.
+- #messages mask-image edge fade: 64px bottom, 28px top softening; works in glass mode too (background-independent).
+- Streaming caret: withStreamCaret() places it inside the last closed block tag (doesn't fall to a new line), cleared on done; caretBlink keyframes.
+- Suggestion chips on welcome (WELCOME_CHIPS tr/en, chipFill fills the input); .w-chip styles. text-wrap:pretty.
+- WCAG audit script (/tmp/opencode/wcag_audit.py): single failure text3/surface2 4.37 → --text3 #7e7e96→#83839c (4.69). Every other pair passes AA.
+- User note: nested-squares logo = chat screen center, toggle-menu pattern = link to future ecosystem tools — DO NOT TOUCH.
 
 ## 2026-08-23 (4) — prefers-reduced-motion
 
-- Respect the OS "Reduce motion" setting: kills all animations/transitions
-  (vestibular-friendliness). SW cache v6.
-- Correction: glass-mode inventory showed 139 selectors but the core is already
-  variable-based (--surface etc. redefined under body.glass-mode), rules are
-  grouped recipes → the earlier "messy" criticism was overstated; no refactor
-  needed.
+- Respect the OS "Reduce motion" setting: kills all animations/transitions (vestibular-friendliness). SW cache v6.
+- Correction: glass-mode inventory showed 139 selectors but the core is already variable-based (--surface etc. redefined under body.glass-mode), rules are grouped recipes → the earlier "messy" criticism was overstated; no refactor needed.
 
 ## 2026-08-23 (3) — UI_LANGUAGE (option B)
 
-- messages.py: the 3 user-facing backend messages (llm_empty_reply/
-  llm_unreachable/llm_empty_response) got tr/en dicts; get_message() picks live
-  via config.get("UI_LANGUAGE").
-- config.py: UI_LANGUAGE select (default tr, no restart needed). llm/utils.py:
-  empty_answer_fallback() helper; EMPTY_ANSWER_FALLBACK constant kept for test
-  compatibility (noqa F401 aliases in stream/chat).
+- messages.py: the 3 user-facing backend messages (llm_empty_reply/ llm_unreachable/llm_empty_response) got tr/en dicts; get_message() picks live via config.get("UI_LANGUAGE").
+- config.py: UI_LANGUAGE select (default tr, no restart needed). llm/utils.py: empty_answer_fallback() helper; EMPTY_ANSWER_FALLBACK constant kept for test compatibility (noqa F401 aliases in stream/chat).
 - Frontend: at init, if ps_lang was never set, adopt the server's UI_LANGUAGE.
-- Lesson: ruff --fix in an intermediate state had deleted the FINALIZE_NUDGE
-  import → import blocks consolidated. Suite 312 passed; closed-port simulation
-  also clean.
+- Lesson: ruff --fix in an intermediate state had deleted the FINALIZE_NUDGE import → import blocks consolidated. Suite 312 passed; closed-port simulation also clean.
 
 ## 2026-08-23 (2) — Final two xfails closed
 
-- llm/utils.py: tag regexes now also consume the <tool|call> (pipe-mangled)
-  variant; _strip_json_tool_echo added (line-independent, known tool names
-  only, JSON inside prose untouched).
-- tests/test_history_hygiene.py: 2 xfail → normal regression tests + 2 negative
-  cases (unknown_tool and inline JSON preserved). Suite: 308 passed / 0 xfail.
-  CHANGELOG + release notes updated.
+- llm/utils.py: tag regexes now also consume the `<tool|call>` (pipe-mangled) variant; _strip_json_tool_echo added (line-independent, known tool names only, JSON inside prose untouched).
+- tests/test_history_hygiene.py: 2 xfail → normal regression tests + 2 negative cases (unknown_tool and inline JSON preserved). Suite: 308 passed / 0 xfail. CHANGELOG + release notes updated.
 
 ## 2026-08-23 — CI hang fixed
 
-- Symptoms: CI run following c399314 sat 3h28m "in_progress"; its twin run
-  succeeded but 3 tests FAIL (no such table: email_session_map); locally
-  single-file runs waited forever.
-- Root cause: new guard/think tests touched the real DB
-  (chat→_build_full_messages→prompt.get_email_context→db.get_email_map). On CI
-  the schema doesn't exist → fast fail; locally, with the table present, the
-  module-global aiosqlite connection never closed and the NON-daemon worker
-  thread blocked interpreter exit.
-- Fix: autouse fixture mocking prompt.get_email_context in three test files
-  (tests run DB-less); pytest_sessionfinish safety net in conftest.py
-  (close_db). Ruff import sorting via --fix.
-- Verification: CI simulation with closed ports — single files <1s rc=0; full
-  suite 7.1/7.8s exit=0 ×2. ruff clean.
+- Symptoms: CI run following c399314 sat 3h28m "in_progress"; its twin run succeeded but 3 tests FAIL (no such table: email_session_map); locally single-file runs waited forever.
+- Root cause: new guard/think tests touched the real DB (chat→_build_full_messages→prompt.get_email_context→db.get_email_map). On CI the schema doesn't exist → fast fail; locally, with the table present, the module-global aiosqlite connection never closed and the NON-daemon worker thread blocked interpreter exit.
+- Fix: autouse fixture mocking prompt.get_email_context in three test files (tests run DB-less); pytest_sessionfinish safety net in conftest.py (close_db). Ruff import sorting via --fix.
+- Verification: CI simulation with closed ports — single files <1s rc=0; full suite 7.1/7.8s exit=0 ×2. ruff clean.
 
 ## 2026-08-22 — Frontend improvements + ollama think flow
 
-- static/index.html: .msg-actions row under assistant messages (copy + read
-  aloud side by side); no longer inside .msg-meta → visible in minimal mode too
-  (minimal hid meta, losing TTS). attachMsgActions() used on both addMsg and
-  stream-completion paths; copyMessage() clipboard API + execCommand fallback,
-  copied feedback (checkmark icon).
+- static/index.html: .msg-actions row under assistant messages (copy + read aloud side by side); no longer inside .msg-meta → visible in minimal mode too (minimal hid meta, losing TTS). attachMsgActions() used on both addMsg and stream-completion paths; copyMessage() clipboard API + execCommand fallback, copied feedback (checkmark icon).
 - Minimal mode message spacing 24px→34px (body.minimal-chat .msg-group).
 - i18n: copyTitle/copiedTitle (TR+EN). sw.js CACHE pisynapse-v4→v5.
-- Ollama think bug: stream.py/chat.py only read `reasoning_content`; ollama ≥0.9
-  sends `message.thinking`. Both are read now. Live test: 169 reasoning events
-  reached the frontend (slow on CPU but working).
-- New discovery: intent/media STT/warmup direct ollama calls lacked
-  `think:false` → gemma4 silently thought, the num_predict=20 budget went to
-  thinking, intent raw='' + ~45s. Added to all three; live raw='question' ✓.
-- PATCH settings automatic model mapping dogfooded both ways (gemma4-e2b ↔
-  gemma4:e2b). Test file: tests/test_ollama_think_stream.py (2 tests). Suite
-  304+2xf, ruff clean. Backend switched back to litert; probe sessions deleted.
+- Ollama think bug: stream.py/chat.py only read `reasoning_content`; ollama ≥0.9 sends `message.thinking`. Both are read now. Live test: 169 reasoning events reached the frontend (slow on CPU but working).
+- New discovery: intent/media STT/warmup direct ollama calls lacked `think:false` → gemma4 silently thought, the num_predict=20 budget went to thinking, intent raw='' + ~45s. Added to all three; live raw='question' ✓.
+- PATCH settings automatic model mapping dogfooded both ways (gemma4-e2b ↔ gemma4:e2b). Test file: tests/test_ollama_think_stream.py (2 tests). Suite 304+2xf, ruff clean. Backend switched back to litert; probe sessions deleted.
 
 ## In-session self-poisoning report (2026-08-22)
 
@@ -254,72 +131,17 @@ user_id-scoped) — intentional feature.
 
 ### Fix plan (approved)
 
-- [x] **1. Save-time sanitization** — strip_tool_leaks() before the assistant
-  reply hits the DB; skip saving if the reply is entirely leak (stream +
-  non-stream paths) ✅ Verified: tests/test_history_hygiene.py 4 passed, ruff
-  clean. _clean_assistant_reply() helper added; stream done/finally and
-  non-stream save points sanitize and skip empties.
-- [x] **2. One-off DB cleanup** ✅ Verified: dry-run scan then 2 pure-poison
-  rows deleted (id=592 old read_email leak, id=757 call:list_notes{{}});
-  re-scan → 0 poisoned. An embedded-cleanup layer was deliberately NOT built:
-  all 20 dry-run candidates were cosmetic whitespace diffs (markdown), one held
-  a Python code block — rewriting would damage them. The finding also exposed
-  strip_tool_leaks' global whitespace collapse breaking code blocks → fixed:
-  collapsing now applies outside ``` fences only
-  (_collapse_spaces_outside_fences). Coverage: tests/test_history_hygiene.py
-  9 tests = 7 passed + 2 xfail (known limits: `<tool|call>` delimiter, JSON
-  echo); integration tests prove the real save path with mocked DB.
-- [x] **3. Empty-buf fallback** ✅ Verified: if the dedup branch drops an empty
-  buf (the 2026-08-22 "model returned an empty reply" case), a single
-  _FINALIZE_NUDGE system note is injected with tools disabled
-  (final_nudge_used → use_tools=False, truncation-retry pattern) forcing a
-  text-only final turn; still empty after the nudge → _EMPTY_ANSWER_FALLBACK
-  gentle message is yielded. If the nudge turn recovers another leak it falls
-  into the same dedup branch → fallback.
-- [x] **2b. Summary poisoning protection** (user suggestion) ✅ Verified:
-  three layers — (1) SUMMARY_SYSTEM_PROMPT updated: ignore artifacts, "do not
-  infer or invent", prefer newer info on conflict, compress to ~3-5 sentences
-  (user draft taken verbatim); (2) _summary_transcript() input sanitization:
-  assistant messages cleaned before reaching the model, fully-leaked lines drop
-  from the transcript, user messages untouched; (3) output protection: summary
-  stored through strip_tool_leaks. With an empty transcript the LLM isn't called
-  at all (previous summary preserved). Tests: tests/test_summary_hygiene.py
-  5 passed. Full suite: 287 passed, 2 xfailed; ruff clean.
-- [x] **4. Tool-loop ceiling** ✅ Verified: sig_exec_counts caps identical
-  signatures (name(args_json sorted)) at _MAX_IDENTICAL_EXECUTIONS=2 per
-  request; the 3rd attempt is refused with a "[Refused: ...]" tool message
-  (safety net for side-effectful tools; pure repeats are already caught by
-  dedup, this layer cuts repeats inside mixed batches — e.g. [A,B] → [A,C]
-  won't run A again). Tests: tests/test_stream_loop_guards.py 3 passed (nudge
-  turn + tools-off payload verification, fallback message, refusal of the 3rd
-  identical call). Full suite: 290 passed, 2 xfailed; ruff clean.
+- [x] **1. Save-time sanitization** — strip_tool_leaks() before the assistant reply hits the DB; skip saving if the reply is entirely leak (stream + non-stream paths) ✅ Verified: tests/test_history_hygiene.py 4 passed, ruff clean. _clean_assistant_reply() helper added; stream done/finally and non-stream save points sanitize and skip empties.
+- [x] **2. One-off DB cleanup** ✅ Verified: dry-run scan then 2 pure-poison rows deleted (id=592 old read_email leak, id=757 call:list_notes{{}}); re-scan → 0 poisoned. An embedded-cleanup layer was deliberately NOT built: all 20 dry-run candidates were cosmetic whitespace diffs (markdown), one held a Python code block — rewriting would damage them. The finding also exposed strip_tool_leaks' global whitespace collapse breaking code blocks → fixed: collapsing now applies outside ``` fences only (_collapse_spaces_outside_fences). Coverage: tests/test_history_hygiene.py 9 tests = 7 passed + 2 xfail (known limits: ``<tool|call>`` delimiter, JSON echo); integration tests prove the real save path with mocked DB.
+- [x] **3. Empty-buf fallback** ✅ Verified: if the dedup branch drops an empty buf (the 2026-08-22 "model returned an empty reply" case), a single _FINALIZE_NUDGE system note is injected with tools disabled (final_nudge_used → use_tools=False, truncation-retry pattern) forcing a text-only final turn; still empty after the nudge → _EMPTY_ANSWER_FALLBACK gentle message is yielded. If the nudge turn recovers another leak it falls into the same dedup branch → fallback.
+- [x] **2b. Summary poisoning protection** (user suggestion) ✅ Verified: three layers — (1) SUMMARY_SYSTEM_PROMPT updated: ignore artifacts, "do not infer or invent", prefer newer info on conflict, compress to ~3-5 sentences (user draft taken verbatim); (2) _summary_transcript() input sanitization: assistant messages cleaned before reaching the model, fully-leaked lines drop from the transcript, user messages untouched; (3) output protection: summary stored through strip_tool_leaks. With an empty transcript the LLM isn't called at all (previous summary preserved). Tests: tests/test_summary_hygiene.py 5 passed. Full suite: 287 passed, 2 xfailed; ruff clean.
+- [x] **4. Tool-loop ceiling** ✅ Verified: sig_exec_counts caps identical signatures (name(args_json sorted)) at _MAX_IDENTICAL_EXECUTIONS=2 per request; the 3rd attempt is refused with a "[Refused: ...]" tool message (safety net for side-effectful tools; pure repeats are already caught by dedup, this layer cuts repeats inside mixed batches — e.g. [A,B] → [A,C] won't run A again). Tests: tests/test_stream_loop_guards.py 3 passed (nudge turn + tools-off payload verification, fallback message, refusal of the 3rd identical call). Full suite: 290 passed, 2 xfailed; ruff clean.
 
 ### Non-stream port + backend sync (2026-08-22)
 
-- [x] **Guards ported to the non-stream path** ✅ Verified: same nudge+cap
-  mechanism in the llm/chat.py loop (constants moved to llm/utils.py:
-  FINALIZE_NUDGE / EMPTY_ANSWER_FALLBACK / MAX_IDENTICAL_EXECUTIONS; the stream
-  module imports them under their old `_`-prefixed names so tests don't break).
-  Tests: tests/test_chat_loop_guards.py 3 passed.
-- [x] **Model sync on backend switch** ✅ Verified: live probe hit 404 on the
-  ollama branch — root cause: LLM_MODEL stored in litert form (gemma4-e2b)
-  while the ollama registry wants colonized (gemma4:e2b); convention per
-  install.py:1246 (litert→dashed, ollama→colonized). Fixes: (1) LLM_BACKEND now
-  selectable from the UI (select input added to SETTINGS_SCHEMA, removed from
-  PROTECTED_SETTINGS, added to RESTART_REQUIRED_KEYS); (2) PATCH /config/settings
-  validates LLM_MODEL against the NEW daemon's list on backend switch and
-  auto-converts via delimiter-agnostic matching when absent
-  (get_llm_model_options(backend=...) parameter added); (3) no match → old
-  model kept + warning logged (manual pick required). Tests:
-  tests/test_settings_backend_sync.py 4 passed.
-- [x] **Intent detection + LLM fallback validated on both backends** ✅: the
-  embedding layer is backend-independent (FastEmbed/ONNX local); unit tests +
-  live probe for the LLM fallback's litert (/v1/chat/completions) and ollama
-  (/api/chat) branches: question intent produced correctly on both. The full
-  tool loop was also live-verified on ollama (despite a Nextcloud timeout the
-  model produced a proper textual reply → error handling solid). Tests:
-  tests/test_intent_backends.py 5 passed. Full suite: 302 passed, 2 xfailed;
-  ruff clean.
+- [x] **Guards ported to the non-stream path** ✅ Verified: same nudge+cap mechanism in the llm/chat.py loop (constants moved to llm/utils.py: FINALIZE_NUDGE / EMPTY_ANSWER_FALLBACK / MAX_IDENTICAL_EXECUTIONS; the stream module imports them under their old `_`-prefixed names so tests don't break). Tests: tests/test_chat_loop_guards.py 3 passed.
+- [x] **Model sync on backend switch** ✅ Verified: live probe hit 404 on the ollama branch — root cause: LLM_MODEL stored in litert form (gemma4-e2b) while the ollama registry wants colonized (gemma4:e2b); convention per install.py:1246 (litert→dashed, ollama→colonized). Fixes: (1) LLM_BACKEND now selectable from the UI (select input added to SETTINGS_SCHEMA, removed from PROTECTED_SETTINGS, added to RESTART_REQUIRED_KEYS); (2) PATCH /config/settings validates LLM_MODEL against the NEW daemon's list on backend switch and auto-converts via delimiter-agnostic matching when absent (get_llm_model_options(backend=...) parameter added); (3) no match → old model kept + warning logged (manual pick required). Tests: tests/test_settings_backend_sync.py 4 passed.
+- [x] **Intent detection + LLM fallback validated on both backends** ✅: the embedding layer is backend-independent (FastEmbed/ONNX local); unit tests + live probe for the LLM fallback's litert (/v1/chat/completions) and ollama (/api/chat) branches: question intent produced correctly on both. The full tool loop was also live-verified on ollama (despite a Nextcloud timeout the model produced a proper textual reply → error handling solid). Tests: tests/test_intent_backends.py 5 passed. Full suite: 302 passed, 2 xfailed; ruff clean.
 
 Every step: ruff + pytest, then this file updated.
 
@@ -340,66 +162,35 @@ Every step: ruff + pytest, then this file updated.
 
 ### Aug 13
 
-- NOTES.md was removed from git tracking on this day (commit `1e61227`,
-  "keep it local-only") — the start of the lost stretch.
-- The session log holds a single user message: an unfinished "glassy effect"
-  experiment on static/index.html plus a pyjsparser topic. No tool calls were
-  recorded, so whether code changed that day is UNVERIFIABLE (the glass-mode
-  CSS existed by Aug 22; when it landed is unknown).
+- NOTES.md was removed from git tracking on this day (commit `1e61227`, "keep it local-only") — the start of the lost stretch.
+- The session log holds a single user message: an unfinished "glassy effect" experiment on static/index.html plus a pyjsparser topic. No tool calls were recorded, so whether code changed that day is UNVERIFIABLE (the glass-mode CSS existed by Aug 22; when it landed is unknown).
 
 ### Aug 21
 
-- 22:07 — full codebase review requested for `/home/salih/piSynapse`
-  (base `ddc5afa` + uncommitted routers/chat.py abort changes). Three copies
-  exist: piSynapse (current), -release, -release-backup.
-- 22:25 — audit report appended to NOTES.md ("FULL CODEBASE REVIEW — Report").
-  Three live-verified critical bugs: (1) update_note completely broken
-  (dispatcher sends category/tags, wrapper raises TypeError), (2) /chat/upload
-  rejects multipart with 422, (3) third bug's text was truncated in the
-  transcript — unrecoverable. Baseline: 242 tests passing.
-- Other confirmed findings from the report: the contacts/CardDAV module does
-  not exist in the codebase (only a table reference survives); C group = dead
-  code/cleanup items.
-- From 22:37 an 11-item fix round ran (user approval awaited at items 2 and 8;
-  pytest after each item):
-  - A2: routers/chat.py — new POST /upload (upload_image), chunked size limit
-    based on MEDIA_MAX_MB, base64 response; tests/test_media.py +3 tests
-    (245 passed).
-  - Item 2 (approved): ID/UID architecture switched to position-based
-    resolution — raw IDs/UIDs removed from listings, dispatcher
-    _parse_*_listing compatibility kept, CRITICAL item-reference rules written
-    into prompt.py.
-  - A1: nextcloud_notes.update_note now accepts and forwards category/tags +
-    _invalidate_list_cache(); tests/test_dispatcher.py::TestUpdateNoteRealPath.
-  - nextcloud_tasks.py: _todos_cache keyed per include_completed flag (tuple
-    key); errors raise instead of being swallowed (caldav's
-    get_todos(include_completed=False) default meant completed todos were never
-    fetched).
-  - Note-write → list-cache inconsistency fixed; regression test:
-    tests/test_stability_fixes.py::test_note_write_invalidates_list_cache.
-- Past midnight (spilled into the 22nd): all items done — 242 → 259 passed
-  (+17 regression tests), ruff clean; NOTES.md updated.
+- 22:07 — full codebase review requested for `/home/salih/piSynapse` (base `ddc5afa` + uncommitted routers/chat.py abort changes). Three copies exist: piSynapse (current), -release, -release-backup.
+- 22:25 — audit report appended to NOTES.md ("FULL CODEBASE REVIEW — Report"). Three live-verified critical bugs: (1) update_note completely broken (dispatcher sends category/tags, wrapper raises TypeError), (2) /chat/upload rejects multipart with 422, (3) third bug's text was truncated in the transcript — unrecoverable. Baseline: 242 tests passing.
+- Other confirmed findings from the report: the contacts/CardDAV module does not exist in the codebase (only a table reference survives); C group = dead code/cleanup items.
+- From 22:37 an 11-item fix round ran (user approval awaited at items 2 and 8; pytest after each item):
+  - A2: routers/chat.py — new POST /upload (upload_image), chunked size limit based on MEDIA_MAX_MB, base64 response; tests/test_media.py +3 tests (245 passed).
+  - Item 2 (approved): ID/UID architecture switched to position-based resolution — raw IDs/UIDs removed from listings, dispatcher _parse_*_listing compatibility kept, CRITICAL item-reference rules written into prompt.py.
+  - A1: nextcloud_notes.update_note now accepts and forwards category/tags + _invalidate_list_cache(); tests/test_dispatcher.py::TestUpdateNoteRealPath.
+  - nextcloud_tasks.py: _todos_cache keyed per include_completed flag (tuple key); errors raise instead of being swallowed (caldav's get_todos(include_completed=False) default meant completed todos were never fetched).
+  - Note-write → list-cache inconsistency fixed; regression test: tests/test_stability_fixes.py::test_note_write_invalidates_list_cache.
+- Past midnight (spilled into the 22nd): all items done — 242 → 259 passed (+17 regression tests), ruff clean; NOTES.md updated.
 
 ### The Aug 21 fix round, itemized (verified later)
 
 <!-- Extracted from the session dump; the ✓ marks were live-checked against
      current code on Aug 23 -->
 1. A2 /chat/upload multipart fix (UploadFile=File(...), 1MB chunks, 413 cap) ✓
-2. ID/UID architecture: position-based resolution (B1+B2 merged; user-approved
-   findings table presented first) ✓
-3. A1 update_note TypeError (wrapper forwards category/tags + cache
-   invalidation) ✓
-4. A3 show_completed no-op (caldav include_completed flag + tuple-keyed
-   cache) ✓
-5. B3 send_email failures now ERROR:-prefixed (audit counts them correctly) ✓
-   dispatcher.py:373
+2. ID/UID architecture: position-based resolution (B1+B2 merged; user-approved findings table presented first) ✓
+3. A1 update_note TypeError (wrapper forwards category/tags + cache invalidation) ✓
+4. A3 show_completed no-op (caldav include_completed flag + tuple-keyed cache) ✓
+5. B3 send_email failures now ERROR:-prefixed (audit counts them correctly) ✓ dispatcher.py:373
 6. B5 list-cache invalidation after notes/tasks writes (+regression test) ✓
-7. B4 stream.py think-retry passes tool_group (done in the Aug 22 parity
-   round) ✓
+7. B4 stream.py think-retry passes tool_group (done in the Aug 22 parity round) ✓
 8. B6 NUM_CTX/MAX_OUTPUT defaults unified: config.py 8192/4096 single source ✓
-9. C-group cleanup: OFFLINE_SAFE_TOOLS dead entries removed (save_memory only
-   now), VENV_DIR→venv, unused weathercode fetch dropped, get_config hardcoded
-   defaults tied to config.py ✓
+9. C-group cleanup: OFFLINE_SAFE_TOOLS dead entries removed (save_memory only now), VENV_DIR→venv, unused weathercode fetch dropped, get_config hardcoded defaults tied to config.py ✓
 10. pytest after every item (242→259, +17 regression tests) ✓
 11. Final report + ruff clean + NOTES update ✓
 
@@ -413,26 +204,19 @@ Every step: ruff + pytest, then this file updated.
 ### Frontend (static/index.html)
 
 **XSS security:**
-- 50 innerHTML assignments audited (27 static, 18 esc()-guarded, 1 low-risk,
-  1 exposed)
-- Exposed: ticker/marquee inserted item.text unescaped → fixed with
-  esc(item.text)
+- 50 innerHTML assignments audited (27 static, 18 esc()-guarded, 1 low-risk, 1 exposed)
+- Exposed: ticker/marquee inserted item.text unescaped → fixed with esc(item.text)
 - renderMd() safe-by-construction (all content paths go through esc())
 - No eval(), Function(), document.write(), outerHTML usage — clean
 
 **Mobile improvements:**
-- Swipe gesture suppressed inside scrollable areas (code-wrapper, pre,
-  textarea, #msg-input, .sess-list) via a _swipeInScrollable flag
-- Input bar glass blur: blur(16px) saturate(150%), rgba(17,17,22,.88) — opaque
-  yet glassy
-- Sidebar toggle: 90ms delay + btn-press animation (scale .88) +
-  navigator.vibrate(12) haptics
-- Button CSS: #logo-btn.btn-press .logo-icon{transform:scale(.88);
-  filter:brightness(.85)}
+- Swipe gesture suppressed inside scrollable areas (code-wrapper, pre, textarea, #msg-input, .sess-list) via a _swipeInScrollable flag
+- Input bar glass blur: blur(16px) saturate(150%), rgba(17,17,22,.88) — opaque yet glassy
+- Sidebar toggle: 90ms delay + btn-press animation (scale .88) + navigator.vibrate(12) haptics
+- Button CSS: #logo-btn.btn-press .logo-icon{transform:scale(.88); filter:brightness(.85)}
 
 **Glass toggle fix:**
-- Added <span class="track"> to the glass toggle — renders properly now
-  (instead of a bare checkbox)
+- Added `<span class="track">` to the glass toggle — renders properly now (instead of a bare checkbox)
 
 ### Backend (config.py)
 
@@ -467,13 +251,10 @@ Every step: ruff + pytest, then this file updated.
 
 ### Test scenarios
 
-1. **XSS**: a calendar event inside the ticker must render `<script>` as inert
-   text, never execute
-2. **Mobile swipe**: horizontal scroll inside a code block or long message must
-   not open the sidebar
+1. **XSS**: a calendar event inside the ticker must render `<script>` as inert text, never execute
+2. **Mobile swipe**: horizontal scroll inside a code block or long message must not open the sidebar
 3. **Mobile input bar**: glass mode — text behind the bar readable but subtle
-4. **Sidebar button**: press the logo button on mobile → slight delay + visual
-   press + haptic tick
+4. **Sidebar button**: press the logo button on mobile → slight delay + visual press + haptic tick
 5. **Context window**: settings can raise context up to 8192
 6. **Max output**: settings can raise max output up to 16384
 
@@ -611,14 +392,10 @@ Status: **Phase 4 (D1-D6) done** — 28 items total, smoke OK. Next: LiteRT syst
 "which ID?" anyway.
 
 **Solution:**
-1. search_emails finds the content the user refers to — the model calls
-   search_emails(query="Netdata") instead of asking
-2. search_emails results are cached too (cache_email_context) — Recent Emails
-   Context stays fresh
-3. System Prompt Rule 4: "Do NOT ask the user 'which one' or 'what ID' — just
-   pick the right email from the data you already have"
-4. System Prompt CRITICAL section: "If you don't have the data anymore, call
-   search_emails — don't ask the user for an ID"
+1. search_emails finds the content the user refers to — the model calls search_emails(query="Netdata") instead of asking
+2. search_emails results are cached too (cache_email_context) — Recent Emails Context stays fresh
+3. System Prompt Rule 4: "Do NOT ask the user 'which one' or 'what ID' — just pick the right email from the data you already have"
+4. System Prompt CRITICAL section: "If you don't have the data anymore, call search_emails — don't ask the user for an ID"
 
 ---
 
@@ -738,8 +515,7 @@ Native constrained decoding improves tool-call accuracy. Similar to the existing
 
 - CLI + Python API (uv/pip)
 - OpenAI-compatible local server mode → only the base URL changes in llm.py
-- Android: com.google.ai.edge.litertlm:litertlm-android (Gradle, Kotlin API).
-  Engine class, errors LiteRtLmJniException / IllegalStateException
+- Android: com.google.ai.edge.litertlm:litertlm-android (Gradle, Kotlin API). Engine class, errors LiteRtLmJniException / IllegalStateException
 
 #### Model support
 
@@ -767,9 +543,7 @@ doesn't use swap, so results were unaffected. Ollama's swap usage is the main
 driver of the dramatic RAM difference.
 
 **Notes:**
-- Ollama's API returns tool_calls.function.arguments as a **dict**; LiteRT-LM
-  returns a **string**. The first test script hit a TypeError over this — an
-  API difference, not test variance.
+- Ollama's API returns tool_calls.function.arguments as a **dict**; LiteRT-LM returns a **string**. The first test script hit a TypeError over this — an API difference, not test variance.
 - Ollama's 150s figure includes model loading; LiteRT-LM's 17s likewise.
 
 ##### Cold start (first inference including model load)
@@ -804,8 +578,7 @@ driver of the dramatic RAM difference.
 
 - **Inference speed:** LiteRT-LM ~8× faster (cold), ~5-8× (warm)
 - **RAM efficiency:** LiteRT-LM ~3× less RAM, no swap
-- **Tool-call format:** LiteRT-LM OpenAI string (`"{\"due\":...}"`) vs Ollama
-  native dict (`{"due":...}`) — both valid, purely a parsing difference
+- **Tool-call format:** LiteRT-LM OpenAI string (`"{\"due\":...}"`) vs Ollama native dict (`{"due":...}`) — both valid, purely a parsing difference
 - **Multi-step accuracy:** both correct with a proper prompt
 
 **Verdict:** LiteRT-LM is decisively better on this hardware. Worth switching.
@@ -840,26 +613,23 @@ existing Nginx Proxy Manager (VPS-side):
 - Domain: `<your-domain>`
 - Forward: `<vpn-ip>:8765`
 - SSL: existing Let's Encrypt cert (`*.<your-domain>` wildcard or new cert)
-- Phone reaches https://<your-domain> → VPS 443 → tunnel → box:8765
+- Phone reaches https://`<your-domain>` → VPS 443 → tunnel → box:8765
 - **Pro:** zero extra configuration, existing cert valid, access everywhere
 - **Con:** all traffic crosses the VPS (extra ~5-10ms latency)
-- **Setup:** NPM admin panel → Add Proxy Host → domain + forward IP/port →
-  pick cert in the SSL tab → Save
+- **Setup:** NPM admin panel → Add Proxy Host → domain + forward IP/port → pick cert in the SSL tab → Save
 
 **Option B — Caddy automatic HTTPS on the box:**
 - Install Caddy (apt install caddy)
 - Use DNS-01 challenge with a DNS provider API (Cloudflare, etc.)
 - Point `<your-domain>` DNS at the box's LAN IP (or VPN IP)
 - **Pro:** fully automatic Let's Encrypt, local HTTPS
-- **Con:** DNS zone A record must show the LAN IP (public access unintended,
-  LAN/VPN only)
-- Cannot run behind Cloudflare proxied mode (orange cloud) — DNS-only (grey
-  cloud) required
+- **Con:** DNS zone A record must show the LAN IP (public access unintended, LAN/VPN only)
+- Cannot run behind Cloudflare proxied mode (orange cloud) — DNS-only (grey cloud) required
 
 **Option C — Self-signed cert + mkcert (fully local):**
 - Install mkcert on the box (apt install mkcert or go install filippo.io/mkcert)
 - Create a local CA (mkcert -install)
-- Sign with mkcert <vpn-ip> <lan-ip> localhost
+- Sign with mkcert `<vpn-ip>` `<lan-ip>` localhost
 - Trust the CA's public key on phone/laptop (iOS profile / Android CA cert)
 - Serve HTTPS via Caddy/nginx using cert+key
 - **Pro:** fully LAN-dependent, no internet needed
