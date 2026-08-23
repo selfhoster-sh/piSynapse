@@ -13,6 +13,18 @@ Project diary + architecture reference. **Reverse chronological: newest entries 
 - Journal policy: entries are strictly reverse chronological (newest first) and record project work only.
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 
+## 2026-08-23 (20) — Hatch v2: group-scoped escalation + early abort; description trim
+
+Follow-up to entry 19's efficiency question. Two optimizations + a careful trim, all measured:
+
+- **Group inference:** `_escalation_tools()` picks the smallest sufficient toolset for the escalated round — group from the leaked call's tool name (`parse_leaked_tool_call` → `TOOL_GROUPS` reverse map) → else keyword heuristics on the user message → else combined fallback. Escalation TTFT drops **49s → ~13s** whenever the name/keyword reveals the domain (the common case).
+- **Early abort:** detection moved INTO the token loop. When hatch is armed, marker match (`_wants_tools_hint`) now flips `suppressing` and breaks the stream immediately instead of consuming the model's trailing apology text; leaked-syntax rounds abort via the existing suppression trigger. Handler after the try block redoes the round with the scoped set. Gated on `intent_no_tools` (nudge/truncation text-modes can never re-arm).
+- **Description trim (-11%):** 23 tightened strings in definitions.py — repeated "list position from latest output" boilerplate compressed, verbose intros shortened. Capability preserved: numbered-position protocol, confirmation warnings, enums/min/max/ISO examples all intact. combined-22: 2707→2411 tok; notes-7: 728→671.
+- **Measured TTFT after trim:** notes-7 12.82s · combined-22 47.29s (was 13.47 / 49.14). Pure-chat TTFT unchanged (2.65s) — hint is free.
+- Tests: counting-fake proves round-1 is abandoned after ~2 chunks of an 8-chunk scripted ramble; new fallback test pins combined-only-when-no-hints. Suite **328 green**, ruff clean. Live: action turn ✓ pure chat ✓.
+
+
+
 ## 2026-08-23 (19) — Intent misrouting: root-cause fix via tool-escalation hatch
 
 User asked for the deepest fix ("not rigid — small models err"). Measured the alternatives first, then implemented the recovery-based design:
