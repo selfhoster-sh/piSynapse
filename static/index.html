@@ -22,10 +22,11 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 :root{
   /* WCAG AA: text 4.5:1, text2 5.1:1, text3 4.69:1 on surface2 (5.35 on bg);
      text4 3.16:1 (decorative) */
-  --bg:#0a0a0f; --surface:#111116; --surface2:#1a1a22; --surface3:#26262f;
-  --border:#1e1e2a; --accent:#f0943a; --accent-d:rgba(240,148,58,.12);
+  /* Pure-black (OLED) base — saf siyah is THE default look, not a toggle */
+  --bg:#000000; --surface:#0a0a0e; --surface2:#131319; --surface3:#1d1d26;
+  --border:#16161f; --accent:#f0943a; --accent-d:rgba(240,148,58,.12);
   --accent-h:#e08020; --text:#e2e2e8; --text2:#8a8a9e; --text3:#83839c;
-  --text4:#626276; --user-bg:#1a1a22; --danger:#e05555; --success:#4ecb71;
+  --text4:#626276; --user-bg:#111118; --danger:#e05555; --success:#4ecb71;
   --r:16px; --r-sm:10px; --r-chat:18px;
   --shadow-sm:0 1px 3px rgba(0,0,0,.2);
   --shadow-md:0 4px 12px rgba(0,0,0,.3);
@@ -43,14 +44,13 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .theme-red{
   --accent:#f05555; --accent-d:rgba(240,85,85,.12); --accent-h:#e03838;
 }
-/* Monochrome: near-white accent on deeper-than-default dark surfaces.
+/* Monochrome: near-white accent on the deepest dark tier.
    Every accent-driven gradient/glow (incl. the glass aurora via color-mix)
-   turns into a faint white wash automatically. Background sits between
-   :root defaults and the amoled switch's pure black. */
+   turns into a faint white wash automatically. */
 .theme-black{
   --accent:#f2f2f5; --accent-d:rgba(242,242,245,.13); --accent-h:#d6d6dd;
-  --bg:#060609; --surface:#0c0c11; --surface2:#14141b; --surface3:#1e1e27;
-  --border:#15151e; --user-bg:#101017;
+  --bg:#000000; --surface:#08080b; --surface2:#0f0f14; --surface3:#17171e;
+  --border:#12121b; --user-bg:#0d0d13;
 }
 /* Light text sits on solid accent fills; flip to dark ink ONLY where the
    fill is actually solid. In glass mode the send button is a translucent
@@ -58,15 +58,9 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .theme-black .settings-save{color:#141419}
 body.theme-black:not(.glass-mode) #send-btn{color:#141419;
   box-shadow:0 3px 14px rgba(242,242,245,.22)}
-/* Pure-black (OLED) background variant — pairs with any accent theme */
-body.amoled{
-  --bg:#000000; --surface:#0a0a0e; --surface2:#131319; --surface3:#1d1d26;
-  --border:#16161f; --user-bg:#111118;
-}
-
 html,body{height:100%;height:100svh;overflow:hidden;padding:0;margin:0}
 body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
-  background:var(--bg);color:var(--text);display:flex;font-size:14.5px;line-height:1.6;
+  background:var(--bg);color:var(--text);display:flex;font-size:15px;line-height:1.6;
   -webkit-text-size-adjust:100%;height:100%;font-feature-settings:'cv02','cv03','cv04','cv11';
   overflow-x:hidden;font-weight:500}
 
@@ -119,18 +113,21 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 #session-list.hidden{display:none}
 
 .sess-item{display:flex;align-items:center;gap:8px;padding:9px 10px;margin-bottom:2px;
-  border-radius:var(--r-sm);cursor:pointer;transition:all .2s;border:1px solid transparent}@media (hover:hover){
-.sess-item:hover:not(:focus){background:var(--surface2)}}
+  border-radius:var(--r-sm);cursor:pointer;border:1px solid transparent;
+  transition:background-color .15s,border-color .15s}
+@media (hover:hover){
+.sess-item:hover:not(:focus){background:var(--surface3);border-color:rgba(255,255,255,.05)}}
 .sess-item.active{background:var(--accent-d);border-color:rgba(124,108,240,.25);
   box-shadow:inset 3px 0 0 var(--accent)}
 .sess-item.active .sess-name{color:var(--accent);font-weight:600}
 
-.sess-name{flex:1;font-size:13.5px;color:var(--text2);white-space:nowrap;
+.sess-name{flex:1;font-size:14px;color:var(--text2);white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis;transition:color .2s}
 .sess-time{font-size:11px;color:var(--text3);flex-shrink:0}
-.sess-del{display:none;background:none;border:none;color:var(--text3);
-  cursor:pointer;padding:4px;border-radius:4px;flex-shrink:0;line-height:1}
-.sess-item:hover .sess-del{display:flex}@media (hover:hover){
+.sess-del{opacity:0;pointer-events:none;background:none;border:none;color:var(--text3);
+  cursor:pointer;padding:4px;border-radius:4px;flex-shrink:0;line-height:1;transition:opacity .15s,color .15s}
+@media (hover:hover){
+.sess-item:hover .sess-del{opacity:1;pointer-events:auto}
 .sess-del:hover:not(:focus){color:var(--danger);background:rgba(224,85,85,.1)}}
 
 #sidebar-mem-section{display:none;animation:fadeIn .2s ease}
@@ -193,8 +190,8 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
   flex-direction:column;scroll-behavior:smooth;
   /* Edge fade: content dissolves instead of hard-clipping under the
      topbar / above the input bar (works in glass mode too — no bg needed) */
-  -webkit-mask-image:linear-gradient(to bottom, transparent 0, #000 28px, #000 calc(100% - 64px), transparent 100%);
-  mask-image:linear-gradient(to bottom, transparent 0, #000 28px, #000 calc(100% - 64px), transparent 100%)}
+  -webkit-mask-image:linear-gradient(to bottom, transparent 0, #000 28px, #000 calc(100% - 96px), transparent 100%);
+  mask-image:linear-gradient(to bottom, transparent 0, #000 28px, #000 calc(100% - 96px), transparent 100%)}
 .msg-group{display:flex;flex-direction:column;margin-bottom:24px;max-width:800px;
   width:100%;margin-left:auto;margin-right:auto}
 .msg-group.user{align-items:flex-end}
@@ -210,7 +207,7 @@ body.minimal-chat .msg-group{margin-bottom:34px}
 /* Black theme taste: user's own sender label a bit fainter */
 body.theme-black .msg-group.user .msg-meta .who{color:var(--text3)}
 
-.bubble{max-width:100%;padding:14px 18px;border-radius:var(--r-chat);font-size:14.5px;
+.bubble{max-width:100%;padding:14px 18px;border-radius:var(--r-chat);font-size:15px;
   line-height:1.7;word-break:break-word;box-shadow:var(--shadow-sm)}
 .msg-group.user .bubble{background:var(--user-bg);border:1px solid var(--border);
   border-bottom-right-radius:4px;color:var(--text)}
@@ -613,6 +610,7 @@ body.glass-mode{
     --user-bg:rgba(30,30,42,.48);
   }
   body.glass-mode::before{
+    inset:-9%;
     background:
       radial-gradient(1150px 780px at 6% -14%, rgba(240,148,58,.16), transparent 62%),
       radial-gradient(950px 720px at 108% 4%, rgba(77,159,245,.11), transparent 60%),
@@ -624,7 +622,7 @@ body.glass-mode{
 /* Fixed ambient backdrop: aurora blobs + vignette + film grain */
 body.glass-mode{position:relative;isolation:isolate}
 body.glass-mode::before{
-  content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;
+  content:'';position:fixed;inset:-9%;z-index:-1;pointer-events:none;
   background:
     radial-gradient(1150px 780px at 6% -14%, color-mix(in srgb, var(--accent) 24%, transparent), transparent 62%),
     radial-gradient(950px 720px at 108% 4%, color-mix(in srgb, var(--accent) 15%, transparent), transparent 60%),
@@ -632,6 +630,15 @@ body.glass-mode::before{
     radial-gradient(720px 540px at 84% 52%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 56%),
     radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.32) 100%);
 }
+@keyframes auroraDrift{
+  from{transform:translate3d(-1.1%,-.8%,0) scale(1.02)}
+  to{transform:translate3d(1.2%,1%,0) scale(1.05)}
+}
+@keyframes grainBreathe{from{opacity:.09}to{opacity:.12}}
+/* Aurora comes alive only while a reply is being generated */
+body.generating.glass-mode::before{animation:auroraDrift 14s ease-in-out infinite alternate}
+body.generating.glass-mode::after{animation:grainBreathe 7s ease-in-out infinite alternate}
+
 body.glass-mode::after{
   content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.09;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
@@ -676,6 +683,8 @@ body.glass-mode #top-ticker,
 body.glass-mode .lang-select,
 body.glass-mode .setting-input{background-color:color-mix(in srgb, var(--accent) 5%, rgba(20,20,28,.3))}
 body.glass-mode .sb-search input{background-color:color-mix(in srgb, var(--accent) 5%, rgba(255,255,255,.05))}
+/* Messages read as a layer gliding above the frosted panes */
+body.glass-mode .msg-group.user .bubble{box-shadow:0 10px 32px -18px rgba(0,0,0,.6),var(--shadow-sm)}
 body.glass-mode .sess-item.active{border-color:color-mix(in srgb, var(--accent) 40%, transparent);box-shadow:inset 3px 0 0 var(--accent),0 0 22px var(--accent-d)}
 
 /* Glass buttons */
@@ -1029,17 +1038,6 @@ body.glass-mode ::selection{background:color-mix(in srgb, var(--accent) 35%, tra
             <input type="checkbox" id="glass-toggle" onchange="applyGlass(this.checked)">
             <span class="track"></span>
           </label>
-          <span id="lbl-glass-hint"></span>
-        </div>
-      </div>
-      <div class="appearance-group">
-        <label id="lbl-black-label"></label>
-        <div class="switch-wrap">
-          <label class="switch">
-            <input type="checkbox" id="black-toggle" onchange="applyBlack(this.checked)">
-            <span class="track"></span>
-          </label>
-          <span id="lbl-black-hint"></span>
         </div>
       </div>
     </div>
@@ -1098,8 +1096,7 @@ const STRINGS = {
      settingsRestart:'Bazı ayarlar sunucu yeniden başlatıldığında tam etkili olur.',
     settingsCancel:'İptal', settingsSave:'Kaydet',
     themeLabel:'Tema Rengi', langLabel:'Dil',
-    glassLabel:'Cam Efekti', glassHint:'Buzlu cam arka plan aktif', glassHintOff:'Cam efekti kapalı',
-    blackLabel:'Siyah Arka Plan', blackHint:'Saf siyah (OLED)', blackHintOff:'Standart koyu arka plan',
+    glassLabel:'Cam Efekti',
     minimalLabel:'Sade Görünüm', minimalDesc:'Mesaj başlarındaki gönderen adı ve zaman etiketi gizlenir.',
     advanced:'Gelişmiş Ayarlar',
     micDenied:'Mikrofon izni reddedildi', transcribeErr:'Ses tanıma başarısız oldu',
@@ -1147,8 +1144,7 @@ const STRINGS = {
     settingsRestart:'Some settings take full effect only after server restart.',
     settingsCancel:'Cancel', settingsSave:'Save',
     themeLabel:'Theme Color', langLabel:'Language',
-    glassLabel:'Glass Effect', glassHint:'Frosted glass background on', glassHintOff:'Glass effect off',
-    blackLabel:'Black Background', blackHint:'Pure black (OLED)', blackHintOff:'Standard dark background',
+    glassLabel:'Glass Effect',
     minimalLabel:'Minimal View', minimalDesc:'Hides sender names and timestamps above messages.',
     advanced:'Advanced Settings',
     micDenied:'Microphone permission denied', transcribeErr:'Transcription failed',
@@ -1173,7 +1169,6 @@ const STRINGS = {
 let lang  = localStorage.getItem('ps_lang') || ((navigator.language||'').toLowerCase().startsWith('tr') ? 'tr' : 'en');
 let theme = localStorage.getItem('ps_theme') || 'orange';
 let glass = localStorage.getItem('ps_glass') === '1';
-let black = localStorage.getItem('ps_black') === '1';
 let minimal = localStorage.getItem('ps_minimal') === '1';
 function t(k){ return STRINGS[lang][k] || k; }
 
@@ -1388,16 +1383,6 @@ function applyGlass(on){
   glass = on;
   document.body.classList.toggle('glass-mode', on);
   localStorage.setItem('ps_glass', on ? '1' : '0');
-  const gl = document.getElementById('lbl-glass-hint');
-  if(gl) gl.textContent = on ? t('glassHint') : t('glassHintOff');
-}
-
-function applyBlack(on){
-  black = on;
-  document.body.classList.toggle('amoled', on);
-  localStorage.setItem('ps_black', on ? '1' : '0');
-  const bl = document.getElementById('lbl-black-hint');
-  if(bl) bl.textContent = on ? t('blackHint') : t('blackHintOff');
 }
 
 function applyMinimal(on){
@@ -1439,11 +1424,7 @@ function applyLang(l){
   const glassLabel = document.getElementById('lbl-glass-label');
   if(glassLabel) glassLabel.textContent = t('glassLabel');
   const glassToggle = document.getElementById('glass-toggle');
-  if(glassToggle){ glassToggle.checked = glass; document.getElementById('lbl-glass-hint').textContent = glass ? t('glassHint') : t('glassHintOff'); }
-  const blackLabel = document.getElementById('lbl-black-label');
-  if(blackLabel) blackLabel.textContent = t('blackLabel');
-  const blackToggle = document.getElementById('black-toggle');
-  if(blackToggle){ blackToggle.checked = black; document.getElementById('lbl-black-hint').textContent = black ? t('blackHint') : t('blackHintOff'); }
+  if(glassToggle){ glassToggle.checked = glass; }
 
   const searchInput = document.getElementById('sess-search');
   if(searchInput) searchInput.placeholder = t('searchPlaceholder');
@@ -2066,7 +2047,7 @@ let lastInputWasVoice = false;
 
 document.addEventListener('DOMContentLoaded', async ()=>{
   if(window._beacon) window._beacon({t:'init', step:'start'});
-  applyTheme(theme); applyGlass(glass); applyBlack(black); applyMinimal(minimal); applyLang(lang); setupInput(); setupMobileKeyboard(); setupHoldToRecord();
+  applyTheme(theme); applyGlass(glass); applyMinimal(minimal); applyLang(lang); setupInput(); setupMobileKeyboard(); setupHoldToRecord();
   if(window._beacon) window._beacon({t:'init', step:'prep-done'});
   // Check if API key is needed
   try {
@@ -2344,6 +2325,7 @@ async function saveSessionName(firstMsg){
 
 function setLoading(v){
   loading=v;
+  document.body.classList.toggle('generating', v);
   const dot=document.getElementById('status-dot'), btn=document.getElementById('send-btn');
   // While a chat stream is running the send button doubles as a stop button
   // (standard chat UX); other flows keep the plain disabled look.
@@ -2442,8 +2424,10 @@ function withStreamCaret(html){
 }
 
 const WELCOME_CHIPS = {
-  tr:['Son e-postalarımı özetle','Bu haftaki etkinliklerim','Yarın için görev oluştur','Notlarımı göster'],
-  en:['Summarize my recent emails','My events this week','Create a task for tomorrow','Show my notes']
+  tr:['Son e-postalarımı özetle','Bu haftaki etkinliklerim','Yarın için görev oluştur',
+      'Notlarımı göster','Bugün hava nasıl?','Komik bir şey söyle'],
+  en:['Summarize my recent emails','My events this week','Create a task for tomorrow',
+      'Show my notes',"How's the weather today?",'Tell me something funny']
 };
 
 function chipSend(el){
@@ -2711,11 +2695,7 @@ async function openSettings(){
   const glassLabel = document.getElementById('lbl-glass-label');
   if(glassLabel) glassLabel.textContent = t('glassLabel');
   const glassToggle = document.getElementById('glass-toggle');
-  if(glassToggle){ glassToggle.checked = glass; document.getElementById('lbl-glass-hint').textContent = glass ? t('glassHint') : t('glassHintOff'); }
-  const blackLabel2 = document.getElementById('lbl-black-label');
-  if(blackLabel2) blackLabel2.textContent = t('blackLabel');
-  const blackToggle2 = document.getElementById('black-toggle');
-  if(blackToggle2){ blackToggle2.checked = black; document.getElementById('lbl-black-hint').textContent = black ? t('blackHint') : t('blackHintOff'); }
+  if(glassToggle){ glassToggle.checked = glass; }
   document.getElementById('lang-select').value = lang;
   renderThemeGrid();
 
@@ -3140,15 +3120,10 @@ if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.s
   .welcome-anim .w-icon{animation:rippleRing .5s ease-out .35s}
 
   /* ── Mobile black-density boost ───────────────────────────────── */
-  /* Small/OLED screens read better with deeper backgrounds. Applies to
-     every theme (incl. Siyah, which goes a step further). amoled keeps
-     priority via :not guard + specificity. Desktop (>768px) untouched. */
+  /* Small/OLED screens read better with slightly lifted backgrounds so
+     edges and layers stay legible. Desktop (>768px) untouched. */
   @media(max-width:768px){
     body{
-      --bg:#060609; --surface:#0b0b10; --surface2:#111117; --surface3:#18181f;
-      --border:#12121a; --user-bg:#0e0e13;
-    }
-    body.theme-black:not(.amoled){
       --bg:#030304; --surface:#08080b; --surface2:#0d0d12; --surface3:#14141a;
       --border:#0e0e14; --user-bg:#0a0a0e;
     }
