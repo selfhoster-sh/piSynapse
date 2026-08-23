@@ -134,6 +134,21 @@ def _shrink_tool_responses(current_msgs: list[dict]) -> None:
             m["content"] = m["content"][:600] + "\n[content truncated]"
 
 
+# Injected into pure-chat requests (tools disabled): gives small models a
+# deterministic escape verb instead of hoping they improvise FC syntax.
+_TOOL_ASK_HINT = (
+    "[system note] You currently have NO tools available in this conversation turn. "
+    "If fulfilling the user's request requires a tool (notes, tasks, email, calendar, "
+    "weather, memory), begin your reply with the exact token TOOL_NEEDED as the very "
+    "first thing, before any other text."
+)
+
+
+def _wants_tools_hint(text: str) -> bool:
+    """True when a tool-less reply opens with the TOOL_NEEDED escape marker."""
+    return bool(text) and text.lstrip().upper().startswith("TOOL_NEEDED")
+
+
 async def chat_with_ollama_stream(
     messages: list[dict],
     *,
@@ -154,9 +169,12 @@ async def chat_with_ollama_stream(
     backend = get("LLM_BACKEND", "litert")
 
     from tools import get_combined_tools
-    if intent == "question" and tool_group is None:
+    intent_no_tools = intent == "question" and tool_group is None
+    if intent_no_tools:
         use_tools = False
         filtered_tools = None
+        # Escape hatch hint: the model can request tools with a literal token.
+        full_msgs = full_msgs + [{"role": "system", "content": _TOOL_ASK_HINT}]
         logger.info("Pure chat (question+None) — tools disabled")
     else:
         use_tools = True
@@ -172,6 +190,7 @@ async def chat_with_ollama_stream(
     truncation_retried = False
     overflow_retried = False
     final_nudge_used = False
+    tools_escalated = False
 
     for iteration in range(get("LLM_MAX_TOOL_ITERATIONS", 5)):
         if truncation_retried or final_nudge_used:
@@ -318,6 +337,21 @@ async def chat_with_ollama_stream(
 
         if done_reason == "length":
             logger.warning(f"Model stopped early (done_reason='length'). Consider raising LLM_NUM_CTX (currently {get('LLM_NUM_CTX', DEFAULT_LLM_NUM_CTX)}).")
+
+        if intent_no_tools and not tools_escalated and not think and (
+                _check_tool_leak(full_text) or _wants_tools_hint(full_text)):
+            # The classifier routed this to pure chat, but the model signals a
+            # tool need anyway (FC syntax leaked into text OR the literal
+            # TOOL_NEEDED marker). Escalate ONCE to the full toolset and redo
+            # the round — small classifiers misroute; the generator is the
+            # strongest judge. Gated on intent_no_tools so terminal text-only
+            # modes (final nudge / truncation retry) can never re-arm it.
+            tools_escalated = True
+            use_tools = True
+            filtered_tools = get_combined_tools()
+            yield {"gen_retry": {"reason": "tools_escalated"}}
+            logger.info("Tool need signalled without tools (leak/marker) — escalating to full toolset")
+            continue
 
         if not tool_calls_acc and not think and use_tools and _check_tool_leak(full_text):
             # Unified think-mode retry (both backends): the model leaked a
