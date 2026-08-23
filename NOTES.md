@@ -13,6 +13,16 @@ Project diary + architecture reference. **Reverse chronological: newest entries 
 - Journal policy: entries are strictly reverse chronological (newest first) and record project work only.
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 
+## 2026-08-23 (15) — Indicator persistence + position, desktop chip clicks, faster aurora
+
+User's live-test feedback on entry 14, four fixes (frontend only):
+
+- **Indicator no longer blinks:** `endToolStatus()` lost its auto-hide timeout — the pill now stays visible (✓/⚠ state) through the quiet gap between tool execution and the next model round, exactly as requested ("visible until the stream starts"). It is removed the moment the first token arrives (token branch, unconditional) or in finally (any terminal path). One mental model for pre-stream AND mid-stream pills.
+- **Position:** new `placePill()` helper inserts the pill directly ABOVE the typing dots (`insertBefore(typingEl)`), falling back to bottom-append once dots are gone (mid-stream). Was: appended below dots.
+- **Desktop chip click fixed:** root cause — `setPointerCapture()` retargets the native click to the track, so the chip's own `onclick` never fired; a press just paused the marquee and resumed 450ms later. Now `release()` resolves the tap manually: moved≤6px → `document.elementFromPoint(x0,y0).closest('.w-chip')` → `chipSend()`. The capture-phase click blocker is conditional (`pointerJustEnded`, auto-cleared 120ms) so keyboard Enter on chips still works. Drags (>6px) still fling without clicking.
+- **Aurora:** generating playbackRate 1.9 → **2.3**.
+- SW v17. node ✓, 317 tests green (backend untouched → no restart needed).
+
 ## 2026-08-23 (14) — Tool-call indicator + aurora generating speed
 
 - **Tool indicator (backend-driven, no stream parsing):** `llm/stream.py` now emits structured SSE events around every `run_tool()`: `{"tool":{name, phase:"start"|"end"|"refused", attempt, max}}` (attempt = prior identical executions+1, max = `_MAX_IDENTICAL_EXECUTIONS`), plus `{"gen_retry":{reason:"overflow"|"empty"|"tool_leak"}}` on in-loop generation retries. `routers/chat.py` passes both through verbatim. Refused calls emit only their own event (no start/end).

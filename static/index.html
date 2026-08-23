@@ -287,6 +287,7 @@ body.theme-black .msg-group.user .msg-meta .who{color:var(--text3)}
 .tool-status .tspin{flex:none;width:12px;height:12px;border-radius:50%;border:2px solid var(--border);border-top-color:var(--accent);animation:tspin .9s linear infinite}
 .tool-status.ok{opacity:.7}
 .tool-status.ok .tspin{animation:none;border-color:var(--accent);background:var(--accent)}
+.tool-status .tspin.dead{animation:none;border-color:var(--border);opacity:.7}
 @keyframes tspin{to{transform:rotate(360deg)}}
 @keyframes bounce{0%{transform:translateY(0);opacity:.4}100%{transform:translateY(-6px);opacity:1}}
 
@@ -2375,9 +2376,8 @@ async function sendMsg(){
         let data; try{ data=JSON.parse(line.slice(6)); } catch{ continue; }
         if('token' in data){
           if(currentSid !== sid) continue; // user navigated away, skip rendering
-          if(!bubble){ bubble=createStreamBubble();
-            if(toolRow && toolRow.isConnected){ document.getElementById('messages').appendChild(toolRow); }
-          }
+          if(toolRow){ toolRow.remove(); toolRow=null; } // stream started — pill's job done
+          if(!bubble){ bubble=createStreamBubble(); }
           gotReply=true;
           fullText+=data.token; bubble.innerHTML=withStreamCaret(renderMd(fullText)); scrollEnd(false);
         } else if(data.done){
@@ -2435,7 +2435,7 @@ async function sendMsg(){
     }
   } finally{
     if(_pendingStream?.sid === sid) _pendingStream=null;
-    if(toolRow){ if(!toolRow.classList.contains('ok')) toolRow.remove(); toolRow=null; }
+    if(toolRow){ toolRow.remove(); toolRow=null; }
     typingEl?.classList.remove('tool-pending');
     if(!gotReply && !terminated){
       if(currentSid === sid){
@@ -2496,7 +2496,7 @@ function setLoading(v){
   // biterken normale döner. playbackRate değişimi kare atlattırmaz (faz korunur).
   requestAnimationFrame(()=>{
     document.querySelectorAll('#aurora .ab').forEach(el=>{
-      el.getAnimations().forEach(a=>{ try{ a.playbackRate = v ? 1.9 : 1; }catch(e){} });
+      el.getAnimations().forEach(a=>{ try{ a.playbackRate = v ? 2.3 : 1; }catch(e){} });
     });
   });
 }
@@ -2579,11 +2579,18 @@ function showTyping(){
 }
 function hideTyping(){ typingEl?.remove(); typingEl=null; }
 
+function placePill(row){
+  // Pill sits directly ABOVE the typing dots (or at the bottom once dots
+  // are gone) — never below them.
+  const m=document.getElementById('messages');
+  if(typingEl && typingEl.isConnected) m.insertBefore(row,typingEl); else m.appendChild(row);
+  return row;
+}
 function showToolStatus(info, row){
   if(!row || !row.isConnected){
     row=document.createElement('div'); row.className='tool-status';
     row.innerHTML='<span class="tspin"></span><span class="tlab"></span>';
-    const m=document.getElementById('messages'); m.appendChild(row);
+    placePill(row);
     if(typingEl){ typingEl.classList.add('tool-pending'); }
   }
   const lab=row.querySelector('.tlab');
@@ -2601,13 +2608,19 @@ function showToolStatus(info, row){
 }
 
 function endToolStatus(row, ok){
+  // No auto-hide: the pill stays visible (✓/⚠) until the reply stream
+  // actually starts or the stream ends — it must not blink away during
+  // the quiet gap between tool execution and the next model round.
   if(!row || !row.isConnected) return null;
   row.classList.toggle('ok', !!ok);
-  typingEl?.classList.remove('tool-pending');
   const lab=row.querySelector('.tlab');
-  if(!ok) lab.textContent='⚠ '+lab.textContent;
-  const el=row;
-  setTimeout(()=>{ el.remove(); }, ok?900:1600);
+  lab.textContent=lab.textContent.replace(/…$/,'');
+  if(!ok){
+    lab.textContent='⚠ '+lab.textContent;
+    row.querySelector('.tspin')?.classList.add('dead');
+  } else {
+    row.querySelector('.tspin')?.remove();
+  }
   return null;
 }
 
@@ -2615,7 +2628,7 @@ function showGenRetry(row){
   if(row && row.isConnected) return row;
   row=document.createElement('div'); row.className='tool-status';
   row.innerHTML='<span class="tspin"></span><span class="tlab"></span>';
-  document.getElementById('messages').appendChild(row);
+  placePill(row);
   row.querySelector('.tlab').textContent=t('genRetryLabel');
   scrollEnd(false);
   return row;
@@ -2686,7 +2699,7 @@ function initWelcomeMarquee(){
     addEventListener('resize',measure,{passive:true});
 
     track.addEventListener('pointerdown',e=>{
-      ctl.drag={lastX:e.clientX,moved:0,v:0,lastT:e.timeStamp};
+      ctl.drag={lastX:e.clientX,x0:e.clientX,y0:e.clientY,moved:0,v:0,lastT:e.timeStamp};
       try{ track.setPointerCapture(e.pointerId); }catch{}
     });
     track.addEventListener('pointermove',e=>{
@@ -2698,16 +2711,30 @@ function initWelcomeMarquee(){
       ctl.x+=dx; wrap(); paint();
     });
     const release=()=>{
-      if(!ctl.drag) return;
-      ctl.vx=ctl.drag.moved>6?ctl.drag.v:0;
-      ctl.suppress=ctl.drag.moved>6;
-      ctl.drag=null;
+      const d=ctl.drag; if(!d) return;
+      ctl.vx=d.moved>6?d.v:0;
+      ctl.suppress=d.moved>6;
       ctl.holdUntil=performance.now()+450;
       setTimeout(()=>{ctl.suppress=false;},80);
+      if(d.moved<=6){
+        // setPointerCapture retargets the native click to the track, so the
+        // chip's own onclick never fires — resolve the chip manually.
+        const chip=document.elementFromPoint(d.x0,d.y0)?.closest('.w-chip');
+        ctl.drag=null; ctl.pointerJustEnded=true;
+        setTimeout(()=>{ctl.pointerJustEnded=false;},120);
+        if(chip) chipSend(chip);
+        return;
+      }
+      ctl.drag=null; ctl.pointerJustEnded=true;
+      setTimeout(()=>{ctl.pointerJustEnded=false;},120);
     };
     track.addEventListener('pointerup',release);
     track.addEventListener('pointercancel',release);
-    track.addEventListener('click',e=>{ if(ctl.suppress){e.stopPropagation();e.preventDefault();} },true);
+    // Block only clicks that follow a pointer gesture (capture may retarget
+    // them to the track; drags must not click). Keyboard Enter passes through.
+    track.addEventListener('click',e=>{
+      if(ctl.pointerJustEnded){ e.stopPropagation(); e.preventDefault(); }
+    },true);
 
     let last=performance.now();
     (function frame(now){
