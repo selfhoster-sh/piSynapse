@@ -736,7 +736,7 @@ user. One of the options above should be implemented for a real fix.
 |---|---|
 | ~~🔴 High~~ ✅ Done 2026-08-23 | **Tool-call indicator** — backend-driven SSE `tool`/`gen_retry` events + frontend status pill (see entry 14) |
 | 🔴 High | **Onboarding screen** — first-run guide ("this is your API key, use it like so") |
-| 🟡 Partial 2026-08-23 | **Error messages** — connection-lost and context-overflow errors localized in UI (errConnLost/errContextTooLong); full catalog ("Model loading, wait 20s", "Nextcloud unreachable" as friendly texts) still open |
+| ~~🔴 High~~ ✅ Done 2026-08-23 | **Error messages** — backend-generated user-facing strings localized via root `messages.py` catalog (`get_message(key)`, tr/en, live via UI_LANGUAGE): empty-reply fallback, engine-unreachable, empty-generation. Frontend additionally maps connection-lost/context-overflow SSE errors (errConnLost/errContextTooLong). Verified against code this date |
 | 🟡 Medium | **Work without Nextcloud** — chat + memory must work at minimum, email/calendar optional |
 | ~~🟡 Medium~~ ✅ Done 2026-08-23 | Raise test coverage (especially dispatcher + mail) — suite at 329; test_dispatcher.py 76+, test_mail.py 13 passing |
 | ~~🟡 Medium~~ ⛔ Obsolete 2026-08-23 | FastAPI DI → dependency_overrides mock-test infrastructure — services/DI layer removed by design (2026-07-30); plain module-level mock fixtures used instead |
