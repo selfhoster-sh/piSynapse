@@ -195,8 +195,8 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
   flex-direction:column;scroll-behavior:smooth;
   /* Edge fade: content dissolves instead of hard-clipping under the
      topbar / above the input bar (works in glass mode too — no bg needed) */
-  -webkit-mask-image:linear-gradient(to bottom, transparent 0, #000 28px, #000 calc(100% - 96px), transparent 100%);
-  mask-image:linear-gradient(to bottom, transparent 0, #000 28px, #000 calc(100% - 96px), transparent 100%)}
+  -webkit-mask-image:linear-gradient(to bottom, transparent 0, #000 32px, #000 calc(100% - 128px), rgba(0,0,0,.55) calc(100% - 52px), transparent calc(100% - 6px));
+  mask-image:linear-gradient(to bottom, transparent 0, #000 32px, #000 calc(100% - 128px), rgba(0,0,0,.55) calc(100% - 52px), transparent calc(100% - 6px))}
 .msg-group{display:flex;flex-direction:column;margin-bottom:24px;max-width:800px;
   width:100%;margin-left:auto;margin-right:auto}
 .msg-group.user{align-items:flex-end}
@@ -303,14 +303,28 @@ body.theme-black .msg-group.user .msg-meta .who{color:var(--text3)}
 .sel-wrap.open .sel-btn{border-color:var(--accent)}
 .sel-wrap.open .sel-btn::after{transform:translateY(-30%) rotate(225deg)}
 .sel-menu{display:none;position:absolute;top:calc(100% + 5px);left:0;right:0;
-  background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);
+  /* semi-transparent surface composited over solid bg => readable even on glass */
+  background:linear-gradient(var(--surface),var(--surface)), var(--bg);
+  backdrop-filter:blur(18px);
+  border:1px solid var(--border);border-radius:var(--r-sm);
   box-shadow:var(--shadow-lg);z-index:2100;max-height:230px;overflow:auto;padding:4px}
 .sel-wrap.open .sel-menu{display:block;animation:msgSlideIn .16s ease-out both}
 .sel-opt{padding:8px 10px;border-radius:7px;font-size:13.5px;color:var(--text2);cursor:pointer}
 .sel-opt:hover{background:var(--surface3);color:var(--text)}
 .sel-opt.on{color:var(--accent);font-weight:600}
 
-.w-chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;max-width:420px;margin-top:4px}
+/* Dual marquee lanes: two rows of chips drifting opposite ways.
+   Each track holds its chip set twice; translating -50% loops seamlessly.
+   Lane edges get a soft fade (mask) so chips melt out at the borders. */
+.w-marquee{display:flex;flex-direction:column;gap:10px;width:100%;max-width:470px;
+  margin-top:8px;overflow:hidden;padding:2px 0;
+  -webkit-mask-image:linear-gradient(90deg,transparent,#000 11%,#000 89%,transparent);
+  mask-image:linear-gradient(90deg,transparent,#000 11%,#000 89%,transparent)}
+.chip-track{display:flex;gap:8px;width:max-content;animation:chipMq var(--mq-dur,38s) linear infinite}
+.chip-track.rev{--mq-dur:46s;animation-direction:reverse}
+.w-marquee:hover .chip-track{animation-play-state:paused}
+.chip-set{display:flex;gap:8px;padding-right:8px}
+@keyframes chipMq{to{transform:translateX(-50%)}}
 .w-chip{border:1px solid var(--border);background:var(--surface2);color:var(--text2);
   font-size:13px;padding:7px 13px;border-radius:999px;cursor:pointer;
   transition:border-color .2s,color .2s,background .2s}
@@ -2537,9 +2551,12 @@ function chipSend(el){
 }
 
 function showWelcome(){
-  const chips = (WELCOME_CHIPS[lang] || WELCOME_CHIPS.en)
-    .map(c => `<button class="w-chip" onclick="chipSend(this)">${c}</button>`).join('');
-  document.getElementById('messages').innerHTML=`<div class="welcome"><div class="w-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">  <g class="outer-wrap"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect></g><g class="inner-wrap"><rect x="9" y="9" width="6" height="6"></rect></g></svg></div><div class="w-title">${t('welcomeTitle')}</div><div class="w-sub">${t('welcomeSub').replace(/\n/g,'<br>')}</div><div class="w-chips">${chips}</div></div>`;
+  const list = WELCOME_CHIPS[lang] || WELCOME_CHIPS.en;
+  const mk = arr => `<span class="chip-set">${arr.map(c => `<button class="w-chip" onclick="chipSend(this)">${c}</button>`).join('')}</span>`;
+  const mid = Math.ceil(list.length / 2);
+  const row1 = mk(list.slice(0, mid)) + mk(list.slice(0, mid));
+  const row2 = mk(list.slice(mid)) + mk(list.slice(mid));
+  document.getElementById('messages').innerHTML=`<div class="welcome"><div class="w-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">  <g class="outer-wrap"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect></g><g class="inner-wrap"><rect x="9" y="9" width="6" height="6"></rect></g></svg></div><div class="w-title">${t('welcomeTitle')}</div><div class="w-sub">${t('welcomeSub').replace(/\n/g,'<br>')}</div><div class="w-marquee"><div class="chip-track">${row1}</div><div class="chip-track rev">${row2}</div></div></div>`;
   const welcomeEl = document.querySelector('.welcome');
   if(welcomeEl) welcomeEl.classList.add('welcome-anim');
 }
