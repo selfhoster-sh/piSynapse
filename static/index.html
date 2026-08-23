@@ -320,11 +320,10 @@ body.theme-black .msg-group.user .msg-meta .who{color:var(--text3)}
   margin-top:8px;overflow:hidden;padding:2px 0;
   -webkit-mask-image:linear-gradient(90deg,transparent,#000 11%,#000 89%,transparent);
   mask-image:linear-gradient(90deg,transparent,#000 11%,#000 89%,transparent)}
-.chip-track{display:flex;gap:8px;width:max-content;animation:chipMq var(--mq-dur,38s) linear infinite}
-.chip-track.rev{--mq-dur:46s;animation-direction:reverse}
-.w-marquee:hover .chip-track{animation-play-state:paused}
+.chip-track{display:flex;gap:8px;width:max-content;will-change:transform;
+  touch-action:pan-y;cursor:grab;user-select:none;-webkit-user-select:none}
+.chip-track:active{cursor:grabbing}
 .chip-set{display:flex;gap:8px;padding-right:8px}
-@keyframes chipMq{to{transform:translateX(-50%)}}
 .w-chip{border:1px solid var(--border);background:var(--surface2);color:var(--text2);
   font-size:13px;padding:7px 13px;border-radius:999px;cursor:pointer;
   transition:border-color .2s,color .2s,background .2s}
@@ -2557,8 +2556,60 @@ function showWelcome(){
   const row1 = mk(list.slice(0, mid)) + mk(list.slice(0, mid));
   const row2 = mk(list.slice(mid)) + mk(list.slice(mid));
   document.getElementById('messages').innerHTML=`<div class="welcome"><div class="w-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">  <g class="outer-wrap"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect></g><g class="inner-wrap"><rect x="9" y="9" width="6" height="6"></rect></g></svg></div><div class="w-title">${t('welcomeTitle')}</div><div class="w-sub">${t('welcomeSub').replace(/\n/g,'<br>')}</div><div class="w-marquee"><div class="chip-track">${row1}</div><div class="chip-track rev">${row2}</div></div></div>`;
+  initWelcomeMarquee();
   const welcomeEl = document.querySelector('.welcome');
   if(welcomeEl) welcomeEl.classList.add('welcome-anim');
+}
+function initWelcomeMarquee(){
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  document.querySelectorAll('.w-marquee .chip-track').forEach(track=>{
+    if(track._mqCtl) return;
+    const ctl={x:0,half:1,vx:0,drag:null,holdUntil:0,suppress:false,
+               dir:track.classList.contains('rev')?1:-1,
+               speed:track.classList.contains('rev')?20:26};
+    track._mqCtl=ctl;
+    const wrap=()=>{ const h=ctl.half||1; while(ctl.x>0)ctl.x-=h; while(ctl.x<=-h)ctl.x+=h; };
+    const paint=()=>{ track.style.transform=`translate3d(${ctl.x}px,0,0)`; };
+    const measure=()=>{ ctl.half=(track.scrollWidth/2)||1; wrap(); paint(); };
+    requestAnimationFrame(()=>requestAnimationFrame(measure));
+    addEventListener('resize',measure,{passive:true});
+
+    track.addEventListener('pointerdown',e=>{
+      ctl.drag={lastX:e.clientX,moved:0,v:0,lastT:e.timeStamp};
+      try{ track.setPointerCapture(e.pointerId); }catch{}
+    });
+    track.addEventListener('pointermove',e=>{
+      const d=ctl.drag; if(!d) return;
+      const dx=e.clientX-d.lastX;
+      d.lastX=e.clientX; d.moved+=Math.abs(dx);
+      const dt=Math.max(1,e.timeStamp-d.lastT)/1000; d.lastT=e.timeStamp;
+      d.v=0.7*d.v+0.3*(dx/dt);
+      ctl.x+=dx; wrap(); paint();
+    });
+    const release=()=>{
+      if(!ctl.drag) return;
+      ctl.vx=ctl.drag.moved>6?ctl.drag.v:0;
+      ctl.suppress=ctl.drag.moved>6;
+      ctl.drag=null;
+      ctl.holdUntil=performance.now()+450;
+      setTimeout(()=>{ctl.suppress=false;},80);
+    };
+    track.addEventListener('pointerup',release);
+    track.addEventListener('pointercancel',release);
+    track.addEventListener('click',e=>{ if(ctl.suppress){e.stopPropagation();e.preventDefault();} },true);
+
+    let last=performance.now();
+    (function frame(now){
+      if(!track.isConnected){ removeEventListener('resize',measure); return; }
+      const dt=Math.min(50,now-last)/1000; last=now;
+      if(!ctl.drag && !reduce && now>=ctl.holdUntil){
+        ctl.x+=ctl.dir*ctl.speed*dt;
+        if(Math.abs(ctl.vx)>2){ ctl.x+=ctl.vx*dt; ctl.vx*=Math.exp(-3*dt); }
+        wrap(); paint();
+      }
+      requestAnimationFrame(frame);
+    })(last);
+  });
 }
 function showWelcomeMsg(){ document.getElementById('messages').innerHTML=''; }
 function clearMsgs(){ document.getElementById('messages').innerHTML=''; }
