@@ -422,6 +422,49 @@ LAN HTTP'de "Mikrofon HTTPS gerektirir" hatası gösterilir. Bu bir çözüm de�
 
 ---
 
+## 13–22 Ağustos 2026 — oturum dökümlerinden kurtarma
+<!-- Kaynak: opencode oturum veritabanı; diskteki günlük kaybolmuştu -->
+
+### 13 Ağustos
+- `NOTES.md` bu gün git takibinden çıkarıldı (commit `1e61227`, "local-only olsun") — kaybolan 13–22 döneminin başlangıcı.
+- Oturum kaydında yalnızca tek kullanıcı mesajı var: `static/index.html` üzerinde yarım kalan "camsı (glassy) efekt" denemesi ve pyjsparser konusu. Araç çağrısı kaydedilmediği için o gün kod değişikliği yapılıp yapılmadığı **doğrulanamıyor** (glass-mode CSS'i sonradan 22 Ağustos'ta mevcuttu; ne zaman eklendiği belirsiz).
+
+### 17 Ağustos
+- Projeye dokunulmamış; RPi5 üzerinde [kişisel sistem notu: redacted 2026-08-23] yapıldı. (14–16 ve 18–19 Ağustos'ta hiç oturum kaydı yok.)
+
+### 20 Ağustos
+- Projeye dokunulmamış; sistem işleri: [kişisel sistem işleri: redacted 2026-08-23], ekran klavyesi düzeltmesi. (Oturum 22'sine sarktı ama piSynapse düzenlemesi yok.)
+
+### 21 Ağustos
+- 22:07 — `/home/salih/piSynapse` tam kod tabanı incelemesi istendi (taban `ddc5afa` + commit'siz `routers/chat.py` abort değişikliği). Üç kopya mevcut: `piSynapse` (güncel), `-release`, `-release-yedek`.
+- 22:25 — Denetim raporu `NOTES.md`'e eklendi ("TAM KOD TABANI İNCELEMESİ — Rapor"). Canlı doğrulanmış 3 kritik bug: (1) `update_note` hiç çalışmıyor (dispatcher `category/tags` gönderiyor, wrapper TypeError), (2) `/chat/upload` multipart'ı 422 ile reddediyor, (3) üçüncü bug metni dökümde kesildi — geri alınamadı. Baz: 242 test geçiyordu.
+- Raporun diğer bulgularından doğrulananlar: contacts/CardDAV modülü kod tabanında hiç yok (yalnızca tabloda referans kalmış); C grubu = ölü kod/temizlik maddeleri.
+- 22:37'den itibaren 11 maddelik düzeltme turu (madde 2 ve 8'de kullanıcı onayı beklandı; her maddeden sonra pytest):
+  - A2: `routers/chat.py` — yeni `POST /upload` (`upload_image`), `MEDIA_MAX_MB` bazlı parçalı boyut limiti, base64 dönüş; `tests/test_media.py` +3 test (245 passed).
+  - Madde 2 (onaylı): ID/UID mimarisi pozisyon-bazlı çözümlemeye çevrildi — listinglerden ham ID/UID kaldırıldı, dispatcher `_parse_*_listing` uyumu korundu, `prompt.py`'a CRITICAL öğe-referansı kuralları yazıldı.
+  - A1: `nextcloud_notes.update_note` artık `category/tags` kabul edip iletiyor + `_invalidate_list_cache()`; `tests/test_dispatcher.py::TestUpdateNoteRealPath`.
+  - `nextcloud_tasks.py`: `_todos_cache` `include_completed` bayrağına duyarlı hale getirildi (tuple anahtarlı); hatalar yutulmayıp raise ediliyor (caldav `get_todos(include_completed=False)` varsayılanı tamamlananları hiç çekmiyordu).
+  - Not-yazma → liste-önbellek tutarsızlığı giderildi; regresyon testi: `tests/test_stability_fixes.py::test_note_write_invalidates_list_cache`.
+- Gece yarısı (22'sine sarktı): tüm maddeler tamamlandı — **242 → 259 passed** (+17 regresyon testi), ruff temiz; `NOTES.md` güncellendi.
+
+### 22 Ağustos
+- Backend parite denetimi ve düzeltmeleri (`llm/payload.py`, `llm/chat.py`, `llm/stream.py`, `litert_serve/server.py`): stream.py:293'teki think-retry asimetrisi giderildi (her iki backend'de birleşik, leak-koşullu, effort korunarak), Ollama `num_predict`, piServe model doğrulaması (boş→varsayılan, bilinmeyen→409 + `allowed_models`), transcribe-gemma4'e `num_ctx=8192` + s16le WAV + Whisper fallback.
+- Parite tablosu maddeleri tek tek doğrulandı: 1a Ollama `num_predict` ✅, 1b think-retry paritesi ✅, 2 piServe model doğrulama ✅, 3 transcribe-gemma4 ✅.
+- Frontend (`static/index.html`): `showTyping()`'den yanıltıcı "Düşünüyor…" etiketi kaldırıldı (+ `.typing-label` CSS temizliği); hover kuralları doğrulandı (37/37 gate'li, 0 gatesiz); `node --check` iki script bloğu da temiz; i18n TR/EN simetrik; **black teması** eklendi (`#e9e9ec`, tr 'Siyah') + `theme-black` toggle; hover muafiyet ayarları (mem-btn/settings-btn/logo-btn/glass-mode).
+- ~17:00 canlı bug avı: **Bug 1** — servis 21 Ağustos 00:04'ten beri çalışıyordu; belleğinde refactor öncesi kod vardı (`list_notes` tuple vs string uyumsuzluğu) → çözüm restart. **Bug 2** — geçmişe sızan ham tool-call metni (`<|tool_call>call:list_notes{{}}<tool_call|>`) sonraki turları zehirliyordu → `llm/utils.py` regex'i sağlamlaştırıldı (çift süslü parantez, Gemma'nın bozuk `<|tool_call>` varyantları), `tests/test_llm.py` vakaları eklendi; commit "fix(llm): recover mangled leaked tool calls".
+- v1.3.0 etiketi yeşil commit'e taşındı ve zorla pushlandı ("Security hardening, backend parity, position-based tools, UI polish").
+- Akşam: senkron probe her iki backend'de geçti; loop guard'lar non-stream yoluna port edildi (`llm/chat.py`; sabitler `llm/utils.py`'e taşındı); **backend switch + model auto-map** (LLM_BACKEND artık Settings UI'dan seçilebilir, `gemma4-e2b ↔ gemma4:e2b`); CHANGELOG `[1.4.0]`, README `python3` + piServe bölümleri, `install.py` kullanım metinleri. Commit `27b05dc`, servis yeniden başladı (PID 1856338).
+- 22:16 kullanıcının 4 isteği: minimal modda TTS butonu kayboluyordu (`.msg-meta` gizleniyordu) → `.msg-actions` satırı (kopyala + sesli oku yan yana, her temada görünür), mesaj aralığı 24px→34px, `copyMessage` (clipboard API + fallback, tik ikonu + "Kopyalandı"), i18n `copyTitle/copiedTitle` TR+EN; `sw.js` cache `pisynapse-v5`.
+- Ollama think akışı görünmezdi: Ollama ≥0.9 `message.thinking` gönderiyor, kod sadece eski `reasoning_content` alias'ını okuyordu → `llm/stream.py` + `llm/chat.py` her iki alanı da okuyor; `tests/test_ollama_think_stream.py` eklendi.
+- Nedeni bulunup giderilen ayrı bir keşif: intent/STT/warmup payload'larında `think:false` eksikti → ollama'da 100% CPU, ~44sn boş sınıflandırma (`llm/intent.py`, `routers/media.py`, `main.py` düzeltildi).
+- Canlı doğrulama: `LLM_BACKEND=ollama`'ya geçişte auto-map tetiklendi; think akışında **169 reasoning event'i** frontend'e aktı; prob oturumları silinip litert'e dönüldü.
+- `NOTES.md`'e "2026-08-22 — Frontend iyileştirmeleri + ollama think akışı" eklendi; commit `c399314` pushlandı (`799de1d..c399314`). Suit: 302 passed (+2 xfail, `tests/test_history_hygiene.py:179,188`).
+- 21:45'teki probe betiği `/tmp/opencode/probe_sync.py` olarak yazıldı (intent fallback + tam araç döngüsü, iki backend'de de geçti; Nextcloud timeout'u altyapı salınımıydı, kod sorunu değil).
+
+<!-- Not: Aynı oturum 23 Ağustos'a sarktı (istenen kapsam dışı): CI'daki 3s28d askıda kalma sızan aiosqlite bağlantısından çözüldü (`conftest.py` güvenlik ağı; `b72c6a0`→`d1ae04c`), 2 xfail de düzeltildi (308 passed / 0 xfail, `4f10098`) ve `v1.4.0` etiketi pushlandı (release notları: `~/RELEASE_NOTES_v1.4.0.md`). -->
+
+---
+
 ## Oturum-içi kendi-kendini-zehirleme raporu (2026-08-22)
 
 ### Bulgular
