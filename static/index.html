@@ -614,10 +614,10 @@ body.glass-mode{
   }
   body.glass-mode::before{
     background:
-      radial-gradient(1150px 780px at 6% -14%, rgba(240,148,58,.2), transparent 62%),
-      radial-gradient(950px 720px at 108% 4%, rgba(77,159,245,.14), transparent 60%),
-      radial-gradient(1050px 950px at 42% 118%, rgba(149,120,245,.16), transparent 62%),
-      radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.28) 100%);
+      radial-gradient(1150px 780px at 6% -14%, rgba(240,148,58,.16), transparent 62%),
+      radial-gradient(950px 720px at 108% 4%, rgba(77,159,245,.11), transparent 60%),
+      radial-gradient(1050px 950px at 42% 118%, rgba(149,120,245,.12), transparent 62%),
+      radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.32) 100%);
   }
 }
 
@@ -626,14 +626,14 @@ body.glass-mode{position:relative;isolation:isolate}
 body.glass-mode::before{
   content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;
   background:
-    radial-gradient(1150px 780px at 6% -14%, color-mix(in srgb, var(--accent) 30%, transparent), transparent 62%),
-    radial-gradient(950px 720px at 108% 4%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 60%),
-    radial-gradient(1050px 950px at 42% 118%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 62%),
-    radial-gradient(720px 540px at 84% 52%, color-mix(in srgb, var(--accent) 13%, transparent), transparent 56%),
-    radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.28) 100%);
+    radial-gradient(1150px 780px at 6% -14%, color-mix(in srgb, var(--accent) 24%, transparent), transparent 62%),
+    radial-gradient(950px 720px at 108% 4%, color-mix(in srgb, var(--accent) 15%, transparent), transparent 60%),
+    radial-gradient(1050px 950px at 42% 118%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 62%),
+    radial-gradient(720px 540px at 84% 52%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 56%),
+    radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.32) 100%);
 }
 body.glass-mode::after{
-  content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.07;
+  content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.09;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   background-size:140px 140px;
 }
@@ -2110,11 +2110,14 @@ function setupMobileKeyboard(){
 }
 
 // ── Chat History & Loading ──────────────────────────────────────────────────────
-async function loadSessions(){
-  try{ const d=await api('GET','/chat/sessions'); sessionList=d.sessions||[]; renderSessions(sessionList); }
+async function loadSessions(animate=true){
+  try{
+    const d=await api('GET','/chat/sessions'); sessionList=d.sessions||[];
+    renderSessions(sessionList, animate);
+  }
   catch(e){
     if(e.message==='HTTP 401'){ window._authPrompted=false; renderAuthNeeded(); }
-    else renderSessions([]);
+    else renderSessions([], animate);
   }
 }
 
@@ -2132,8 +2135,10 @@ function reenterKey(){
 
 function sessName(s){ return s.name || (t('chatPrefix')+' '+s.session_id.slice(-6)); }
 
-function renderSessions(list){
+function renderSessions(list, animate=true){
   const el=document.getElementById('session-list');
+  if(!el) return;
+  el.classList.toggle('no-anim', !animate);
   if(!list.length){ el.innerHTML=`<div style="padding:14px 16px;font-size:13px;color:var(--text4)">${t('noChats')}</div>`; return; }
   el.innerHTML=list.map(s=>{
     const name=sessName(s), tm=relTime(s.last_active), act=s.session_id===currentSid?' active':'', sid=esc(s.session_id);
@@ -2144,7 +2149,7 @@ function renderSessions(list){
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
       </button></div>`;
   }).join('');
-  applyStagger();
+  if(animate) applyStagger();
 }
 
 function newSid(){ return 'session_'+Date.now()+'_'+crypto.getRandomValues(new Uint32Array(1))[0].toString(36); }
@@ -2264,7 +2269,7 @@ async function sendMsg(){
           if(currentSid === sid){
             await saveSessionName(text);
           }
-          await loadSessions();
+          await loadSessions(false);
           // Don't reload the session — the stream bubble already has the full text.
           // Reloading calls clearMsgs()+DOM rebuild, which causes a visible flash.
           // If the user navigated away during streaming, loadSessions() updates the sidebar.
@@ -2305,7 +2310,7 @@ async function sendMsg(){
       // Abort closes the SSE without a done event — do the light
       // session bookkeeping here so sidebar/title stay consistent.
       await saveSessionName(text);
-      await loadSessions();
+      await loadSessions(false);
     }
     if(currentSid === sid){
       // Stream finished: drop the caret, keep final markdown render
@@ -2437,20 +2442,20 @@ function withStreamCaret(html){
 }
 
 const WELCOME_CHIPS = {
-  tr:['Son e-postalarımı özetle','Bu haftaki etkinliklerim','Yarın için hatırlatıcı oluştur','Bugün hava nasıl?'],
-  en:['Summarize my recent emails','My events this week','Create a reminder for tomorrow','How is the weather today?']
+  tr:['Son e-postalarımı özetle','Bu haftaki etkinliklerim','Yarın için görev oluştur','Notlarımı göster'],
+  en:['Summarize my recent emails','My events this week','Create a task for tomorrow','Show my notes']
 };
 
-function chipFill(el){
+function chipSend(el){
   const inp = document.getElementById('msg-input');
   if(!inp) return;
   inp.value = el.textContent;
-  inp.focus();
+  sendMsg();
 }
 
 function showWelcome(){
   const chips = (WELCOME_CHIPS[lang] || WELCOME_CHIPS.en)
-    .map(c => `<button class="w-chip" onclick="chipFill(this)">${c}</button>`).join('');
+    .map(c => `<button class="w-chip" onclick="chipSend(this)">${c}</button>`).join('');
   document.getElementById('messages').innerHTML=`<div class="welcome"><div class="w-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">  <g class="outer-wrap"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect></g><g class="inner-wrap"><rect x="9" y="9" width="6" height="6"></rect></g></svg></div><div class="w-title">${t('welcomeTitle')}</div><div class="w-sub">${t('welcomeSub').replace(/\n/g,'<br>')}</div><div class="w-chips">${chips}</div></div>`;
   const welcomeEl = document.querySelector('.welcome');
   if(welcomeEl) welcomeEl.classList.add('welcome-anim');
@@ -2537,7 +2542,7 @@ async function confirmAction(){
   showTyping(); setLoading(true);
   try{
     const d=await api('POST','/chat/execute',{ session_id:currentSid, user_id:config.username||'default', tool:tool, params:params });
-    hideTyping(); addMsg('assistant',d.reply); await loadSessions();
+    hideTyping(); addMsg('assistant',d.reply); await loadSessions(false);
   } catch{ hideTyping(); addMsg('assistant','\u26A0\uFE0F '+t('connErr')); toast(t('connErr'),true); } finally{ setLoading(false); }
 }
 
@@ -2941,7 +2946,12 @@ function toggleSearch(){
   if(toggle) toggle.classList.toggle('on', open);
   const inp = document.getElementById('sess-search');
   if(open){ if(inp) inp.focus(); }
-  else { if(inp) inp.blur(); _searchQuery = ''; renderSessions(sessionList); }
+  else {
+    if(inp) inp.blur();
+    // Restore the unfiltered list only when a filter was actually applied —
+    // rebuilding on every toggle replayed the item animation (looked like a redraw).
+    if(_searchQuery){ _searchQuery = ''; renderSessions(sessionList, false); }
+  }
 }
 
 function toggleCompact(){
@@ -3078,6 +3088,9 @@ if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.s
 
   /* ── Sidebar Stagger ──────────────────────────────────────────── */
   .sess-item{opacity:0;animation:msgSlideIn .25s ease-out forwards}
+  /* Silent refresh (post-stream, search restore): rebuild without replaying
+     the slide-in so list updates never read as a full redraw */
+  #session-list.no-anim .sess-item{animation:none;opacity:1}
 
   /* ── Glow on send ─────────────────────────────────────────────── */
   @keyframes subtleGlow{
