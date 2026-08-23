@@ -2379,7 +2379,10 @@ async function sendMsg(){
         let data; try{ data=JSON.parse(line.slice(6)); } catch{ continue; }
         if('token' in data){
           if(currentSid !== sid) continue; // user navigated away, skip rendering
-          if(toolRow){ toolRow.remove(); toolRow=null; } // stream started — pill's job done
+          // Stream started — every pill's job is done. Sweep by class, not
+          // just the tracked node, so no orphan can ever linger.
+          document.querySelectorAll('#messages .tool-status').forEach(r=>r.remove());
+          toolRow=null;
           if(!bubble){ bubble=createStreamBubble(); }
           gotReply=true;
           fullText+=data.token; bubble.innerHTML=withStreamCaret(renderMd(fullText)); scrollEnd(false);
@@ -2407,7 +2410,8 @@ async function sendMsg(){
           // If the user navigated away during streaming, loadSessions() updates the sidebar.
         } else if('reasoning' in data){
           if(currentSid !== sid) continue;
-          if(toolRow){ toolRow.remove(); toolRow=null; } // thinking IS streaming — pill's job done
+          document.querySelectorAll('#messages .tool-status').forEach(r=>r.remove());
+          toolRow=null; // thinking IS streaming — pill's job done
           if(!bubble) bubble=createStreamBubble();
           if(!thinkBox){ thinkBox=ensureThinkBox(bubble); }
           fullReasoning+=data.reasoning;
@@ -2623,9 +2627,10 @@ function showToolStatus(info, row){
 
 function endToolStatus(row, ok){
   // No auto-hide: the pill stays visible (✓/⚠) until the reply stream
-  // actually starts or the stream ends — it must not blink away during
-  // the quiet gap between tool execution and the next model round.
-  if(!row || !row.isConnected) return null;
+  // actually starts or the stream ends. Returns the row so the caller
+  // KEEPS tracking it — returning null orphaned the DOM node and the
+  // next event drew a second pill below instead of updating this one.
+  if(!row || !row.isConnected) return row;
   row.classList.toggle('ok', !!ok);
   const lab=row.querySelector('.tlab');
   lab.textContent=lab.textContent.replace(/…$/,'');
@@ -2635,7 +2640,7 @@ function endToolStatus(row, ok){
   } else {
     row.querySelector('.tspin')?.remove();
   }
-  return null;
+  return row;
 }
 
 function showGenRetry(row){

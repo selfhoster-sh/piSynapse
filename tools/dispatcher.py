@@ -34,19 +34,28 @@ def is_tool_success(result: str) -> bool:
 def _as_position(ref) -> int | None:
     """Parse a tool parameter into a 1-based list position.
 
-    Accepts an int or a numeric string (tolerating surrounding whitespace and
-    a trailing dot, e.g. ``" 3."``). Anything else (raw IDs, truncated UIDs,
-    garbage) is rejected — the model is only ever allowed to reference items
-    by their position in the latest listing.
+    Accepts an int, an integral float (litert/gemma routinely emits ``1.0``
+    in tool-call JSON — a strict int check rejected valid references), or a
+    numeric string (tolerating surrounding whitespace and a trailing dot,
+    e.g. ``" 3."``). Anything else (raw IDs, truncated UIDs, garbage,
+    fractional numbers) is rejected — the model is only ever allowed to
+    reference items by their position in the latest listing.
     """
     if isinstance(ref, bool):
         return None
     if isinstance(ref, int):
         return ref
+    if isinstance(ref, float):
+        return int(ref) if ref.is_integer() else None
     if isinstance(ref, str):
         s = ref.strip().rstrip(".")
         if s.isdigit():
             return int(s)
+        try:
+            f = float(s)
+        except ValueError:
+            return None
+        return int(f) if f.is_integer() else None
     return None
 
 
@@ -70,6 +79,7 @@ async def _resolve_position(session_id: str, ref, context_fn, id_field: str):
 async def run_tool(name: str, params: dict, context: dict | None = None) -> str:
     """Route a tool call to the appropriate handler and return the result string."""
     context = context or {}
+    logger.info("Tool call: %s params=%s", name, str(params)[:200])
 
     if name == "get_datetime":
         return f"Current: {datetime.now().strftime('%d %B %Y, %A, %H:%M')}"

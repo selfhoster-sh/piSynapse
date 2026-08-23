@@ -518,3 +518,31 @@ class TestUpdateNoteRealPath:
             )
         assert result == "OK Note updated."
         client.update_note.assert_called_once_with(42, "Yeni", None, "kişisel", ["a", "b"])
+
+
+class TestAsPosition:
+    """_as_position must tolerate the float positions litert emits (1.0)."""
+
+    def test_int_passes(self):
+        assert _as_position(2) == 2
+
+    def test_integral_float_accepted(self):
+        # Regression: gemma emitted note_id=1.0 -> strict int check failed
+        assert _as_position(1.0) == 1
+        assert _as_position(3.0) == 3
+
+    def test_fractional_float_rejected(self):
+        assert _as_position(1.5) is None
+
+    def test_numeric_string_variants(self):
+        assert _as_position(" 3.") == 3
+        assert _as_position("2.0") == 2
+        assert _as_position("1") == 1
+
+    def test_garbage_rejected(self):
+        assert _as_position("abc") is None
+        assert _as_position(True) is None
+        assert _as_position(None) is None
+
+
+from tools.dispatcher import _as_position  # noqa: E402
