@@ -461,6 +461,20 @@ LAN HTTP'de "Mikrofon HTTPS gerektirir" hatası gösterilir. Bu bir çözüm de�
 - `NOTES.md`'e "2026-08-22 — Frontend iyileştirmeleri + ollama think akışı" eklendi; commit `c399314` pushlandı (`799de1d..c399314`). Suit: 302 passed (+2 xfail, `tests/test_history_hygiene.py:179,188`).
 - 21:45'teki probe betiği `/tmp/opencode/probe_sync.py` olarak yazıldı (intent fallback + tam araç döngüsü, iki backend'de de geçti; Nextcloud timeout'u altyapı salınımıydı, kod sorunu değil).
 
+### 21 Ağustos düzeltme turunun 11 maddesi (sonradan doğrulandı)
+<!-- Oturum dökümünden çıkarıldı; sağdaki ✓ işaretleri 23 Ağustos'ta güncel kodda canlı teyit -->
+1. A2 `/chat/upload` multipart fix (`UploadFile=File(...)`, 1MB chunk, 413 limiti) ✓
+2. ID/UID mimarisi: pozisyon-bazlı çözümleme (B1+B2 birleşik; kullanıcı onaylı, bulgu tablosu sunuldu) ✓
+3. A1 `update_note` TypeError (wrapper category/tags iletiyor + cache invalidate) ✓
+4. A3 `show_completed` no-op (caldav `include_completed` bayrağı + tuple-anahtarlı cache) ✓
+5. B3 send_email başarısızlığı artık `ERROR:` prefix'li (audit doğru sayıyor) ✓ dispatcher.py:373
+6. B5 notes/tasks yazma sonrası liste-cache invalidation (+regresyon testi) ✓
+7. B4 stream.py think-retry'ye tool_group geçişi (22'sinde parite turunda tamamlandı) ✓
+8. B6 NUM_CTX/MAX_OUTPUT default tutarlılaştırma: config.py 8192/4096 tek kaynak ✓
+9. C-grubu temizlik: OFFLINE_SAFE_TOOLS ölü girdiler silindi (artık yalnız save_memory), VENV_DIR→venv, weathercode kullanılmayan fetch kaldırıldı, get_config hardcoded defaultlar config.py'e bağlandı ✓
+10. Her maddeden sonra pytest koşusu (242→259, +17 regresyon testi) ✓
+11. Final rapor + ruff temiz + NOTES güncellemesi ✓
+
 <!-- Not: Aynı oturum 23 Ağustos'a sarktı (istenen kapsam dışı): CI'daki 3s28d askıda kalma sızan aiosqlite bağlantısından çözüldü (`conftest.py` güvenlik ağı; `b72c6a0`→`d1ae04c`), 2 xfail de düzeltildi (308 passed / 0 xfail, `4f10098`) ve `v1.4.0` etiketi pushlandı (release notları: `~/RELEASE_NOTES_v1.4.0.md`). -->
 
 ---
