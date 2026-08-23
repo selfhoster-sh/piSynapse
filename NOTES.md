@@ -1,662 +1,896 @@
-# piSynapse — Architecture Notes
+# piSynapse — Development Journal
 
-## Son Değişiklikler — 13-08-2026
+Project diary + architecture reference. **Reverse chronological: newest entries live at the TOP**, oldest at the bottom — keep it that way with every new entry. Timeless reference sections sit at the very bottom.
 
-Denetim (A1-A10/B1-B5/C1-C8/D1-D6) + Faz 1 düzeltmeleri. Süreç: analiz → plan → uygulama, her madde ayrı commit + `py_compile` + `pytest` (27/27).
+## READ FIRST — AFTER EVERY SESSION/COMPACTION
 
-| # | Değişiklik | Detay |
+- The project IS a git repo (since Aug 13, 2026). Commit changes one by one
+  (rule: one item = one commit + py_compile + pytest). Before risky architectural
+  work, take a backup: `backups/piSynapse-*.tar.gz` (gitignored). ASK THE USER
+  whether a backup should be taken — never assume "I took a backup" on your own.
+- No architectural changes without user approval (new folders/packages, new
+  infrastructure like Docker/WebSocket, framework swaps). Don't widen scope on
+  your own initiative.
+- Before writing "the user approved/accepted" ANYTHING, make sure that approval
+  was really, explicitly given in this conversation. If unsure, write honestly
+  "the user did not approve, I assumed" — never fabricate an approval.
+- The services/ layer was REMOVED (July 30, 2026) — legacy modules (db.py, llm/,
+  tools/, embedding.py) do all the work. Don't propose a DI/service layer again
+  unless the user explicitly asks.
+- Docker and WebSocket (/chat/ws) were removed — the frontend uses SSE only
+  (/chat/stream); do not reintroduce them.
+- The Ollama service is stopped/disabled — LLM_BACKEND=litert is active. Don't
+  restart Ollama or add dependencies on it unless the user asks.
+- Journal policy: entries are strictly reverse chronological (newest first)
+  and record project work only.
+- Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/
+  dispatcher untested). A dedicated hardening pass has been running since
+  August; suite size is tracked in the entries below.
+
+## 2026-08-23 (13) — Chip random distribution
+
+- shuffleChips(): Fisher-Yates + anti-clump constraints (same chip may not sit
+  across the loop seam, the two lanes may not start with the same chip), 60
+  attempts; verified 2000/2000 via node. Fresh layout on every showWelcome().
+- SW v15.
+
+## 2026-08-23 (12) — Draggable marquee
+
+- JS rAF model replaces CSS keyframes: each track owns a controller (x, half,
+  vx, drag). Horizontal finger/mouse dragging (touch-action:pan-y keeps vertical
+  scroll intact), taps under 6px still count as clicks (chipSend works), beyond
+  that it's a fling: velocity measured and inherited as vx, decays with
+  exp(-3t); auto-resume after 450ms (no need to click elsewhere). Hover-pause
+  removed.
+- Wrapping loops x within (-half, 0] → perfectly seamless infinity. half is
+  re-measured on resize. reduced-motion: no auto flow, free manual drag. rAF
+  cleanup on page detach (isConnected).
+- SW v14. node ✓.
+
+## 2026-08-23 (11) — Marquee chips + menu opacity + deeper mask
+
+- #messages bottom fade: flat 96px → 128px + partial alpha stops (rgba .55 @
+  -52px) = cinematic dissolve, both modes.
+- .sel-menu stayed translucent over glass and blended with underlying text:
+  layered background (surface gradient over solid --bg) + backdrop-blur 18px →
+  readable in every theme.
+- Chips went dual-marquee: two lanes moving in opposite directions (chipMq
+  38s/46s linear infinite), mask fade at edges ('|shadow|'), pause on hover,
+  send on click. Track = set×2, translateX(-50%) loop. Static under the global
+  reduced-motion kill (halves identical → identical look).
+- SW v13. Frontend only → no service restart needed.
+
+## 2026-08-23 (10) — Ambient standards round (full authority while user slept)
+
+- Research (aurora UI write-ups + dark-mode gradient practice): the color field
+  is visible AT ALL TIMES; idle = calm frozen scene, text panel lit, background
+  quiet, motion slow. 60-30-10 rule.
+- FREEZE+RESUME FIX (the real bug): animations were bound to .generating → when
+  the class left, the animation itself left → jump back to frame 0. Correct
+  pattern: keyframes permanently attached, default play-state:paused;
+  generating only flips running + opacity 1. On finish the frame freezes, next
+  reply resumes from where it stopped.
+- Faint corner washes returned to ::before (11/7/8/5% mixes) → idle is never
+  empty black (@supports fallback added too). Blob idle opacities .5-.62.
+- Chip #7: +Create a note (TR keyword ✓, EN corpus contains 'create note'
+  verbatim).
+- SW v12. 314 tests ✓ ruff ✓ node ✓. Service restarted, healthy.
+
+## 2026-08-23 (9) — Aurora freeze fix + 4 blobs + memory meta-save root cause
+
+- Aurora "pitch black" issue: idle opacity:0 left only the vignette behind. New
+  model: blobs always visible (idle .45-.55), animation always defined but
+  animation-play-state:paused while idle = FREEZES IN PLACE mid-frame, no snap.
+  While generating: running + opacity .95.
+- Blob count 2→4 (ab3 center-right 19s, ab4 accent-hue upper-right 27s; lavaC /
+  lavaD multi-point keyframes).
+- MEMORY BUG ROOT CAUSE (log-proven): at 05:40:28 'show my notes' had been
+  routed to memory via embedding (sim .73, MARGIN .06 — threshold .05!). The
+  memory-group LLM then called save_memory treating the request itself as a
+  fact: 'User request to show their notes.' Layers fixed: (1) the generic
+  'değiştirir misin'-style patterns were already purged from the corpus but
+  that wasn't enough → intent.py now lets keywords win when margin<0.10 and the
+  keyword group disagrees, plus the message is logged on the embedding path
+  (visibility). (2) prompt.py rule 6 + tool description + group blurb: requests/
+  questions/commands are forbidden. (3) dispatcher save_memory guard: regex
+  rejects meta-content (isteği/talebi/request to/wants to/asked that...) while
+  real facts like 'User likes Python' still pass (8 cases tested). DB: junk row
+  id=17 deleted from assistant.db.
+- Chip: 'Notlarımı göster'→'Notları listele' / EN 'List my notes'.
+- Tests: 314 (+2 save_memory regressions). ruff ✓ node ✓ SW v11. Service
+  restarted, healthy.
+
+## 2026-08-23 (8) — Lava-lamp aurora + clock position + intent corpus fix + custom select
+
+- Aurora fully rewritten: #aurora layer (blobs, --glow-tokened radials, no
+  color-mix dependency → @supports aurora duplicates deleted). During
+  generating lavaA 17s/lavaB 23s large drift+scale; idle fades out and freezes
+  (no snap). ::before now carries only the vignette.
+- Clock position restored: .sess-del absolutely positioned right (hover swaps
+  time↔trash Discord-style), padding-right:20px on the name. Time always flush
+  right.
+- Chip: joke replaced with 'Görevlerimi listele'/'List my tasks' (task_kw
+  'görev' ✓). TR/EN rows mirrored.
+- INTENT BUG FOUND: the calendar corpus contained generic patterns without any
+  domain word ("değiştirir misin..." and DE/FR/ES equivalents) pulling every
+  "could you change X" into calendar; tasks had no update examples. Purged +
+  update/postpone anchors added to tasks. 7/7 correct with real embeddings
+  (before: task-change drifted to calendar).
+- applyLang instant: full welcome rebuild (chips included) + openSettings()
+  re-invoked if the modal is open. This was why a hard refresh seemed required
+  (a modal stuck in the old language made it look like nothing changed).
+- Custom dropdown (.sel-wrap/.sel-btn/.sel-menu): native <select> hidden,
+  esc()'d menu; enhanceAllSelects after boot+openSettings; closes on
+  outside-click/Esc; change event dispatched to inline handlers.
+- SW v10. Tests 312 ✓ ruff ✓ node ✓
+
+## 2026-08-23 (7) — Pure black default + hover fix + typography + living aurora
+
+- Pure black is no longer an option, it's the default: body.amoled values
+  folded into :root, toggle+applyBlack+ps_black+i18n keys deleted. theme-black
+  remains as deepest tier (bg still #000). Mobile density boost simplified.
+- Sidebar jitter root cause: hover toggled .sess-del display:none→flex =
+  layout shift. Fix: opacity+pointer-events (slot reserved),
+  transition:all→background-color/border-color. Stronger hover: surface2→
+  surface3 + rgba(255,255,255,.05) border.
+- Typography standardized: body+bubble 14.5→15px, sess-name 13.5→14px.
+- Chips 4→6: +weather ('Bugün hava nasıl?'), +joke ('Komik bir şey söyle' —
+  embedding corpus has a 'tell me a joke' example, safe).
+- Aurora lives during replies: setLoading→body.generating; auroraDrift 14s
+  transform-only (inset:-9% oversize, GPU-friendly) + grainBreathe. The global
+  reduced-motion kill already covers it. Mobile: compositor-only, no repaint.
+- Glass feel: mask fade bottom 64→96px (text melts into the glass), subtle
+  elevation shadow on user bubbles in glass-mode.
+- User question "does this meet glassmorphism standards": yes — translucency+
+  blur+1px light border+inset highlight+vignette+decoration all present; what
+  was missing was motion, now added.
+
+## 2026-08-23 (6) — Sidebar redraw fix + chip send + glass tuning
+
+- Bug: every render gave .sess-item opacity:0+slide-in → redraw flash on stream
+  end/search close. Fix: renderSessions(list,animate) + #session-list.no-anim;
+  loadSessions(animate) pass-through. Silent calls: stream done, abort finally,
+  non-stream reply, search-restore (restore only when a filter is applied).
+- Chips now SEND directly (chipSend→sendMsg); content keyword-aligned with
+  intent: özetle/e-posta (email-read), etkinlik (calendar), görev (tasks),
+  notlarımı göster (notes exact). The old 'reminder' chip could slip into
+  memory because of memory_kw('hatırla') → became 'görev oluştur'.
+- Glass decisions: grain .07→.09; aurora mixes 30/20/22/13→24/15/16/9 + vignette
+  .28→.32 (@supports fallback updated too); inner white hairlines kept (glass
+  affordance).
+
+## 2026-08-23 (5) — Visual polish round
+
+- #messages mask-image edge fade: 64px bottom, 28px top softening; works in
+  glass mode too (background-independent).
+- Streaming caret: withStreamCaret() places it inside the last closed block tag
+  (doesn't fall to a new line), cleared on done; caretBlink keyframes.
+- Suggestion chips on welcome (WELCOME_CHIPS tr/en, chipFill fills the input);
+  .w-chip styles. text-wrap:pretty.
+- WCAG audit script (/tmp/opencode/wcag_audit.py): single failure text3/surface2
+  4.37 → --text3 #7e7e96→#83839c (4.69). Every other pair passes AA.
+- User note: nested-squares logo = chat screen center, toggle-menu pattern =
+  link to future ecosystem tools — DO NOT TOUCH.
+
+## 2026-08-23 (4) — prefers-reduced-motion
+
+- Respect the OS "Reduce motion" setting: kills all animations/transitions
+  (vestibular-friendliness). SW cache v6.
+- Correction: glass-mode inventory showed 139 selectors but the core is already
+  variable-based (--surface etc. redefined under body.glass-mode), rules are
+  grouped recipes → the earlier "messy" criticism was overstated; no refactor
+  needed.
+
+## 2026-08-23 (3) — UI_LANGUAGE (option B)
+
+- messages.py: the 3 user-facing backend messages (llm_empty_reply/
+  llm_unreachable/llm_empty_response) got tr/en dicts; get_message() picks live
+  via config.get("UI_LANGUAGE").
+- config.py: UI_LANGUAGE select (default tr, no restart needed). llm/utils.py:
+  empty_answer_fallback() helper; EMPTY_ANSWER_FALLBACK constant kept for test
+  compatibility (noqa F401 aliases in stream/chat).
+- Frontend: at init, if ps_lang was never set, adopt the server's UI_LANGUAGE.
+- Lesson: ruff --fix in an intermediate state had deleted the FINALIZE_NUDGE
+  import → import blocks consolidated. Suite 312 passed; closed-port simulation
+  also clean.
+
+## 2026-08-23 (2) — Final two xfails closed
+
+- llm/utils.py: tag regexes now also consume the <tool|call> (pipe-mangled)
+  variant; _strip_json_tool_echo added (line-independent, known tool names
+  only, JSON inside prose untouched).
+- tests/test_history_hygiene.py: 2 xfail → normal regression tests + 2 negative
+  cases (unknown_tool and inline JSON preserved). Suite: 308 passed / 0 xfail.
+  CHANGELOG + release notes updated.
+
+## 2026-08-23 — CI hang fixed
+
+- Symptoms: CI run following c399314 sat 3h28m "in_progress"; its twin run
+  succeeded but 3 tests FAIL (no such table: email_session_map); locally
+  single-file runs waited forever.
+- Root cause: new guard/think tests touched the real DB
+  (chat→_build_full_messages→prompt.get_email_context→db.get_email_map). On CI
+  the schema doesn't exist → fast fail; locally, with the table present, the
+  module-global aiosqlite connection never closed and the NON-daemon worker
+  thread blocked interpreter exit.
+- Fix: autouse fixture mocking prompt.get_email_context in three test files
+  (tests run DB-less); pytest_sessionfinish safety net in conftest.py
+  (close_db). Ruff import sorting via --fix.
+- Verification: CI simulation with closed ports — single files <1s rc=0; full
+  suite 7.1/7.8s exit=0 ×2. ruff clean.
+
+## 2026-08-22 — Frontend improvements + ollama think flow
+
+- static/index.html: .msg-actions row under assistant messages (copy + read
+  aloud side by side); no longer inside .msg-meta → visible in minimal mode too
+  (minimal hid meta, losing TTS). attachMsgActions() used on both addMsg and
+  stream-completion paths; copyMessage() clipboard API + execCommand fallback,
+  copied feedback (checkmark icon).
+- Minimal mode message spacing 24px→34px (body.minimal-chat .msg-group).
+- i18n: copyTitle/copiedTitle (TR+EN). sw.js CACHE pisynapse-v4→v5.
+- Ollama think bug: stream.py/chat.py only read `reasoning_content`; ollama ≥0.9
+  sends `message.thinking`. Both are read now. Live test: 169 reasoning events
+  reached the frontend (slow on CPU but working).
+- New discovery: intent/media STT/warmup direct ollama calls lacked
+  `think:false` → gemma4 silently thought, the num_predict=20 budget went to
+  thinking, intent raw='' + ~45s. Added to all three; live raw='question' ✓.
+- PATCH settings automatic model mapping dogfooded both ways (gemma4-e2b ↔
+  gemma4:e2b). Test file: tests/test_ollama_think_stream.py (2 tests). Suite
+  304+2xf, ruff clean. Backend switched back to litert; probe sessions deleted.
+
+## In-session self-poisoning report (2026-08-22)
+
+### Findings
+
+| Issue | Status |
+|---|---|
+| Cross-session data leakage | None — design is clean (get_history/_fetch_candidates/summary/cache all `WHERE session_id = ?`) ✅ |
+| Leak text persisted into history | Bug — save points in routers/chat.py have no sanitization; raw `call:xxx{{}}` gets stored as assistant replies ⚠️ |
+| Poisoned row in DB | the `call:list_notes{{}}` line inside session_1787407132114_14uw4dn still sits there; model imitates its own garbage output ⚠️ |
+| Empty-answer fallback | If dedup drops everything and accumulated text is empty, nothing is produced → "model returned an empty reply" ⚠️ |
+
+By design the only thing crossing sessions: user memories (save_memory,
+user_id-scoped) — intentional feature.
+
+### Fix plan (approved)
+
+- [x] **1. Save-time sanitization** — strip_tool_leaks() before the assistant
+  reply hits the DB; skip saving if the reply is entirely leak (stream +
+  non-stream paths) ✅ Verified: tests/test_history_hygiene.py 4 passed, ruff
+  clean. _clean_assistant_reply() helper added; stream done/finally and
+  non-stream save points sanitize and skip empties.
+- [x] **2. One-off DB cleanup** ✅ Verified: dry-run scan then 2 pure-poison
+  rows deleted (id=592 old read_email leak, id=757 call:list_notes{{}});
+  re-scan → 0 poisoned. An embedded-cleanup layer was deliberately NOT built:
+  all 20 dry-run candidates were cosmetic whitespace diffs (markdown), one held
+  a Python code block — rewriting would damage them. The finding also exposed
+  strip_tool_leaks' global whitespace collapse breaking code blocks → fixed:
+  collapsing now applies outside ``` fences only
+  (_collapse_spaces_outside_fences). Coverage: tests/test_history_hygiene.py
+  9 tests = 7 passed + 2 xfail (known limits: `<tool|call>` delimiter, JSON
+  echo); integration tests prove the real save path with mocked DB.
+- [x] **3. Empty-buf fallback** ✅ Verified: if the dedup branch drops an empty
+  buf (the 2026-08-22 "model returned an empty reply" case), a single
+  _FINALIZE_NUDGE system note is injected with tools disabled
+  (final_nudge_used → use_tools=False, truncation-retry pattern) forcing a
+  text-only final turn; still empty after the nudge → _EMPTY_ANSWER_FALLBACK
+  gentle message is yielded. If the nudge turn recovers another leak it falls
+  into the same dedup branch → fallback.
+- [x] **2b. Summary poisoning protection** (user suggestion) ✅ Verified:
+  three layers — (1) SUMMARY_SYSTEM_PROMPT updated: ignore artifacts, "do not
+  infer or invent", prefer newer info on conflict, compress to ~3-5 sentences
+  (user draft taken verbatim); (2) _summary_transcript() input sanitization:
+  assistant messages cleaned before reaching the model, fully-leaked lines drop
+  from the transcript, user messages untouched; (3) output protection: summary
+  stored through strip_tool_leaks. With an empty transcript the LLM isn't called
+  at all (previous summary preserved). Tests: tests/test_summary_hygiene.py
+  5 passed. Full suite: 287 passed, 2 xfailed; ruff clean.
+- [x] **4. Tool-loop ceiling** ✅ Verified: sig_exec_counts caps identical
+  signatures (name(args_json sorted)) at _MAX_IDENTICAL_EXECUTIONS=2 per
+  request; the 3rd attempt is refused with a "[Refused: ...]" tool message
+  (safety net for side-effectful tools; pure repeats are already caught by
+  dedup, this layer cuts repeats inside mixed batches — e.g. [A,B] → [A,C]
+  won't run A again). Tests: tests/test_stream_loop_guards.py 3 passed (nudge
+  turn + tools-off payload verification, fallback message, refusal of the 3rd
+  identical call). Full suite: 290 passed, 2 xfailed; ruff clean.
+
+### Non-stream port + backend sync (2026-08-22)
+
+- [x] **Guards ported to the non-stream path** ✅ Verified: same nudge+cap
+  mechanism in the llm/chat.py loop (constants moved to llm/utils.py:
+  FINALIZE_NUDGE / EMPTY_ANSWER_FALLBACK / MAX_IDENTICAL_EXECUTIONS; the stream
+  module imports them under their old `_`-prefixed names so tests don't break).
+  Tests: tests/test_chat_loop_guards.py 3 passed.
+- [x] **Model sync on backend switch** ✅ Verified: live probe hit 404 on the
+  ollama branch — root cause: LLM_MODEL stored in litert form (gemma4-e2b)
+  while the ollama registry wants colonized (gemma4:e2b); convention per
+  install.py:1246 (litert→dashed, ollama→colonized). Fixes: (1) LLM_BACKEND now
+  selectable from the UI (select input added to SETTINGS_SCHEMA, removed from
+  PROTECTED_SETTINGS, added to RESTART_REQUIRED_KEYS); (2) PATCH /config/settings
+  validates LLM_MODEL against the NEW daemon's list on backend switch and
+  auto-converts via delimiter-agnostic matching when absent
+  (get_llm_model_options(backend=...) parameter added); (3) no match → old
+  model kept + warning logged (manual pick required). Tests:
+  tests/test_settings_backend_sync.py 4 passed.
+- [x] **Intent detection + LLM fallback validated on both backends** ✅: the
+  embedding layer is backend-independent (FastEmbed/ONNX local); unit tests +
+  live probe for the LLM fallback's litert (/v1/chat/completions) and ollama
+  (/api/chat) branches: question intent produced correctly on both. The full
+  tool loop was also live-verified on ollama (despite a Nextcloud timeout the
+  model produced a proper textual reply → error handling solid). Tests:
+  tests/test_intent_backends.py 5 passed. Full suite: 302 passed, 2 xfailed;
+  ruff clean.
+
+Every step: ruff + pytest, then this file updated.
+
+### Files involved
+
+- routers/chat.py — save points (stream ~255/~273, non-stream ~182)
+- llm/stream.py — dedup/fallback (~358), loop machinery
+- llm/utils.py — strip_tool_leaks, _TOOL_CALL_TAG_RE
+- db.py — conversations table
+
+<!-- ═══ CHRONOLOGICAL CONTINUATION · the Aug 13-22 stretch was lost from disk
+     when the journal lived outside git; the records below were reassembled
+     from opencode session transcripts and surviving fragments (2026-08-23) -->
+
+## Aug 13–22, 2026 — recovered from session transcripts
+
+<!-- Source: opencode session database -->
+
+### Aug 13
+
+- NOTES.md was removed from git tracking on this day (commit `1e61227`,
+  "keep it local-only") — the start of the lost stretch.
+- The session log holds a single user message: an unfinished "glassy effect"
+  experiment on static/index.html plus a pyjsparser topic. No tool calls were
+  recorded, so whether code changed that day is UNVERIFIABLE (the glass-mode
+  CSS existed by Aug 22; when it landed is unknown).
+
+### Aug 21
+
+- 22:07 — full codebase review requested for `/home/salih/piSynapse`
+  (base `ddc5afa` + uncommitted routers/chat.py abort changes). Three copies
+  exist: piSynapse (current), -release, -release-backup.
+- 22:25 — audit report appended to NOTES.md ("FULL CODEBASE REVIEW — Report").
+  Three live-verified critical bugs: (1) update_note completely broken
+  (dispatcher sends category/tags, wrapper raises TypeError), (2) /chat/upload
+  rejects multipart with 422, (3) third bug's text was truncated in the
+  transcript — unrecoverable. Baseline: 242 tests passing.
+- Other confirmed findings from the report: the contacts/CardDAV module does
+  not exist in the codebase (only a table reference survives); C group = dead
+  code/cleanup items.
+- From 22:37 an 11-item fix round ran (user approval awaited at items 2 and 8;
+  pytest after each item):
+  - A2: routers/chat.py — new POST /upload (upload_image), chunked size limit
+    based on MEDIA_MAX_MB, base64 response; tests/test_media.py +3 tests
+    (245 passed).
+  - Item 2 (approved): ID/UID architecture switched to position-based
+    resolution — raw IDs/UIDs removed from listings, dispatcher
+    _parse_*_listing compatibility kept, CRITICAL item-reference rules written
+    into prompt.py.
+  - A1: nextcloud_notes.update_note now accepts and forwards category/tags +
+    _invalidate_list_cache(); tests/test_dispatcher.py::TestUpdateNoteRealPath.
+  - nextcloud_tasks.py: _todos_cache keyed per include_completed flag (tuple
+    key); errors raise instead of being swallowed (caldav's
+    get_todos(include_completed=False) default meant completed todos were never
+    fetched).
+  - Note-write → list-cache inconsistency fixed; regression test:
+    tests/test_stability_fixes.py::test_note_write_invalidates_list_cache.
+- Past midnight (spilled into the 22nd): all items done — 242 → 259 passed
+  (+17 regression tests), ruff clean; NOTES.md updated.
+
+### The Aug 21 fix round, itemized (verified later)
+
+<!-- Extracted from the session dump; the ✓ marks were live-checked against
+     current code on Aug 23 -->
+1. A2 /chat/upload multipart fix (UploadFile=File(...), 1MB chunks, 413 cap) ✓
+2. ID/UID architecture: position-based resolution (B1+B2 merged; user-approved
+   findings table presented first) ✓
+3. A1 update_note TypeError (wrapper forwards category/tags + cache
+   invalidation) ✓
+4. A3 show_completed no-op (caldav include_completed flag + tuple-keyed
+   cache) ✓
+5. B3 send_email failures now ERROR:-prefixed (audit counts them correctly) ✓
+   dispatcher.py:373
+6. B5 list-cache invalidation after notes/tasks writes (+regression test) ✓
+7. B4 stream.py think-retry passes tool_group (done in the Aug 22 parity
+   round) ✓
+8. B6 NUM_CTX/MAX_OUTPUT defaults unified: config.py 8192/4096 single source ✓
+9. C-group cleanup: OFFLINE_SAFE_TOOLS dead entries removed (save_memory only
+   now), VENV_DIR→venv, unused weathercode fetch dropped, get_config hardcoded
+   defaults tied to config.py ✓
+10. pytest after every item (242→259, +17 regression tests) ✓
+11. Final report + ruff clean + NOTES update ✓
+
+<!-- Note: the same session spilled into Aug 23 (outside the requested scope):
+     the 3h28m CI hang traced to a leaked aiosqlite connection (conftest.py
+     safety net; b72c6a0→d1ae04c), the last 2 xfails fixed (308 passed /
+     0 xfail, 4f10098) and the v1.4.0 tag pushed. -->
+
+## Aug 17, 2026 — UI improvements, XSS fix, limit raise
+
+### Frontend (static/index.html)
+
+**XSS security:**
+- 50 innerHTML assignments audited (27 static, 18 esc()-guarded, 1 low-risk,
+  1 exposed)
+- Exposed: ticker/marquee inserted item.text unescaped → fixed with
+  esc(item.text)
+- renderMd() safe-by-construction (all content paths go through esc())
+- No eval(), Function(), document.write(), outerHTML usage — clean
+
+**Mobile improvements:**
+- Swipe gesture suppressed inside scrollable areas (code-wrapper, pre,
+  textarea, #msg-input, .sess-list) via a _swipeInScrollable flag
+- Input bar glass blur: blur(16px) saturate(150%), rgba(17,17,22,.88) — opaque
+  yet glassy
+- Sidebar toggle: 90ms delay + btn-press animation (scale .88) +
+  navigator.vibrate(12) haptics
+- Button CSS: #logo-btn.btn-press .logo-icon{transform:scale(.88);
+  filter:brightness(.85)}
+
+**Glass toggle fix:**
+- Added <span class="track"> to the glass toggle — renders properly now
+  (instead of a bare checkbox)
+
+### Backend (config.py)
+
+**Limit raises:**
+- LLM_NUM_CTX: default 6144 → **8192**, UI max 6144 → **32768**
+- LLM_MAX_OUTPUT_TOKENS: default 2048 → **4096**, UI max 6144 → **16384**
+- piServe config.json: max_num_tokens 6144 → **8192**
+- Pi .env: LLM_NUM_CTX=8192, LLM_MAX_OUTPUT_TOKENS=4096
+- piServe service restarted (8192 context active)
+
+**Rate limiting:**
+- 30 RPM limiter stays active (no exemptions added)
+- 429s seen at page load were resolved by a service restart
+
+### Security audit result
+
+| Category | Count | Status |
+|---|---|---|
+| innerHTML — static HTML | 27 | Safe |
+| innerHTML — esc()-guarded | 18 | Safe |
+| innerHTML — low-risk (local data URI) | 1 | Acceptable |
+| innerHTML — exposed (ticker item.text) | 1 | **FIXED** |
+| eval/Function/document.write | 0 | Clean |
+| Hardcoded secrets/API keys | 0 | Clean |
+| .env gitignored | — | Correct |
+
+### Changed files
+
+- static/index.html: XSS fix, mobile improvements, glass toggle fix, stronger blur
+- config.py: limit defaults and UI maxima
+- notes-additions.md: staging file for this entry
+
+### Test scenarios
+
+1. **XSS**: a calendar event inside the ticker must render `<script>` as inert
+   text, never execute
+2. **Mobile swipe**: horizontal scroll inside a code block or long message must
+   not open the sidebar
+3. **Mobile input bar**: glass mode — text behind the bar readable but subtle
+4. **Sidebar button**: press the logo button on mobile → slight delay + visual
+   press + haptic tick
+5. **Context window**: settings can raise context up to 8192
+6. **Max output**: settings can raise max output up to 16384
+
+## Changes — 2026-08-13
+
+Audit (A1-A10/B1-B5/C1-C8/D1-D6) + Phase 1 fixes. Process: analyze → plan →
+execute, one commit per item + `py_compile` + `pytest` (27/27).
+
+| # | Change | Detail |
 |---|-----------|-------|
-| **1** | **git init + baseline commit** | Proje artık git repo (`bcc7379`). Öncesinde tar yedeği: `backups/piSynapse-20260813-1917.tar.gz` (venv/db/.env/modeller hariç). |
-| **2** | **.gitignore tamamlandı** | Eklendi: `venv/` (gerçek venv noktasız, önceden commit'lenebilirdi!), `*.db-wal`, `*.db-shm`, `*.db-journal`, `.pytest_cache/`, `.ruff_cache/`, `.mypy_cache/`, `*.egg-info/`, `dist/`, `build/`, `*.pyc`. |
-| **3** | **A1** | `pyproject.toml` build-backend `setuptools.backends._legacy` (geçersiz) → `setuptools.build_meta`. `[project].dependencies`'e eksik `faster-whisper` eklendi. `[tool.setuptools]` paket/`py-modules` layout tanımı — `pip install -e .` artık çalışıyor. |
-| **4** | **A2** | `llm/stream.py` — LiteRT stream'de tool_calls delta'ları üzerine yazılıyordu (id/name/arguments kayboluyor, çoklu tool call yok oluyordu). `_merge_tool_calls()` ile index'e göre birleştirme. Ollama tam-listeleri ayrıca ele alınıyor. |
-| **5** | **A3** | `routers/media.py` — faster-whisper `transcribe` + 2× `subprocess.run(ffmpeg)` senkrondu (event loop blok). Hepsi `asyncio.to_thread`; lazy segment iterasyonu thread içinde. |
-| **6** | **A4** | `llm/intent.py` — `model.embed()` senkron. `embed_async()` + yeni `embed_batch_async()` (embedding.py) kullanılıyor. |
-| **7** | **A5** | `config.sync_config()` string listesi eksikti (DEFAULT_CITY, ASSISTANT_USER→DEFAULT_USER, MAIL_PROVIDER, LLM_KEEP_ALIVE yok). Dict eşlemesine çevrildi. `INTENT_LLM_FALLBACK` `RESTART_REQUIRED_KEYS`'ten çıkarıldı (çelişki). prompt.py/widgets.py/weather.py `DEFAULT_CITY`'yi çağrı anında okuyor (import-time binding kaldırıldı). |
-| **8** | **A6** | `MEMORY_SIMILARITY_THRESHOLD` (0.68) ölü config'ti — db.py 0.85 hardcoded. Artık db.py dedup eşiğinde kullanılıyor + `SETTINGS_SCHEMA`'ya eklendi (UI'da ayarlanabilir). |
-| **9** | **A7** | `routers/chat.py` — asistan yanıtı yalnızca `done` event'inde kaydediliyordu; disconnect/error'da kullanıcı mesajı sahipsiz kalıyordu. `finally` bloğu ile kısmi yanıt da kaydediliyor (`reply_saved` bayrağı). |
-| **10** | **A8** | `calendar_ops.update_event` — ham iCal string `.replace()` (all-day VALUE=DATE eşleşmiyor, folded SUMMARY kırılıyor, yanlış damga değişebiliyordu) → vobject property manipülasyonu. All-day + timed test edildi. |
-| **11** | **A9** | `mail.py` — boş MAIL_PROVIDER gmail'e düşüyordu (docs "empty = disable" diyor). Artık boş ise email devre dışı. |
-| **12** | **A10** | `install.py` — `missing.append("ffmpeg"/"curl")` kurulum başarılı olsa da çalışıyordu; yalnızca gerçekten eksikse ekleniyor. |
-| **13** | **B1** | `.gitignore` baseline'a girdi (satır 2). Kritik eksikler kapatıldı: `venv/`, `*.db-wal/shm/journal`, cache'ler, `dist/`/`build`/`*.egg-info`. |
-| **14** | **B3** | `main.py` rate-limit IP'si `x-forwarded-for`'a koşulsuz güveniyordu (spoof ile bypass). Artık `request.client.host`; proxy arkasında çalışanlar `TRUST_X_FORWARDED_FOR=1` (PROTECTED_SETTINGS'e eklendi). |
-| **15** | **B2/B4** | README'den yanlış "SSRF protection" iddiası kaldırıldı. "Security Notes" bölümü eklendi (TLS reverse-proxy, `.env` chmod 600, XFF). |
+| **1** | **git init + baseline commit** | Project is now a git repo (`bcc7379`). Tar backup beforehand: `backups/piSynapse-20260813-1917.tar.gz` (excluding venv/db/.env/models). |
+| **2** | **.gitignore completed** | Added: `venv/` (the real venv, dotless — could previously have been committed!), `*.db-wal`, `*.db-shm`, `*.db-journal`, `.pytest_cache/`, `.ruff_cache/`, `.mypy_cache/`, `*.egg-info/`, `dist/`, `build/`, `*.pyc`. |
+| **3** | **A1** | pyproject.toml build-backend `setuptools.backends._legacy` (invalid) → `setuptools.build_meta`. Missing `faster-whisper` added to `[project].dependencies`. `[tool.setuptools]` package/py-modules layout — `pip install -e .` works now. |
+| **4** | **A2** | llm/stream.py — LiteRT stream overwrote tool_calls deltas (id/name/arguments lost, multiple tool calls vanished). `_merge_tool_calls()` merges by index. Ollama full-lists handled separately. |
+| **5** | **A3** | routers/media.py — faster-whisper transcribe + 2× subprocess.run(ffmpeg) were synchronous (event-loop blocking). All moved to asyncio.to_thread; lazy segment iteration inside the thread. |
+| **6** | **A4** | llm/intent.py — model.embed() was synchronous. Now embed_async() + new embed_batch_async() (embedding.py). |
+| **7** | **A5** | config.sync_config() missed string entries (DEFAULT_CITY, ASSISTANT_USER→DEFAULT_USER, MAIL_PROVIDER, LLM_KEEP_ALIVE). Converted to dict mapping. INTENT_LLM_FALLBACK removed from RESTART_REQUIRED_KEYS (contradiction). prompt.py/widgets.py/weather.py read DEFAULT_CITY at call time (import-time binding removed). |
+| **8** | **A6** | MEMORY_SIMILARITY_THRESHOLD (0.68) was dead config — db.py hardcoded 0.85. Now used for the db dedup threshold + added to SETTINGS_SCHEMA (UI-adjustable). |
+| **9** | **A7** | routers/chat.py — assistant reply saved only on the done event; disconnect/error orphaned the user message. finally block now saves partial replies too (reply_saved flag). |
+| **10** | **A8** | calendar_ops.update_event — raw iCal string .replace() (misses all-day VALUE=DATE, breaks folded SUMMARY, could stamp the wrong occurrence) → vobject property manipulation. All-day + timed tested. |
+| **11** | **A9** | mail.py — empty MAIL_PROVIDER fell back to gmail (docs said "empty = disable"). Empty now disables email. |
+| **12** | **A10** | install.py — missing.append("ffmpeg"/"curl") ran even when installation succeeded; appended only when genuinely missing. |
+| **13** | **B1** | .gitignore entered the baseline (line 2). Critical gaps closed: venv/, *.db-wal/shm/journal, caches, dist//build/*.egg-info. |
+| **14** | **B3** | main.py rate-limit IP trusted x-forwarded-for unconditionally (spoofable bypass). Now request.client.host; proxy users set TRUST_X_FORWARDED_FOR=1 (added to PROTECTED_SETTINGS). |
+| **15** | **B2/B4** | False "SSRF protection" claim removed from README. Security Notes section added (TLS reverse proxy, .env chmod 600, XFF). |
 
-Durum: **Faz 1 (A1-A10) + Faz 2 (B1-B4) tamamlandı**, Faz 3 (mimari) başlıyor.
+Status: **Phase 1 (A1-A10) + Phase 2 (B1-B4) done**, Phase 3 (architecture) starting.
 
-## Faz 3 (Mimari) — 13-08-2026
+## Phase 3 (Architecture) — 2026-08-13
 
-| # | Değişiklik | Detay |
+| # | Change | Detail |
 |---|-----------|-------|
-| **16** | **C8** | `f0179b1` — Ölü kod temizliği: `_AUTH_EXEMPT` (main.py), `_TOOL_TO_GROUP` (tools/definitions.py), `llm/__init__.py` re-export'ları (yalnızca `__all__`'dakiler kaldı), install.py `home`/`python_path` F841, `llm/payload.py` `tool_name`, f-string'ler + 42 otomatik F-hatası. Tüm F401/F841/F541 temiz (kalan 144 hata: E501/D-docstring stil, önceden vardı). |
-| **17** | **C6** | `7780496` — `get_llm_model_options()` senkron subprocess(curl/ollama) çalıştırıyordu → async sarmalayıcı + `asyncio.to_thread`; bloklama event loop'tan çıktı. LiteRT canlı sorgu test edildi (gemma4-e2b, gemma4-e4b). |
-| **18** | **C7** | `f224513` — `nextcloud_notes.list_notes()` tek istekle tüm notları çekiyordu → `page`/`itemsPerPage=100` sayfalama. Sunucu sayfalama parametresini yok sayarsa sonsuz döngü koruması (id dedupe). |
-| **19** | **C3** | `0c3691e` — DB şema migrasyonu ad-hoc try/except → `PRAGMA user_version` tabanlı sıralı MIGRATIONS (images, name, summarized_until, embedding). Mevcut DB `user_version=4` doğrulandı. |
-| **20** | **C2** | `807866c` — Opsiyonel veri saklama: `CONVERSATION_RETENTION_DAYS` / `MEMORY_RETENTION_DAYS` (varsayılan 0 = kapalı). `db.cleanup_expired_data()` başlangıçta çalışır. UI'da ayarlanabilir + `.env` PATCH ile canlı sync (restart gerekmez). |
-| **21** | **C1** | `d13bd82` — SQLite `database is locked` hataları: `busy_timeout=10000` + `_write_with_retry()` (3 deneme, migrasyon/cleanup yazımlarında). Retry'ı simülasyonla test edildi. |
-| **22** | **C4** | `b9e72d3` — `[project.optional-dependencies].dev` (pytest, pytest-asyncio, ruff, mypy). mypy gerçek bug'ı düzeltildi: `llm/chat.py` `msg2`/`message` None narrowing (188→154 hata; kalanlar eksik stub/generic, baseline). |
+| **16** | **C8** | `f0179b1` — Dead-code purge: _AUTH_EXEMPT (main.py), _TOOL_TO_GROUP (tools/definitions.py), llm/__init__.py re-exports (only __all__ entries remain), install.py home/python_path F841, llm/payload.py tool_name, f-strings + 42 automated F-errors. All F401/F841/F541 clean (remaining 144: E501/D-docstring style, pre-existing). |
+| **17** | **C6** | `7780496` — get_llm_model_options() ran synchronous subprocess(curl/ollama) → async wrapper + asyncio.to_thread; event loop no longer blocked. Live LiteRT query tested (gemma4-e2b, gemma4-e4b). |
+| **18** | **C7** | `f224513` — nextcloud_notes.list_notes() fetched all notes in one request → page/itemsPerPage=100 pagination. Infinite-loop guard if the server ignores pagination params (id dedupe). |
+| **19** | **C3** | `0c3691e` — DB schema migrations from ad-hoc try/except → PRAGMA user_version sequential MIGRATIONS (images, name, summarized_until, embedding). Existing DB verified at user_version=4. |
+| **20** | **C2** | `807866c` — Optional data retention: CONVERSATION_RETENTION_DAYS / MEMORY_RETENTION_DAYS (default 0 = off). db.cleanup_expired_data() runs at startup. UI-adjustable + live sync via .env PATCH (no restart). |
+| **21** | **C1** | `d13bd82` — SQLite "database is locked": busy_timeout=10000 + _write_with_retry() (3 attempts, on migration/cleanup writes). Retry simulated and tested. |
+| **22** | **C4** | `b9e72d3` — [project.optional-dependencies].dev (pytest, pytest-asyncio, ruff, mypy). mypy caught a real bug: llm/chat.py msg2/message None narrowing (188→154 errors; remainder missing stubs/generics, baseline). |
 
-Durum: **Faz 3 (C1-C8) tamamlandı** — 22 madde işlendi, 27/27 test, smoke OK (/health 200, / 200, /chat/sessions 401). Sıradaki: Faz 4 (D1-D6, arayüz + README) + LiteRT systemd unit'i.
+Status: **Phase 3 (C1-C8) done** — 22 items processed, 27/27 tests, smoke OK (/health 200, / 200, /chat/sessions 401). Next: Phase 4 (D1-D6, UI + README) + LiteRT systemd unit.
 
-## Faz 4 (Arayüz + Dokümantasyon) — 13-08-2026
+## Phase 4 (UI + Documentation) — 2026-08-13
 
-| # | Değişiklik | Detay |
+| # | Change | Detail |
 |---|-----------|-------|
-| **23** | **D3** | `a0c10d3` — `static/manifest.json`'dan `orientation: portrait` kaldırıldı (PWA tablet/landscape'te dönebilsin). |
-| **24** | **D4** | `52765c3` — `relTime()`: SQLite UTC damgası `"YYYY-MM-DD HH:MM:SS"` boşluk ayraçlı; JS `new Date()` buna her tarayıcıda güvenilmiyor. `ts.replace(' ','T')` ile ISO-8601 normalizasyonu. Prompt'taki "Current date and time"a "(local time)" etiketi (DB UTC, prompt local — tutarsızlık işaretlendi). |
-| **25** | **D5** | `52765c3` içinde — Sistem prompt'unun "Under ~{LLM_NUM_CTX} tokens" kuralı yanıltıcıydı (LLM_NUM_CTX context penceresi, yanıt limiti değil) → genel "concise ol" ifadesiyle değiştirildi, import kaldırıldı. |
-| **26** | **D1** | `52765c3` içinde — Onay modali salt-okunurdu (`<div class="val">`); send_email alanları (to/subject/body + cc/bcc) artık düzenlenebilir input/textarea (`mInput()` + `data-p`, `confirmAction` değerleri params'a yazıyor). CSS `.val-input` eklendi. |
-| **27** | **D2** | `39dca60` — `send_email` cc/bcc desteklenmiyordu (imza vardı, kullanılmıyordu). `_send_email(to, subject, body, cc, bcc)` header + envelope (sendmail recipients'a virgülle ayrılmış tüm alıcılar), dispatcher params passthrough, tool tanımına cc/bcc. |
-| **28** | **D6** | `028d7de` — README: LiteRT import hedefi `gemma4:e2b`→`gemma4-e2b` (kolonlu ID ile piSynapse `-` normalize ettiğinden eşleşmiyordu); port `8000`→`8765` (gerçek hizmet + curl örnekleri); `MAIL_PROVIDER` varsayılanı `gmail`→`— (disabled)` (A9 ile boş=devre dışı). |
+| **23** | **D3** | `a0c10d3` — orientation: portrait removed from static/manifest.json (PWA can rotate on tablets/landscape). |
+| **24** | **D4** | `52765c3` — relTime(): SQLite UTC stamps are space-separated "YYYY-MM-DD HH:MM:SS"; JS new Date() can't be trusted across browsers. ISO-8601 normalization via ts.replace(' ','T'). "(local time)" label added to the prompt's "Current date and time" (DB UTC vs prompt local — mismatch flagged). |
+| **25** | **D5** | within `52765c3` — the system prompt's "Under ~{LLM_NUM_CTX} tokens" rule was misleading (LLM_NUM_CTX is the context window, not the reply limit) → replaced with generic conciseness wording, import removed. |
+| **26** | **D1** | within `52765c3` — confirmation modal was read-only (.val div); send_email fields (to/subject/body + cc/bcc) now editable inputs/textarea (mInput() + data-p, confirmAction writes values into params). CSS .val-input added. |
+| **27** | **D2** | `39dca60` — send_email didn't support cc/bcc (signature existed, unused). _send_email(to, subject, body, cc, bcc) builds header + envelope (sendmail recipients comma-separated), dispatcher passthrough, cc/bcc added to the tool definition. |
+| **28** | **D6** | `028d7de` — README: LiteRT import target gemma4:e2b→gemma4-e2b (piSynapse normalizes colons to dashes, colonized IDs never matched); port 8000→8765 (actual service + curl examples); MAIL_PROVIDER default gmail→— (disabled) (empty = disabled per A9). |
 
-Durum: **Faz 4 (D1-D6) tamamlandı** — toplam 28 madde, smoke OK. Sıradaki: LiteRT systemd unit'i (`litert-lm.service`) + pisynapse.service sıralama bağımlılığı.
+Status: **Phase 4 (D1-D6) done** — 28 items total, smoke OK. Next: LiteRT systemd unit (litert-lm.service) + pisynapse.service ordering dependency.
 
-## Kapanış — 13-08-2026 (LiteRT systemd + dev-rules)
+## Wrap-up — 2026-08-13 (LiteRT systemd + dev-rules)
 
-| # | Değişiklik | Detay |
+| # | Change | Detail |
 |---|-----------|-------|
-| **29** | **LiteRT systemd unit'i** | LiteRT manuel süreçti (PID 3482251, unit yok → reboot'ta ölüyordu). `/etc/systemd/system/litert.service` oluşturuldu (User=salih, `uv` python + `litert-lm serve --host 127.0.0.1 --port 9379`, Restart=on-failure). Manuel süreç durduruldu → `enable --now`. Port 9379 model sorgusuyla doğrulandı (gemma4-e2b, gemma4-e4b). |
-| **30** | **pisynapse.service sıralama** | `After=network.target ollama.service` → `After=network.target litert.service`. `pisynapse` de **disabled**'dı → `enable` edildi (reboot-safe). `systemd-analyze verify` temiz. |
-| **31** | **dev-rules güncellemesi** | `piSynapse-dev-rules.md`: git repo durumu, `llm/` ve `tools/` paket yapısı (llm.py/tools.py yerine), LiteRT primary + gemma4-e2b (kolonlu değil), pytest 27 test + ruff/mypy komutları, port 8765, MAIL_PROVIDER boş=devre dışı, XFF/rate-limit notu, yanlış "SSRF prevention" satırı düzeltildi, systemd birimleri. |
+| **29** | **LiteRT systemd unit** | LiteRT ran as a manual process (PID 3482251, no unit → died on reboot). Created /etc/systemd/system/litert.service (User=salih, uv python + litert-lm serve --host 127.0.0.1 --port 9379, Restart=on-failure). Manual process stopped → enable --now. Port 9379 verified with a model query (gemma4-e2b, gemma4-e4b). |
+| **30** | **pisynapse.service ordering** | After=network.target ollama.service → After=network.target litert.service. pisynapse itself was disabled → enabled (reboot-safe). systemd-analyze verify clean. |
+| **31** | **dev-rules update** | piSynapse-dev-rules.md: git repo status, llm/ and tools/ package layout (instead of llm.py/tools.py), LiteRT primary + gemma4-e2b (dash not colon), pytest 27 tests + ruff/mypy commands, port 8765, MAIL_PROVIDER empty=disabled, XFF/rate-limit note, false "SSRF prevention" line corrected, systemd units. |
 
-**Toplam denetim sonucu:** A1-A10 ✓, B1-B5 ✓ (B5=C5 atlandı, not), C1-C8 ✓, D1-D6 ✓ — **31 madde**, 20+ commit, 27/27 test, smoke OK. Tüm değişiklikler git'te (`main`).
+**Total audit outcome:** A1-A10 ✓, B1-B5 ✓ (B5=C5 skipped, noted), C1-C8 ✓, D1-D6 ✓ — **31 items**, 20+ commits, 27/27 tests, smoke OK. Everything committed to main.
 
-## Son Değişiklikler — 31-07-2026
+## Changes — 2026-07-31
 
-| # | Değişiklik | Detay |
+| # | Change | Detail |
 |---|-----------|-------|
-| **1** | **Port 8765** | `pisynapse.service` portu 8000 → 8765. Eski 8765 process'i (PID 314732, manuel) durduruldu, systemd servisi güncellendi. |
-| **2** | **install.py yeniden yazıldı** (453→654 satır) | LiteRT kurulumu: `uv tool install litert-lm` + `litert-lm import --from-huggingface-repo` ile model indirme (~2.4 GB) + `litert-lm serve --port 9379` başlatma + 60sn bekleme. Ollama: `curl install.sh | sh` + `ollama pull`. Model registry `_LITERT_MODEL_REGISTRY` dict'inde tanımlı. |
-| **3** | **systemd çift servis** | `litert.service` (LiteRT server), `pisynapse.service` (After=litert.service varsa). `_create_litert_service()` ile kurulum. |
-| **4** | **release.sh** | `rm -rf + bash release.sh` ile sıfırdan, kalıntısız release (912K, 49 dosya). exclude'lar: venv, __pycache__, *.db, models/, .env, .git, cache'ler. |
-| **5** | **INTENT_LLM_FALLBACK** | `config.py` → `SETTINGS_SCHEMA`'da select kutusu. Varsayılan `off` (embedding+keywords yeterli). `on` olursa LLM fallback çağrısı (~+15s). `RESTART_REQUIRED_KEYS` + `sync_config()` string listesinde. |
-| **6** | **get_llm_model_options() cache** | `_MODEL_OPTIONS_CACHE` (30s TTL, backend bazlı). LiteRT `/v1/models` ve `ollama list` tekrar çağrılmaz. |
-| **7** | **Tüm dosyalara yorum satırları** | Her `.py` dosyasına kısa docstring + section/inline yorumlar eklendi. `embedding.py`, `llm/utils.py`, `llm/stream.py`, `llm/intent.py`, `llm/payload.py`, `llm/chat.py`, `tools/__init__.py`, `routers/config.py`. |
-| **8** | **Avahi fix** | `/etc/avahi/avahi-daemon.conf` → `allow-interfaces=eth0`. `.local` çözümlemesi Docker bridge (`<docker-bridge-ip>`) yerine gerçek IP (`<lan-ip>`) döndürüyor. |
-| **9** | **TTFT regresyonu — gürültü** | Ardışık 3 ölçüm: 14.5s / 13.3s / 13.6s. Önceki 18-21s değerleri LiteRT soğukken alınmış. Embedding+keywords intent ~50-100ms, gerisi LiteRT warmup. |
-| **10** | **README baştan yazıldı** | Vision bölümü kaldırıldı. Hardware Requirements, Privacy & External Services tablosu, dual email (Proton/Gmail) kılavuzu eklendi. 52 env değişkeni senkronize edildi. |
-| **11** | **install.py self-contained .env** | `step_env()` artık `example.env`'e ihtiyaç duymaz — tüm 52 değişkeni sıfırdan oluşturur. Email kurulumunda Proton/Gmail/none seçeneği sunar. |
-| **12** | **example.env yenilendi** | Eksik 20+ değişken eklendi (LLM_NUM_CTX, SUMMARY_*, INTENT_LLM_FALLBACK, MEDIA_MAX_MB, etc.). config.py ile %100 uyumlu. |
-| **13** | **GitHub push — v2 release** | `piSynapse-release` → `git init + add + commit + remote + pull --allow-unrelated-histories -X ours + push`. Eski 42 commit korundu, üzerine merge ile yeni kod eklendi. Toplam commit: 43 + merge. |
+| **1** | **Port 8765** | pisynapse.service port 8000 → 8765. Old 8765 process (PID 314732, manual) stopped, systemd unit updated. |
+| **2** | **install.py rewritten** (453→654 lines) | LiteRT install: uv tool install litert-lm + litert-lm import --from-huggingface-repo downloads the model (~2.4 GB) + litert-lm serve --port 9379 startup + 60s wait. Ollama: curl install.sh \| sh + ollama pull. Model registry defined in _LITERT_MODEL_REGISTRY. |
+| **3** | **systemd dual services** | litert.service (LiteRT server), pisynapse.service (After=litert.service when present). Installed via _create_litert_service(). |
+| **4** | **release.sh** | rm -rf + bash release.sh gives a residue-free release build (912K, 49 files). Excludes: venv, __pycache__, *.db, models/, .env, .git, caches. |
+| **5** | **INTENT_LLM_FALLBACK** | config.py → SETTINGS_SCHEMA select box. Default off (embeddings+keywords suffice). on adds an LLM fallback call (~+15s). Listed in RESTART_REQUIRED_KEYS + sync_config() strings. |
+| **6** | **get_llm_model_options() cache** | _MODEL_OPTIONS_CACHE (30s TTL, per backend). LiteRT /v1/models and ollama list aren't re-called. |
+| **7** | **Comments across all files** | Short docstring + section/inline comments added to every .py. embedding.py, llm/utils.py, llm/stream.py, llm/intent.py, llm/payload.py, llm/chat.py, tools/__init__.py, routers/config.py. |
+| **8** | **Avahi fix** | /etc/avahi/avahi-daemon.conf → allow-interfaces=eth0. .local resolution returns the real IP instead of the docker bridge. |
+| **9** | **TTFT regression — noise** | Three consecutive measurements: 14.5s / 13.3s / 13.6s. Earlier 18-21s figures were taken with LiteRT cold. Embedding+keywords intent ~50-100ms, the rest is LiteRT warmup. |
+| **10** | **README rewritten** | Vision section dropped. Hardware Requirements, Privacy & External Services table, dual email (Proton/Gmail) guide added. 52 env vars synchronized. |
+| **11** | **install.py self-contained .env** | step_env() no longer needs example.env — creates all 52 vars from scratch. Email setup offers Proton/Gmail/none. |
+| **12** | **example.env refreshed** | 20+ missing vars added (LLM_NUM_CTX, SUMMARY_*, INTENT_LLM_FALLBACK, MEDIA_MAX_MB, etc.). 100% aligned with config.py. |
+| **13** | **GitHub push — v2 release** | piSynapse-release → git init + add + commit + remote + pull --allow-unrelated-histories -X ours + push. Old 42 commits preserved, new code merged on top. Total: 43 + merge. |
 
-## ZORUNLU — HER SESSION/COMPACTION SONRASI ÖNCE BUNU OKU
+## Tool improvements — July 30, 2026
 
-- Proje ARTIK git repo (13 Ağustos 2026). Değişiklikler tek tek commit'lenir
-  (kural: her madde tek commit + py_compile + pytest). Riskli mimari değişiklik
-  öncesi yedek: `backups/piSynapse-*.tar.gz` (gitignore'da). Yedek alıp
-  almadığını KULLANICIYA sor, kendiliğinden "yedek aldım" diye varsayma.
-- Kullanıcının onayı olmadan mimari değişiklik yapma (yeni klasör/
-  paket ekleme, Docker/WebSocket gibi yeni altyapı ekleme, framework
-  değiştirme). Kapsamı kendi inisiyatifinle genişletme.
-- "Kullanıcı onayladı / kabul etti" diye BİR ŞEY YAZMADAN önce, o
-  onayın bu konuşmada gerçekten, açıkça verildiğinden emin ol. Emin
-  değilsen "kullanıcı onaylamadı, ben varsaydım" diye dürüstçe yaz,
-  asla olmayan bir onayı var gibi gösterme.
-- services/ katmanı KALDIRILDI (30 Temmuz 2026) — db.py, llm/,
-  tools/, embedding.py gibi eski modüller tüm işi yapıyor. Yeniden
-  bir DI/service katmanı önerme, kullanıcı özellikle istemedikçe.
-- Docker, WebSocket (/chat/ws) kaldırıldı — frontend sadece SSE
-  (/chat/stream) kullanıyor, gelecekte tekrar eklenmesin.
-- Ollama servisi durduruldu, devre dışı bırakıldı — LLM_BACKEND=litert
-  aktif. Ollama'yı tekrar başlatma/bağımlılık ekleme, kullanıcı
-  özellikle istemedikçe.
-- Test kapsamı düşük (~%7) — calendar_ops.py, mail.py, llm/, tools/
-  dispatcher hiç test edilmiyor. Bu bilinen bir eksik, ayrı bir
-  oturumda ele alınacak, "prod kalitesinde" iddiası şu an bu yüzden
-  tam doğru değil.
-- calendar_ops.py'de hata yönetimi eksik (try/except yok) — bilinen
-  bir sorun, henüz düzeltilmedi.
+> Improved the model's tool usage and content ownership. Main goal: the model calls tools without hesitation, keeps email/note/task data in context, and never asks the user for IDs.
 
-## Vision
+### ✅ Tool definitions — precision and directness
 
-Tek makineden dağıtık kişisel asistana evrim.
+| Change | Detail |
+|---|---|
+| **"Only use when the user explicitly asks" removed** | From all email/notes/tasks tools — it was the source of hesitation |
+| **Imperative descriptions** | "Call this when...", "Use this when..." format — the model knows exactly what to do |
+| **list_emails** | "Returns a list you can use to answer questions" — the model knows it can use the data |
+| **search_emails** | "Searches subject, sender, AND body" — scope is explicit |
+| **read_email** | "Use this when the user asks for DETAILS of a specific email" — clear usage condition |
 
-## Three Layers
+### ✅ System prompt — 10 rules
+
+| # | Rule | Goal |
+|---|---|---|
+| 1 | Call the tool immediately, don't narrate | Break hesitation |
+| 2 | Call with sensible defaults, don't ask "how many" | Proactivity |
+| 3 | Widen the search if results are sparse | Proactivity |
+| 4 | Answer follow-ups from listed data | Never ask the user for IDs/subjects |
+| 5 | Never say "I can't" — the tool exists | Break hesitation |
+| 6 | save_memory only for durable facts | Prevent memory pollution |
+| 7 | Relative dates → get_datetime | Date correctness |
+| 8 | ISO 8601 format | Standardization |
+| 9 | Short answers | Context economy |
+| 10 | Natural, warm tone | User experience |
+
+### ✅ Email content richness
+
+| Change | File |
+|---|---|
+| **Body preview 200→300 chars** | mail.py:_list_emails() |
+| **Cache preview 100→200 chars** | prompt.py:cache_email_context() |
+| **Preview line in email context** | prompt.py:build_context() — model can answer without read_email |
+| **search_emails searches bodies too** | mail.py:_search_emails() IMAP TEXT key added |
+| **search_emails caches results** | tools/dispatcher.py:search_emails → cache_email_context() |
+| **search_emails output matches list_emails format** | ID + Preview + From/Subject in the same layout |
+
+### ✅ Calendar/Notes/Tasks previews
+
+| Tool | New feature | File |
+|---|---|---|
+| **list_calendar_events** | Description preview ≤100 chars on a second line | calendar_ops.py:85 |
+| **list_notes** | 80-char content preview per note | nextcloud_notes.py:149 |
+| **list_tasks** | 120-char description preview per task | nextcloud_tasks.py:185-186 |
+
+### ✅ Email ID tracking — critical fix
+
+**Problem:** the model called list_emails, got results, then asked the user
+"which ID?" anyway.
+
+**Solution:**
+1. search_emails finds the content the user refers to — the model calls
+   search_emails(query="Netdata") instead of asking
+2. search_emails results are cached too (cache_email_context) — Recent Emails
+   Context stays fresh
+3. System Prompt Rule 4: "Do NOT ask the user 'which one' or 'what ID' — just
+   pick the right email from the data you already have"
+4. System Prompt CRITICAL section: "If you don't have the data anymore, call
+   search_emails — don't ask the user for an ID"
+
+---
+
+## Codebase improvements — July 29, 2026
+
+> These changes raised piSynapse's code quality, security and maintainability.
+
+### ✅ Infrastructure
+
+| Change | Description |
+|---|---|
+| **pyproject.toml** | Project config file added — pytest, mypy, ruff settings |
+| ~~Alembic migrations~~ | ~~alembic/ dir + initial migration~~ — REMOVED (July 30, 2026). Schema lives directly in db.py. |
+| ~~Dockerfile + docker-compose.yml~~ | ~~Multi-stage Docker build~~ — REMOVED (July 30, 2026). Unused, container never ran. |
+
+### ✅ Architecture
+
+| Change | Description |
+|---|---|
+| ~~services/ layer + DI helpers~~ | ~~DatabaseService, LLMService, EmbeddingService + main.py DI helpers~~ — REMOVED (July 30, 2026). No router ever bound to them; legacy modules did the work. |
+| **Lazy loading** | FastEmbed (~470MB) loads only when embeddings are needed (no eager startup load) |
+
+### ✅ Module structure
+
+| File | New layout |
+|---|---|
+| llm.py → llm/ | payload.py, chat.py, stream.py, intent.py, utils.py |
+| tools.py → tools/ | definitions.py, dispatcher.py |
+| routers/chat.py | Chat, session and memory endpoints only |
+| routers/media.py (new) | Transcription (Whisper/Gemma4) + TTS (Piper) endpoints |
+
+### ✅ Security
+
+| Change | Description |
+|---|---|
+| **ProtonMail SSL** | Bypass on localhost, enforced certificate verification remotely (mail.py) |
+| **X-Forwarded-For** | Rate limiter sees the correct client IP behind proxies |
+
+### ✅ Type safety
+
+| Change | Description |
+|---|---|
+| **_safe_int()** | Raises ValueError instead of returning an int\|str union — callers catch with except ValueError |
+| **retry decorator** | utils.py @retry now applied to IMAP/SMTP operations |
+
+### ✅ Streaming
+
+| Change | Description |
+|---|---|
+| **LiteRT SSE streaming** | Real SSE streaming for LiteRT-LM (previously a non-streaming fallback) |
+| **Ollama + LiteRT shared stream** | One chat_with_ollama_stream() drives both backends over SSE |
+
+### ✅ WebSocket
+
+| Change | Description |
+|---|---|
+| **/chat/ws** | WebSocket chat endpoint — session_id/user_id as query params, JSON message exchange |
+
+### ✅ Testing
+
+| Change | Description |
+|---|---|
+| **pytest** | 20 tests (test_utils.py, test_tools.py) — utilities, tool definitions, _safe_int, arg parser |
+
+---
+
+## Reference
+
+### Vision
+
+Evolve from a single machine to a distributed personal assistant.
+
+### Three Layers
 
 | Layer | State | Description |
 |-------|-------|-------------|
-| **1. Current** | ✅ Live | Single server + web UI, her şey local |
-| **2. Queue / Sync** | 🔜 Next | Phone stores plain-text commands offline, `/sync` endpoint on reconnect |
+| **1. Current** | ✅ Live | Single server + web UI, everything local |
+| **2. Queue / Sync** | 🔜 Next | Phone stores plain-text commands offline, /sync endpoint on reconnect |
 | **3. Distributed** | 🔭 Far | Every device contributes at its capacity, LiteRT on mobile, optional sync-only server |
 
-## Key Decisions
+### Key Decisions
 
 - **Device discovery:** Manual (login / domain / VPN) — no auto-discovery
 - **Conflict resolution:** Merge semantics — last-write-wins is not acceptable
 - **Queue format:** `{ "command": str, "timestamp": str, "session_id": str }` — JSONL locally
-- **Offline tool policy:** `OFFLINE_SAFE_TOOLS` set in `tools.py` — low-risk commands run offline, `CONFIRM_TOOLS` are queued only
-- **Mobile model:** LiteRT-LM (eski TFLite üzerine LLM orkestrasyon katmanı) — not mature yet, tracking
+- **Offline tool policy:** OFFLINE_SAFE_TOOLS in tools.py — low-risk commands run offline, CONFIRM_TOOLS queue only
+- **Mobile model:** LiteRT-LM (LLM orchestration over the former TFLite) — not mature yet, tracking
 - **Sync transport:** Tailscale-like P2P or user-defined relay
-- **Sync-only server:** Optional — for users who want cloud sync without LLM on server
+- **Sync-only server:** Optional — for users who want cloud sync without an LLM on the server
 
-## Open Questions
+### Open Questions
 
 - Queue persistence format (JSONL? SQLite?)
-- `/sync` endpoint design — batch vs streaming
+- /sync endpoint design — batch vs streaming
 - Conflict resolution algorithm for calendar/alarm overlap scenarios
 - LiteRT integration timeline
 
 ---
 
-## LiteRT-LM Detay
+### LiteRT-LM Detail
 
-> 13 Temmuz 2026 — mobil offline model araştırması için teknoloji notu.
+> July 13, 2026 — technology note for the mobile offline-model research.
 
-### Nedir
+#### What it is
 
-LiteRT-LM, LiteRT (eski TFLite) üzerine kurulu, LLM'lere özgü karmaşıklıkları (KV-cache yönetimi, session state, multi-turn context, prompt caching) yöneten bir orkestrasyon katmanı. Gemini Nano'nun Chrome ve Pixel Watch'taki dağıtımını güçlendiren üretim altyapısı.
+LiteRT-LM is an orchestration layer built on LiteRT (formerly TFLite) handling LLM-specific complexities (KV-cache management, session state, multi-turn context, prompt caching). It powers Gemini Nano's distribution in Chrome and Pixel Watch.
 
-### Cross-Platform
+#### Cross-platform
 
-Android, iOS (Swift + Metal), Web (JS + WebGPU), Desktop (Linux/macOS/Windows), Raspberry Pi dahil IoT. Erken aşamada topluluk destekli Flutter binding.
+Android, iOS (Swift + Metal), Web (JS + WebGPU), Desktop (Linux/macOS/Windows), IoT including Raspberry Pi. Early community-supported Flutter binding.
 
-### Tool-Use / Function Calling
+#### Tool-use / function calling
 
-Native constrained decoding ile tool-call doğruluğu artırılıyor. Mevcut `run_tool()` akışına benzer: model duraklatıp yapılandırılmış tool-call isteği döndürüyor, sonuç alınınca devam ediyor.
+Native constrained decoding improves tool-call accuracy. Similar to the existing run_tool() flow: the model pauses, returns a structured tool-call request, resumes once the result arrives.
 
-### Entegrasyon
+#### Integration
 
-- CLI + Python API (`uv`/`pip`)
-- OpenAI-uyumlu yerel sunucu modu → `llm.py`'de sadece base URL değişir
-- Android: `com.google.ai.edge.litertlm:litertlm-android` (Gradle, Kotlin API). Engine sınıfı, hatalar `LiteRtLmJniException` / `IllegalStateException`
+- CLI + Python API (uv/pip)
+- OpenAI-compatible local server mode → only the base URL changes in llm.py
+- Android: com.google.ai.edge.litertlm:litertlm-android (Gradle, Kotlin API).
+  Engine class, errors LiteRtLmJniException / IllegalStateException
 
-### Model Desteği
+#### Model support
 
 Gemma, Llama, Phi-4, Qwen, Gemma4 12B
 
-### Pi 5'te Beklenti (TEST EDİLDİ — 29 Temmuz 2026)
+#### Expectations on the Pi-class target (TESTED — July 29, 2026)
 
-CPU-only ~2-5 token/sn (E2B). Ollama+gemma4:e2b ile token/sn, bellek, tool-call doğruluğu kıyaslandı.
+CPU-only ~2-5 tok/s (E2B). Compared tokens/s, memory and tool-call accuracy
+against Ollama+gemma4:e2b.
 
-### Karşılaştırma Sonuçları (Raspberry Pi 5, 8 GB RAM) — 29 Tem 2026
+#### Benchmark results (8 GB RAM board) — Jul 29, 2026
 
-**Metodoloji:** Aynı system prompt ve tool şeması kullanıldı (get_current_time + create_task, 3-turn multi-step).
+**Methodology:** identical system prompt and tool schema (get_current_time +
+create_task, 3-turn multi-step).
 
-**Ollama testi:** Temiz başlangıç: `swapoff -a && swapon -a && echo 3 > /proc/sys/vm/drop_caches` sonrası. Hiçbir runtime process'i çalışmıyordu. 3 kez çalıştırılmak istendi ama 1. run tamamlandı, 2. run'un ilk turn'ü 129.6s'de timeout'a takıldı, 3. run başlayamadı.
+**Ollama run:** clean start after `swapoff -a && swapon -a && echo 3 >
+/proc/sys/vm/drop_caches`. No runtime processes were running. Three runs
+intended, but run 1 completed, run 2's first turn hit a 129.6s timeout, run 3
+never started.
 
-**LiteRT-LM testi:** Ollama testinin hemen ardından yapıldı. Ollama process'leri `killall -9` ile öldürüldü ama **swap yeniden sıfırlanmadı** (free -h ~1.3 GiB swap used gösteriyordu). Bu nedenle LiteRT-LM test ortamı %100 temiz değildi — ancak LiteRT-LM swap kullanmadığı için sonuçları etkilemedi. RAM kıyaslamasında Ollama'nın swap kullanımı dramatik farkın ana kaynağı.
+**LiteRT-LM run:** immediately after the Ollama test. Ollama processes killed
+with killall -9 but **swap was not reset** (free -h showed ~1.3 GiB swap used).
+The LiteRT-LM environment therefore wasn't 100% pristine — however LiteRT-LM
+doesn't use swap, so results were unaffected. Ollama's swap usage is the main
+driver of the dramatic RAM difference.
 
-**Notlar:**
-- Ollama API'si `tool_calls.function.arguments`'ı **dict** döndürür; LiteRT-LM ise **string** döndürür. İlk test script'inde bu fark TypeError'a yol açmıştı — test tekrarı değil, API farkıydı.
-- Ollama'nın 150s ölçümü model loading içeriyor; LiteRT-LM'in 17s'si de öyle.
+**Notes:**
+- Ollama's API returns tool_calls.function.arguments as a **dict**; LiteRT-LM
+  returns a **string**. The first test script hit a TypeError over this — an
+  API difference, not test variance.
+- Ollama's 150s figure includes model loading; LiteRT-LM's 17s likewise.
 
-#### Cold start (model yükleme dahil ilk inference)
+##### Cold start (first inference including model load)
 
-| Ölçüt | LiteRT-LM (gemma4-e2b) | Ollama (gemma4:e2b) |
+| Metric | LiteRT-LM (gemma4-e2b) | Ollama (gemma4:e2b) |
 |-------|------------------------|---------------------|
 | **Turn 1** (load + get_current_time) | **16.9 s** | 137.7 s |
 | **Turn 2** (create_task) | **16.7 s** | 70.7 s |
 | **Turn 3** (final answer) | **14.5 s** | 197.9 s |
-| **Toplam** | **48.1 s** | 406.3 s |
-| Warm simple query (3-req avg) | **2.4 s** | (ölçülemedi — swap thrashing) |
+| **Total** | **48.1 s** | 406.3 s |
+| Warm simple query (3-req avg) | **2.4 s** | (unmeasurable — swap thrashing) |
 
-#### Warm runs (model yüklü, 2. ve 3. denemeler)
+##### Warm runs (model loaded, 2nd/3rd attempts)
 
-| Ölçüt | LiteRT-LM (gemma4-e2b) | Ollama (gemma4:e2b) |
+| Metric | LiteRT-LM (gemma4-e2b) | Ollama (gemma4:e2b) |
 |-------|------------------------|---------------------|
-| Run 2 total | **44.7 s** | (test 129.6s'de timeout) |
+| Run 2 total | **44.7 s** | (timed out at 129.6s) |
 | Run 3 total | **43.6 s** | — |
-| n | 3 (tam) | 1 (tam) + 1 (yarım) |
-| Not | Model yüklü, stabil | Her turn ~100-140s, 2. run timeout |
-| Warm latency | ~2.4s (simple) | Ölçülemedi — swap thrashing |
+| n | 3 (complete) | 1 (complete) + 1 (half) |
+| Note | Model loaded, stable | ~100-140s per turn, run 2 timed out |
+| Warm latency | ~2.4s (simple) | Unmeasurable — swap thrashing |
 
-#### Memory (model yüklüyken)
+##### Memory (model loaded)
 
-| Ölçüt | LiteRT-LM (gemma4-e2b) | Ollama (gemma4:e2b) |
+| Metric | LiteRT-LM (gemma4-e2b) | Ollama (gemma4:e2b) |
 |-------|------------------------|---------------------|
-| **RAM kullanımı** | **+1.7 GB** (3.7 GB total) | +5.4 GB (7.5 GB total) |
-| **Swap kullanımı** | 0 (sadece zram) | 6.5 GB (zram + swapfile) |
-| **Model loading** | Lazy (ilk inference'da) | Eager (ilk inference'da) |
+| **RAM usage** | **+1.7 GB** (3.7 GB total) | +5.4 GB (7.5 GB total) |
+| **Swap usage** | 0 (zram only) | 6.5 GB (zram + swapfile) |
+| **Model loading** | Lazy (at first inference) | Eager (at first inference) |
 
-#### Özet
+##### Summary
 
-- **Inference hızı:** LiteRT-LM ~8× daha hızlı (cold), ~5-8× (warm)
-- **RAM verimliliği:** LiteRT-LM ~3× daha az RAM, swap kullanmıyor
-- **Tool call formatı:** LiteRT-LM OpenAI string (`"{\"due\":...}"`) vs Ollama native dict (`{"due":...}`) — ikisi de doğru, sadece parse farkı
-- **Multi-step doğruluk:** İkisi de doğru prompt'la çalışıyor
+- **Inference speed:** LiteRT-LM ~8× faster (cold), ~5-8× (warm)
+- **RAM efficiency:** LiteRT-LM ~3× less RAM, no swap
+- **Tool-call format:** LiteRT-LM OpenAI string (`"{\"due\":...}"`) vs Ollama
+  native dict (`{"due":...}`) — both valid, purely a parsing difference
+- **Multi-step accuracy:** both correct with a proper prompt
 
-**Sonuç:** LiteRT-LM Pi 5'te açık ara daha iyi. Geçişe değer.
+**Verdict:** LiteRT-LM is decisively better on this hardware. Worth switching.
 
-### E2B vs E4B Tool-Call Doğruluğu (LiteRT-LM)
+#### E2B vs E4B tool-call accuracy (LiteRT-LM)
 
-| Mod | E2B | E4B |
+| Mode | E2B | E4B |
 |-----|-----|-----|
-| `litert-lm run` (preset/constrained decoding) | ✅ 5/5 PASS (~30s) | ✅ 5/5 PASS (~30s) |
-| `litert-lm serve` (OpenAI API, doğru prompt) | ✅ multi-step (~15s/turn) | ✅ multi-step (~35s/turn) |
-| RAM (serve modu, model yüklü) | ~3.2 GB | ~4.9 GB |
+| litert-lm run (preset/constrained decoding) | ✅ 5/5 PASS (~30s) | ✅ 5/5 PASS (~30s) |
+| litert-lm serve (OpenAI API, proper prompt) | ✅ multi-step (~15s/turn) | ✅ multi-step (~35s/turn) |
+| RAM (serve mode, model loaded) | ~3.2 GB | ~4.9 GB |
 | Warm latency (simple) | ~2.4s | ~5.9s |
 
-**Not:** Daha önce E4B server'ın `<|tool_call|>` döndürdüğü rapor edilmişti. Bunun sebebi system prompt'ta `get_current_time` talimatının olmamasıydı — doğru prompt'la E4B server da düzgün JSON `tool_calls` döndürüyor.
+**Note:** it was previously reported that the E4B server returned
+`<|tool_call|>` markup. The cause was get_current_time instructions missing
+from the system prompt — with a proper prompt the E4B server emits clean JSON
+tool_calls too.
 
 ---
 
-## Bilinen Sınırlamalar
+### Known Limitations
 
-### LAN HTTPS / Mikrofon Erişimi
+#### LAN HTTPS / microphone access
 
-**Sorun:** LAN üzerinden (`http://<vpn-ip>:8765`) erişildiğinde tarayıcı `getUserMedia` API'sini bloke eder çünkü HTTP + non-localhost origin "güvenli olmayan bağlam" (insecure context) sayılır. Sonuç: sesli konuşma (mikrofon) çalışmaz. `localhost` veya `127.0.0.1`'den erişimde sorun yok.
+**Problem:** accessed over LAN (`http://<vpn-ip>:8765`) the browser blocks the
+getUserMedia API because HTTP + non-localhost origin counts as an "insecure
+context". Result: voice input (microphone) doesn't work. Access from localhost
+or 127.0.0.1 is unaffected.
 
-**Çözüm A — VPS üzerinden NPM proxy (önerilen):**
-Mevcut Nginx Proxy Manager'a (VPS'te, Docker `npm-app-1`) yeni bir proxy host eklenir:
+**Option A — NPM proxy via VPS (recommended):** add a proxy host on the
+existing Nginx Proxy Manager (VPS-side):
 - Domain: `<your-domain>`
-- Forward: `<vpn-ip>:8765` (Pi5'in VPN IP'si)
-- SSL: Mevcut Let's Encrypt sertifikası (`*.<your-domain>` wildcard veya yeni cert)
-- Telefon `https://<your-domain>` ile erişir → VPS 443 → AWG tunnel → Pi5:8765
-- **Artı:** Sıfır ek yapılandırma, mevcut cert geçerli, her yerden erişim
-- **Eksi:** Tüm trafik VPS üzerinden geçer (ek gecikme ~5-10ms AWG üzerinden)
-- **Kurulum:** NPM admin panel → Add Proxy Host → domain + forward IP/port → SSL sekmesinden cert seç → Save
+- Forward: `<vpn-ip>:8765`
+- SSL: existing Let's Encrypt cert (`*.<your-domain>` wildcard or new cert)
+- Phone reaches https://<your-domain> → VPS 443 → tunnel → box:8765
+- **Pro:** zero extra configuration, existing cert valid, access everywhere
+- **Con:** all traffic crosses the VPS (extra ~5-10ms latency)
+- **Setup:** NPM admin panel → Add Proxy Host → domain + forward IP/port →
+  pick cert in the SSL tab → Save
 
-**Çözüm B — Pi5'te Caddy ile otomatik HTTPS:**
-- Pi5'e Caddy kurulur (`apt install caddy`)
-- DNS provider API (Cloudflare, etc.) ile DNS-01 challenge kullanılır
-- `<your-domain>` DNS kaydı Pi5 LAN IP'sini (veya AWG IP'sini) gösterecek şekilde ayarlanır
-- **Artı:** Tam otomatik Let's Encrypt, yerel HTTPS
-- **Eksi:** DNS zone'da A kaydı LAN IP'sini göstermeli (public erişim yok, sadece LAN/WG için)
-- Cloudflare proxied mode (orange cloud) ile kullanılamaz — DNS-only (gri cloud) gerekir
+**Option B — Caddy automatic HTTPS on the box:**
+- Install Caddy (apt install caddy)
+- Use DNS-01 challenge with a DNS provider API (Cloudflare, etc.)
+- Point `<your-domain>` DNS at the box's LAN IP (or VPN IP)
+- **Pro:** fully automatic Let's Encrypt, local HTTPS
+- **Con:** DNS zone A record must show the LAN IP (public access unintended,
+  LAN/VPN only)
+- Cannot run behind Cloudflare proxied mode (orange cloud) — DNS-only (grey
+  cloud) required
 
-**Çözüm C — Self-signed cert + mkcert (tam yerel):**
-- Pi5'te `mkcert` kurulur (`apt install mkcert` veya `go install filippo.io/mkcert`)
-- Yerel CA oluşturulur (`mkcert -install`)
-- `mkcert <vpn-ip> <lan-ip> localhost` ile cert imzalanır
-- Telefona/laptop'a yerel CA'nın public key'i yüklenir (iOS: profile, Android: CA cert)
-- Caddy/nginx ile cert+key kullanılarak Pi5'te HTTPS sunulur
-- **Artı:** Tamamen LAN'a bağımlı, internet gerekmez
-- **Eksi:** Her cihaza CA trust'ı manuel eklenmeli
+**Option C — Self-signed cert + mkcert (fully local):**
+- Install mkcert on the box (apt install mkcert or go install filippo.io/mkcert)
+- Create a local CA (mkcert -install)
+- Sign with mkcert <vpn-ip> <lan-ip> localhost
+- Trust the CA's public key on phone/laptop (iOS profile / Android CA cert)
+- Serve HTTPS via Caddy/nginx using cert+key
+- **Pro:** fully LAN-dependent, no internet needed
+- **Con:** CA trust must be added manually per device
 
-**Çözüm D — nginx-proxy-manager (NPM) Pi5'te:**
-- Pi5'e Docker + NPM kurulur
-- NPM üzerinden self-signed cert veya DNS-01 Let's Encrypt ile HTTPS sunulur
-- Artı: Mevcut NPM bilgisi kullanılır, web UI ile yönetim
-- Eksi: Pi5'te ek Docker container, NPM'nin kendisi 80/443 ister
+**Option D — nginx-proxy-manager (NPM) on the box:**
+- Install Docker + NPM
+- Serve HTTPS via self-signed cert or DNS-01 Let's Encrypt through NPM
+- Pro: existing NPM knowledge reused, web UI management
+- Con: extra container on the box, NPM wants 80/443
 
-**Mevcut yaklaşım (index.html'deki `isSecureContext` kontrolü):**
-LAN HTTP'de "Mikrofon HTTPS gerektirir" hatası gösterilir. Bu bir çözüm değil, sadece kullanıcıyı bilgilendirir. Gerçek çözüm için yukarıdaki seçeneklerden biri uygulanmalı.
-
----
-
-## Kod Tabanı İyileştirmeleri — 29 Temmuz 2026
-
-> Aşağıdaki değişiklikler piSynapse'in kod kalitesi, güvenlik ve bakım kolaylığını artırmak için yapıldı.
-
-### ✅ Altyapı
-
-| Değişiklik | Açıklama |
-|---|---|
-| **pyproject.toml** | Proje yapılandırma dosyası eklendi — pytest, mypy, ruff ayarları |
-| ~~Alembic migrations~~ | ~~`alembic/` dizini + ilk migration~~ — KALDIRILDI (30 Temmuz 2026). Veritabanı schema'sı doğrudan `db.py` içinde. |
-| ~~Dockerfile + docker-compose.yml~~ | ~~Multi-stage Docker build~~ — KALDIRILDI (30 Temmuz 2026). Kullanılmıyordu, container çalışmıyordu. |
-
-### ✅ Mimari
-
-| Değişiklik | Açıklama |
-|---|---|
-| ~~services/ katmanı + DI helpers~~ | ~~`DatabaseService`, `LLMService`, `EmbeddingService` + `main.py` DI helpers~~ — KALDIRILDI (30 Temmuz 2026). Hiçbir router bağlanmamıştı, eski modüller tüm işi yapıyordu. |
-| **Lazy loading** | FastEmbed (~470MB) artık sadece embedding gerektiğinde yüklenir (startup'ta eager load yok) |
-
-### ✅ Modül Yapısı
-
-| Dosya | Yeni Yapı |
-|---|---|
-| `llm.py` → `llm/` | `payload.py`, `chat.py`, `stream.py`, `intent.py`, `utils.py` |
-| `tools.py` → `tools/` | `definitions.py`, `dispatcher.py` |
-| `routers/chat.py` | Sadece chat, session, memory endpoint'leri |
-| `routers/media.py` (yeni) | Transcription (Whisper/Gemma4) + TTS (Piper) endpoint'leri |
-
-### ✅ Güvenlik
-
-| Değişiklik | Açıklama |
-|---|---|
-| **ProtonMail SSL** | Localhost'ta bypass, remote'ta sertifika doğrulaması zorunlu (`mail.py`) |
-| **X-Forwarded-For** | Rate limiter proxy arkasında da doğru client IP'sini görür |
-
-### ✅ Tip Güvenliği
-
-| Değişiklik | Açıklama |
-|---|---|
-| **`_safe_int()`** | Artık `int \| str` union döndürmek yerine `ValueError` fırlatır — tüm çağıranlar `except ValueError` ile yakalar |
-| **retry decorator** | `utils.py`'deki `@retry` dekoratörü IMAP/SMTP işlemlerinde kullanılmaya başlandı |
-
-### ✅ Streaming
-
-| Değişiklik | Açıklama |
-|---|---|
-| **LiteRT SSE streaming** | LiteRT-LM için gerçek SSE streaming eklendi (önceden non-streaming fallback vardı) |
-| **Ollama + LiteRT ortak stream** | Tek `chat_with_ollama_stream()` fonksiyonu iki backend'i de SSE ile çalıştırır |
-
-### ✅ WebSocket
-
-| Değişiklik | Açıklama |
-|---|---|
-| **`/chat/ws`** | WebSocket chat endpoint'i — session_id ve user_id query param ile, JSON mesaj alışverişi |
-
-### ✅ Test
-
-| Değişiklik | Açıklama |
-|---|---|
-| **pytest** | 20 test (`test_utils.py`, `test_tools.py`) — utility fonksiyonları, tool definitions, `_safe_int`, arg parser |
+**Current approach (isSecureContext check in index.html):** shows a
+"Microphone requires HTTPS" error on LAN HTTP. Not a solution, just informs the
+user. One of the options above should be implemented for a real fix.
 
 ---
 
-## Tool İyileştirmeleri — 30 Temmuz 2026
+### Future Plan
 
-> Modelin tool kullanma yeteneği ve içerik hakimiyeti geliştirildi. Ana hedef: modelin tereddüt etmeden tool çağırması, email/note/task verilerini bağlamda tutması ve kullanıcıya ID sormaması.
-
-### ✅ Tool Definitions — Kesinlik ve Doğrudanlık
-
-| Değişiklik | Detay |
+| Priority | What |
 |---|---|
-| **`"Only use when the user explicitly asks"` kaldırıldı** | Tüm email/notes/tasks tool'larından — modelin tereddüt sebebiydi |
-| **Imperative description'lar** | "Call this when...", "Use this when..." formatı — model ne yapacağını net bilir |
-| **list_emails** | "Returns a list you can use to answer questions" — model veriyi kullanabileceğini bilsin |
-| **search_emails** | "Searches subject, sender, AND body" — model kapsamı bilir |
-| **read_email** | "Use this when the user asks for DETAILS of a specific email" — net kullanım koşulu |
-
-### ✅ System Prompt — 10 Kural
-
-| # | Kural | Hedef |
-|---|---|---|
-| 1 | Tool'u hemen çağır, tarif etme | Tereddüt kırıcı |
-| 2 | Varsayılan değerlerle çağır, "kaç tane" diye sorma | Proaktiflik |
-| 3 | Seyrek sonuç gelirse genişlet | Proaktiflik |
-| 4 | List verisiyle takip sorularını yanıtla | Kullanıcıya ID/konu sorma |
-| 5 | "Yapamam" deme — tool'un var | Tereddüt kırıcı |
-| 6 | save_memory sadece kalıcı bilgiler için | Hafıza kirliliğini önleme |
-| 7 | Relative dates → get_datetime | Tarih doğruluğu |
-| 8 | ISO 8601 formatı | Standardizasyon |
-| 9 | Kısa cevaplar | Context ekonomisi |
-| 10 | Doğal ve sıcak ton | Kullanıcı deneyimi |
-
-### ✅ Email İçerik Zenginliği
-
-| Değişiklik | Dosya |
-|---|---|
-| **Body preview 200→300 karakter** | `mail.py:_list_emails()` |
-| **Cache preview 100→200 karakter** | `prompt.py:cache_email_context()` |
-| **Email context'te Preview satırı** | `prompt.py:build_context()` — model read_email çağırmadan cevap verebilsin |
-| **search_emails artık body'de de arar** | `mail.py:_search_emails()` IMAP `TEXT` anahtarı eklendi |
-| **search_emails de cache'ler** | `tools/dispatcher.py:search_emails` → `cache_email_context()` çağırır |
-| **search_emails çıktısı list_emails ile aynı formatta** | ID + Preview + From/Subject aynı düzende |
-
-### ✅ Calendar/Notes/Tasks Önizleme
-
-| Tool | Yeni Özellik | Dosya |
-|---|---|---|
-| **list_calendar_events** | Description varsa 100 karakter alt satır | `calendar_ops.py:85` |
-| **list_notes** | Her not için 80 karakter content preview | `nextcloud_notes.py:149` |
-| **list_tasks** | Her task için 120 karakter description preview | `nextcloud_tasks.py:185-186` |
-
-### ✅ Email ID Takibi — Kritik Düzeltme
-
-**Sorun:** Model `list_emails` çağırıp sonuç alıyor, context'ten düşünce kullanıcıya "hangi ID?" diye soruyordu.
-
-**Çözüm:**
-1. `search_emails` artık kullanıcının bahsettiği içeriği bulmak için kullanılır — model kullanıcıya sormak yerine `search_emails(query="Netdata")` çağırır
-2. `search_emails` sonuçları da `cache_email_context()` ile cache'lenir — "Recent Emails Context" güncel kalır
-3. System Prompt Kural 4: "Do NOT ask the user 'which one' or 'what ID' — just pick the right email from the data you already have"
-4. System Prompt CRITICAL bölümü: "If you don't have the data anymore, call search_emails — don't ask the user for an ID"
-
----
-
-## Gelecek Planı
-
-| Öncelik | Ne Yapılacak |
-|---|---|
-| 🔴 Yüksek | **Tool call indicator** — chat'te modelin tool çağırdığını gösteren UI ("Takvime bakıyorum..." gibi) |
-| 🔴 Yüksek | **Onboarding ekranı** — ilk kurulumda "API key'in bu, şöyle kullan" rehberi |
-| 🔴 Yüksek | **Hata mesajları** — net kullanıcı mesajları ("Model yükleniyor, 20sn bekle", "Nextcloud bağlantısı yok") |
-| 🟡 Orta | **Nextcloud'suz kullanım** — sohbet + hafıza en azından çalışmalı, email/takvim opsiyonel |
-| 🟡 Orta | Test coverage artırma (özellikle dispatcher + mail) |
-| 🟡 Orta | FastAPI DI → dependency_overrides ile mock test altyapısı |
-| 🟡 Orta | Docker image'i optimize etme (Pi 5'te multiarch) |
-| 🟡 Orta | **HTTPS/mikrofon** — Caddy self-signed veya NPM ile çözüm |
-| 🟡 Orta | **Performans** — NUM_CTX/batch optimizasyonu ile 13-15s → 10-12s |
-| 🟢 Düşük | Session management için Redis cache (opsiyonel) |
-| 🟢 Düşük | Observability: Prometheus metrikleri, structured logging |
-| 🟢 Düşük | Multi-user authentication (JWT) |
-| 🟢 Düşük | Daha fazla dil desteği |
-
-<!-- ═══ KRONOLOJİK DEVAM · 13-22 Ağustos arası local-only dönem disk kaybına uğradı;
-     aşağıdaki kayıtlar notes-additions.md ve güncel dosyadan derlendi (2026-08-23) -->
-
-## 17 Ağustos 2026 — UI İyileştirmeleri, XSS Düzeltmesi, Limit Yükseltme
-
----
-
-## 13–22 Ağustos 2026 — oturum dökümlerinden kurtarma
-<!-- Kaynak: opencode oturum veritabanı; diskteki günlük kaybolmuştu -->
-
-### 13 Ağustos
-- `NOTES.md` bu gün git takibinden çıkarıldı (commit `1e61227`, "local-only olsun") — kaybolan 13–22 döneminin başlangıcı.
-- Oturum kaydında yalnızca tek kullanıcı mesajı var: `static/index.html` üzerinde yarım kalan "camsı (glassy) efekt" denemesi ve pyjsparser konusu. Araç çağrısı kaydedilmediği için o gün kod değişikliği yapılıp yapılmadığı **doğrulanamıyor** (glass-mode CSS'i sonradan 22 Ağustos'ta mevcuttu; ne zaman eklendiği belirsiz).
-
-### 17 Ağustos
-- Projeye dokunulmamış; RPi5 üzerinde [kişisel sistem notu: redacted 2026-08-23] yapıldı. (14–16 ve 18–19 Ağustos'ta hiç oturum kaydı yok.)
-
-### 20 Ağustos
-- Projeye dokunulmamış; sistem işleri: [kişisel sistem işleri: redacted 2026-08-23], ekran klavyesi düzeltmesi. (Oturum 22'sine sarktı ama piSynapse düzenlemesi yok.)
-
-### 21 Ağustos
-- 22:07 — `/home/salih/piSynapse` tam kod tabanı incelemesi istendi (taban `ddc5afa` + commit'siz `routers/chat.py` abort değişikliği). Üç kopya mevcut: `piSynapse` (güncel), `-release`, `-release-yedek`.
-- 22:25 — Denetim raporu `NOTES.md`'e eklendi ("TAM KOD TABANI İNCELEMESİ — Rapor"). Canlı doğrulanmış 3 kritik bug: (1) `update_note` hiç çalışmıyor (dispatcher `category/tags` gönderiyor, wrapper TypeError), (2) `/chat/upload` multipart'ı 422 ile reddediyor, (3) üçüncü bug metni dökümde kesildi — geri alınamadı. Baz: 242 test geçiyordu.
-- Raporun diğer bulgularından doğrulananlar: contacts/CardDAV modülü kod tabanında hiç yok (yalnızca tabloda referans kalmış); C grubu = ölü kod/temizlik maddeleri.
-- 22:37'den itibaren 11 maddelik düzeltme turu (madde 2 ve 8'de kullanıcı onayı beklandı; her maddeden sonra pytest):
-  - A2: `routers/chat.py` — yeni `POST /upload` (`upload_image`), `MEDIA_MAX_MB` bazlı parçalı boyut limiti, base64 dönüş; `tests/test_media.py` +3 test (245 passed).
-  - Madde 2 (onaylı): ID/UID mimarisi pozisyon-bazlı çözümlemeye çevrildi — listinglerden ham ID/UID kaldırıldı, dispatcher `_parse_*_listing` uyumu korundu, `prompt.py`'a CRITICAL öğe-referansı kuralları yazıldı.
-  - A1: `nextcloud_notes.update_note` artık `category/tags` kabul edip iletiyor + `_invalidate_list_cache()`; `tests/test_dispatcher.py::TestUpdateNoteRealPath`.
-  - `nextcloud_tasks.py`: `_todos_cache` `include_completed` bayrağına duyarlı hale getirildi (tuple anahtarlı); hatalar yutulmayıp raise ediliyor (caldav `get_todos(include_completed=False)` varsayılanı tamamlananları hiç çekmiyordu).
-  - Not-yazma → liste-önbellek tutarsızlığı giderildi; regresyon testi: `tests/test_stability_fixes.py::test_note_write_invalidates_list_cache`.
-- Gece yarısı (22'sine sarktı): tüm maddeler tamamlandı — **242 → 259 passed** (+17 regresyon testi), ruff temiz; `NOTES.md` güncellendi.
-
-### 22 Ağustos
-- Backend parite denetimi ve düzeltmeleri (`llm/payload.py`, `llm/chat.py`, `llm/stream.py`, `litert_serve/server.py`): stream.py:293'teki think-retry asimetrisi giderildi (her iki backend'de birleşik, leak-koşullu, effort korunarak), Ollama `num_predict`, piServe model doğrulaması (boş→varsayılan, bilinmeyen→409 + `allowed_models`), transcribe-gemma4'e `num_ctx=8192` + s16le WAV + Whisper fallback.
-- Parite tablosu maddeleri tek tek doğrulandı: 1a Ollama `num_predict` ✅, 1b think-retry paritesi ✅, 2 piServe model doğrulama ✅, 3 transcribe-gemma4 ✅.
-- Frontend (`static/index.html`): `showTyping()`'den yanıltıcı "Düşünüyor…" etiketi kaldırıldı (+ `.typing-label` CSS temizliği); hover kuralları doğrulandı (37/37 gate'li, 0 gatesiz); `node --check` iki script bloğu da temiz; i18n TR/EN simetrik; **black teması** eklendi (`#e9e9ec`, tr 'Siyah') + `theme-black` toggle; hover muafiyet ayarları (mem-btn/settings-btn/logo-btn/glass-mode).
-- ~17:00 canlı bug avı: **Bug 1** — servis 21 Ağustos 00:04'ten beri çalışıyordu; belleğinde refactor öncesi kod vardı (`list_notes` tuple vs string uyumsuzluğu) → çözüm restart. **Bug 2** — geçmişe sızan ham tool-call metni (`<|tool_call>call:list_notes{{}}<tool_call|>`) sonraki turları zehirliyordu → `llm/utils.py` regex'i sağlamlaştırıldı (çift süslü parantez, Gemma'nın bozuk `<|tool_call>` varyantları), `tests/test_llm.py` vakaları eklendi; commit "fix(llm): recover mangled leaked tool calls".
-- v1.3.0 etiketi yeşil commit'e taşındı ve zorla pushlandı ("Security hardening, backend parity, position-based tools, UI polish").
-- Akşam: senkron probe her iki backend'de geçti; loop guard'lar non-stream yoluna port edildi (`llm/chat.py`; sabitler `llm/utils.py`'e taşındı); **backend switch + model auto-map** (LLM_BACKEND artık Settings UI'dan seçilebilir, `gemma4-e2b ↔ gemma4:e2b`); CHANGELOG `[1.4.0]`, README `python3` + piServe bölümleri, `install.py` kullanım metinleri. Commit `27b05dc`, servis yeniden başladı (PID 1856338).
-- 22:16 kullanıcının 4 isteği: minimal modda TTS butonu kayboluyordu (`.msg-meta` gizleniyordu) → `.msg-actions` satırı (kopyala + sesli oku yan yana, her temada görünür), mesaj aralığı 24px→34px, `copyMessage` (clipboard API + fallback, tik ikonu + "Kopyalandı"), i18n `copyTitle/copiedTitle` TR+EN; `sw.js` cache `pisynapse-v5`.
-- Ollama think akışı görünmezdi: Ollama ≥0.9 `message.thinking` gönderiyor, kod sadece eski `reasoning_content` alias'ını okuyordu → `llm/stream.py` + `llm/chat.py` her iki alanı da okuyor; `tests/test_ollama_think_stream.py` eklendi.
-- Nedeni bulunup giderilen ayrı bir keşif: intent/STT/warmup payload'larında `think:false` eksikti → ollama'da 100% CPU, ~44sn boş sınıflandırma (`llm/intent.py`, `routers/media.py`, `main.py` düzeltildi).
-- Canlı doğrulama: `LLM_BACKEND=ollama`'ya geçişte auto-map tetiklendi; think akışında **169 reasoning event'i** frontend'e aktı; prob oturumları silinip litert'e dönüldü.
-- `NOTES.md`'e "2026-08-22 — Frontend iyileştirmeleri + ollama think akışı" eklendi; commit `c399314` pushlandı (`799de1d..c399314`). Suit: 302 passed (+2 xfail, `tests/test_history_hygiene.py:179,188`).
-- 21:45'teki probe betiği `/tmp/opencode/probe_sync.py` olarak yazıldı (intent fallback + tam araç döngüsü, iki backend'de de geçti; Nextcloud timeout'u altyapı salınımıydı, kod sorunu değil).
-
-### 21 Ağustos düzeltme turunun 11 maddesi (sonradan doğrulandı)
-<!-- Oturum dökümünden çıkarıldı; sağdaki ✓ işaretleri 23 Ağustos'ta güncel kodda canlı teyit -->
-1. A2 `/chat/upload` multipart fix (`UploadFile=File(...)`, 1MB chunk, 413 limiti) ✓
-2. ID/UID mimarisi: pozisyon-bazlı çözümleme (B1+B2 birleşik; kullanıcı onaylı, bulgu tablosu sunuldu) ✓
-3. A1 `update_note` TypeError (wrapper category/tags iletiyor + cache invalidate) ✓
-4. A3 `show_completed` no-op (caldav `include_completed` bayrağı + tuple-anahtarlı cache) ✓
-5. B3 send_email başarısızlığı artık `ERROR:` prefix'li (audit doğru sayıyor) ✓ dispatcher.py:373
-6. B5 notes/tasks yazma sonrası liste-cache invalidation (+regresyon testi) ✓
-7. B4 stream.py think-retry'ye tool_group geçişi (22'sinde parite turunda tamamlandı) ✓
-8. B6 NUM_CTX/MAX_OUTPUT default tutarlılaştırma: config.py 8192/4096 tek kaynak ✓
-9. C-grubu temizlik: OFFLINE_SAFE_TOOLS ölü girdiler silindi (artık yalnız save_memory), VENV_DIR→venv, weathercode kullanılmayan fetch kaldırıldı, get_config hardcoded defaultlar config.py'e bağlandı ✓
-10. Her maddeden sonra pytest koşusu (242→259, +17 regresyon testi) ✓
-11. Final rapor + ruff temiz + NOTES güncellemesi ✓
-
-<!-- Not: Aynı oturum 23 Ağustos'a sarktı (istenen kapsam dışı): CI'daki 3s28d askıda kalma sızan aiosqlite bağlantısından çözüldü (`conftest.py` güvenlik ağı; `b72c6a0`→`d1ae04c`), 2 xfail de düzeltildi (308 passed / 0 xfail, `4f10098`) ve `v1.4.0` etiketi pushlandı (release notları: `~/RELEASE_NOTES_v1.4.0.md`). -->
-
----
-
-## Oturum-içi kendi-kendini-zehirleme raporu (2026-08-22)
-
-### Bulgular
-
-| Sorun | Durum |
-|---|---|
-| Oturumlar arası veri sızması | Yok — tasarım temiz (`get_history`/`_fetch_candidates`/özet/cache hepsi `WHERE session_id = ?`) ✅ |
-| Leak metninin geçmişe kaydedilmesi | Bug — `routers/chat.py` save noktalarında sanitizasyon yok; ham `call:xxx{{}}` metni assistant cevabı olarak DB'ye yazılıyor ⚠️ |
-| DB'deki zehirli kayıt | `session_1787407132114_14uw4dn` içindeki `call:list_notes{{}}` satırı hâlâ duruyor; model kendi çöp çıktısını taklit ediyor ⚠️ |
-| Boş cevap fallback'i | Dedup düşerse birikmiş metin boşsa hiçbir şey üretilmiyor → "model boş cevap döndürdü" ⚠️ |
-
-Tasarım gereği oturumlar arası taşınan tek şey: kullanıcı hafızaları (`save_memory`, user_id bazlı) — bilinçli özellik.
-
-### Düzeltme planı (onaylandı)
-
-- [x] **1. Save-time sanitizasyon** — assistant cevabı DB'ye yazılmadan önce
-  `strip_tool_leaks()`; tamamen leak ise kaydetme (stream + non-stream yolları)
-  ✅ Doğrulandı: `tests/test_history_hygiene.py` 4 passed, ruff temiz.
-  `_clean_assistant_reply()` yardımcısı eklendi; stream done/finally ve
-  non-stream save noktaları sanitizyor, boşsa kaydetmiyor.
-- [x] **2. Tek seferlik DB temizliği** ✅ Doğrulandı: dry-run tarama sonrası
-  2 saf zehir satırı silindi (id=592 eski read_email leak'i, id=757
-  `call:list_notes{{}}`); tekrar tarama → 0 zehirli. Gömülü-temizlik katmanı
-  bilinçli olarak UYGULANMADI: dry-run'daki 20 adayın tamamı kozmetik boşluk
-  farklarıydı (markdown), biri Python kod bloğu içeriyordu — rewrite etmek
-  zarar verirdi. Bu bulgu ayrıca strip_tool_leaks'ın küresel boşluk
-  sıkıştırmasının kod bloklarını bozduğunu ortaya çıkardı → düzeltildi:
-  sıkıştırma artık ``` fence dışında uygulanıyor (_collapse_spaces_outside_fences).
-  Test kapsamı: `tests/test_history_hygiene.py` 9 test = 7 passed + 2 xfail
-  (bilinen sınırlar: `<tool|call>` ayraç, JSON echo); entegrasyon testleri gerçek
-  save path'ini mock DB ile kanıtlıyor.
-- [x] **3. Boş-buf fallback** ✅ Doğrulandı: dedup dalı boş `buf` ile düşerse
-  (2026-08-22 "model boş cevap döndürdü" vakası) bir kez `_FINALIZE_NUDGE`
-  sistem notu eklenip araçlar kapatılarak (`final_nudge_used` → `use_tools=False`,
-  truncation-retry deseni) text-only final turu zorlanıyor; nudge sonrası hâlâ
-  boşsa `_EMPTY_ANSWER_FALLBACK` nazik mesajı yield ediliyor. Nudge turunda
-  sızıntı tekrar kurtarılırsa aynı dedup dalına düşer → fallback.
-- [x] **2b. Summary zehirlenme koruması** (kullanıcı önerisiyle) ✅ Doğrulandı:
-  3 katman — (1) `SUMMARY_SYSTEM_PROMPT` güncellendi: artifact görmezden gelme,
-  "do not infer or invent", çelişkide yeni bilgi önceliği, ~3-5 cümle sıkıştırma
-  (kullanıcının taslağı aynen alındı); (2) `_summary_transcript()` girdi
-  sanitizasyonu: assistant mesajları modele gitmeden önce temizlenir, tamamen
-  leak olan satır transcript'ten düşer, kullanıcı mesajlarına dokunulmaz;
-  (3) çıktı koruması: özet `strip_tool_leaks` ile saklanır. Boş transcript'te
-  LLM çağrısı hiç yapılmaz (önceki özet korunur).
-  Testler: `tests/test_summary_hygiene.py` 5 passed. Tam suite: 287 passed,
-  2 xfailed; ruff temiz.
-- [x] **4. Tool-loop üst sınırı** ✅ Doğrulandı: `sig_exec_counts` sayacı ile
-  birebir aynı imza `(isim(args_json sorted))` istek başına en fazla
-  `_MAX_IDENTICAL_EXECUTIONS=2` kez çalıştırılır; 3. denemede çalıştırma
-  reddedilip modele "[Refused: ...]" tool mesajı döner (yan etkili araçlar için
-  emniyet; saf tekrarları zaten dedup yakalar, bu katman karışık batch'lerdeki
-  tekrarları keser — örn. [A,B] → [A,C] akışında A bir daha koşmaz).
-  Testler: `tests/test_stream_loop_guards.py` 3 passed (nudge turu + tools
-  kapalı payload doğrulaması, fallback mesajı, 3. özdeş çağrının reddi).
-  Tam suite: 290 passed, 2 xfailed; ruff temiz.
-
-### Non-stream portu + backend senkronizasyonu (2026-08-22)
-
-- [x] **Guard'ların non-stream yoluna portu** ✅ Doğrulandı: `llm/chat.py`
-  döngüsüne aynı nudge+cap mekanizması (sabitler `llm/utils.py`'e taşındı:
-  FINALIZE_NUDGE / EMPTY_ANSWER_FALLBACK / MAX_IDENTICAL_EXECUTIONS; stream
-  modülü eski `_` önekli adlarla içe aktarıyor — testler bozulmaz).
-  Testler: `tests/test_chat_loop_guards.py` 3 passed.
-- [x] **Backend değişiminde model senkronu** ✅ Doğrulandı: canlı probda
-  ollama dalı 404 verdi — kök neden: LLM_MODEL litert biçiminde saklanıyor
-  (`gemma4-e2b`) ama ollama kayıt defteri kolonlu ister (`gemma4:e2b`);
-  konvansiyon install.py:1246 (litert→tireli, ollama→kolonlu). Düzeltmeler:
-  (1) `LLM_BACKEND` artık UI'dan seçilebilir (SETTINGS_SCHEMA'ya select
-  girdisi eklendi, PROTECTED_SETTINGS'ten çıkarıldı,
-  RESTART_REQUIRED_KEYS'e eklendi); (2) PATCH /config/settings backend
-  değiştirirken LLM_MODEL'i YENİ daemon listesine göre doğruluyor ve istekte
-  model yoksa ayraç-bağımsız eşlemeyle otomatik dönüştürüyor
-  (`get_llm_model_options(backend=...)` parametresi eklendi); (3) eşleşme
-  yoksa eski model korunur + uyarı loglanır (manuel seçim gerekir).
-  Testler: `tests/test_settings_backend_sync.py` 4 passed.
-- [x] **Niyet tespiti + LLM fallback iki-backend doğrulaması** ✅: embedding
-  katmanı backend-bağımsız (FastEmbed/ONNX yerel); LLM fallback'in litert
-  (/v1/chat/completions) ve ollama (/api/chat) dalları için unit testler +
-  canlı probe: her iki backend'de de soru niyeti doğru üretildi. Ollama ile
-  tam araç döngüsü de canlı doğrulandı (Nextcloud timeout'a rağmen model
-  hatadan düzgün metin yanıtı üretti → hata yönetimi sağlam).
-  Testler: `tests/test_intent_backends.py` 5 passed.
-  Tam suite: 302 passed, 2 xfailed; ruff temiz. Not: test sonrası ollama
-  servisi çalışır bırakıldı (kullanıcı denerse hazır).
-
-Her adımda: ruff + pytest doğrulaması, sonra bu dosyanın güncellenmesi.
-
-### İlgili dosyalar
-- `routers/chat.py` — save noktaları (stream ~255/~273, non-stream ~182)
-- `llm/stream.py` — dedup/fallback (~358), loop mekanizması
-- `llm/utils.py` — `strip_tool_leaks`, `_TOOL_CALL_TAG_RE`
-- `db.py` — conversations tablosu
-
-## 2026-08-22 — Frontend iyileştirmeleri + ollama think akışı
-- static/index.html: asistan mesajlarının altına .msg-actions satırı (kopyala + sesli oku, yan yana); artık .msg-meta içinde değil → minimal modda da görünür (minimal modda meta gizleniyordu, TTS kayboluyordu). attachMsgActions() hem addMsg hem stream-tamamlama yolunda kullanılıyor; copyMessage() clipboard API + execCommand fallback, kopyalandı geri bildirimi (tik ikonu).
-- Minimal mod mesaj aralığı 24px→34px (body.minimal-chat .msg-group).
-- i18n: copyTitle/copiedTitle (TR+EN). sw.js CACHE pisynapse-v4→v5.
-- Ollama think hatası: stream.py/chat.py yalnız `reasoning_content` okuyordu; ollama ≥0.9 alanı `message.thinking`. İkisi de okunuyor. Canlı test: ollama'da 169 reasoning event frontend'e aktı (CPU'da yavaş ama çalışıyor).
-- Yeni keşif: intent/media STT/warmup doğrudan ollama çağrılarında `think:false` eksikti → gemma4 sessizce düşünüyor, num_predict=20 bütçesi thinking'e gidiyor, intent raw='' + ~45sn. Üçüne think:false eklendi; canlıda raw='question' ✓.
-- PATCH settings otomatik model-eşleme iki yönlü dogfood edildi (gemma4-e2b ↔ gemma4:e2b). Test dosyası: tests/test_ollama_think_stream.py (2 test). Suite 304+2xf, ruff temiz. Backend litert'e geri alındı; prob oturumları silindi.
-
-## 2026-08-23 — CI askıda kalması düzeltildi
-- Belirtiler: c399314 push'unu takip eden CI run'ı 3h28m "in_progress"; ikiz run success ama 3 test FAIL (no such table: email_session_map); lokalde tek dosya koşumları sonsuz bekliyor.
-- Kök neden: yeni guard/think testleri gerçek DB'ye dokunuyordu (chat→_build_full_messages→prompt.get_email_context→db.get_email_map). CI'da şema yok → hızlı fail; lokalde tablo varken modül-global aiosqlite bağlantısı kapanmıyor ve NON-daemon worker thread interpreter exit'i blokluyordu.
-- Çözüm: üç test dosyasına autouse fixture ile prompt.get_email_context mock'u (testler DB'siz); conftest.py'ye pytest_sessionfinish güvenlik ağı (close_db). Ruff import sıralaması --fix.
-- Doğrulama: kapalı portlarla CI simülasyonunda tek dosyalar <1sn rc=0; tam suite 7.1/7.8sn exit=0 ×2. ruff temiz.
-
-## 2026-08-23 (2) — Son iki xfail kapatıldı
-- llm/utils.py: tag regex'leri artık <tool|call> (pipe mangle) türevini de tüketiyor; _strip_json_tool_echo eklendi (satır-bağımsız, sadece bilinen tool adları, prose içindeki JSON'a dokunmaz).
-- tests/test_history_hygiene.py: 2 xfail → normal regression test + 2 negatif vaka (unknown_tool ve inline JSON korunuyor). Suite: 308 passed / 0 xfail. CHANGELOG + release notes güncellendi.
-
-## 2026-08-23 (3) — UI_LANGUAGE (seçenek B)
-- messages.py: kullanıcıya dönük 3 backend mesajı (llm_empty_reply/llm_unreachable/llm_empty_response) tr/en sözlüğü; get_message() config.get("UI_LANGUAGE") ile canlı seçer.
-- config.py: UI_LANGUAGE select (default tr, restart gerektirmez). llm/utils.py: empty_answer_fallback() fonksiyonu; EMPTY_ANSWER_FALLBACK sabiti test-uyumu için kaldı (noqa F401 alias'lar stream/chat'te).
-- Frontend: init'te ps_lang hiç set edilmemişse sunucudaki UI_LANGUAGE benimseniyor.
-- Ders: ruff --fix ara durumda FINALIZE_NUDGE import'unu silmişti → import blokları tekilleştirildi. Suite 312 passed; kapalı-port simülasyonu da temiz.
-
-## 2026-08-23 (4) — prefers-reduced-motion
-- OS "Hareketi Azalt" ayarına saygı: tüm animasyon/transition'ları kapatır (vestibüler hassasiyet nezaketi). SW cache v6.
-- Düzeltme: glass-mode envanteri 139 seçici gösterdi ama çekirdek zaten değişken bazlı (--surface vs. body.glass-mode'da yeniden tanımlı), kurallar gruplu tarifler → önceki "dağınık" eleştirisi abartıydı; refactor gerekmedi.
-
-## 2026-08-23 (5) — Visual polish turu
-- #messages mask-image edge fade: altta 64px, üstte 28px yumuşatma; cam modda da çalışır (bg'den bağımsız).
-- Streaming caret: withStreamCaret() son kapanan block tag'ının içine yerleştirir (yeni satıra düşmez), done'da temizlenir; caretBlink keyframes.
-- Welcome'a öneri çipleri (WELCOME_CHIPS tr/en, chipFill input'u doldurur); .w-chip stilleri. text-wrap:pretty.
-- WCAG denetimi script'i (/tmp/opencode/wcag_audit.py): tek fail text3/surface2 4.37 → --text3 #7e7e96→#83839c (4.69). Diğer tüm çiftler AA geçiyor (kullanıcı WCAG'ı gerçekten uygulamış). SW v7.
-- Kullanıcı notu: logo iç içe kare = chat merkezi, toggle menü deseni = ekosistem araçlarına bağlantı sembolü — dokunulmayacak.
-
-## 2026-08-23 (6) — Sidebar redraw fix + chip gönderimi + cam ayarı
-- Bug: .sess-item her render'da opacity:0+slide-in → stream bitişi/arama kapanışında "yeniden çizim" flaşı. Çözüm: renderSessions(list,animate) + #session-list.no-anim; loadSessions(animate) pass-through. Sessiz çağrılar: stream done, abort finally, non-stream reply, search-restore (sadece filtre uygulanmışsa restore).
-- Çipler artık direkt GÖNDERİYOR (chipSend→sendMsg); içerik intent keyword'leriyle hizalı: özetle/e-posta (email-read), etkinlik (calendar), görev (tasks), notlarımı göster (notes exact). Önceki 'hatırlatıcı' çipi memory_kw('hatırla') yüzünden memory'ye kayabiliyordu → 'görev oluştur' yapıldı.
-- Cam kararları: gren .07→.09; aurora mix 30/20/22/13→24/15/16/9 + vinyet .28→.32 (@supports fallback da güncellendi); iç beyaz çizgiler korundu (glass affordance).
-- Kullanıcı: push şimdi değil.
-
-## 2026-08-23 (7) — Saf siyah varsayılan + hover fix + tipografi + aurora canlanması
-- Saf siyah artık seçenek değil, varsayılan: body.amoled değerleri :root'a gömüldü, toggle+applyBlack+ps_black+i18n anahtarları silindi. theme-black en derin katman olarak kaldı (bg yine #000). Mobil density boost sadeleşti.
-- Sidebar titreme kök nedeni: hover'da .sess-del display:none→flex = layout shift. Çözüm: opacity+pointer-events (slot rezerve), transition:all→background-color/border-color. Hover belirginliği: surface2→surface3 + rgba(255,255,255,.05) border.
-- Tipografi standart: body+bubble 14.5→15px, sess-name 13.5→14px.
-- Çipler 4→6: +hava ('Bugün hava nasıl?'), +question ('Komik bir şey söyle' — embedding corpus'ta 'tell me a joke' örneği var, güvenli).
-- Aurora yanıt sırasında yaşıyor: setLoading→body.generating; auroraDrift 14s transform-only (inset:-9% oversize, GPU-friendly) + grainBreathe. reduced-motion global kill zaten var. Mobil: compositor animasyonu, repaint yok.
-- Cam hissi: maske fade alt 64→96px (yazı cama "eriyerek" giriyor), user bubble'a hafif elevation shadow glass-mode'da.
-- Kullanıcı sorusu "glassmorphism standartlarına uygun mu": evet — translucency+blur+1px light border+inset highlight+vignette+decoration hepsi mevcut; eksik kalan hareket hissiydi, eklendi.
-
-## 2026-08-23 (8) — Lav lambası aurora + saat konumu + intent corpus fix + custom select
-- Aurora tam yeniden yazıldı: #aurora katmanı (2 blob, --glow token'lı radial, color-mix bağımsız → @supports aurora dupesü silindi). generating'de lavaA 17s/lavaB 23s büyük gezinme+scale; idle'da opacity fade + donma (snap yok). ::before artık sadece vinyet.
-- Saat konumu geri: .sess-del absolute right (hover'da saat↔çöp swap, Discord tarzı), name'e padding-right:20px. Zaman hep sağ kenarda.
-- Çip: şaka yerine 'Görevlerimi listele'/'List my tasks' (task_kw 'görev' ✓). TR/EN sıraları eşitlendi.
-- INTENT BUG BULUNDU: calendar corpus'unda alan-sözcüksüz genel kalıplar ("değiştirir misin...", DE/FR/ES muadilleri) her "X'i değiştirir misin"i takvime çekiyordu; tasks'ta güncelleme örnekleri yoktu. Temizlendi + tasks'a update/ertele anchor'ları eklendi. Gerçek embedding ile 7/7 doğru (öncesi: görev-değiştir→calendar kayması).
-- applyLang anında uygulama: welcome tam rebuild (çipler dahil) + settings modal açıksa openSettings() yeniden çağrılıyor. Hard-refresh ihtiyacının nedeni buydu (modal eski dilde kalınca değişmemiş sanılıyor).
-- Custom dropdown (.sel-wrap/.sel-btn/.sel-menu): native <select> gizlenir, esc()'li menü; enhanceAllSelects boot+openSettings sonrası; outside-click/Esc kapatır; change event'i inline handler'lara dispatch edilir.
-- SW v10. Testler 312 ✓ ruff ✓ node ✓
-
-## 2026-08-23 (9) — Aurora donma fix + 4 blob + memory meta-save kök nedeni
-- Aurora "simsiyah" sorunu: idle'da opacity:0 → arka plan sadece vinyet kalıyordu. Yeni model: bloblar her zaman görünür (idle .45-.55), animasyon hep tanımlı ama idle'da animation-play-state:paused = BULUNDUĞU KAREDE DONAR, snap yok. generating'de running + opacity .95.
-- Blob sayısı 2→4 (ab3 merkez-sağ 19s, ab4 accent-h tonlu sağ-üst 27s; lavaC/lavaD çok-noktalı keyframes).
-- MEMORY BUG KÖK NEDENİ (log kanıtı): 05:40:28 'Notlarımı göster' embedding ile memory'e kaymış (sim .73, MARGIN .06 — eşik .05!). Ardından memory grubundaki LLM save_memory'yi çağırıp isteği fact sanmış: 'Kullanıcının notlarını gösterme isteği.' katmanlar: (1) corpus'taki generic 'değiştirir misin' kalıpları zaten silinmişti ama bu yeterli olmadı → intent.py artık margin<0.10'da keyword farklı grup işaret ediyorsa keyword kazanır + embedding path'te mesaj loglanıyor (görünürlük). (2) prompt.py kural 6 + tool desc + group blurb: istek/soru/komut yasak. (3) dispatcher save_memory guard: regex (isteği/talebi/request to/wants to/asked that...) meta içerik reddi, 'Kullanıcı Python sever' gibi gerçek fact'ler geçiyor (8 vaka test edildi). DB: assistant.db id=17 çöp kayıt silindi.
-- Çip: 'Notlarımı göster'→'Notları listele' / EN 'List my notes'.
-- Testler: 314 (+2 save_memory regresyon). ruff ✓ node ✓ SW v11. Servis restart, healthy.
-
-## 2026-08-23 (10) — Ambient standart turu (kullanıcı uyurken tam yetki)
-- Araştırma (aurora UI tarifleri + dark-mode gradient pratikleri): renk alanı HZAMAN görünür; idle = sakin donmuş sahne, metin panelde ışık arkada, hareket yavaş. 60-30-10 kuralı.
-- DONMA+DEVAM FIX (asıl bug): animasyon .generating'e bağlıydı → sınıf gidince animation kendisi gidiyor → başa sıçrama. Doğru desen: keyframes kalıcı bağlı, default play-state:paused; generating sadece running + opacity 1. Bittiğinde kare donar, sonraki yanıtta kaldığı yerden devam.
-- ::before'a soluk köşe yıkamaları geri geldi (11/7/8/5% mixes) → idle asla boş siyah değil (@supports fallback da eklendi). Blob idle opaklıkları .5-.62.
-- Çip 7 oldu: +Yeni not oluştur / Create a note (TR keyword ✓, EN corpus'ta 'create note' birebir var).
-- SW v12. 314 test ✓ ruff ✓ node ✓. Servis restart, healthy. Push hâlâ beklemede (7+1 commit).
-
-## 2026-08-23 (11) — Marquee çipler + menü opaklığı + maske derinleşti
-- #messages alt fade: 96px düz → 128px + kısmi alfa durakları (rgba .55 @ -52px) = sinematik erime, her iki mod.
-- .sel-menu glass'ta yarı saydam kalıp alttaki yazıyla karışıyordu: layered background (surface üstüne surface gradient, altına solid --bg) + backdrop-blur 18px → her temada okunur.
-- Çipler dual marquee: iki sıra, ters yönlüler (chipMq 38s/46s linear infinite), kenarlarda mask fade ('|gölge|'), hover'da dururlar, tıklayınca gönderir. Track = set×2, translateX(-50%) döngüsü. reduced-motion global kill ile statik (yarılar özdeş → aynı görünüm).
-- SW v13. Sadece frontend → restart gerekmez. 8+1 commit push bekliyor.
-
-## 2026-08-23 (12) — Sürüklenebilir marquee
-- CSS keyframe yerine JS rAF modeli: her track kendi controller'ı (x, half, vx, drag). Parmak/mouse ile yatay sürükleme (touch-action:pan-y → dikey scroll bozulmaz), 6px eşiği altı dokunuş = tık sayılır (chipSend çalışır), üstü fling: hız ölçülüp vx olarak devralınır, exp(-3t) ile söner; 450ms sonra otomatik devam (boş yere tıklama gereksiz). Hover-pause kaldırıldı.
-- wrap: x (-half,0] aralığında döngü → sonsuz kusursuz. resize'da half yeniden ölçülür. reduced-motion: otomatik akış yok, sürükleme serbest. Sayfadan ayrılınca rAF temizliği (isConnected).
-- SW v14. node ✓.
-
-## 2026-08-23 (13) — Çip rastgele dağıtımı
-- shuffleChips(): Fisher-Yates + anti-clump kurallar (dikiş komşusu aynı çip yasak, iki şerit aynı çiple başlayamaz), 60 deneme; node ile 2000/2000 doğrulandı. Her showWelcome'da yeni düzen.
-- SW v15.
+| 🔴 High | **Tool-call indicator** — UI showing the model is calling a tool ("Checking your calendar...") |
+| 🔴 High | **Onboarding screen** — first-run guide ("this is your API key, use it like so") |
+| 🔴 High | **Error messages** — clear user-facing texts ("Model loading, wait 20s", "Nextcloud unreachable") |
+| 🟡 Medium | **Work without Nextcloud** — chat + memory must work at minimum, email/calendar optional |
+| 🟡 Medium | Raise test coverage (especially dispatcher + mail) |
+| 🟡 Medium | FastAPI DI → dependency_overrides mock-test infrastructure |
+| 🟡 Medium | Optimize the Docker image (multiarch on small boards) |
+| 🟡 Medium | **HTTPS/microphone** — Caddy self-signed or NPM solution |
+| 🟡 Medium | **Performance** — NUM_CTX/batch tuning to bring 13-15s → 10-12s |
+| 🟢 Low | Redis cache for session management (optional) |
+| 🟢 Low | Observability: Prometheus metrics, structured logging |
+| 🟢 Low | Multi-user authentication (JWT) |
+| 🟢 Low | More language support |
