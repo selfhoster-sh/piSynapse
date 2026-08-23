@@ -272,7 +272,7 @@ SETTINGS_SCHEMA: dict = {
         {"value": "ollama", "label": {"tr": "Ollama (yerel)", "en": "Ollama (local)"}},
     ]},
     # Read live by messages.get_message() — deliberately NOT restart-required.
-    "UI_LANGUAGE":        {"type": "select", "default": "tr", "label": {"tr": "Asistan Dili (sistem mesajları)", "en": "Assistant Language (system messages)"}, "options": [
+    "UI_LANGUAGE":        {"type": "select", "default": "en", "label": {"tr": "Asistan Dili (sistem mesajları)", "en": "Assistant Language (system messages)"}, "options": [
         {"value": "tr", "label": {"tr": "Türkçe",   "en": "Turkish"}},
         {"value": "en", "label": {"tr": "İngilizce", "en": "English"}},
     ]},

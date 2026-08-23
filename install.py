@@ -1129,7 +1129,7 @@ AUTO_TTS_ON_VOICE={AUTO_TTS_ON_VOICE}
 INTENT_LLM_FALLBACK=off
 
 # --- Assistant language for backend user-facing strings (tr/en) ---
-UI_LANGUAGE=tr
+UI_LANGUAGE=en
 
 # --- Personalization ---
 ASSISTANT_USER={ASSISTANT_USER}
