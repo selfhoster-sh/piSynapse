@@ -13,6 +13,17 @@ Project diary + architecture reference. **Reverse chronological: newest entries 
 - Journal policy: entries are strictly reverse chronological (newest first) and record project work only.
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 
+## 2026-08-23 (14) — Tool-call indicator + aurora generating speed
+
+- **Tool indicator (backend-driven, no stream parsing):** `llm/stream.py` now emits structured SSE events around every `run_tool()`: `{"tool":{name, phase:"start"|"end"|"refused", attempt, max}}` (attempt = prior identical executions+1, max = `_MAX_IDENTICAL_EXECUTIONS`), plus `{"gen_retry":{reason:"overflow"|"empty"|"tool_leak"}}` on in-loop generation retries. `routers/chat.py` passes both through verbatim. Refused calls emit only their own event (no start/end).
+- **Frontend:** `.tool-status` pill (spinner dot + label) appears below the typing dots on `tool.start`, updates on retry attempts ("attempt n/max") and cap refusal ("retry cap (n/max)"), flips to ✓/⚠ on end and self-removes (900ms/1600ms). Dots dim to 25% opacity while a tool runs (`.typing.tool-pending`), restored on end/finally. Pill reparents under the reply bubble once the first token lands; aborted/error/confirm paths clean it up via finally.
+- **Aurora speed-up:** `setLoading()` now bumps `playbackRate` to 1.9 on all `#aurora .ab` animations while generating, back to 1 when idle — velocity change without phase jump (no keyframe restart), subtle not exaggerated.
+- **i18n:** toolAttempt/toolCap/genRetryLabel (tr/en); TOOL_LABELS map covers all 22 tools with graceful fallback to the raw name.
+- **Tests:** new tests/test_tool_events.py reuses the _SeqClient harness: start/end ordering, refused attempt counts (3rd identical call refused, never reaches run_tool), overflow gen_retry mid-tool-loop with recovery text. 317 passed, ruff clean, node ✓.
+- **Live probe findings:** events verified end-to-end against litert (create_note start→end ok:true captured). Two pre-existing quirks surfaced: (1) litert server hard-fails (`INVALID_ARGUMENT: Failed to parse tool calls from code block`) when the model emits doubled-brace native calls in round 2+ — the known template-leak pattern from utils.py regexes, but at SERVER level, unreachable by our text recovery; (2) `_is_context_overflow()` matches bare "invalid_argument", so those parse failures get mislabeled as overflow → gen_retry fires with the shrink path. Kept as-is for now: the frontend label is cause-neutral ("compressing tool responses and retrying…"), so nothing lies to the user; distinguishing parse-vs-overflow needs a litert error payload field — future item.
+- SW v16.
+
+
 ## 2026-08-23 (13) — Chip random distribution
 
 - shuffleChips(): Fisher-Yates + anti-clump constraints (same chip may not sit across the loop seam, the two lanes may not start with the same chip), 60 attempts; verified 2000/2000 via node. Fresh layout on every showWelcome().
@@ -651,7 +662,7 @@ user. One of the options above should be implemented for a real fix.
 
 | Priority | What |
 |---|---|
-| 🔴 High | **Tool-call indicator** — UI showing the model is calling a tool ("Checking your calendar...") |
+| ~~🔴 High~~ ✅ Done 2026-08-23 | **Tool-call indicator** — backend-driven SSE `tool`/`gen_retry` events + frontend status pill (see entry 14) |
 | 🔴 High | **Onboarding screen** — first-run guide ("this is your API key, use it like so") |
 | 🔴 High | **Error messages** — clear user-facing texts ("Model loading, wait 20s", "Nextcloud unreachable") |
 | 🟡 Medium | **Work without Nextcloud** — chat + memory must work at minimum, email/calendar optional |

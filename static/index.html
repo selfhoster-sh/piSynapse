@@ -282,6 +282,12 @@ body.theme-black .msg-group.user .msg-meta .who{color:var(--text3)}
   animation:bounce .8s infinite alternate}
 .typing span:nth-child(2){animation-delay:.2s}
 .typing span:nth-child(3){animation-delay:.4s}
+.typing.tool-pending{opacity:.25;transition:opacity .2s}
+.tool-status{display:flex;align-items:center;gap:9px;width:fit-content;max-width:90%;padding:8px 14px;margin:6px 0;border-radius:999px;background:var(--surface2);border:1px solid var(--border);font-size:13px;color:var(--text2)}
+.tool-status .tspin{flex:none;width:12px;height:12px;border-radius:50%;border:2px solid var(--border);border-top-color:var(--accent);animation:tspin .9s linear infinite}
+.tool-status.ok{opacity:.7}
+.tool-status.ok .tspin{animation:none;border-color:var(--accent);background:var(--accent)}
+@keyframes tspin{to{transform:rotate(360deg)}}
 @keyframes bounce{0%{transform:translateY(0);opacity:.4}100%{transform:translateY(-6px);opacity:1}}
 
 .welcome{flex:1;display:flex;flex-direction:column;align-items:center;
@@ -1190,7 +1196,9 @@ const STRINGS = {
     thinkingTitle:'Düşünme', thinkingLive:'Düşünüyor…',
     send:'Gönder', stopGen:'Üretimi durdur', stoppedMsg:'Yanıt durduruldu.', listenTitle:'Sesli oku',
     copyTitle:'Mesajı kopyala', copiedTitle:'Kopyalandı',
-    thinkEffortTitle:'Think seviyesi'
+    thinkEffortTitle:'Think seviyesi',
+    toolAttempt:'deneme', toolCap:'tekrar sınırı',
+    genRetryLabel:'Araç yanıtları sıkıştırılıp yeniden deneniyor…'
   },
   en:{
     newChat:'New chat', chats:'Chats', mem:'Memory', memTitle:'Memory',
@@ -1238,7 +1246,9 @@ const STRINGS = {
     thinkingTitle:'Thinking', thinkingLive:'Thinking…',
     send:'Send', stopGen:'Stop generating', stoppedMsg:'Response stopped.', listenTitle:'Listen',
     copyTitle:'Copy message', copiedTitle:'Copied',
-    thinkEffortTitle:'Think effort'
+    thinkEffortTitle:'Think effort',
+    toolAttempt:'attempt', toolCap:'retry cap',
+    genRetryLabel:'Compressing tool responses and retrying…'
   }
 };
 
@@ -1288,6 +1298,30 @@ document.addEventListener('keydown',e=>{
 });
 
 function t(k){ return STRINGS[lang][k] || k; }
+
+const TOOL_LABELS={
+  tr:{get_weather:'Havaya bakıyorum', get_datetime:'Saate bakıyorum',
+    create_calendar_event:'Etkinlik oluşturuyorum', list_calendar_events:'Takvimine bakıyorum',
+    delete_calendar_event:'Etkinliği siliyorum', update_calendar_event:'Etkinliği güncelliyorum',
+    list_emails:'E-postalarına bakıyorum', read_email:'E-postayı okuyorum',
+    send_email:'E-posta gönderiyorum', search_emails:'E-postalarda arıyorum',
+    save_memory:'Bunu hatırlıyorum', create_note:'Not oluşturuyorum',
+    list_notes:'Notlarını listeliyorum', read_note:'Notu okuyorum',
+    update_note:'Notu güncelliyorum', delete_note:'Notu siliyorum', search_notes:'Notlarda arıyorum',
+    create_task:'Görev oluşturuyorum', list_tasks:'Görevlerini listeliyorum',
+    complete_task:'Görevi tamamlıyorum', delete_task:'Görevi siliyorum', search_tasks:'Görevlerde arıyorum'},
+  en:{get_weather:'Checking the weather', get_datetime:'Checking the time',
+    create_calendar_event:'Creating an event', list_calendar_events:'Checking your calendar',
+    delete_calendar_event:'Deleting an event', update_calendar_event:'Updating an event',
+    list_emails:'Checking your emails', read_email:'Reading the email',
+    send_email:'Sending an email', search_emails:'Searching your emails',
+    save_memory:'Saving to memory', create_note:'Creating a note',
+    list_notes:'Listing your notes', read_note:'Reading a note',
+    update_note:'Updating a note', delete_note:'Deleting a note', search_notes:'Searching notes',
+    create_task:'Creating a task', list_tasks:'Listing your tasks',
+    complete_task:'Completing a task', delete_task:'Deleting a task', search_tasks:'Searching tasks'}
+};
+function toolLabel(n){ return (TOOL_LABELS[lang] && TOOL_LABELS[lang][n]) || n; }
 
 let currentSid = null; let sessionList = []; let loading = false; let memOpen = false;
 const SEND_ICON='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>';
@@ -2321,7 +2355,7 @@ async function sendMsg(){
   el.value=''; el.style.height='auto'; pendingImages=[]; renderImagePreview();
   addMsg('user',text,true,null,images); showTyping(); setLoading(true);
   let bubble=null, fullText='', thinkBox=null, fullReasoning='';
-  let gotReply=false, terminated=false;
+  let gotReply=false, terminated=false, toolRow=null;
   // ⚠️ YENİ DAL EKLEME: done/confirm/error/catch — hepsi terminal durumdur.
   // Yeni bir son durum dalı eklersen, return'den ÖNCE `terminated=true` ekle.
   // Aksi halde finally bloğu gereksiz "boş yanıt" mesajı ekler.
@@ -2341,7 +2375,9 @@ async function sendMsg(){
         let data; try{ data=JSON.parse(line.slice(6)); } catch{ continue; }
         if('token' in data){
           if(currentSid !== sid) continue; // user navigated away, skip rendering
-          if(!bubble) bubble=createStreamBubble();
+          if(!bubble){ bubble=createStreamBubble();
+            if(toolRow && toolRow.isConnected){ document.getElementById('messages').appendChild(toolRow); }
+          }
           gotReply=true;
           fullText+=data.token; bubble.innerHTML=withStreamCaret(renderMd(fullText)); scrollEnd(false);
         } else if(data.done){
@@ -2373,6 +2409,13 @@ async function sendMsg(){
           fullReasoning+=data.reasoning;
           thinkBox.querySelector('.think-body').textContent=fullReasoning;
           scrollEnd(false);
+        } else if(data.tool){
+          if(currentSid !== sid) continue;
+          if(data.tool.phase==='end'){ toolRow=endToolStatus(toolRow, data.tool.ok); }
+          else { toolRow=showToolStatus(data.tool, toolRow); }
+        } else if(data.gen_retry){
+          if(currentSid !== sid) continue;
+          toolRow=showGenRetry(toolRow);
         } else if(data.confirm){
           terminated=true; hideTyping(); showConfirmModal(data.confirm); setLoading(false); _pendingStream=null; return;
         } else if(data.error){
@@ -2392,6 +2435,8 @@ async function sendMsg(){
     }
   } finally{
     if(_pendingStream?.sid === sid) _pendingStream=null;
+    if(toolRow){ if(!toolRow.classList.contains('ok')) toolRow.remove(); toolRow=null; }
+    typingEl?.classList.remove('tool-pending');
     if(!gotReply && !terminated){
       if(currentSid === sid){
         const note = userAborted ? '\u2139\uFE0F '+t('stoppedMsg') : '\u26A0\uFE0F '+t('emptyReply');
@@ -2447,6 +2492,13 @@ function setLoading(v){
   btn.title=stoppable ? t('stopGen') : t('send');
   btn.innerHTML=stoppable ? STOP_ICON : SEND_ICON;
   if(v){ dot.classList.remove('ok','warn','error'); dot.classList.add('thinking'); } else { dot.classList.remove('thinking'); pollHealth(); }
+  // Aurora hız kolu: blob animasyonlarının oynatma hızı üretilirken artar,
+  // biterken normale döner. playbackRate değişimi kare atlattırmaz (faz korunur).
+  requestAnimationFrame(()=>{
+    document.querySelectorAll('#aurora .ab').forEach(el=>{
+      el.getAnimations().forEach(a=>{ try{ a.playbackRate = v ? 1.9 : 1; }catch(e){} });
+    });
+  });
 }
  const _SPEAKER_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>';
 const _CLIPBOARD_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
@@ -2526,6 +2578,48 @@ function showTyping(){
   document.getElementById('messages').appendChild(g); scrollEnd(true); typingEl=g;
 }
 function hideTyping(){ typingEl?.remove(); typingEl=null; }
+
+function showToolStatus(info, row){
+  if(!row || !row.isConnected){
+    row=document.createElement('div'); row.className='tool-status';
+    row.innerHTML='<span class="tspin"></span><span class="tlab"></span>';
+    const m=document.getElementById('messages'); m.appendChild(row);
+    if(typingEl){ typingEl.classList.add('tool-pending'); }
+  }
+  const lab=row.querySelector('.tlab');
+  let txt=toolLabel(info.name);
+  if(info.phase==='refused'){
+    txt+=' — '+t('toolCap')+' ('+info.attempt+'/'+info.max+')';
+  } else if((info.attempt||1)>1){
+    txt+=' ('+t('toolAttempt')+' '+info.attempt+'/'+info.max+')';
+  } else {
+    txt+='…';
+  }
+  lab.textContent=txt;
+  scrollEnd(false);
+  return row;
+}
+
+function endToolStatus(row, ok){
+  if(!row || !row.isConnected) return null;
+  row.classList.toggle('ok', !!ok);
+  typingEl?.classList.remove('tool-pending');
+  const lab=row.querySelector('.tlab');
+  if(!ok) lab.textContent='⚠ '+lab.textContent;
+  const el=row;
+  setTimeout(()=>{ el.remove(); }, ok?900:1600);
+  return null;
+}
+
+function showGenRetry(row){
+  if(row && row.isConnected) return row;
+  row=document.createElement('div'); row.className='tool-status';
+  row.innerHTML='<span class="tspin"></span><span class="tlab"></span>';
+  document.getElementById('messages').appendChild(row);
+  row.querySelector('.tlab').textContent=t('genRetryLabel');
+  scrollEnd(false);
+  return row;
+}
 function withStreamCaret(html){
   // Place the blinking caret inline at the very end of the last block —
   // appending after innerHTML would drop it onto its own line.
