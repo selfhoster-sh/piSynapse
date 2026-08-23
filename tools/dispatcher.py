@@ -95,12 +95,18 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> str:
             if name == "create_calendar_event":
                 from calendar_ops import create_event
                 st = params.get("start_time")
-                if not st:
-                    return "ERROR: start_time required."
+                summary = (params.get("summary") or "").strip()
+                missing = [w for w, v in (("a title", summary), ("a start time", st)) if not v]
+                if missing:
+                    # Chip flow guard: never create "New Event" junk.
+                    return ("CLARIFY_REQUIRED: The event request is missing "
+                            + " and ".join(missing) + ". Ask the user ONE short question "
+                            "(in their language) for exactly those details. "
+                            "Do not call create_calendar_event again until they answer.")
                 dur = _safe_int(params.get("duration_minutes", 60), 60, "duration_minutes", min_value=1)
                 return await asyncio.to_thread(
                     create_event,
-                    params.get("summary", "New Event"),
+                    summary,
                     st,
                     dur,
                 )
@@ -201,11 +207,18 @@ async def _run_notes_tool(name: str, params: dict, session_id: str = "") -> str:
     try:
         if name == "create_note":
             title = params.get("title", "").strip()
+            content = (params.get("content") or "").strip()
             if not title:
                 return "ERROR: title required."
+            if not content:
+                # Chip flow guard: never save an empty/placeholder note —
+                # the model must ask the user for the content first.
+                return ("CLARIFY_REQUIRED: The note has no content. Ask the user ONE short "
+                        "question (in their language) about what to write in the note. "
+                        "Do not call create_note again until they answer.")
             return await create_note(
                 title=title,
-                content=params.get("content", ""),
+                content=content,
                 category=params.get("category", ""),
             )
         elif name == "list_notes":
@@ -278,7 +291,10 @@ async def _run_tasks_tool(name: str, params: dict, session_id: str = "") -> str:
         if name == "create_task":
             summary = params.get("summary", "").strip()
             if not summary:
-                return "ERROR: summary required."
+                # Chip flow guard: no empty/placeholder tasks.
+                return ("CLARIFY_REQUIRED: The task has no text. Ask the user ONE short "
+                        "question (in their language) about what the task should be. "
+                        "Do not call create_task again until they answer.")
             priority = _safe_int(params.get("priority", 0), 0, "priority")
             return await create_task(
                 summary=summary,
@@ -374,8 +390,13 @@ async def _run_mail_tool(name: str, params: dict, session_id: str = "") -> str:
 
         elif name == "send_email":
             to, subj, body = params.get("to"), params.get("subject"), params.get("body")
-            if not all([to, subj, body]):
-                return "ERROR: 'to', 'subject' and 'body' are required."
+            missing = [w for w, v in (("the recipient", to), ("a subject", subj), ("the message body", body)) if not v]
+            if missing:
+                # Chip flow guard: never send or half-fill an email.
+                return ("CLARIFY_REQUIRED: The email request is missing "
+                        + " and ".join(missing) + ". Ask the user ONE short question "
+                        "(in their language) for exactly those parts. "
+                        "Do not call send_email again until they answer.")
             ok = await mc.send_message(account_id, to, subj, body, params.get("cc", ""), params.get("bcc", ""))
             detail = f"To: {to}"
             if params.get("cc"):
