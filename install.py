@@ -1244,9 +1244,10 @@ def step_env() -> None:
     auto_tts = ask("Auto-speak response when input was voice? (on/off)", current.get("AUTO_TTS_ON_VOICE", "off"))
 
     values = {
-        "LLM_BACKEND":        STATE["backend"],
+        # --skip-llm ile gelindiyse STATE boş olur: makul defaults kullan.
+        "LLM_BACKEND":        STATE.get("backend", "litert"),
         # LiteRT model IDs use dashes (gemma4-e2b); Ollama uses colons (gemma4:e2b).
-        "LLM_MODEL":          STATE["model"].replace(":", "-") if STATE["backend"] == "litert" else STATE["model"],
+        "LLM_MODEL":          STATE.get("model", "gemma4:e2b").replace(":", "-") if STATE.get("backend", "litert") == "litert" else STATE.get("model", "gemma4:e2b"),
         "LITERT_PORT":        str(LITERT_PORT),
         "DEFAULT_CITY":       default_city,
         "ASSISTANT_USER":     assistant_user,
