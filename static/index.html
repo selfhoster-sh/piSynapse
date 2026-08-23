@@ -27,27 +27,29 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   --border:#16161f; --accent:#f0943a; --accent-d:rgba(240,148,58,.12);
   --accent-h:#e08020; --text:#e2e2e8; --text2:#8a8a9e; --text3:#83839c;
   --text4:#626276; --user-bg:#111118; --danger:#e05555; --success:#4ecb71;
+  --glow:rgba(240,148,58,.30);
   --r:16px; --r-sm:10px; --r-chat:18px;
   --shadow-sm:0 1px 3px rgba(0,0,0,.2);
   --shadow-md:0 4px 12px rgba(0,0,0,.3);
   --shadow-lg:0 12px 40px rgba(0,0,0,.45);
 }
 .theme-blue{
-  --accent:#4d9ff5; --accent-d:rgba(77,159,245,.12); --accent-h:#358de8;
+  --glow:rgba(77,159,245,.30); --accent:#4d9ff5; --accent-d:rgba(77,159,245,.12); --accent-h:#358de8;
 }
 .theme-green{
-  --accent:#3dbf65; --accent-d:rgba(61,191,101,.12); --accent-h:#2ea855;
+  --glow:rgba(61,191,101,.30); --accent:#3dbf65; --accent-d:rgba(61,191,101,.12); --accent-h:#2ea855;
 }
 .theme-purple{
-  --accent:#9578f5; --accent-d:rgba(149,120,245,.12); --accent-h:#8060e8;
+  --glow:rgba(149,120,245,.30); --accent:#9578f5; --accent-d:rgba(149,120,245,.12); --accent-h:#8060e8;
 }
 .theme-red{
-  --accent:#f05555; --accent-d:rgba(240,85,85,.12); --accent-h:#e03838;
+  --glow:rgba(240,85,85,.30); --accent:#f05555; --accent-d:rgba(240,85,85,.12); --accent-h:#e03838;
 }
 /* Monochrome: near-white accent on the deepest dark tier.
    Every accent-driven gradient/glow (incl. the glass aurora via color-mix)
    turns into a faint white wash automatically. */
 .theme-black{
+  --glow:rgba(242,242,245,.22);
   --accent:#f2f2f5; --accent-d:rgba(242,242,245,.13); --accent-h:#d6d6dd;
   --bg:#000000; --surface:#08080b; --surface2:#0f0f14; --surface3:#17171e;
   --border:#12121b; --user-bg:#0d0d13;
@@ -121,12 +123,15 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
   box-shadow:inset 3px 0 0 var(--accent)}
 .sess-item.active .sess-name{color:var(--accent);font-weight:600}
 
-.sess-name{flex:1;font-size:14px;color:var(--text2);white-space:nowrap;
+.sess-name{flex:1;font-size:14px;color:var(--text2);white-space:nowrap;padding-right:20px;
   overflow:hidden;text-overflow:ellipsis;transition:color .2s}
-.sess-time{font-size:11px;color:var(--text3);flex-shrink:0}
-.sess-del{opacity:0;pointer-events:none;background:none;border:none;color:var(--text3);
-  cursor:pointer;padding:4px;border-radius:4px;flex-shrink:0;line-height:1;transition:opacity .15s,color .15s}
+.sess-time{font-size:11px;color:var(--text3);flex-shrink:0;transition:opacity .15s}
+.sess-item{position:relative}
+.sess-del{position:absolute;right:8px;top:50%;transform:translateY(-50%);
+  opacity:0;pointer-events:none;background:none;border:none;color:var(--text3);
+  cursor:pointer;padding:4px;border-radius:4px;line-height:1;transition:opacity .15s,color .15s}
 @media (hover:hover){
+.sess-item:hover:not(:focus) .sess-time{opacity:0}
 .sess-item:hover .sess-del{opacity:1;pointer-events:auto}
 .sess-del:hover:not(:focus){color:var(--danger);background:rgba(224,85,85,.1)}}
 
@@ -286,6 +291,25 @@ body.theme-black .msg-group.user .msg-meta .who{color:var(--text3)}
   color:var(--text);box-shadow:var(--shadow-md)}
 .w-title{font-size:22px;font-weight:600;color:var(--text);letter-spacing:-.5px}
 .w-sub{font-size:14.5px;color:var(--text2);line-height:1.6;max-width:300px}
+/* ── Custom select (styled dropdown) ───────────────────────────────────── */
+.sel-wrap{position:relative;flex:1 1 auto;min-width:0}
+.sel-btn{width:100%;text-align:left;background:var(--surface2);border:1px solid var(--border);
+  color:var(--text);border-radius:var(--r-sm);padding:8px 30px 8px 12px;font-size:13.5px;
+  font-weight:500;cursor:pointer;transition:border-color .15s}
+.sel-btn:hover{border-color:var(--surface3)}
+.sel-btn::after{content:'';position:absolute;right:12px;top:50%;width:7px;height:7px;
+  border-right:1.6px solid var(--text3);border-bottom:1.6px solid var(--text3);
+  transform:translateY(-70%) rotate(45deg);transition:transform .18s}
+.sel-wrap.open .sel-btn{border-color:var(--accent)}
+.sel-wrap.open .sel-btn::after{transform:translateY(-30%) rotate(225deg)}
+.sel-menu{display:none;position:absolute;top:calc(100% + 5px);left:0;right:0;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);
+  box-shadow:var(--shadow-lg);z-index:2100;max-height:230px;overflow:auto;padding:4px}
+.sel-wrap.open .sel-menu{display:block;animation:msgSlideIn .16s ease-out both}
+.sel-opt{padding:8px 10px;border-radius:7px;font-size:13.5px;color:var(--text2);cursor:pointer}
+.sel-opt:hover{background:var(--surface3);color:var(--text)}
+.sel-opt.on{color:var(--accent);font-weight:600}
+
 .w-chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;max-width:420px;margin-top:4px}
 .w-chip{border:1px solid var(--border);background:var(--surface2);color:var(--text2);
   font-size:13px;padding:7px 13px;border-radius:999px;cursor:pointer;
@@ -609,35 +633,40 @@ body.glass-mode{
     --surface3:rgba(44,44,58,.42); --border:rgba(255,255,255,.13);
     --user-bg:rgba(30,30,42,.48);
   }
-  body.glass-mode::before{
-    inset:-9%;
-    background:
-      radial-gradient(1150px 780px at 6% -14%, rgba(240,148,58,.16), transparent 62%),
-      radial-gradient(950px 720px at 108% 4%, rgba(77,159,245,.11), transparent 60%),
-      radial-gradient(1050px 950px at 42% 118%, rgba(149,120,245,.12), transparent 62%),
-      radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.32) 100%);
-  }
 }
 
 /* Fixed ambient backdrop: aurora blobs + vignette + film grain */
 body.glass-mode{position:relative;isolation:isolate}
 body.glass-mode::before{
   content:'';position:fixed;inset:-9%;z-index:-1;pointer-events:none;
-  background:
-    radial-gradient(1150px 780px at 6% -14%, color-mix(in srgb, var(--accent) 24%, transparent), transparent 62%),
-    radial-gradient(950px 720px at 108% 4%, color-mix(in srgb, var(--accent) 15%, transparent), transparent 60%),
-    radial-gradient(1050px 950px at 42% 118%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 62%),
-    radial-gradient(720px 540px at 84% 52%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 56%),
-    radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.32) 100%);
-}
-@keyframes auroraDrift{
-  from{transform:translate3d(-1.1%,-.8%,0) scale(1.02)}
-  to{transform:translate3d(1.2%,1%,0) scale(1.05)}
+  background:radial-gradient(ellipse at center, transparent 52%, rgba(0,0,0,.34) 100%);
 }
 @keyframes grainBreathe{from{opacity:.09}to{opacity:.12}}
-/* Aurora comes alive only while a reply is being generated */
-body.generating.glass-mode::before{animation:auroraDrift 14s ease-in-out infinite alternate}
 body.generating.glass-mode::after{animation:grainBreathe 7s ease-in-out infinite alternate}
+
+/* Lava-lamp blobs: two independent glow masses drifting while generating.
+   Transform-only (compositor friendly); fade out + freeze when idle so
+   finishing a reply returns the backdrop to a calm still image. */
+#aurora{position:fixed;inset:-12%;z-index:-1;pointer-events:none;display:none;overflow:hidden}
+body.glass-mode #aurora{display:block}
+.ab{position:absolute;border-radius:50%;opacity:0;transition:opacity 1.1s ease;will-change:transform}
+.ab1{width:62vmax;height:62vmax;left:-10%;top:-16%;
+  background:radial-gradient(closest-side,var(--glow),transparent 68%)}
+.ab2{width:54vmax;height:54vmax;right:-14%;bottom:-20%;
+  background:radial-gradient(closest-side,var(--glow),transparent 66%)}
+body.generating.glass-mode .ab{opacity:.9}
+body.generating.glass-mode .ab1{animation:lavaA 17s ease-in-out infinite alternate}
+body.generating.glass-mode .ab2{animation:lavaB 23s ease-in-out infinite alternate}
+@keyframes lavaA{
+  0%{transform:translate3d(0,0,0) scale(1)}
+  45%{transform:translate3d(28vw,16vh,0) scale(1.26)}
+  100%{transform:translate3d(-4vw,44vh,0) scale(.9)}
+}
+@keyframes lavaB{
+  0%{transform:translate3d(0,0,0) scale(1.06)}
+  50%{transform:translate3d(-32vw,-18vh,0) scale(.86)}
+  100%{transform:translate3d(8vw,-40vh,0) scale(1.24)}
+}
 
 body.glass-mode::after{
   content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.09;
@@ -868,6 +897,7 @@ body.glass-mode ::selection{background:color-mix(in srgb, var(--accent) 35%, tra
 <base target="_blank">
 </head>
 <body>
+<div id="aurora" aria-hidden="true"><i class="ab ab1"></i><i class="ab ab2"></i></div>
 
 <div id="overlay" onclick="closeSidebar()"></div>
 <div id="drag-overlay" class="drag-overlay"><div class="drag-overlay-text" id="drag-overlay-text">Drop images here</div></div>
@@ -1170,6 +1200,47 @@ let lang  = localStorage.getItem('ps_lang') || ((navigator.language||'').toLower
 let theme = localStorage.getItem('ps_theme') || 'orange';
 let glass = localStorage.getItem('ps_glass') === '1';
 let minimal = localStorage.getItem('ps_minimal') === '1';
+function enhanceSelect(sel){
+  if(!sel || sel.dataset.enhanced) return;
+  sel.dataset.enhanced = '1';
+  sel.style.display = 'none';
+  const wrap=document.createElement('div'); wrap.className='sel-wrap';
+  const btn=document.createElement('button'); btn.type='button'; btn.className='sel-btn';
+  const menu=document.createElement('div'); menu.className='sel-menu';
+  sel.parentNode.insertBefore(wrap, sel);
+  wrap.appendChild(btn); wrap.appendChild(menu); wrap.appendChild(sel);
+
+  const options=()=>[...sel.options].map(o=>({v:o.value,t:o.textContent,s:o.selected}));
+  const syncBtn=()=>{ const o=options().find(x=>x.s)||options()[0]; btn.textContent=o?o.t:''; };
+  const buildMenu=()=>{
+    menu.innerHTML=options().map(o=>`<div class="sel-opt${o.s?' on':''}" data-v="${esc(o.v)}">${esc(o.t)}</div>`).join('');
+    syncBtn();
+  };
+  buildMenu();
+  btn.addEventListener('click',e=>{
+    e.stopPropagation();
+    const willOpen=!wrap.classList.contains('open');
+    document.querySelectorAll('.sel-wrap.open').forEach(w=>w.classList.remove('open'));
+    if(willOpen){ wrap.classList.add('open'); menu.scrollTop=0; }
+  });
+  menu.addEventListener('click',e=>{
+    const d=e.target.closest('.sel-opt'); if(!d) return;
+    sel.value=d.dataset.v;
+    sel.dispatchEvent(new Event('change'));
+    buildMenu();
+    wrap.classList.remove('open');
+  });
+  // keep the pretty control in sync when code sets sel.value directly
+  sel.addEventListener('change', buildMenu);
+}
+function enhanceAllSelects(root){
+  (root||document).querySelectorAll('#lang-select, #settings-form select').forEach(enhanceSelect);
+}
+document.addEventListener('click',()=>document.querySelectorAll('.sel-wrap.open').forEach(w=>w.classList.remove('open')));
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape') document.querySelectorAll('.sel-wrap.open').forEach(w=>w.classList.remove('open'));
+});
+
 function t(k){ return STRINGS[lang][k] || k; }
 
 let currentSid = null; let sessionList = []; let loading = false; let memOpen = false;
@@ -1446,26 +1517,21 @@ function applyLang(l){
 
   renderThemeGrid();
 
-  const welcomeEl = document.querySelector('.welcome');
-  if(welcomeEl && !currentSid){
-    welcomeEl.querySelector('.w-title').textContent = t('welcomeTitle');
-    welcomeEl.querySelector('.w-sub').innerHTML = t('welcomeSub').replace(/\n/g,'<br>');
-    welcomeEl.querySelector('.w-start').textContent = t('startChat');
-  }
-
   const sessList = document.getElementById('session-list');
   if(sessList && sessionList.length === 0){
     const noChatsDiv = sessList.querySelector('div[style*="padding:14px"]');
     if(noChatsDiv) noChatsDiv.textContent = t('noChats');
   }
 
-  if(!currentSid && document.querySelector('.welcome') && !document.querySelector('.w-start')){
-    document.querySelector('.w-title').textContent = t('readyTitle');
-    document.querySelector('.w-sub').textContent = t('readySub');
-  }
+  // Full rebuild so suggestion chips and every welcome string switch at once
+  if(!currentSid && document.querySelector('.welcome')) showWelcome();
 
   document.querySelectorAll('.copy-label').forEach(el => { el.textContent = t('copy'); });
   if(!currentSid) document.getElementById('sess-title').textContent = 'piSynapse';
+
+  // If settings are open, redraw them in the new language immediately
+  const sm = document.getElementById('settings-modal');
+  if(sm && sm.classList.contains('open')) openSettings();
 }
 
 function _thinkBtn(){ return document.getElementById('inline-think-btn'); }
@@ -2047,7 +2113,7 @@ let lastInputWasVoice = false;
 
 document.addEventListener('DOMContentLoaded', async ()=>{
   if(window._beacon) window._beacon({t:'init', step:'start'});
-  applyTheme(theme); applyGlass(glass); applyMinimal(minimal); applyLang(lang); setupInput(); setupMobileKeyboard(); setupHoldToRecord();
+  applyTheme(theme); applyGlass(glass); applyMinimal(minimal); applyLang(lang); enhanceAllSelects(); setupInput(); setupMobileKeyboard(); setupHoldToRecord();
   if(window._beacon) window._beacon({t:'init', step:'prep-done'});
   // Check if API key is needed
   try {
@@ -2425,9 +2491,9 @@ function withStreamCaret(html){
 
 const WELCOME_CHIPS = {
   tr:['Son e-postalarımı özetle','Bu haftaki etkinliklerim','Yarın için görev oluştur',
-      'Notlarımı göster','Bugün hava nasıl?','Komik bir şey söyle'],
+      'Görevlerimi listele','Bugün hava nasıl?','Notlarımı göster'],
   en:['Summarize my recent emails','My events this week','Create a task for tomorrow',
-      'Show my notes',"How's the weather today?",'Tell me something funny']
+      'List my tasks',"How's the weather today?",'Show my notes']
 };
 
 function chipSend(el){
@@ -2736,6 +2802,7 @@ async function openSettings(){
       advInner.insertAdjacentHTML('beforeend',
         `<div class="setting-item advanced"><div class="setting-label"><span class="label-wrap"><span>${esc(t('minimalLabel'))}</span></span><label class="switch"><input type="checkbox" id="minimal-toggle" ${minimal ? 'checked' : ''} onchange="applyMinimal(this.checked)"><span class="track"></span></label></div><div class="setting-desc">${esc(t('minimalDesc'))}</div></div>`);
     }
+    enhanceAllSelects(form);
   } catch {
     form.innerHTML = `<div style="text-align:center;padding:12px;color:var(--danger)">${t('connErr')}</div>`;
   }
