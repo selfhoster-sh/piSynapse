@@ -20,3 +20,6 @@ build/
 
 # Agent/dev notes — kept local only
 # NOTES.md artık git'te takip ediliyor (2026-08-23 karar)
+
+# Yerel hassas kopya — push EDİLMEZ (IP/domain içerir)
+NOTES.local.md
