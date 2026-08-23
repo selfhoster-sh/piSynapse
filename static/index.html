@@ -2549,12 +2549,29 @@ function chipSend(el){
   sendMsg();
 }
 
+function shuffleChips(list){
+  // Random layout per render, with anti-clump rules: a chip may not sit
+  // next to itself at a lane's loop seam, and lanes may not start with
+  // the same chip stacked. Retry-shuffle beats clever patching here.
+  for(let i=0;i<60;i++){
+    const l=[...list];
+    for(let j=l.length-1;j>0;j--){ const k=Math.floor(Math.random()*(j+1)); [l[j],l[k]]=[l[k],l[j]]; }
+    const mid=Math.ceil(l.length/2);
+    const r1=l.slice(0,mid), r2=l.slice(mid);
+    if(r1.length>1 && r1[0]===r1[r1.length-1]) continue;
+    if(r2.length>1 && r2[0]===r2[r2.length-1]) continue;
+    if(r1[0]===r2[0]) continue;
+    return [r1,r2];
+  }
+  const mid=Math.ceil(list.length/2);
+  return [list.slice(0,mid), list.slice(mid)];
+}
 function showWelcome(){
   const list = WELCOME_CHIPS[lang] || WELCOME_CHIPS.en;
   const mk = arr => `<span class="chip-set">${arr.map(c => `<button class="w-chip" onclick="chipSend(this)">${c}</button>`).join('')}</span>`;
-  const mid = Math.ceil(list.length / 2);
-  const row1 = mk(list.slice(0, mid)) + mk(list.slice(0, mid));
-  const row2 = mk(list.slice(mid)) + mk(list.slice(mid));
+  const [a,b] = shuffleChips(list);
+  const row1 = mk(a) + mk(a);
+  const row2 = mk(b) + mk(b);
   document.getElementById('messages').innerHTML=`<div class="welcome"><div class="w-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">  <g class="outer-wrap"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect></g><g class="inner-wrap"><rect x="9" y="9" width="6" height="6"></rect></g></svg></div><div class="w-title">${t('welcomeTitle')}</div><div class="w-sub">${t('welcomeSub').replace(/\n/g,'<br>')}</div><div class="w-marquee"><div class="chip-track">${row1}</div><div class="chip-track rev">${row2}</div></div></div>`;
   initWelcomeMarquee();
   const welcomeEl = document.querySelector('.welcome');
