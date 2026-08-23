@@ -25,6 +25,15 @@ Test suite grows from 275 to 302 passing tests (+2 documented xfails).
 - Loop-guard test suites for both execution paths plus an intent-pipeline
   suite covering the embedding layer, keyword heuristics and the LLM fallback
   on both backends.
+- **Instance-level assistant language (`UI_LANGUAGE`)**: backend-generated
+  user-facing strings (empty-reply fallback, engine error messages) are
+  localized via a new `messages.py` catalog driven by a Settings option
+  (`tr`/`en`, applied live without restart). History entries are therefore
+  written in the instance owner's language, and the web UI adopts the same
+  language by default when the visitor hasn't explicitly chosen one.
+  Model-facing prompts stay English by design — small models follow English
+  instructions best and users never see them; intent keyword heuristics
+  remain intentionally multilingual detection data.
 - **Per-message actions row**: assistant replies get copy-message and
   listen-to-TTS buttons side by side under the bubble — visible in every
   theme including the minimal chat view, where the old placement inside the

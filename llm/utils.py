@@ -23,6 +23,17 @@ FINALIZE_NUDGE = (
 EMPTY_ANSWER_FALLBACK = (
     "İşlem tamamlandı ancak özet oluşturulamadı. Lütfen isteğini tekrar dener misin?"
 )
+
+
+def empty_answer_fallback() -> str:
+    """User-facing fallback in the instance's UI_LANGUAGE.
+
+    Kept as a function so setting changes apply live; the module constant
+    above remains the canonical Turkish text for backwards compatibility.
+    """
+    from messages import get_message
+
+    return get_message("llm_empty_reply")
 MAX_IDENTICAL_EXECUTIONS = 2
 
 # Detect when the model emits a tool call within plain text (leak).

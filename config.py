@@ -271,6 +271,11 @@ SETTINGS_SCHEMA: dict = {
         {"value": "litert", "label": {"tr": "LiteRT (yerel, hızlı)", "en": "LiteRT (local, fast)"}},
         {"value": "ollama", "label": {"tr": "Ollama (yerel)", "en": "Ollama (local)"}},
     ]},
+    # Read live by messages.get_message() — deliberately NOT restart-required.
+    "UI_LANGUAGE":        {"type": "select", "default": "tr", "label": {"tr": "Asistan Dili (sistem mesajları)", "en": "Assistant Language (system messages)"}, "options": [
+        {"value": "tr", "label": {"tr": "Türkçe",   "en": "Turkish"}},
+        {"value": "en", "label": {"tr": "İngilizce", "en": "English"}},
+    ]},
     "LLM_MODEL":          {"type": "select", "default": "gemma4-e2b", "label": {"tr": "LLM Model",              "en": "LLM Model"}},
     "LLM_REASONING_EFFORT": {"type": "select", "default": "medium", "label": {"tr": "Düşünce Seviyesi (Gemma4)", "en": "Thinking Level (Gemma4)"}, "options": [
         {"value": "none",     "label": {"tr": "Kapalı (düşünme yok)",   "en": "Off (no thinking)"}},

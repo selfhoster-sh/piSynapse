@@ -11,6 +11,7 @@ from config import (
     OLLAMA_BASE_URL,
     get,
 )
+from messages import get_message
 from tool_verification import run_verification
 from tools import (
     CONFIRM_TOOLS,
@@ -31,13 +32,16 @@ from .utils import (
     strip_tool_leaks,
 )
 from .utils import (
-    EMPTY_ANSWER_FALLBACK as _EMPTY_ANSWER_FALLBACK,
+    EMPTY_ANSWER_FALLBACK as _EMPTY_ANSWER_FALLBACK,  # noqa: F401 -- legacy alias, referenced by tests
 )
 from .utils import (
     FINALIZE_NUDGE as _FINALIZE_NUDGE,
 )
 from .utils import (
     MAX_IDENTICAL_EXECUTIONS as _MAX_IDENTICAL_EXECUTIONS,
+)
+from .utils import (
+    empty_answer_fallback as _empty_answer_fallback,
 )
 
 logger = logging.getLogger("piSynapse")
@@ -216,10 +220,10 @@ async def chat_with_ollama(
         )
         if err:
             logger.error(f"Ollama request failed: {err}")
-            return {"reply": "Motorla bağlantı kurulamadı. Lütfen tekrar deneyin.", "pending_action": None, "memories_saved": memories_saved, "thinking": None}
+            return {"reply": get_message("llm_unreachable"), "pending_action": None, "memories_saved": memories_saved, "thinking": None}
         if not resp_json or not message:
             logger.error(f"Ollama returned empty response (resp_json={resp_json}, message={message})")
-            return {"reply": "Motor boş yanıt döndürdü. Lütfen tekrar deneyin.", "pending_action": None, "memories_saved": memories_saved, "thinking": None}
+            return {"reply": get_message("llm_empty_response"), "pending_action": None, "memories_saved": memories_saved, "thinking": None}
 
         if resp_json.get("done_reason") == "length":
             logger.warning(f"Ollama stopped early (done_reason='length'). Consider raising LLM_NUM_CTX (currently {get('LLM_NUM_CTX', DEFAULT_LLM_NUM_CTX)}).")
@@ -270,7 +274,7 @@ async def chat_with_ollama(
                 continue
             reply = strip_prefix(raw_content)
             if not reply.strip():
-                reply = _EMPTY_ANSWER_FALLBACK
+                reply = _empty_answer_fallback()
             return {"reply": reply, "pending_action": None, "memories_saved": memories_saved, "thinking": thinking}
 
         if non_confirm_calls:
