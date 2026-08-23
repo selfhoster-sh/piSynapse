@@ -20,10 +20,11 @@ button:focus{outline:none}
 button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 :root{
-  /* WCAG AA: text 4.5:1, text2 5.1:1, text3 4.76:1 on surface; text4 3.16:1 (decorative) */
+  /* WCAG AA: text 4.5:1, text2 5.1:1, text3 4.69:1 on surface2 (5.35 on bg);
+     text4 3.16:1 (decorative) */
   --bg:#0a0a0f; --surface:#111116; --surface2:#1a1a22; --surface3:#26262f;
   --border:#1e1e2a; --accent:#f0943a; --accent-d:rgba(240,148,58,.12);
-  --accent-h:#e08020; --text:#e2e2e8; --text2:#8a8a9e; --text3:#7e7e96;
+  --accent-h:#e08020; --text:#e2e2e8; --text2:#8a8a9e; --text3:#83839c;
   --text4:#626276; --user-bg:#1a1a22; --danger:#e05555; --success:#4ecb71;
   --r:16px; --r-sm:10px; --r-chat:18px;
   --shadow-sm:0 1px 3px rgba(0,0,0,.2);
@@ -189,7 +190,11 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 
 /* ── Messages ──────────────────────────────────────────────────────────────── */
 #messages{flex:1;overflow-y:auto;padding:80px 20px 160px;display:flex;
-  flex-direction:column;scroll-behavior:smooth}
+  flex-direction:column;scroll-behavior:smooth;
+  /* Edge fade: content dissolves instead of hard-clipping under the
+     topbar / above the input bar (works in glass mode too — no bg needed) */
+  -webkit-mask-image:linear-gradient(to bottom, transparent 0, #000 28px, #000 calc(100% - 64px), transparent 100%);
+  mask-image:linear-gradient(to bottom, transparent 0, #000 28px, #000 calc(100% - 64px), transparent 100%)}
 .msg-group{display:flex;flex-direction:column;margin-bottom:24px;max-width:800px;
   width:100%;margin-left:auto;margin-right:auto}
 .msg-group.user{align-items:flex-end}
@@ -214,6 +219,11 @@ body.theme-black .msg-group.user .msg-meta .who{color:var(--text3)}
 
 /* Markdown, code, LaTeX */
 .bubble p{margin-bottom:12px}.bubble p:last-child{margin-bottom:0}
+.bubble p{text-wrap:pretty}
+/* Streaming caret: inline cursor at the end of the last block */
+.stream-caret{display:inline-block;width:7px;height:15px;margin-left:3px;vertical-align:-2px;
+  border-radius:2px;background:var(--accent);animation:caretBlink 1s steps(1) infinite}
+@keyframes caretBlink{0%,60%{opacity:1}61%,100%{opacity:.15}}
 .bubble ul,.bubble ol{padding-left:24px;margin-bottom:12px}
 .bubble ol{list-style:none;padding-left:4px}
 .bubble ol li{margin-bottom:2px}
@@ -279,6 +289,11 @@ body.theme-black .msg-group.user .msg-meta .who{color:var(--text3)}
   color:var(--text);box-shadow:var(--shadow-md)}
 .w-title{font-size:22px;font-weight:600;color:var(--text);letter-spacing:-.5px}
 .w-sub{font-size:14.5px;color:var(--text2);line-height:1.6;max-width:300px}
+.w-chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;max-width:420px;margin-top:4px}
+.w-chip{border:1px solid var(--border);background:var(--surface2);color:var(--text2);
+  font-size:13px;padding:7px 13px;border-radius:999px;cursor:pointer;
+  transition:border-color .2s,color .2s,background .2s}
+@media (hover:hover){.w-chip:hover{border-color:var(--accent);color:var(--text);background:var(--surface3)}}
 .w-start{padding:10px 24px;background:var(--text);border:none;border-radius:24px;
   color:var(--bg);font-size:14px;font-weight:600;cursor:pointer;margin-top:8px;
   font-family:inherit;transition:all .2s}@media (hover:hover){
@@ -2230,7 +2245,7 @@ async function sendMsg(){
           if(currentSid !== sid) continue; // user navigated away, skip rendering
           if(!bubble) bubble=createStreamBubble();
           gotReply=true;
-          fullText+=data.token; bubble.innerHTML=renderMd(fullText); scrollEnd(false);
+          fullText+=data.token; bubble.innerHTML=withStreamCaret(renderMd(fullText)); scrollEnd(false);
         } else if(data.done){
           if(thinkBox && fullReasoning){
             const body = thinkBox.querySelector('.think-body');
@@ -2293,6 +2308,8 @@ async function sendMsg(){
       await loadSessions();
     }
     if(currentSid === sid){
+      // Stream finished: drop the caret, keep final markdown render
+      if(bubble && fullText) bubble.innerHTML = renderMd(fullText);
       // Add copy/TTS actions to the streamed message (createStreamBubble adds none)
       if(bubble && fullText) attachMsgActions(bubble.closest('.msg-group'), fullText);
       setLoading(false); el.focus();
@@ -2410,8 +2427,31 @@ function showTyping(){
   document.getElementById('messages').appendChild(g); scrollEnd(true); typingEl=g;
 }
 function hideTyping(){ typingEl?.remove(); typingEl=null; }
+function withStreamCaret(html){
+  // Place the blinking caret inline at the very end of the last block —
+  // appending after innerHTML would drop it onto its own line.
+  const CLOSERS=['</p>','</li>','</h1>','</h2>','</h3>','</blockquote>','</pre>','</ol>','</ul>','</div>'];
+  let best=-1;
+  for(const c of CLOSERS){ const i=html.lastIndexOf(c); if(i>best) best=i; }
+  return best<0 ? html+'<span class="stream-caret"></span>' : html.slice(0,best)+'<span class="stream-caret"></span>'+html.slice(best);
+}
+
+const WELCOME_CHIPS = {
+  tr:['Son e-postalarımı özetle','Bu haftaki etkinliklerim','Yarın için hatırlatıcı oluştur','Bugün hava nasıl?'],
+  en:['Summarize my recent emails','My events this week','Create a reminder for tomorrow','How is the weather today?']
+};
+
+function chipFill(el){
+  const inp = document.getElementById('msg-input');
+  if(!inp) return;
+  inp.value = el.textContent;
+  inp.focus();
+}
+
 function showWelcome(){
-  document.getElementById('messages').innerHTML=`<div class="welcome"><div class="w-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">  <g class="outer-wrap"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect></g><g class="inner-wrap"><rect x="9" y="9" width="6" height="6"></rect></g></svg></div><div class="w-title">${t('welcomeTitle')}</div><div class="w-sub">${t('welcomeSub').replace(/\n/g,'<br>')}</div></div>`;
+  const chips = (WELCOME_CHIPS[lang] || WELCOME_CHIPS.en)
+    .map(c => `<button class="w-chip" onclick="chipFill(this)">${c}</button>`).join('');
+  document.getElementById('messages').innerHTML=`<div class="welcome"><div class="w-icon"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">  <g class="outer-wrap"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect></g><g class="inner-wrap"><rect x="9" y="9" width="6" height="6"></rect></g></svg></div><div class="w-title">${t('welcomeTitle')}</div><div class="w-sub">${t('welcomeSub').replace(/\n/g,'<br>')}</div><div class="w-chips">${chips}</div></div>`;
   const welcomeEl = document.querySelector('.welcome');
   if(welcomeEl) welcomeEl.classList.add('welcome-anim');
 }
