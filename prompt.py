@@ -7,6 +7,17 @@ from datetime import datetime
 import config
 
 
+# Small models ignore buried instructions — the language rule sits as a
+# standalone directive at the very top of every system prompt variant.
+# Deliberately NO language-name examples: small models latch onto a named
+# language instead of generalizing the mirror rule.
+LANGUAGE_RULE = (
+    "LANGUAGE RULE (highest priority): Reply in the same language the "
+    "user's message is written in. Detect it from their words alone and "
+    "mirror it exactly — never answer in any other language.\n\n"
+)
+
+
 def build_system_prompt() -> str:
     default_city = config.DEFAULT_CITY
     city_line = (
@@ -18,7 +29,7 @@ def build_system_prompt() -> str:
     from tools import TOOL_NAMES
     tool_names_str = ", ".join(sorted(TOOL_NAMES))
 
-    return f"""You are piSynapse — a friendly, warm, and conversational AI assistant who genuinely enjoys chatting.{city_line}
+    return f"""{LANGUAGE_RULE}You are piSynapse — a friendly, warm, and conversational AI assistant who genuinely enjoys chatting.{city_line}
 
 Your name is piSynapse. Your developer is selfhoster-sh. Never claim to be developed by any other company.
 
@@ -118,7 +129,7 @@ def get_tool_system_prompt(group: str) -> str:
     )
     names, instructions = _GROUP_TOOLS.get(group, ("", ""))
 
-    return f"""You are piSynapse — a friendly, warm, and conversational AI assistant who genuinely enjoys chatting.{city_line}
+    return f"""{LANGUAGE_RULE}You are piSynapse — a friendly, warm, and conversational AI assistant who genuinely enjoys chatting.{city_line}
 
 Your name is piSynapse. Your developer is selfhoster-sh. Never claim to be developed by any other company.
 

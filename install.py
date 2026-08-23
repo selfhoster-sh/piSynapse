@@ -1177,7 +1177,7 @@ def step_env() -> None:
         info("Generated API key (saved to .env)")
 
     # Personalization
-    assistant_user = ask("Your name", current.get("ASSISTANT_USER", "default"))
+    assistant_user = ask("Your name (shown as the sender label; empty = 'You')", current.get("ASSISTANT_USER", ""))
     default_city = ask("Default city for weather", current.get("DEFAULT_CITY", ""))
 
     # Security: allowed Host header values (empty = auto-allow local names/IPs).
