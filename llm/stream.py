@@ -149,6 +149,42 @@ def _wants_tools_hint(text: str) -> bool:
     return bool(text) and text.lstrip().upper().startswith("TOOL_NEEDED")
 
 
+def _escalation_tools(full_text: str, user_message: str = "") -> tuple[list, str]:
+    """Pick the SMALLEST sufficient toolset for an escalated round.
+
+    Escalating with the full combined set costs ~49s TTFT on litert; a single
+    group (~7 tools) streams its first token in ~13s. Priority:
+    1. group inferred from the leaked tool call's name (deterministic)
+    2. group inferred from keyword heuristics on the user message
+    3. full combined set as last resort
+    Returns (tools, scope_label_for_logging).
+    """
+    from tools.definitions import (
+        TOOL_GROUPS,
+        get_combined_tools,
+        get_tools_for_group,
+    )
+
+    name_to_group: dict[str, str] = {}
+    for grp, names in TOOL_GROUPS.items():
+        for n in names:
+            name_to_group.setdefault(n, grp)
+
+    leaked = parse_leaked_tool_call(full_text)
+    if leaked:
+        g = name_to_group.get(leaked["function"]["name"])
+        if g:
+            return get_tools_for_group(g), g
+    try:
+        from llm.intent import _keyword_group
+        g = _keyword_group(user_message or "")
+    except Exception:
+        g = None
+    if g:
+        return get_tools_for_group(g), f"{g} (keyword)"
+    return get_combined_tools(), "combined"
+
+
 async def chat_with_ollama_stream(
     messages: list[dict],
     *,
@@ -230,6 +266,7 @@ async def chat_with_ollama_stream(
         tool_calls_acc: list = []
         done_reason = None
         suppressing = False
+        escalate_now = False
 
         try:
             async with client.stream("POST", url, json=payload) as resp:
@@ -292,12 +329,20 @@ async def chat_with_ollama_stream(
 
                     if token:
                         full_text += token
+                        hatch_armed = intent_no_tools and not tools_escalated and not think
                         if not suppressing and not tool_calls_acc:
                             if _check_tool_leak(full_text) or _check_tool_leak(buf + token):
                                 suppressing = True
                                 logger.info("Tool call pattern detected mid-stream, suppressing output")
+                            elif hatch_armed and _wants_tools_hint(full_text):
+                                # Marker confirmed: nothing more of value in
+                                # this round — stop reading, escalate below.
+                                suppressing = True
+                                logger.info("TOOL_NEEDED marker detected — cutting round short")
                         if suppressing:
-                            pass
+                            if hatch_armed:
+                                escalate_now = True
+                                break
                         elif not early_buf_flushed:
                             buf += token
                             if not tool_calls_acc and (len(buf) >= EARLY_BUFFER_CHARS or done_reason):
@@ -338,19 +383,17 @@ async def chat_with_ollama_stream(
         if done_reason == "length":
             logger.warning(f"Model stopped early (done_reason='length'). Consider raising LLM_NUM_CTX (currently {get('LLM_NUM_CTX', DEFAULT_LLM_NUM_CTX)}).")
 
-        if intent_no_tools and not tools_escalated and not think and (
-                _check_tool_leak(full_text) or _wants_tools_hint(full_text)):
-            # The classifier routed this to pure chat, but the model signals a
-            # tool need anyway (FC syntax leaked into text OR the literal
-            # TOOL_NEEDED marker). Escalate ONCE to the full toolset and redo
-            # the round — small classifiers misroute; the generator is the
-            # strongest judge. Gated on intent_no_tools so terminal text-only
-            # modes (final nudge / truncation retry) can never re-arm it.
+        if escalate_now:
+            # Mid-stream hatch fired (TOOL_NEEDED marker or leaked call
+            # syntax) — redo this round with the smallest sufficient toolset.
+            # Gated on intent_no_tools upstream so terminal text-only modes
+            # (final nudge / truncation retry) can never re-arm it.
             tools_escalated = True
             use_tools = True
-            filtered_tools = get_combined_tools()
+            last_user = next((m.get("content", "") for m in reversed(messages) if m.get("role") == "user"), "")
+            filtered_tools, esc_scope = _escalation_tools(full_text, last_user)
             yield {"gen_retry": {"reason": "tools_escalated"}}
-            logger.info("Tool need signalled without tools (leak/marker) — escalating to full toolset")
+            logger.info(f"Escalating to toolset scope={esc_scope} ({len(filtered_tools)} tools)")
             continue
 
         if not tool_calls_acc and not think and use_tools and _check_tool_leak(full_text):
