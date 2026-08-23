@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pisynapse-v17';
+const CACHE_NAME = 'pisynapse-v18';
 const STATIC_ASSETS = [
   '/',
   '/static/manifest.json',

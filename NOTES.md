@@ -13,6 +13,16 @@ Project diary + architecture reference. **Reverse chronological: newest entries 
 - Journal policy: entries are strictly reverse chronological (newest first) and record project work only.
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 
+## 2026-08-23 (16) — Pill state revival on retry / multi-tool reuse
+
+Tracing the pill lifecycle surfaced two stale-state gaps in entry 15's persistence model, both fixed with a `resetPill()` helper called on every REUSE of an existing pill:
+
+- **Retry after a finished tool** (the live-probe order: start → end ✓ → gen_retry): `showGenRetry`'s early-return kept the ✓-state pill untouched — the "compressing tool responses and retrying…" message never showed. Now the reused pill is revived: `ok` class dropped, spinner recreated/dead-class cleared, label swapped.
+- **Second tool in a chain**: new round's `tool.start` updated only the label — the pill still carried `ok` styling with no spinner. Now every reused pill looks active again before the label swap.
+
+Net behavior: ONE pill per stream, always reflecting the LATEST backend event; history is not shown (single-line label), which stays honest because each event overwrites it. SW v18.
+
+
 ## 2026-08-23 (15) — Indicator persistence + position, desktop chip clicks, faster aurora
 
 User's live-test feedback on entry 14, four fixes (frontend only):
