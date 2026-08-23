@@ -280,6 +280,10 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                 elif "confirm" in event:
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                elif "tool" in event:
+                    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                elif "gen_retry" in event:
+                    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                     return
                 elif "error" in event:
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"

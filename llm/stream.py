@@ -300,6 +300,7 @@ async def chat_with_ollama_stream(
             if _is_context_overflow(e) and not overflow_retried and current_msgs:
                 overflow_retried = True
                 _shrink_tool_responses(current_msgs)
+                yield {"gen_retry": {"reason": "overflow"}}
                 logger.info("Context overflow detected — shrinking tool responses and retrying")
                 continue
             yield {"error": f"{backend} connection error"}
@@ -309,6 +310,7 @@ async def chat_with_ollama_stream(
             if not overflow_retried:
                 overflow_retried = True
                 _shrink_tool_responses(current_msgs)
+                yield {"gen_retry": {"reason": "empty"}}
                 logger.warning("Generation returned empty after tool call — shrinking tool responses and retrying")
                 continue
             yield {"error": "Model generation failed (context too long). Please ask again."}
@@ -323,6 +325,7 @@ async def chat_with_ollama_stream(
             # tool_calls. reasoning_effort is preserved so litert's thinking
             # budget matches the original request.
             logger.info("Tool leak detected in stream buffer, retrying with think-mode...")
+            yield {"gen_retry": {"reason": "tool_leak"}}
             try:
                 retry_msgs = await _build_full_messages(messages, memories or [], summary, session_id, tool_group=tool_group) + current_msgs
                 if backend == "litert":
@@ -422,9 +425,15 @@ async def chat_with_ollama_stream(
                     if call.get("id"):
                         tool_msg["tool_call_id"] = call["id"]
                     current_msgs.append(tool_msg)
+                    yield {"tool": {"name": tn, "phase": "refused",
+                                    "attempt": sig_exec_counts.get(probe_sig, 0) + 1,
+                                    "max": _MAX_IDENTICAL_EXECUTIONS}}
                     continue
                 try:
                     args = parse_tool_args(fn.get("arguments"))
+                    yield {"tool": {"name": tn, "phase": "start",
+                                    "attempt": sig_exec_counts.get(probe_sig, 0) + 1,
+                                    "max": _MAX_IDENTICAL_EXECUTIONS}}
                     result = await run_tool(tn, args, context)
                     success = is_tool_success(result)
                 except Exception as e:
@@ -432,6 +441,7 @@ async def chat_with_ollama_stream(
                     result = f"ERROR: tool {tn} failed"
                     success = False
                 duration_ms = (time.perf_counter() - t0) * 1000
+                yield {"tool": {"name": tn, "phase": "end", "ok": success}}
                 await run_verification(tn, args, result, success, duration_ms=duration_ms, error=None if success else result)
                 if tn == "save_memory" and is_tool_success(result):
                     memories_saved += 1
