@@ -64,10 +64,12 @@ def test_marker_escalates_to_full_toolset(monkeypatch):
     assert executed == ["list_notes"]
     tokens = "".join(ev["token"] for ev in events if "token" in ev)
     assert "işte notların." in tokens
-    # second request must carry the FULL toolset
+    # second request must carry tools; keyword heuristics on "notu oku"
+    # narrow the escalation to the NOTES group instead of all 22
     assert len(client.payloads) == 3
     assert not client.payloads[0].get("tools")
-    assert len(client.payloads[1].get("tools") or []) > 7
+    esc_tools = client.payloads[1].get("tools") or []
+    assert 0 < len(esc_tools) <= 7
 
 
 def test_leak_syntax_escalates_too(monkeypatch):
@@ -76,9 +78,26 @@ def test_leak_syntax_escalates_too(monkeypatch):
         [_tc("list_notes"), _fin("tool_calls"), _DONE_LINE],
         [_tok("alındı."), _fin("stop"), _DONE_LINE],
     ]
-    events, _client = asyncio.run(_drain(monkeypatch, rounds)())
+    events, client = asyncio.run(_drain(monkeypatch, rounds)())
     reasons = [ev["gen_retry"]["reason"] for ev in events if "gen_retry" in ev]
     assert reasons == ["tools_escalated"]
+    # leaked tool name list_notes -> NOTES group (7), not the full set
+    assert len(client.payloads[1].get("tools") or []) == 7
+
+
+def test_marker_without_hints_falls_back_to_combined(monkeypatch):
+    import llm.intent as li
+    monkeypatch.setattr(li, "_keyword_group", lambda m: None)
+    rounds = [
+        [_tok("TOOL_NEEDED"), _fin("stop"), _DONE_LINE],
+        [_tc("get_weather"), _fin("tool_calls"), _DONE_LINE],
+        [_tok("güneşli."), _fin("stop"), _DONE_LINE],
+    ]
+    events, client = asyncio.run(_drain(monkeypatch, rounds)())
+    reasons = [ev["gen_retry"]["reason"] for ev in events if "gen_retry" in ev]
+    assert reasons == ["tools_escalated"]
+    # no name, no keywords -> combined fallback
+    assert len(client.payloads[1].get("tools") or []) > 7
 
 
 def test_normal_pure_chat_never_escalates(monkeypatch):
@@ -101,3 +120,78 @@ def test_escalation_happens_once(monkeypatch):
     events, _client = asyncio.run(_drain(monkeypatch, rounds)())
     reasons = [ev["gen_retry"]["reason"] for ev in events if "gen_retry" in ev]
     assert reasons.count("tools_escalated") == 1
+
+
+class _CountingResp:
+    """_SeqResp that remembers how many SSE lines the loop consumed."""
+
+    def __init__(self, lines):
+        self._lines = lines
+        self.consumed = 0
+
+    def raise_for_status(self):
+        return None
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return False
+
+    async def aiter_bytes(self):
+        # SSE lines are newline-terminated — _iter_sse_lines splits on b"\n".
+        for line in self._lines:
+            self.consumed += 1
+            yield line.encode("utf-8") + b"\n"
+
+
+def test_marker_aborts_round_before_it_finishes(monkeypatch):
+    # Round 1: marker arrives in chunk 2, then the model rambles on for
+    # several more chunks. The hatch must cut the stream immediately —
+    # most of the round is never read.
+    trailing = [_tok(f" gereksiz cümle {i}") for i in range(6)]
+    lines = [_tok("TOOL_NEEDED")] + trailing + [_fin("stop"), _DONE_LINE]
+    resp = _CountingResp(lines)
+
+    client = _CaptureClient([])
+    client.stream = lambda method, url, json=None: resp
+
+    async def fake_verify(*a, **k):
+        pass
+
+    monkeypatch.setattr(llm_stream, "_get_client", lambda: client)
+    monkeypatch.setattr(llm_stream, "run_verification", fake_verify)
+
+    from tests.test_stream_loop_guards import _SeqResp as _SR  # noqa: F401
+
+    async def drain():
+        events = []
+        async for ev in llm_stream.chat_with_ollama_stream(
+            [{"role": "user", "content": "bunu halleder misin"}],
+            memories=[], think=False, summary="", user_id="t",
+            session_id="s-abort", intent="question", tool_group=None,
+            reasoning_effort="",
+        ):
+            events.append(ev)
+        return events
+
+    # serve escalation + recovery rounds after the aborted one
+    client._rounds = [
+        [_tc("list_notes"), _fin("tool_calls"), _DONE_LINE],
+        [_tok("tamam."), _fin("stop"), _DONE_LINE],
+    ]
+    def multi_stream(method, url, json=None):
+        nonlocal resp
+        if resp.consumed and client._rounds:
+            return _SeqResp(client._rounds.pop(0))
+        return resp
+
+    client.stream = multi_stream
+    events = asyncio.run(drain())
+
+    reasons = [ev["gen_retry"]["reason"] for ev in events if "gen_retry" in ev]
+    assert reasons == ["tools_escalated"]
+    assert any(ev.get("done") for ev in events)
+    # marker chunk (line 1) + a couple of chunks at most were read; the six
+    # trailing rambling chunks were abandoned mid-stream
+    assert resp.consumed <= 4, f"consumed {resp.consumed}/{len(lines)} lines"
