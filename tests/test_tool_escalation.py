@@ -70,6 +70,11 @@ def test_marker_escalates_to_full_toolset(monkeypatch):
     assert not client.payloads[0].get("tools")
     esc_tools = client.payloads[1].get("tools") or []
     assert 0 < len(esc_tools) <= 7
+    # the stale "you have NO tools" hint must NOT survive into the
+    # escalated round — it would make the model re-emit the marker
+    from llm.stream import _TOOL_ASK_HINT as HINT
+    assert any(m.get("content") == HINT for m in client.payloads[0]["messages"])
+    assert all(m.get("content") != HINT for m in client.payloads[1]["messages"])
 
 
 def test_leak_syntax_escalates_too(monkeypatch):
