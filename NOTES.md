@@ -1,6 +1,8 @@
 # piSynapse — Development Journal
 
-Project diary + architecture reference. **Reverse chronological: newest entries live at the TOP**, oldest at the bottom — keep it that way with every new entry. Timeless reference sections sit at the very bottom.
+> **About this file** (developer's test-environment notes): created to carry every test, rule, and piece of essential knowledge accumulated since day one. It is used while coding with AI to keep the project structure intact, capture required knowledge, and hand it over correctly. **Never trust a statement here unconditionally** — if you are unsure of its currency, VERIFY first; after verification, EDIT the relevant spot: do not delete the old text, strike it through (`~~...~~`) and note why it is now invalid/unnecessary/done/fixed, with the date.
+
+**Reverse chronological: newest entries live at the TOP**, oldest at the bottom — keep it that way with every new entry. Timeless reference sections sit at the very bottom.
 
 ## READ FIRST — AFTER EVERY SESSION/COMPACTION
 
@@ -10,7 +12,8 @@ Project diary + architecture reference. **Reverse chronological: newest entries 
 - The services/ layer was REMOVED (July 30, 2026) — legacy modules (db.py, llm/, tools/, embedding.py) do all the work. Don't propose a DI/service layer again unless the user explicitly asks.
 - Docker and WebSocket (/chat/ws) were removed — the frontend uses SSE only (/chat/stream); do not reintroduce them.
 - The Ollama service is stopped/disabled — LLM_BACKEND=litert is active. Don't restart Ollama or add dependencies on it unless the user asks.
-- Journal policy: entries are strictly reverse chronological (newest first) and record project work only.
+- Journal policy: entries are strictly reverse chronological (newest first), record project-relevant facts only — no meta/authority commentary ("full authority", "while user slept", approval statuses). Applies to every future edit.
+- Currency rule: before relying on a statement in this file, verify it against the code. Found-stale statements get struck through with a dated reason (invalid/unnecessary/done/fixed) — never silently deleted.
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 
 ## 2026-08-23 (20) — Hatch v2: group-scoped escalation + early abort; description trim
@@ -27,7 +30,7 @@ Follow-up to entry 19's efficiency question. Two optimizations + a careful trim,
 
 ## 2026-08-23 (19) — Intent misrouting: root-cause fix via tool-escalation hatch
 
-User asked for the deepest fix ("not rigid — small models err"). Measured the alternatives first, then implemented the recovery-based design:
+Requirement set for the fix: root-cause level, no rigid rules (small models err). Measured the alternatives first, then implemented the recovery-based design:
 
 **Measurements (litert, trivial chat turn, non-stream):** no tools 9.7s · 7-tool group (~728 tok) 19-20s (2×) · full 22-tool set (~2707 tok) >45s TIMEOUT. → Always-tools is dead on this hardware; the intent gate is load-bearing, its failure mode needed a net.
 
@@ -107,7 +110,7 @@ User's live-test feedback on entry 14, four fixes (frontend only):
 - Chips went dual-marquee: two lanes moving in opposite directions (chipMq 38s/46s linear infinite), mask fade at edges ('|shadow|'), pause on hover, send on click. Track = set×2, translateX(-50%) loop. Static under the global reduced-motion kill (halves identical → identical look).
 - SW v13. Frontend only → no service restart needed.
 
-## 2026-08-23 (10) — Ambient standards round (full authority while user slept)
+## 2026-08-23 (10) — Ambient standards round
 
 - Research (aurora UI write-ups + dark-mode gradient practice): the color field is visible AT ALL TIMES; idle = calm frozen scene, text panel lit, background quiet, motion slow. 60-30-10 rule.
 - FREEZE+RESUME FIX (the real bug): animations were bound to .generating → when the class left, the animation itself left → jump back to frame 0. Correct pattern: keyframes permanently attached, default play-state:paused; generating only flips running + opacity 1. On finish the frame freezes, next reply resumes from where it stopped.
@@ -209,7 +212,7 @@ user_id-scoped) — intentional feature.
 - [x] **1. Save-time sanitization** — strip_tool_leaks() before the assistant reply hits the DB; skip saving if the reply is entirely leak (stream + non-stream paths) ✅ Verified: tests/test_history_hygiene.py 4 passed, ruff clean. _clean_assistant_reply() helper added; stream done/finally and non-stream save points sanitize and skip empties.
 - [x] **2. One-off DB cleanup** ✅ Verified: dry-run scan then 2 pure-poison rows deleted (id=592 old read_email leak, id=757 call:list_notes{{}}); re-scan → 0 poisoned. An embedded-cleanup layer was deliberately NOT built: all 20 dry-run candidates were cosmetic whitespace diffs (markdown), one held a Python code block — rewriting would damage them. The finding also exposed strip_tool_leaks' global whitespace collapse breaking code blocks → fixed: collapsing now applies outside ``` fences only (_collapse_spaces_outside_fences). Coverage: tests/test_history_hygiene.py 9 tests = 7 passed + 2 xfail (known limits: ``<tool|call>`` delimiter, JSON echo); integration tests prove the real save path with mocked DB.
 - [x] **3. Empty-buf fallback** ✅ Verified: if the dedup branch drops an empty buf (the 2026-08-22 "model returned an empty reply" case), a single _FINALIZE_NUDGE system note is injected with tools disabled (final_nudge_used → use_tools=False, truncation-retry pattern) forcing a text-only final turn; still empty after the nudge → _EMPTY_ANSWER_FALLBACK gentle message is yielded. If the nudge turn recovers another leak it falls into the same dedup branch → fallback.
-- [x] **2b. Summary poisoning protection** (user suggestion) ✅ Verified: three layers — (1) SUMMARY_SYSTEM_PROMPT updated: ignore artifacts, "do not infer or invent", prefer newer info on conflict, compress to ~3-5 sentences (user draft taken verbatim); (2) _summary_transcript() input sanitization: assistant messages cleaned before reaching the model, fully-leaked lines drop from the transcript, user messages untouched; (3) output protection: summary stored through strip_tool_leaks. With an empty transcript the LLM isn't called at all (previous summary preserved). Tests: tests/test_summary_hygiene.py 5 passed. Full suite: 287 passed, 2 xfailed; ruff clean.
+- [x] **2b. Summary poisoning protection** ✅ Verified: three layers — (1) SUMMARY_SYSTEM_PROMPT updated: ignore artifacts, "do not infer or invent", prefer newer info on conflict, compress to ~3-5 sentences (2) _summary_transcript() input sanitization: assistant messages cleaned before reaching the model, fully-leaked lines drop from the transcript, user messages untouched; (3) output protection: summary stored through strip_tool_leaks. With an empty transcript the LLM isn't called at all (previous summary preserved). Tests: tests/test_summary_hygiene.py 5 passed. Full suite: 287 passed, 2 xfailed; ruff clean.
 - [x] **4. Tool-loop ceiling** ✅ Verified: sig_exec_counts caps identical signatures (name(args_json sorted)) at _MAX_IDENTICAL_EXECUTIONS=2 per request; the 3rd attempt is refused with a "[Refused: ...]" tool message (safety net for side-effectful tools; pure repeats are already caught by dedup, this layer cuts repeats inside mixed batches — e.g. [A,B] → [A,C] won't run A again). Tests: tests/test_stream_loop_guards.py 3 passed (nudge turn + tools-off payload verification, fallback message, refusal of the 3rd identical call). Full suite: 290 passed, 2 xfailed; ruff clean.
 
 ### Non-stream port + backend sync (2026-08-22)
@@ -245,7 +248,7 @@ Every step: ruff + pytest, then this file updated.
 - 22:07 — full codebase review requested for `/home/salih/piSynapse` (base `ddc5afa` + uncommitted routers/chat.py abort changes). Three copies exist: piSynapse (current), -release, -release-backup.
 - 22:25 — audit report appended to NOTES.md ("FULL CODEBASE REVIEW — Report"). Three live-verified critical bugs: (1) update_note completely broken (dispatcher sends category/tags, wrapper raises TypeError), (2) /chat/upload rejects multipart with 422, (3) third bug's text was truncated in the transcript — unrecoverable. Baseline: 242 tests passing.
 - Other confirmed findings from the report: the contacts/CardDAV module does not exist in the codebase (only a table reference survives); C group = dead code/cleanup items.
-- From 22:37 an 11-item fix round ran (user approval awaited at items 2 and 8; pytest after each item):
+- From 22:37 an 11-item fix round ran (pytest after each item):
   - A2: routers/chat.py — new POST /upload (upload_image), chunked size limit based on MEDIA_MAX_MB, base64 response; tests/test_media.py +3 tests (245 passed).
   - Item 2 (approved): ID/UID architecture switched to position-based resolution — raw IDs/UIDs removed from listings, dispatcher _parse_*_listing compatibility kept, CRITICAL item-reference rules written into prompt.py.
   - A1: nextcloud_notes.update_note now accepts and forwards category/tags + _invalidate_list_cache(); tests/test_dispatcher.py::TestUpdateNoteRealPath.
@@ -722,20 +725,25 @@ user. One of the options above should be implemented for a real fix.
 
 ---
 
+#### litert FC quirks (discovered 2026-08-23)
+
+- **Round-2 native call parse failure:** after a tool-result round, the model sometimes emits doubled-brace syntax (`call:create_note{{...}}` with stray `<|tool_call>` markers). LiteRT's SERVER-side parser hard-fails mid-stream (`INVALID_ARGUMENT: Failed to parse tool calls from code block`) — unreachable by our text-level leak recovery. Mitigated downstream by the overflow-retry path (the error text matches `_is_context_overflow`), which shrinks and retries once; if it recurs, the turn errors out.
+- **Overflow misclassification:** `_is_context_overflow()` matches bare `"invalid_argument"`, so the parse failure above is labeled `overflow` and triggers the shrink+retry path even though context isn't actually full. Frontend label is cause-neutral so nothing misleading reaches the user. Proper fix needs a distinguishing field in litert's error payload — future item.
+
 ### Future Plan
 
 | Priority | What |
 |---|---|
 | ~~🔴 High~~ ✅ Done 2026-08-23 | **Tool-call indicator** — backend-driven SSE `tool`/`gen_retry` events + frontend status pill (see entry 14) |
 | 🔴 High | **Onboarding screen** — first-run guide ("this is your API key, use it like so") |
-| 🔴 High | **Error messages** — clear user-facing texts ("Model loading, wait 20s", "Nextcloud unreachable") |
+| 🟡 Partial 2026-08-23 | **Error messages** — connection-lost and context-overflow errors localized in UI (errConnLost/errContextTooLong); full catalog ("Model loading, wait 20s", "Nextcloud unreachable" as friendly texts) still open |
 | 🟡 Medium | **Work without Nextcloud** — chat + memory must work at minimum, email/calendar optional |
-| 🟡 Medium | Raise test coverage (especially dispatcher + mail) |
-| 🟡 Medium | FastAPI DI → dependency_overrides mock-test infrastructure |
-| 🟡 Medium | Optimize the Docker image (multiarch on small boards) |
+| ~~🟡 Medium~~ ✅ Done 2026-08-23 | Raise test coverage (especially dispatcher + mail) — suite at 329; test_dispatcher.py 76+, test_mail.py 13 passing |
+| ~~🟡 Medium~~ ⛔ Obsolete 2026-08-23 | FastAPI DI → dependency_overrides mock-test infrastructure — services/DI layer removed by design (2026-07-30); plain module-level mock fixtures used instead |
+| ~~🟡 Medium~~ ⛔ Obsolete 2026-08-23 | Optimize the Docker image (multiarch on small boards) — Docker removed from the project entirely |
 | 🟡 Medium | **HTTPS/microphone** — Caddy self-signed or NPM solution |
-| 🟡 Medium | **Performance** — NUM_CTX/batch tuning to bring 13-15s → 10-12s |
+| 🟡 Medium | **Performance** — NUM_CTX raised to 8192 (done); latency tuning round (13-15s → 10-12s) still open |
 | 🟢 Low | Redis cache for session management (optional) |
 | 🟢 Low | Observability: Prometheus metrics, structured logging |
 | 🟢 Low | Multi-user authentication (JWT) |
-| 🟢 Low | More language support |
+| ~~🟢 Low~~ ✅ Done 2026-08-23 | More language support — tr/en shipped via UI_LANGUAGE setting |
