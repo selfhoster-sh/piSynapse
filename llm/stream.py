@@ -390,6 +390,10 @@ async def chat_with_ollama_stream(
             # (final nudge / truncation retry) can never re-arm it.
             tools_escalated = True
             use_tools = True
+            # The injected hint says "you have NO tools" — now false, and
+            # left in place it would make the model re-emit the marker
+            # instead of calling the freshly attached tools.
+            full_msgs = [m for m in full_msgs if m.get("content") != _TOOL_ASK_HINT]
             last_user = next((m.get("content", "") for m in reversed(messages) if m.get("role") == "user"), "")
             filtered_tools, esc_scope = _escalation_tools(full_text, last_user)
             yield {"gen_retry": {"reason": "tools_escalated"}}
