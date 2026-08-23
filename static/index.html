@@ -2586,12 +2586,22 @@ function placePill(row){
   if(typingEl && typingEl.isConnected) m.insertBefore(row,typingEl); else m.appendChild(row);
   return row;
 }
+function resetPill(row){
+  // Reuse path: an ended pill (✓ ok / ⚠ dead, no live spinner) must look
+  // active again before its label is swapped for the next event.
+  row.classList.remove('ok');
+  let sp=row.querySelector('.tspin');
+  if(!sp){ sp=document.createElement('span'); sp.className='tspin'; row.prepend(sp); }
+  else sp.classList.remove('dead');
+}
 function showToolStatus(info, row){
   if(!row || !row.isConnected){
     row=document.createElement('div'); row.className='tool-status';
     row.innerHTML='<span class="tspin"></span><span class="tlab"></span>';
     placePill(row);
     if(typingEl){ typingEl.classList.add('tool-pending'); }
+  } else {
+    resetPill(row);
   }
   const lab=row.querySelector('.tlab');
   let txt=toolLabel(info.name);
@@ -2625,7 +2635,14 @@ function endToolStatus(row, ok){
 }
 
 function showGenRetry(row){
-  if(row && row.isConnected) return row;
+  if(row && row.isConnected){
+    // Retry often lands right after a tool end (✓ state) — revive the pill
+    // so the retry label + spinner actually replace the stale "done" look.
+    resetPill(row);
+    row.querySelector('.tlab').textContent=t('genRetryLabel');
+    scrollEnd(false);
+    return row;
+  }
   row=document.createElement('div'); row.className='tool-status';
   row.innerHTML='<span class="tspin"></span><span class="tlab"></span>';
   placePill(row);
