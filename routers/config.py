@@ -22,7 +22,9 @@ router = APIRouter(prefix="/config", tags=["config"])
 async def get_config():
     """Returns .env configurations needed by the UI on startup."""
     return {
-        "username": get("ASSISTANT_USER", "User"),
+        # Empty when unset — the UI falls back to a localized "You" label
+        # instead of ever displaying a placeholder like "User"/"default".
+        "username": (get("ASSISTANT_USER") or "").strip(),
         "default_city": get("DEFAULT_CITY", ""),
         "model": get("LLM_MODEL", "gemma4-e2b"),
         "llm_backend": get("LLM_BACKEND", "litert"),
