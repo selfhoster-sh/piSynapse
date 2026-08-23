@@ -13,7 +13,22 @@ Project diary + architecture reference. **Reverse chronological: newest entries 
 - Journal policy: entries are strictly reverse chronological (newest first) and record project work only.
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 
+## 2026-08-23 (19) — Intent misrouting: root-cause fix via tool-escalation hatch
+
+User asked for the deepest fix ("not rigid — small models err"). Measured the alternatives first, then implemented the recovery-based design:
+
+**Measurements (litert, trivial chat turn, non-stream):** no tools 9.7s · 7-tool group (~728 tok) 19-20s (2×) · full 22-tool set (~2707 tok) >45s TIMEOUT. → Always-tools is dead on this hardware; the intent gate is load-bearing, its failure mode needed a net.
+
+**Design:** the classifier stays a fast-path hint; the GENERATOR becomes the strongest judge with a one-shot escape hatch. Pure-chat requests now carry an injected system note teaching a deterministic escape verb; after each round, when `intent_no_tools` and not yet escalated:
+- leaked FC syntax (`_check_tool_leak`) **or** reply starting with literal `TOOL_NEEDED` (`_wants_tools_hint`) → escalate once: `use_tools=True`, full combined toolset, round redone, `gen_retry{reason:"tools_escalated"}` emitted.
+Two loose triggers cover each other's blind spots (small models may do either); exact-token matching keeps false positives near zero; zero happy-path cost (vs +5s LLM-arbiter on every doubtful message — measured, rejected).
+
+**Guard-rail lesson:** first cut keyed the hatch on `not use_tools` — that also caught the terminal text-only nudge round and consumed unscripted iterations (broke a guards test). Fixed by gating on `intent_no_tools` (set once at routing time); nudge/truncation text-modes can never re-arm it.
+
+Frontend: gen_retry pill label is now reason-specific (compress / fixing a tool call / enabling required tools), i18n tr+en. SW v21. 4 new tests in test_tool_escalation.py (marker path, leak path, no-false-trigger on normal chat, single-shot cap); suite 326 green. Live: pure-chat turn unaffected ✓, action turn unaffected ✓.
+
 ## 2026-08-23 (18) — read_note positional failure root-caused: float positions
+
 
 User reported "notları listele → 1. notu oku" failing inside ONE session. Live repro with per-call param logging (new permanent `Tool call:` INFO line in `run_tool`, params truncated 200 chars) caught it red-handed:
 
