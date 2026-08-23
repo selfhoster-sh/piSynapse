@@ -23,3 +23,4 @@ build/
 
 # Yerel hassas kopya — push EDİLMEZ (IP/domain içerir)
 NOTES.local.md
+litert_serve/config.json

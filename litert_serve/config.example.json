@@ -1,6 +1,6 @@
 {
   "model_id": "gemma4-e2b",
-  "model_path": "/home/salih/.litert-lm/models/gemma4-e2b/model.litertlm",
+  "model_path": "~/.litert-lm/models/gemma4-e2b/model.litertlm",
   "max_num_tokens": 6144,
   "speculative_decoding": true,
   "use_ringbuffers_local_attention": false,

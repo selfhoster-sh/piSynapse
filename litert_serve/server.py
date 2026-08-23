@@ -38,13 +38,15 @@ ADMIN_TOKEN = os.environ.get("PISERVE_ADMIN_TOKEN", "")
 
 DEFAULT_CONFIG = {
     "model_id": "gemma4-e2b",
-    "model_path": "/home/salih/.litert-lm/models/gemma4-e2b/model.litertlm",
+    # '~' is expanded at load time — never commit an absolute home path here.
+    "model_path": "~/.litert-lm/models/gemma4-e2b/model.litertlm",
     "max_num_tokens": 8192,
     "speculative_decoding": True,
     "use_ringbuffers_local_attention": False,
     "enable_ynnpack": False,
+    # Must match the app's LITERT_BASE_URL port (config.LITERT_PORT).
     "host": "127.0.0.1",
-    "port": 9380,
+    "port": 9379,
 }
 
 REASONING_BUDGET = {
@@ -161,6 +163,7 @@ def reload_engine() -> dict:
         try:
             new_cfg = dict(DEFAULT_CONFIG)
             new_cfg.update(json.loads(_config_path.read_text(encoding="utf-8")))
+            new_cfg["model_path"] = os.path.expanduser(new_cfg["model_path"])
         except Exception as e:
             return {"ok": False, "error": f"config parse error: {e}"}
 
@@ -485,6 +488,7 @@ def main():
     _config_path = Path(__file__).resolve().parent / "config.json"
     if _config_path.exists():
         cfg.update(json.loads(_config_path.read_text(encoding="utf-8")))
+        cfg["model_path"] = os.path.expanduser(cfg["model_path"])
     if args.port is not None:
         cfg["port"] = args.port
     if args.max_num_tokens is not None:
