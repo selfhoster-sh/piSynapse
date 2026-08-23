@@ -99,12 +99,12 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "delete_calendar_event",
-            "description": "Delete a calendar event by its title (or part of it), optionally narrowed down with its list number from the latest list_calendar_events output. Use the number when multiple events share the same title.",
+            "description": "Delete a calendar event by title (or part). Add its list number from the latest listing when the title matches multiple events.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "summary": {"type": "string", "description": "Title (or part of it) of the event to delete."},
-                    "event_uid": {"type": "string", "description": "The event's list number (e.g. '2') from the latest list_calendar_events output. Use this when summary alone is ambiguous."},
+                    "summary": {"type": "string", "description": "Event title or part of it."},
+                    "event_uid": {"type": "string", "description": "List number (e.g. '2') from the latest listing; use when the title alone is ambiguous."},
                 },
                 "required": ["summary"],
             },
@@ -114,15 +114,15 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "update_calendar_event",
-            "description": "Update an existing calendar event: change its title, time, and/or duration. Provide the current title (or part of it) to identify the event, plus the fields to change. If multiple events match, provide the event's list number from list_calendar_events.",
+            "description": "Update an event (new title/time/duration as needed). Identify by current title; if multiple match, include its list number.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "summary": {"type": "string", "description": "Current title (or part of it) of the event to update."},
+                    "summary": {"type": "string", "description": "Current title or part of it."},
                     "new_summary": {"type": "string", "description": "New title. Leave empty to keep current."},
                     "new_start_time": {"type": "string", "description": "New start time in ISO 8601 format (e.g. 2026-07-29T18:40:00). Leave empty to keep current."},
                     "new_duration_minutes": {"type": "integer", "description": "New duration in minutes. Leave 0 to keep current."},
-                    "event_uid": {"type": "string", "description": "The event's list number (e.g. '2') from the latest list_calendar_events output. Use this when summary alone matches multiple events."},
+                    "event_uid": {"type": "string", "description": "List number (e.g. '2') from the latest listing; use when the title matches multiple."},
                 },
                 "required": ["summary"],
             },
@@ -132,7 +132,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "list_emails",
-            "description": "Show the user's recent inbox emails with sender, subject, date, and a short preview. Each email is numbered (1., 2., ...). Refer to emails only by their list number — never show raw IDs to the user.",
+            "description": "List recent inbox emails (sender, subject, date, preview), numbered 1., 2., ... Refer to emails only by list number.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -146,11 +146,11 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "read_email",
-            "description": "Read the full content of one email by its list number (e.g. '3') from list_emails or search_emails results. Use this when the user asks about details of a specific email.",
+            "description": "Read one email's full content by its list number from list_emails/search_emails results.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "message_id": {"type": "string", "description": "The email's list number (e.g. '3') from list_emails or search_emails output. Never ask the user for or show raw IDs."},
+                    "message_id": {"type": "string", "description": "Email list number (e.g. '3') from the latest list/search output."},
                 },
                 "required": ["message_id"],
             },
@@ -178,7 +178,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "search_emails",
-            "description": "Search the user's emails by subject, sender, or body content. Returns numbered matching emails with previews (1., 2., ...). Useful when the user mentions a specific topic or person. Never show raw IDs to the user.",
+            "description": "Search emails by subject, sender, or body; returns numbered matches with previews.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -194,9 +194,8 @@ TOOLS = [
         "function": {
             "name": "save_memory",
             "description": (
-                "Save a durable fact about the user — preferences, habits, personal info. "
-                "Never save greetings, requests, questions, commands, or descriptions of what the "
-                "user just asked (those are not facts). Never save facts already shown in Core Memories."
+                "Save a durable fact about the user (preferences, habits, info). "
+                "Never save greetings, requests, questions, or facts already in Core Memories."
             ),
             "parameters": {
                 "type": "object",
@@ -239,7 +238,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "list_notes",
-            "description": "List the user's notes stored in Nextcloud Notes — a numbered list (1., 2., ...) with title, category, tags, and a content preview. Call this first when the user mentions their notes.",
+            "description": "List notes as a numbered list (title, category, tags, preview). Call first when the user mentions notes.",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -251,7 +250,7 @@ TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "note_id": {"type": "integer", "description": "The note's list position number (e.g. 2) from the latest list_notes/search_notes output."},
+                    "note_id": {"type": "integer", "description": "Note list position (e.g. 2) from the latest listing."},
                 },
                 "required": ["note_id"],
             },
@@ -265,11 +264,11 @@ TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "note_id": {"type": "integer", "description": "The note's list position number (e.g. 2) from the latest list_notes/search_notes output."},
-                    "title": {"type": "string", "description": "New title (leave empty to keep current)."},
-                    "content": {"type": "string", "description": "New content (leave empty to keep current)."},
-                    "category": {"type": "string", "description": "New category (leave empty to keep current)."},
-                    "tags": {"type": "array", "items": {"type": "string"}, "description": "New tags list (leave empty to keep current)."},
+                    "note_id": {"type": "integer", "description": "Note list position (e.g. 2) from the latest listing."},
+                    "title": {"type": "string", "description": "New title; empty keeps current."},
+                    "content": {"type": "string", "description": "New content; empty keeps current."},
+                    "category": {"type": "string", "description": "New category; empty keeps current."},
+                    "tags": {"type": "array", "items": {"type": "string"}, "description": "New tags; empty keeps current."},
                 },
                 "required": ["note_id"],
             },
@@ -283,7 +282,7 @@ TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "note_id": {"type": "integer", "description": "The note's list position number (e.g. 2) from the latest list_notes/search_notes output."},
+                    "note_id": {"type": "integer", "description": "Note list position (e.g. 2) from the latest listing."},
                 },
                 "required": ["note_id"],
             },
@@ -325,7 +324,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "list_tasks",
-            "description": "Show the user's tasks from Nextcloud Tasks — a numbered list (1., 2., ...) with title, due date, priority, and description preview. Call this when the user asks about their tasks or to-dos.",
+            "description": "List tasks (numbered: title, due date, priority, preview). Use for task/to-do questions.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -343,7 +342,7 @@ TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "uid": {"type": "string", "description": "The task's list position number (e.g. '3') from the latest list_tasks or search_tasks output."},
+                    "uid": {"type": "string", "description": "Task list position (e.g. '3') from the latest listing."},
                 },
                 "required": ["uid"],
             },
@@ -357,7 +356,7 @@ TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "uid": {"type": "string", "description": "The task's list position number (e.g. '3') from the latest list_tasks or search_tasks output."},
+                    "uid": {"type": "string", "description": "Task list position (e.g. '3') from the latest listing."},
                 },
                 "required": ["uid"],
             },
