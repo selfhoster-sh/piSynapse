@@ -380,6 +380,11 @@ body.theme-black .msg-group.user .msg-meta .who{color:var(--text3)}
 .tts-btn.tts-playing{color:var(--accent);animation:mic-pulse 1s ease-in-out infinite}
 .msg-actions{display:flex;gap:4px;margin-top:6px}
 .copy-btn.copied{color:var(--accent)}
+/* Respect the OS "reduce motion" setting: users with vestibular sensitivity
+   get a fully still UI (no slide-ins, pulses or marquees). */
+@media (prefers-reduced-motion: reduce){
+  *, *::before, *::after{animation:none!important;transition:none!important}
+}
 
 #msg-input{flex:1 1 auto;min-width:0;background:none;border:none;outline:none;color:var(--text);
   font-size:15px;line-height:1.5;padding:8px 0;resize:none;max-height:200px;
