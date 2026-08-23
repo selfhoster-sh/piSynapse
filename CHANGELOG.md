@@ -4,6 +4,80 @@ All notable changes to piSynapse will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 uses [Semantic Versioning](https://semver.org/).
 
+## [1.5.0] - 2026-08-23
+
+This cycle ships a backend-driven tool-call indicator, an intent-misroute
+safety net for small models, and a full ambient-UI campaign. The SSE stream
+schema gains two additive event types (`tool`, `gen_retry`); old clients
+ignore them gracefully, so nothing breaks. Test suite grows from 302 to 329
+passing tests.
+
+### Added
+
+- **Tool-call indicator**: the stream loop emits structured `tool`
+  (start/end/refused, with attempt n/max against the identical-call cap) and
+  `gen_retry` (overflow / empty / tool_leak / tools_escalated) events around
+  every tool execution. The frontend renders a status pill directly above
+  the typing dots — visible before streaming starts AND mid-stream for
+  multi-tool chains, localized tr/en for all tools, WCAG-AA contrast in
+  every theme including glass mode, dots dim while a tool runs, and the
+  pill disappears the instant reasoning or reply tokens arrive.
+- **Tool-escalation escape hatch**: intent routing stays fast, but pure-chat
+  turns now carry a system note teaching a literal `TOOL_NEEDED` escape
+  verb. When the model leaks function-call syntax or emits the marker, the
+  round is cut mid-stream and redone once with the smallest sufficient
+  toolset — group inferred from the leaked tool's name, else keyword
+  heuristics on the user message, else the combined set. Escalated
+  time-to-first-token drops from ~49s to ~13s whenever the domain is
+  inferable; terminal text-only modes can never re-arm it. Verified
+  identical on both the LiteRT and Ollama wire formats.
+- **Ambient aurora campaign**: always-present color field with true
+  freeze/resume (animations pause instead of detaching — no frame jump
+  between replies), four drifting blobs, subtle playback speed-up while
+  generating, faint idle washes so idle is never empty black,
+  `prefers-reduced-motion` support, pure-black OLED default plus frosted
+  glass-mode refinements.
+- **Welcome chip lanes**: dual counter-scrolling marquee tracks with drag +
+  fling physics (velocity inheritance, exponential decay, auto-resume),
+  randomized anti-clump layout on every render, and taps that send directly
+  — on desktop and mobile alike.
+- Streaming caret, scroll edge-fade, silent sidebar refresh, per-message
+  copy/TTS actions row.
+- Permanent `Tool call:` INFO logging (params truncated) for diagnosing
+  small-model tool behavior in production.
+
+### Fixed
+
+- **Float positions from LiteRT FC JSON** (`note_id: 1.0`) were rejected by
+  the strict list-position parser, so reads/updates/deletes failed with
+  "not found" even though the session listing was current. Integral floats
+  and float-valued strings now resolve; fractional values are still
+  rejected (regression-tested).
+- **Desktop chip clicks never reached the chips**: pointer capture
+  retargeted native clicks to the track element, so pressing a chip merely
+  paused the marquee. Taps are now resolved manually at pointer-up;
+  keyboard activation keeps working.
+- Memory hygiene root cause: meta-requests ("remember to save this later")
+  are no longer stored as user facts; additional leak variants (mangled
+  delimiter tags, JSON tool_calls echoes) are stripped from streamed text.
+- WCAG AA sweep: the pill done-state dimmed to 3.29:1 contrast (fail) and
+  was restyled to 14.34:1; glass-mode pill backdrop hardened to ≥4.63:1
+  worst-case; sidebar text3 contrast corrected.
+
+### Changed
+
+- Tool descriptions tightened −11% prompt tokens (combined set 2707→2411,
+  notes group 728→671) without losing semantics: numbered-position
+  protocol, confirmation warnings, enums, ranges and ISO examples intact.
+- Service worker cache bumped to `pisynapse-v21`.
+
+### Docs
+
+- NOTES.md development journal rebuilt and tracked in git: file-purpose
+  notice, verify-before-trust currency rules (strike through with a dated
+  reason instead of deleting), Future Plan verified row-by-row against the
+  code.
+
 ## [1.4.0] - 2026-08-22
 
 This cycle hardens conversation integrity against small-model quirks: leaked
