@@ -30,8 +30,13 @@ class TestWeather:
 
 class TestCalendarTools:
     async def test_create_requires_start_time(self):
+        # Chip-flow guard: missing essentials -> CLARIFY, not a hard error.
         result = await run_tool("create_calendar_event", {"summary": "Meet"})
-        assert result == "ERROR: start_time required."
+        assert "CLARIFY_REQUIRED" in result and "start time" in result
+
+    async def test_create_missing_summary_clarifies(self):
+        result = await run_tool("create_calendar_event", {"start_time": "2026-08-17T10:00:00"})
+        assert "CLARIFY_REQUIRED" in result and "title" in result
 
     async def test_create_calls_handler(self):
         with patch("calendar_ops.create_event", return_value="Created.") as ce:
@@ -44,7 +49,8 @@ class TestCalendarTools:
 
     async def test_create_invalid_duration_returns_error(self):
         result = await run_tool(
-            "create_calendar_event", {"start_time": "x", "duration_minutes": "abc"}
+            "create_calendar_event",
+            {"summary": "Meet", "start_time": "x", "duration_minutes": "abc"},
         )
         assert result == "ERROR: 'duration_minutes' must be a valid number, got: 'abc'"
 
@@ -256,7 +262,7 @@ class TestMailTools:
     async def test_send_requires_all_fields(self):
         with patch("mail.get_active_mail_client", return_value=_mail_client()):
             result = await run_tool("send_email", {"to": "a@x.com"})
-        assert result == "ERROR: 'to', 'subject' and 'body' are required."
+        assert "CLARIFY_REQUIRED" in result and "subject" in result and "body" in result
 
     async def test_send_ok(self):
         mc = _mail_client(sent=True)
@@ -397,7 +403,7 @@ class TestNotesTools:
 class TestTasksTools:
     async def test_create_task_requires_summary(self):
         result = await run_tool("create_task", {})
-        assert result == "ERROR: summary required."
+        assert "CLARIFY_REQUIRED" in result
 
     async def test_create_task_calls_handler(self):
         with patch("nextcloud_tasks.create_task", new=AsyncMock(return_value="created")) as ct:
