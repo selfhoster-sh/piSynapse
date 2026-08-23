@@ -13,6 +13,15 @@ Project diary + architecture reference. **Reverse chronological: newest entries 
 - Journal policy: entries are strictly reverse chronological (newest first) and record project work only.
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 
+## 2026-08-23 (18) — read_note positional failure root-caused: float positions
+
+User reported "notları listele → 1. notu oku" failing inside ONE session. Live repro with per-call param logging (new permanent `Tool call:` INFO line in `run_tool`, params truncated 200 chars) caught it red-handed:
+
+- **Root cause:** gemma/litert emitted `read_note params={'note_id': 1.0}` — a FLOAT. `_as_position()` accepted only int / numeric-string; `1.0` fell through to None → "Note '1' not found" ERROR despite a warm session listing. The model then flailed (listed again / apologized) exactly as the user saw.
+- **Fix:** `_as_position` now accepts integral floats (`1.0→1`, rejects `1.5`) and float-valued strings (`"2.0"`). Strictness preserved otherwise (raw IDs/garbage still rejected). 5 new unit tests; dispatcher suite 76 green.
+- **Frontend (same round):** `endToolStatus` returned null → caller lost the reference → next event drew a SECOND pill below the ended one, and orphaned pills survived into the text stream. Now returns the row (tracking kept) + token/reasoning branches sweep ALL `.tool-status` nodes by class. SW v20.
+- Live verification after fix: same-session "1. notu oku, tamamını" → read_note executed ✓ content returned ✓.
+
 ## 2026-08-23 (17) — Pill removal on thinking-stream + contrast hardening
 
 Second live-test round:
