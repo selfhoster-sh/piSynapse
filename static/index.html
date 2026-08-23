@@ -633,37 +633,51 @@ body.glass-mode{
     --surface3:rgba(44,44,58,.42); --border:rgba(255,255,255,.13);
     --user-bg:rgba(30,30,42,.48);
   }
+  body.glass-mode::before{
+    background:
+      radial-gradient(1150px 780px at 6% -14%, rgba(240,148,58,.07), transparent 62%),
+      radial-gradient(1050px 950px at 42% 118%, rgba(240,148,58,.06), transparent 62%),
+      radial-gradient(ellipse at center, transparent 52%, rgba(0,0,0,.34) 100%);
+  }
 }
 
 /* Fixed ambient backdrop: aurora blobs + vignette + film grain */
 body.glass-mode{position:relative;isolation:isolate}
 body.glass-mode::before{
   content:'';position:fixed;inset:-9%;z-index:-1;pointer-events:none;
-  background:radial-gradient(ellipse at center, transparent 52%, rgba(0,0,0,.34) 100%);
+  background:
+    radial-gradient(1150px 780px at 6% -14%, color-mix(in srgb, var(--accent) 11%, transparent), transparent 62%),
+    radial-gradient(950px 720px at 108% 4%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 60%),
+    radial-gradient(1050px 950px at 42% 118%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 62%),
+    radial-gradient(720px 540px at 84% 52%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 56%),
+    radial-gradient(ellipse at center, transparent 52%, rgba(0,0,0,.34) 100%);
 }
 @keyframes grainBreathe{from{opacity:.09}to{opacity:.12}}
 body.generating.glass-mode::after{animation:grainBreathe 7s ease-in-out infinite alternate}
 
-/* Lava-lamp blobs: two independent glow masses drifting while generating.
-   Transform-only (compositor friendly); fade out + freeze when idle so
-   finishing a reply returns the backdrop to a calm still image. */
+/* Lava-lamp ambience: four independent glow masses over a near-black base.
+   Research consensus (aurora UI recipes): the color field is ALWAYS present —
+   idle shows a calm frozen scene, generation lets it drift. Animations are
+   permanently attached and merely PAUSED when idle, so finishing a reply
+   freezes every blob exactly in place and the next reply resumes from there
+   (no snap-to-start). Transform-only => compositor friendly on mobile. */
 #aurora{position:fixed;inset:-12%;z-index:-1;pointer-events:none;display:none;overflow:hidden}
 body.glass-mode #aurora{display:block}
-.ab{position:absolute;border-radius:50%;opacity:.55;transition:opacity 1.2s ease;
-  will-change:transform;animation-play-state:paused}
-.ab1{width:62vmax;height:62vmax;left:-10%;top:-16%;
-  background:radial-gradient(closest-side,var(--glow),transparent 68%)}
-.ab2{width:54vmax;height:54vmax;right:-14%;bottom:-20%;
-  background:radial-gradient(closest-side,var(--glow),transparent 66%)}
-.ab3{width:44vmax;height:44vmax;left:32%;top:34%;opacity:.45;
-  background:radial-gradient(closest-side,var(--glow),transparent 64%)}
-.ab4{width:38vmax;height:38vmax;right:22%;top:-8%;opacity:.5;
-  background:radial-gradient(closest-side,var(--accent-h),transparent 62%)}
-body.generating.glass-mode .ab{opacity:.95;animation-play-state:running}
-body.generating.glass-mode .ab1{animation:lavaA 17s ease-in-out infinite alternate}
-body.generating.glass-mode .ab2{animation:lavaB 23s ease-in-out infinite alternate}
-body.generating.glass-mode .ab3{animation:lavaC 19s ease-in-out infinite alternate}
-body.generating.glass-mode .ab4{animation:lavaD 27s ease-in-out infinite alternate}
+.ab{position:absolute;border-radius:50%;will-change:transform;
+  animation-play-state:paused;transition:opacity 1.4s ease}
+.ab1{width:62vmax;height:62vmax;left:-10%;top:-16%;opacity:.62;
+  background:radial-gradient(closest-side,var(--glow),transparent 68%);
+  animation:lavaA 17s ease-in-out infinite alternate}
+.ab2{width:54vmax;height:54vmax;right:-14%;bottom:-20%;opacity:.58;
+  background:radial-gradient(closest-side,var(--glow),transparent 66%);
+  animation:lavaB 23s ease-in-out infinite alternate}
+.ab3{width:44vmax;height:44vmax;left:32%;top:34%;opacity:.5;
+  background:radial-gradient(closest-side,var(--glow),transparent 64%);
+  animation:lavaC 19s ease-in-out infinite alternate}
+.ab4{width:38vmax;height:38vmax;right:22%;top:-8%;opacity:.55;
+  background:radial-gradient(closest-side,var(--accent-h),transparent 62%);
+  animation:lavaD 27s ease-in-out infinite alternate}
+body.generating.glass-mode .ab{opacity:1;animation-play-state:running}
 @keyframes lavaA{
   0%{transform:translate3d(0,0,0) scale(1)}
   45%{transform:translate3d(28vw,16vh,0) scale(1.26)}
@@ -2510,9 +2524,9 @@ function withStreamCaret(html){
 
 const WELCOME_CHIPS = {
   tr:['Son e-postalarımı özetle','Bu haftaki etkinliklerim','Yarın için görev oluştur',
-      'Görevlerimi listele','Notları listele','Bugün hava nasıl?'],
+      'Görevlerimi listele','Notları listele','Yeni not oluştur','Bugün hava nasıl?'],
   en:['Summarize my recent emails','My events this week','Create a task for tomorrow',
-      'List my tasks','List my notes',"How's the weather today?"]
+      'List my tasks','List my notes','Create a note',"How's the weather today?"]
 };
 
 function chipSend(el){
