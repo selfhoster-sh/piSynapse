@@ -199,6 +199,10 @@ def test_marker_escalation_synced_on_both_backends(monkeypatch):
         reasons = [ev["gen_retry"]["reason"] for ev in events if "gen_retry" in ev]
         assert reasons == ["tools_escalated"], backend
         assert executed == ["list_notes"], backend
+        # the frontend pill's data source: tool start/end SSE events must
+        # flow identically regardless of backend wire format
+        phases = [ev["tool"]["phase"] for ev in events if "tool" in ev]
+        assert phases == ["start", "end"], backend
         assert any(ev.get("done") for ev in events), backend
         # hint injected pre-escalation, gone after; tools attached after
         assert not payloads[0].get("tools"), backend
