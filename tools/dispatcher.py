@@ -141,6 +141,15 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> str:
         content = (params.get("content") or "").strip()
         if not content:
             return "ERROR: content required."
+        # Guard against meta-requests being stored as memories: a description
+        # of what the user just asked ("user wants to see notes") is not a
+        # durable fact about the user. Seen in the wild once; never again.
+        import re as _re
+        if _re.search(r"(?i)\b(iste\u011fi|istegi|istemi|talebi)\b|\brequest (to|for|that)\b|\b(ask(ed)?|wants?|trying) (him|her|them|us|me)? ?(to|that)\b", content):
+            logger.warning(f"save_memory rejected meta-content: {content!r}")
+            return ("ERROR: That describes a request, not a durable fact about the user. "
+                    "Memories must outlive the conversation (preferences, habits, personal info). "
+                    "Do not retry saving this; simply fulfill the user's actual request.")
         from db import save_memory
         importance = params.get("importance", 5)
         try:

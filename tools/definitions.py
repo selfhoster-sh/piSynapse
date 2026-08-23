@@ -195,7 +195,8 @@ TOOLS = [
             "name": "save_memory",
             "description": (
                 "Save a durable fact about the user — preferences, habits, personal info. "
-                "Never save greetings or facts already shown in Core Memories."
+                "Never save greetings, requests, questions, commands, or descriptions of what the "
+                "user just asked (those are not facts). Never save facts already shown in Core Memories."
             ),
             "parameters": {
                 "type": "object",
