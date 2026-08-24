@@ -710,7 +710,7 @@ ollama structured-outputs docs, FunctionGemma release.
 
 | # | Item | Decision / status |
 |---|---|---|
-| 1 | Constrained decoding on litert — test efficiency; accept small slowdown, bail on heavy | IN PROGRESS |
+| ~~1~~ ✅ Measured 2026-08-24 | Constrained decoding overhead ≈ **0%** (4+4 ölçüm: TR-clean 53.7s vs 53.7s avg; TR-detail 7.4 vs 7.5 — fark gürültü içinde, kısıtlı çoğu örnekte hafif hızlı) → **ADOPT** via Conversation API migration (next: #2/#8) |
 | 2 | Automatic schema path (Conversation/apply_chat_template) vs manual JSON — evaluate migration | EVALUATE |
 | 3 | FunctionGemma 270M as intent/slot router — wait for .litertlm packaging vs test HF form now | DECIDE |
 | 4 | Arg-arity diet: update_calendar_event(5p), send_email(5p), update_note(5p) sit past the E2B reliability cliff (3+ string args collapse; 4 args=0% pass) — split per-operation or shrink required set | TODO |
