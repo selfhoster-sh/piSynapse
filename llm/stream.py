@@ -487,6 +487,13 @@ async def chat_with_ollama_stream(
 
         if non_confirm_calls:
             current_msgs.append({"role": "assistant", "content": "", "tool_calls": non_confirm_calls})
+            # Tools offered THIS turn (filtered group / combined set). Small
+            # models sometimes hallucinate a known-but-unoffered tool from
+            # memory — executing it would write to the wrong domain (seen:
+            # create_task during a calendar turn). Reject with guidance so
+            # the model self-corrects using the tools it was given.
+            allowed_names = ({t["function"]["name"] for t in filtered_tools}
+                             if use_tools and filtered_tools else None)
             for call in non_confirm_calls:
                 fn = call.get("function", {})
                 tn = fn.get("name", "")
@@ -516,6 +523,21 @@ async def chat_with_ollama_stream(
                     yield {"tool": {"name": tn, "phase": "refused",
                                     "attempt": sig_exec_counts.get(probe_sig, 0) + 1,
                                     "max": _MAX_IDENTICAL_EXECUTIONS}}
+                    continue
+                if allowed_names is not None and tn not in allowed_names:
+                    logger.warning(f"Tool {tn} hallucinated (not offered this turn) — rejected")
+                    tool_msg = {
+                        "role": "tool",
+                        "tool_name": tn,
+                        "content": (
+                            f"[Rejected: '{tn}' is NOT available in this conversation turn. "
+                            f"Available tools: {', '.join(sorted(allowed_names))}. "
+                            "Use one of those, or if none fits, answer in plain text.]"
+                        ),
+                    }
+                    if call.get("id"):
+                        tool_msg["tool_call_id"] = call["id"]
+                    current_msgs.append(tool_msg)
                     continue
                 try:
                     args = parse_tool_args(fn.get("arguments"))
