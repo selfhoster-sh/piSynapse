@@ -702,6 +702,26 @@ tool_calls too.
 
 ---
 
+### FC Restructure Roadmap — decided 2026-08-24
+
+Research-driven restructure after laptop field testing. Sources: ai.google.dev Gemma 4 FC docs,
+LiteRT-LM constrained-decoding docs (LLGuidance), Mali-GPU E2B field report (357-case eval),
+ollama structured-outputs docs, FunctionGemma release.
+
+| # | Item | Decision / status |
+|---|---|---|
+| 1 | Constrained decoding on litert — test efficiency; accept small slowdown, bail on heavy | IN PROGRESS |
+| 2 | Automatic schema path (Conversation/apply_chat_template) vs manual JSON — evaluate migration | EVALUATE |
+| 3 | FunctionGemma 270M as intent/slot router — wait for .litertlm packaging vs test HF form now | DECIDE |
+| 4 | Arg-arity diet: update_calendar_event(5p), send_email(5p), update_note(5p) sit past the E2B reliability cliff (3+ string args collapse; 4 args=0% pass) — split per-operation or shrink required set | TODO |
+| 5 | Official `tool_responses` result format — align piServe result feeding with gemma template | TODO |
+| 6 | Dual-backend support continues; audit ollama official docs for equivalent gaps | ONGOING |
+| 7 | Constrained-decoding benchmarks both backends; ollama native FC constraints unavailable → use schema-constrained slot-extraction call (`format=json_schema`) instead | WITH #1 |
+| 8 | piServe scope review: what does it still provide over stock serve? (max_num_tokens>4096 needed at 8192 ctx ✓, OpenAI SSE translation ✓, admin/hot-reload ✓, legacy litert.service retirement ✓) → trim to necessity afterwards | REVIEW |
+
+Consolidated earlier suggestions that were previously untracked: frontend modularization
+(Future Plan, new row), litert-lm version pinning/watch (Future Plan, new row).
+
 ### Known Limitations
 
 #### LAN HTTPS / microphone access
@@ -766,6 +786,8 @@ user. One of the options above should be implemented for a real fix.
 | ~~🟡 Medium~~ ✅ Done 2026-08-23 | Raise test coverage (especially dispatcher + mail) — suite at 329; test_dispatcher.py 76+, test_mail.py 13 passing |
 | ~~🟡 Medium~~ ⛔ Obsolete 2026-08-23 | FastAPI DI → dependency_overrides mock-test infrastructure — services/DI layer removed by design (2026-07-30); plain module-level mock fixtures used instead |
 | ~~🟡 Medium~~ ⛔ Obsolete 2026-08-23 | Optimize the Docker image (multiarch on small boards) — Docker removed from the project entirely |
+| 🟡 Medium | **Frontend modularization** — split monolithic index.html when next touched |
+| 🟢 Low | **litert-lm version pin & watch** — track upstream changes (FC parser/template behavior shifts between versions) |
 | 🟡 Medium | **HTTPS/microphone** — Caddy self-signed or NPM solution |
 | 🟡 Medium | **Performance** — NUM_CTX raised to 8192 (done); latency tuning round (13-15s → 10-12s) still open |
 | 🟢 Low | Redis cache for session management (optional) |
