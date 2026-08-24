@@ -16,6 +16,25 @@
 - Currency rule: before relying on a statement in this file, verify it against the code. Found-stale statements get struck through with a dated reason (invalid/unnecessary/done/fixed) — never silently deleted.
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 
+## 2026-08-24 (21) — Laptop field report + language anchoring + clarify guards
+
+First external-hardware install (ollama + GPU laptop): **one-shot success**, no installer steps failed. Issues found & fixed:
+
+- **Language mirror failure (recency bias proven live):** chip text "Yeni etkinlik oluştur" got an ENGLISH clarifying question even though the LANGUAGE RULE sat at the very top of the system prompt. Root cause: the LAST text in context was the English `CLARIFY_REQUIRED` tool result — small models mirror the most recent language seen, overriding top-of-prompt rules ("türkçe konuş" mid-chat fixed it, confirming the mechanism). Fix: every guard string now embeds the user's original message as a language anchor (`_user_text` threaded through dispatcher helpers). Verified live: TR chip → TR question, EN chip → EN question, zero junk writes.
+- **Clarify guards are backend-enforced:** gemma called `create_note(title='Yeni Not')` with empty content DESPITE prompt instructions — prompt hope is not enforcement. Dispatcher now returns `CLARIFY_REQUIRED` (with the anchored user text) instead of executing empty creates for note/task/event/email; calendar's hidden `"New Event"` default summary removed.
+- **New welcome chips:** 'Yeni etkinlik oluştur' / 'E-posta gönder' (+EN); all four phrasings verified routing to calendar/email through the live classifier.
+- **Prompt:** Rule 1 exception (missing essentials → ONE short clarifying question, never invent placeholders); new Rule 12 honesty clause; per-group one-line ask-first rules.
+- `/config` no longer returns a literal "User"; installer no longer writes `default` as name.
+
+### Open verification items (theories awaiting field data)
+
+| # | Theory | How to verify |
+|---|---|---|
+| 1 | Escalation hatch fires on real ollama flow (unit-tested only) | Ask a tool-needing question with NO group keywords (e.g. "şemsiye almalı mıyım bugün?") → expect "Escalating…" in service log |
+| 2 | Language mirroring survives LONG multi-tool sessions | Alternate tr/en turns incl. tool results ×10; log any drift turn |
+| 3 | `_is_context_overflow` mislabels litert parse errors as overflow | Needs distinguishing field in litert error payload — inspect upstream |
+| 4 | litert round-2 doubled-brace failure root cause location | Isolate: server grammar vs our result formatting |
+
 ## 2026-08-23 (20) — Hatch v2: group-scoped escalation + early abort; description trim
 
 Follow-up to entry 19's efficiency question. Two optimizations + a careful trim, all measured:
