@@ -165,17 +165,23 @@ def test_rollup_retention_default_is_14_days(audit_db):
     row would have survived, so this distinguishes the policy.)
     """
 
+    from datetime import datetime, timedelta
+    # Relative dates: hardcoded ones age past the threshold and turn the
+    # test into a time bomb (the 2026-08-10 row detonated on 2026-08-24).
+    old_day = (datetime.now() - timedelta(days=26)).strftime("%Y-%m-%d %H:%M:%S")
+    recent_day = (datetime.now() - timedelta(days=5)).strftime("%Y-%m-%d %H:%M:%S")
+
     async def seed():
         db = await dbmod.get_db()
         await db.execute(
             "INSERT INTO tool_audit_log (tool_name, params, success, created_at) "
             "VALUES (?, ?, ?, ?)",
-            ("get_datetime", "{}", 1, "2026-07-20 10:00:00"),
+            ("get_datetime", "{}", 1, old_day),
         )
         await db.execute(
             "INSERT INTO tool_audit_log (tool_name, params, success, created_at) "
             "VALUES (?, ?, ?, ?)",
-            ("send_email", "{}", 1, "2026-08-10 10:00:00"),
+            ("send_email", "{}", 1, recent_day),
         )
         await db.commit()
 
@@ -186,7 +192,7 @@ def test_rollup_retention_default_is_14_days(audit_db):
     summary_days = asyncio.run(_fetch_all(
         "SELECT day FROM tool_audit_log WHERE is_summary = 1"
     ))
-    assert [r[0] for r in summary_days] == ["2026-07-20"]
+    assert [r[0] for r in summary_days] == [old_day[:10]]
 
     remaining_details = asyncio.run(_fetch_all(
         "SELECT day FROM tool_audit_log WHERE is_summary = 0"

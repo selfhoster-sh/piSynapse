@@ -291,10 +291,10 @@ def test_hallucinated_tool_rejected_when_not_offered(monkeypatch):
     # create_task (a notes/tasks tool it wasn't offered) and the dispatcher
     # executed it — junk tasks in the wrong domain. The stream must reject
     # non-offered tools with a guidance result instead of running them.
+    executed: list[str] = []
+
     async def fake_verify(*a, **k):
         pass
-
-    executed: list[str] = []
 
     async def fake_run_tool(name, params, context=None):
         executed.append(name)
@@ -338,3 +338,58 @@ def test_hallucinated_tool_rejected_when_not_offered(monkeypatch):
     second_tools = {t["function"]["name"] for t in (holder["payloads"][1].get("tools") or [])}
     assert "create_task" not in second_tools
     assert any(ev.get("done") for ev in events)
+
+
+def test_litert_server_parse_failure_recovered_via_leak(monkeypatch):
+    # LiteRT server rejects doubled-brace native calls BEFORE we see text:
+    # the call arrives embedded in the error message. It must be extracted
+    # and executed instead of failing the turn (field case, 2026-08-24).
+    class ExplodingResp:
+        def raise_for_status(self): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def aiter_bytes(self):
+            yield b"data: " + b'{"error": {"message": "litert stream error: INVALID_ARGUMENT: '
+            yield b'Failed to parse tool calls from code block: call:create_task{{\\"summary\\": \\"x\\"}}"}}\n\n'
+
+    executed: list[str] = []
+
+    async def fake_verify(*a, **k):
+        pass
+
+    async def fake_run_tool(name, params, context=None):
+        executed.append((name, params))
+        return "OK"
+
+    rounds = [
+        [_tok("tamam, oluşturdum."), _fin("stop"), _DONE_LINE],
+    ]
+    state = {"n": 0}
+
+    class C:
+        def stream(self, method, url, json=None):
+            if state["n"] == 0:
+                state["n"] += 1
+                return ExplodingResp()
+            return _SeqResp(rounds.pop(0))
+
+    monkeypatch.setattr(llm_stream, "_get_client", lambda: C())
+    monkeypatch.setattr(llm_stream, "run_verification", fake_verify)
+    monkeypatch.setattr(llm_stream, "run_tool", fake_run_tool)
+
+    async def drain():
+        events = []
+        async for ev in llm_stream.chat_with_ollama_stream(
+            [{"role": "user", "content": "görev oluştur"}],
+            memories=[], think=False, summary="", user_id="t",
+            session_id="s-litert", intent="action", tool_group="tasks",
+            reasoning_effort="",
+        ):
+            events.append(ev)
+        return events
+
+    events = asyncio.run(drain())
+    assert executed and executed[0][0] == "create_task"
+    assert executed[0][1].get("summary") == "x"
+    assert any(ev.get("done") for ev in events)
+    assert not any("error" in ev for ev in events)

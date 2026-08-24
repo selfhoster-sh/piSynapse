@@ -288,6 +288,7 @@ async def chat_with_ollama_stream(
     overflow_retried = False
     final_nudge_used = False
     tools_escalated = False
+    litert_parse_recovered = False
 
     for iteration in range(get("LLM_MAX_TOOL_ITERATIONS", 5)):
         if truncation_retried or final_nudge_used:
@@ -404,15 +405,35 @@ async def chat_with_ollama_stream(
                         break
 
         except Exception as e:
-            logger.error(f"Stream error ({backend}): {e}")
-            if _is_context_overflow(e) and not overflow_retried and current_msgs:
+            err_str = str(e)
+            # LiteRT server-side grammar failure: the model emitted a doubled-
+            # brace native call and the SERVER rejected it before we saw text
+            # (INVALID_ARGUMENT: Failed to parse tool calls from code block: ...).
+            # The full call is inside the error message — recover it and route
+            # through the normal execution path instead of failing the turn.
+            if ("Failed to parse tool calls from code block" in err_str
+                    and not litert_parse_recovered):
+                leaked = parse_leaked_tool_call(err_str.split("code block:", 1)[-1])
+                if leaked:
+                    litert_parse_recovered = True
+                    logger.info("Recovered litert server-side parse failure: %s()",
+                                leaked["function"]["name"])
+                    tool_calls_acc = [leaked]
+                    done_reason = "stop"
+                else:
+                    logger.error("Stream error (%s): %s", backend, e)
+                    yield {"error": f"{backend} connection error"}
+                    return
+            elif _is_context_overflow(e) and not overflow_retried and current_msgs:
                 overflow_retried = True
                 _shrink_tool_responses(current_msgs)
                 yield {"gen_retry": {"reason": "overflow"}}
                 logger.info("Context overflow detected — shrinking tool responses and retrying")
                 continue
-            yield {"error": f"{backend} connection error"}
-            return
+            else:
+                logger.error(f"Stream error ({backend}): {e}")
+                yield {"error": f"{backend} connection error"}
+                return
 
         if not full_text and not full_reasoning and not tool_calls_acc and current_msgs:
             if not overflow_retried:
