@@ -793,4 +793,9 @@ user. One of the options above should be implemented for a real fix.
 | 🟢 Low | Redis cache for session management (optional) |
 | 🟢 Low | Observability: Prometheus metrics, structured logging |
 | 🟢 Low | Multi-user authentication (JWT) |
+| 🟡 Medium | **Retry button on stream errors** — today a failed turn forces full retyping; add one-tap retry reusing the stored request |
+| 🟡 Medium | **Session search** — sidebar has no search; months of sessions become unnavigable |
+| 🟢 Low | **Better session auto-titles** — first-38-chars truncation yields clipped sentences; use a tiny LLM summary instead |
+| 🟢 Idea | **Proactive features** (morning briefings, reminders push) — required to fully match branded assistants |
+| 🟢 Parked | **Installer web wizard** — deferred until external testers report CLI friction points |
 | ~~🟢 Low~~ ✅ Done 2026-08-23 | More language support — tr/en shipped via UI_LANGUAGE setting |
