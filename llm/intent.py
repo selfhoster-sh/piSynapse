@@ -141,7 +141,10 @@ def _keyword_group(message: str) -> str | None:
         (["etkinlik", "takvim", "randevu", "toplantı", "olay"], "calendar"),
         (["email", "e-posta", "posta", "gelen kutusu", "ileti", "mesaj", "mail"], "email"),
         (["görev", "gorev", "yapılacak", "yapilacak", "task", "todo", "yapmam gereken"], "tasks"),
-        (["not", "notlar", "not defteri"], "notes"),
+        # Bare "not" deliberately absent: it collides with English negation
+        # ("I could NOT find it") and routed pure chat to the notes group.
+        # Distinctive suffixed/frozen forms cover Turkish inflections instead.
+        (["notlar", "notu", "nota", "not defteri", "not oluştur", "not al", "note"], "notes"),
         (["hatırla", "hatirla", "unutma", "sakla", "kaydet", "remember", "don't forget", "save"], "memory"),
     )
     for kws, group in checks:
