@@ -393,3 +393,41 @@ def test_litert_server_parse_failure_recovered_via_leak(monkeypatch):
     assert executed[0][1].get("summary") == "x"
     assert any(ev.get("done") for ev in events)
     assert not any("error" in ev for ev in events)
+
+
+def test_chip_origin_create_gets_instant_clarify(monkeypatch):
+    # Chip texts carry no details: the question must be deterministic and
+    # INSTANT — no LLM round-trip, no tool attempts, no placeholder saves.
+    import time
+
+    async def fake_verify(*a, **k): pass
+
+    class C:
+        def stream(self, method, url, json=None):
+            raise AssertionError("LLM must not be called for chip clarify")
+
+    monkeypatch.setattr(llm_stream, "_get_client", lambda: C())
+    monkeypatch.setattr(llm_stream, "run_verification", fake_verify)
+
+    async def drain(msg):
+        events = []
+        t0 = time.perf_counter()
+        async for ev in llm_stream.chat_with_ollama_stream(
+            [{"role": "user", "content": msg}],
+            memories=[], think=False, summary="", user_id="t",
+            session_id="s-chipq", intent="action", tool_group="tasks",
+            reasoning_effort="", origin="chip",
+        ):
+            events.append(ev)
+        return events, time.perf_counter()-t0
+
+    events, dt = asyncio.run(drain("Yeni görev oluştur"))
+    text = "".join(e.get("token","") for e in events)
+    assert "Görevin ne olsun" in text
+    assert any(e.get("done") for e in events)
+    assert not any("tool" in e for e in events)
+    assert dt < 0.5  # no model call — deterministic
+
+    # non-create chip (list) must NOT trigger the fast path
+    events2, _ = asyncio.run(drain("görevlerimi listele"))
+    assert not any("Görevin ne olsun" in e.get("token","") for e in events2)

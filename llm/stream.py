@@ -237,6 +237,49 @@ def _build_round_request(backend: str, full_msgs: list[dict], current_msgs: list
     return payload, url
 
 
+
+# ── Chip-origin instant clarify ────────────────────────────────────────────────
+# Welcome chips carry no details. Instead of burning an LLM round-trip to have
+# the model ask "what should it contain?", answer deterministically here —
+# zero latency, zero tokens, and no placeholder executions possible.
+_CHIP_CREATE_PATTERNS: dict[str, tuple[str, ...]] = {
+    "tasks":    ("oluştur", "olustur", "ekle", "görev yap", "task", "todo"),
+    "calendar": ("etkinlik oluştur", "olustur", "etkinlik ekle", "planla",
+                 "toplantı", "randevu", "create event", "schedule"),
+    "notes":    ("not oluştur", "not al", "not yaz", "oluştur", "create note", "new note"),
+    "email":    ("gönder", "gonder", "send", "compose", "mail yaz", "e-posta yaz"),
+}
+
+_CHIP_CLARIFY_Q: dict[str, tuple[str, str]] = {
+    "tasks":    ("Tabii! Görevin ne olsun ve tarihi var mı?",
+                 "Sure! What's the task, and when is it due?"),
+    "calendar": ("Tabii! Etkinlik ne olsun ve hangi gün, saat kaçta?",
+                 "Sure! What's the event about, and what date and time?"),
+    "notes":    ("Tabii! Notun içeriği ne olsun?",
+                 "Sure! What should the note say?"),
+    "email":    ("Tabii! Alıcı adresi, konu ve mesajı yazar mısın?",
+                 "Sure! Who is the recipient, and what are the subject and message?"),
+}
+
+
+def _chip_clarify_question(tool_group: str, message: str) -> str | None:
+    """Deterministic clarifying question for chip-origin create requests.
+
+    Returns the question in the message's own language (simple heuristic),
+    or None when the group isn't a create/send target or no create verb
+    appears (list/read chips flow normally).
+    """
+    if tool_group not in _CHIP_CREATE_PATTERNS:
+        return None
+    low = message.lower()
+    if not any(p in low for p in _CHIP_CREATE_PATTERNS[tool_group]):
+        return None
+    tr_chars = any(c in low for c in "çğıöşüÇĞİÖŞÜ") or any(
+        w in low for w in ("için", "yarın", "bugün", "nasıl", "var mı"))
+    q_tr, q_en = _CHIP_CLARIFY_Q[tool_group]
+    return q_tr if tr_chars else q_en
+
+
 async def chat_with_ollama_stream(
     messages: list[dict],
     *,
@@ -281,6 +324,19 @@ async def chat_with_ollama_stream(
         else:
             filtered_tools = get_combined_tools()
             logger.info(f"No specific group — sending combined tools ({len(filtered_tools)} tools)")
+
+    # Chip-origin fast path: create/send chips never reach the model — the
+    # clarifying question is deterministic and instant.
+    last_user_msg = next((m.get("content", "") for m in reversed(messages)
+                          if m.get("role") == "user"), "")
+    if (origin == "chip" and not think):
+        chip_q = _chip_clarify_question(tool_group or "", last_user_msg)
+        if chip_q:
+            logger.info("Chip-origin %s request — instant clarify (LLM skipped)", tool_group)
+            yield {"token": chip_q}
+            yield {"done": True, "session_id": session_id, "memories_saved": 0,
+                   "retrieved_count": 0, "retrieval_ms": 0}
+            return
 
     executed_tool_sigs: set[str] = set()
     sig_exec_counts: dict[str, int] = {}
