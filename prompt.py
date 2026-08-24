@@ -102,7 +102,7 @@ _GROUP_TOOLS: dict[str, tuple[str, str]] = {
         "create_task, list_tasks, complete_task, delete_task, search_tasks",
         "When the user asks about their tasks, call list_tasks immediately. "
         "Call create_task to add new tasks. "
-        "Call complete_task or delete_task to modify (calling it shows the user a confirmation card automatically — NEVER ask 'Are you sure?' in text) — pass the task's list number from the latest list_tasks/search_tasks output. "
+        "Call complete_task ONLY when the user means mark-as-done ('tamamla', 'bitti', 'done'). Call delete_task when the user means remove/erase ('sil', 'kaldır', 'delete') — completing is NOT deleting. Both show the user a confirmation card automatically — NEVER ask 'Are you sure?' in text. Pass "
         "Call search_tasks to find tasks by keyword. "
         "If create_task is requested with no task text, ask ONE short question for what the task is — never create an empty or placeholder task.",
     ),
