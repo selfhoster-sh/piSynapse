@@ -284,3 +284,57 @@ def test_marker_aborts_round_before_it_finishes(monkeypatch):
     # marker chunk (line 1) + a couple of chunks at most were read; the six
     # trailing rambling chunks were abandoned mid-stream
     assert resp.consumed <= 4, f"consumed {resp.consumed}/{len(lines)} lines"
+
+
+def test_hallucinated_tool_rejected_when_not_offered(monkeypatch):
+    # Laptop field case: during a CALENDAR turn the model hallucinated
+    # create_task (a notes/tasks tool it wasn't offered) and the dispatcher
+    # executed it — junk tasks in the wrong domain. The stream must reject
+    # non-offered tools with a guidance result instead of running them.
+    async def fake_verify(*a, **k):
+        pass
+
+    executed: list[str] = []
+
+    async def fake_run_tool(name, params, context=None):
+        executed.append(name)
+        return "OK"
+
+    rounds = [
+        [_tc("create_task", '{"summary": "toplantı-test"}'), _fin("tool_calls"), _DONE_LINE],
+        [_tok("anladım, takvime ekleyemem."), _fin("stop"), _DONE_LINE],
+    ]
+    holder = {"rounds": list(rounds), "payloads": []}
+
+    class C:
+        def stream(self, method, url, json=None):
+            holder["payloads"].append(json or {})
+            return _SeqResp(holder["rounds"].pop(0))
+
+        async def post(self, url, json=None):
+            raise AssertionError("non-stream retry not expected")
+
+    monkeypatch.setattr(llm_stream, "_get_client", lambda: C())
+    monkeypatch.setattr(llm_stream, "run_verification", fake_verify)
+    monkeypatch.setattr(llm_stream, "run_tool", fake_run_tool)
+
+    async def drain():
+        events = []
+        async for ev in llm_stream.chat_with_ollama_stream(
+            [{"role": "user", "content": "toplantı-test etkinliğini sil"}],
+            memories=[], think=False, summary="", user_id="t",
+            session_id="s-halluc", intent="action", tool_group="calendar",
+            reasoning_effort="",
+        ):
+            events.append(ev)
+        return events
+
+    events = asyncio.run(drain())
+
+    assert executed == []  # never reached the dispatcher
+    reasons = [ev["gen_retry"]["reason"] for ev in events if "gen_retry" in ev]
+    assert reasons == []
+    # second round must carry ONLY calendar-group tools
+    second_tools = {t["function"]["name"] for t in (holder["payloads"][1].get("tools") or [])}
+    assert "create_task" not in second_tools
+    assert any(ev.get("done") for ev in events)
