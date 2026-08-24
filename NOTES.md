@@ -25,6 +25,7 @@ First external-hardware install (ollama + GPU laptop): **one-shot success**, no 
 - **New welcome chips:** 'Yeni etkinlik oluştur' / 'E-posta gönder' (+EN); all four phrasings verified routing to calendar/email through the live classifier.
 - **Prompt:** Rule 1 exception (missing essentials → ONE short clarifying question, never invent placeholders); new Rule 12 honesty clause; per-group one-line ask-first rules.
 - `/config` no longer returns a literal "User"; installer no longer writes `default` as name.
+- **Double-confirmation fixed:** "(requires confirmation)" wording made gemma ask "are you sure?" in text BEFORE calling the tool — but calling a CONFIRM_TOOLS member already pops the UI card. Reworded all four group-prompt mentions + added Rule 13 ("calling the tool pops the card; never ask in text"). Live: "1. notu sil" → first SSE event is the card, zero preceding tokens.
 
 ### Open verification items (theories awaiting field data)
 
