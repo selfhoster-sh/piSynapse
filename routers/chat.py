@@ -283,8 +283,10 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
                 elif "tool" in event:
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                 elif "gen_retry" in event:
+                    # NOT terminal — the inner loop keeps generating after an
+                    # in-flight retry (escalation/overflow/tool_leak). Returning
+                    # here silently swallowed every post-retry token.
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-                    return
                 elif "error" in event:
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                     return
