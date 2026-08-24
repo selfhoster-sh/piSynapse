@@ -81,6 +81,9 @@ class ChatRequest(BaseModel):
     think_mode: bool = False
     images: list[str] = []
     reasoning_effort: str = ""
+    # Set to "chip" by the UI when the send came from a welcome chip:
+    # chip texts carry no details, so create/send tools must ask first.
+    origin: str = ""
 
 
 class ChatResponse(BaseModel):
@@ -261,6 +264,7 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
                 history, memories=memories, think=req.think_mode,
                 summary=meta["summary"], user_id=req.user_id, session_id=req.session_id,
                 intent=intent, tool_group=tool_group, reasoning_effort=req.reasoning_effort,
+                origin=(req.origin or "").strip().lower(),
             ):
                 if abort_event.is_set():
                     logger.info("Stream aborted for session %s", req.session_id)

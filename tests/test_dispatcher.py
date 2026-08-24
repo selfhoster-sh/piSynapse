@@ -552,3 +552,28 @@ class TestAsPosition:
 
 
 from tools.dispatcher import _as_position  # noqa: E402
+
+
+class TestChipOrigin:
+    """Chip-sourced create/send requests must clarify, never execute."""
+
+    async def test_create_task_clarifies_even_with_summary(self):
+        with patch("nextcloud_tasks.create_task", new=AsyncMock(return_value="created")) as ct:
+            result = await run_tool("create_task", {"summary": "yeni görev"},
+                                    context={"session_id": "s1", "_origin": "chip"})
+        ct.assert_not_awaited()
+        assert "CLARIFY_REQUIRED" in result
+
+    async def test_create_note_clarifies_even_with_content(self):
+        with patch("nextcloud_notes.create_note", new=AsyncMock(return_value="OK")) as cn:
+            result = await run_tool("create_note", {"title": "T", "content": "C"},
+                                    context={"session_id": "s1", "_origin": "chip"})
+        cn.assert_not_awaited()
+        assert "CLARIFY_REQUIRED" in result
+
+    async def test_non_chip_flow_unaffected(self):
+        with patch("nextcloud_tasks.create_task", new=AsyncMock(return_value="created")) as ct:
+            result = await run_tool("create_task", {"summary": "süt al"},
+                                    context={"session_id": "s1"})
+        ct.assert_awaited_once()
+        assert result == "created"
