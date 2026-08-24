@@ -15,6 +15,7 @@ from config import (
 from tool_verification import run_verification
 from tools import (
     CONFIRM_TOOLS,
+    TOOL_NAMES,
     get_tools_for_group,
     is_tool_success,
     parse_tool_args,
@@ -149,6 +150,18 @@ def _wants_tools_hint(text: str) -> bool:
     return bool(text) and text.lstrip().upper().startswith("TOOL_NEEDED")
 
 
+def _bare_tool_name(text: str) -> bool:
+    """True when a tool-less reply is NOTHING but a known tool name.
+
+    Small models sometimes answer a tool-needing prompt by blurting a
+    single tool name ('get_weather') instead of using the marker.
+    """
+    if not text:
+        return False
+    stripped = text.strip().strip(".!? ").lower()
+    return stripped in TOOL_NAMES
+
+
 def _escalation_tools(full_text: str, user_message: str = "") -> tuple[list, str]:
     """Pick the SMALLEST sufficient toolset for an escalated round.
 
@@ -183,6 +196,45 @@ def _escalation_tools(full_text: str, user_message: str = "") -> tuple[list, str
     if g:
         return get_tools_for_group(g), f"{g} (keyword)"
     return get_combined_tools(), "combined"
+
+
+
+def _build_round_request(backend: str, full_msgs: list[dict], current_msgs: list[dict],
+                         use_tools: bool, filtered_tools, think: bool, reasoning_effort: str):
+    """Construct the streaming request payload + endpoint URL for one round.
+
+    Extracted so the per-iteration loop can wrap construction in a hard
+    try/except — a silent generator death here showed users an empty reply
+    with zero diagnostics (laptop field case, 2026-08-24).
+    """
+    tools_tokens = 0
+    if use_tools and filtered_tools:
+        tools_tokens = len(json.dumps(filtered_tools, ensure_ascii=False)) // 4
+    if backend == "litert":
+        payload = _build_payload(
+            trim_messages_for_context(
+                _normalize_messages_for_backend(full_msgs + current_msgs, backend="litert"),
+                context_window=int(get("LLM_NUM_CTX", DEFAULT_LLM_NUM_CTX)),
+                reserved_output=int(get("LLM_MAX_OUTPUT_TOKENS", DEFAULT_LLM_MAX_OUTPUT_TOKENS)),
+                tools_tokens=tools_tokens,
+            ),
+            stream=True, think=think, use_tools=use_tools, tool_list=filtered_tools,
+            backend="litert", reasoning_effort=reasoning_effort,
+        )
+        url = f"{LITERT_BASE_URL}/v1/chat/completions"
+    else:
+        payload = _build_payload(
+            trim_messages_for_context(
+                full_msgs + current_msgs,
+                context_window=int(get("LLM_NUM_CTX", DEFAULT_LLM_NUM_CTX)),
+                reserved_output=int(get("LLM_MAX_OUTPUT_TOKENS", DEFAULT_LLM_MAX_OUTPUT_TOKENS)),
+                tools_tokens=tools_tokens,
+            ),
+            stream=True, think=think, use_tools=use_tools, tool_list=filtered_tools,
+            reasoning_effort=reasoning_effort,
+        )
+        url = f"{OLLAMA_BASE_URL}/api/chat"
+    return payload, url
 
 
 async def chat_with_ollama_stream(
@@ -239,32 +291,14 @@ async def chat_with_ollama_stream(
         if truncation_retried or final_nudge_used:
             use_tools = False
             filtered_tools = None
-        tools_tokens = 0
-        if use_tools and filtered_tools:
-            tools_tokens = len(json.dumps(filtered_tools, ensure_ascii=False)) // 4
-        if backend == "litert":
-            payload = _build_payload(
-                trim_messages_for_context(
-                    _normalize_messages_for_backend(full_msgs + current_msgs, backend="litert"),
-                    context_window=int(get("LLM_NUM_CTX", DEFAULT_LLM_NUM_CTX)),
-                    reserved_output=int(get("LLM_MAX_OUTPUT_TOKENS", DEFAULT_LLM_MAX_OUTPUT_TOKENS)),
-                    tools_tokens=tools_tokens,
-                ),
-                stream=True, think=think, use_tools=use_tools, tool_list=filtered_tools, backend="litert",
-                reasoning_effort=reasoning_effort,
-            )
-            url = f"{LITERT_BASE_URL}/v1/chat/completions"
-        else:
-            payload = _build_payload(
-                trim_messages_for_context(
-                    full_msgs + current_msgs,
-                    context_window=int(get("LLM_NUM_CTX", DEFAULT_LLM_NUM_CTX)),
-                    reserved_output=int(get("LLM_MAX_OUTPUT_TOKENS", DEFAULT_LLM_MAX_OUTPUT_TOKENS)),
-                    tools_tokens=tools_tokens,
-                ),
-                stream=True, think=think, use_tools=use_tools, tool_list=filtered_tools, reasoning_effort=reasoning_effort,
-            )
-            url = f"{OLLAMA_BASE_URL}/api/chat"
+        try:
+            payload, url = _build_round_request(
+                backend, full_msgs, current_msgs, use_tools, filtered_tools,
+                think, reasoning_effort)
+        except Exception:
+            logger.exception("Round %d request construction failed", iteration)
+            yield {"error": "Internal error while preparing the model request."}
+            return
 
         buf = ""
         full_text = ""
@@ -341,13 +375,14 @@ async def chat_with_ollama_stream(
                             if _check_tool_leak(full_text) or _check_tool_leak(buf + token):
                                 suppressing = True
                                 logger.info("Tool call pattern detected mid-stream, suppressing output")
-                            elif hatch_armed and _wants_tools_hint(full_text):
+                            elif hatch_armed and (_wants_tools_hint(full_text) or _bare_tool_name(full_text)):
                                 # Marker confirmed: nothing more of value in
                                 # this round — stop reading, escalate below.
                                 suppressing = True
                                 logger.info("TOOL_NEEDED marker detected — cutting round short")
                         if suppressing:
                             if hatch_armed:
+                                logger.info("Hatch armed — aborting pure-chat round to escalate")
                                 escalate_now = True
                                 break
                         elif not early_buf_flushed:
@@ -390,6 +425,12 @@ async def chat_with_ollama_stream(
         if done_reason == "length":
             logger.warning(f"Model stopped early (done_reason='length'). Consider raising LLM_NUM_CTX (currently {get('LLM_NUM_CTX', DEFAULT_LLM_NUM_CTX)}).")
 
+        if not escalate_now and intent_no_tools and not think and not tools_escalated \
+                and (_check_tool_leak(full_text) or _wants_tools_hint(full_text)):
+            # Round ended with a tool-signal we could not cut early —
+            # escalate through the same path below.
+            escalate_now = True
+
         if escalate_now:
             # Mid-stream hatch fired (TOOL_NEEDED marker or leaked call
             # syntax) — redo this round with the smallest sufficient toolset.
@@ -402,9 +443,13 @@ async def chat_with_ollama_stream(
             # instead of calling the freshly attached tools.
             full_msgs = [m for m in full_msgs if m.get("content") != _TOOL_ASK_HINT]
             last_user = next((m.get("content", "") for m in reversed(messages) if m.get("role") == "user"), "")
-            filtered_tools, esc_scope = _escalation_tools(full_text, last_user)
+            try:
+                filtered_tools, esc_scope = _escalation_tools(full_text, last_user)
+            except Exception:
+                logger.exception("Escalation toolset selection failed")
+                filtered_tools, esc_scope = get_combined_tools(), "combined"
+            logger.info("Hatch escalating: scope=%s (%d tools)", esc_scope, len(filtered_tools))
             yield {"gen_retry": {"reason": "tools_escalated"}}
-            logger.info(f"Escalating to toolset scope={esc_scope} ({len(filtered_tools)} tools)")
             continue
 
         if not tool_calls_acc and not think and use_tools and _check_tool_leak(full_text):
