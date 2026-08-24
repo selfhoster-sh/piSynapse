@@ -248,10 +248,12 @@ async def chat_with_ollama_stream(
     intent: str = "action",
     tool_group: str | None = None,
     reasoning_effort: str = "",
+    origin: str = "",
 ):
     full_msgs = await _build_full_messages(messages, memories or [], summary, session_id, tool_group=tool_group)
     context = {
         "user_id": user_id,
+        "_origin": (origin or "").strip().lower(),
         "session_id": session_id,
         # Guards (CLARIFY_REQUIRED etc.) anchor their clarifying question to
         # the user's own words — small models mirror the LAST language they
