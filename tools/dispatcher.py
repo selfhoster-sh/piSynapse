@@ -79,6 +79,7 @@ async def _resolve_position(session_id: str, ref, context_fn, id_field: str):
 async def run_tool(name: str, params: dict, context: dict | None = None) -> str:
     """Route a tool call to the appropriate handler and return the result string."""
     context = context or {}
+    user_text = (context.get("_user_text") or "").strip()
     logger.info("Tool call: %s params=%s", name, str(params)[:200])
 
     if name == "get_datetime":
@@ -102,7 +103,8 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> str:
                     return ("CLARIFY_REQUIRED: The event request is missing "
                             + " and ".join(missing) + ". Ask the user ONE short question "
                             "(in their language) for exactly those details. "
-                            "Do not call create_calendar_event again until they answer.")
+                            "Do not call create_calendar_event again until they answer. "
+                            f'The user\'s original message: "{user_text}"')
                 dur = _safe_int(params.get("duration_minutes", 60), 60, "duration_minutes", min_value=1)
                 return await asyncio.to_thread(
                     create_event,
@@ -151,7 +153,7 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> str:
             return "ERROR: Calendar operation failed. Check server logs."
 
     if name in {"list_emails", "read_email", "send_email", "search_emails"}:
-        return await _run_mail_tool(name, params, context.get("session_id", ""))
+        return await _run_mail_tool(name, params, context.get("session_id", ""), context.get("_user_text", ""))
 
     if name == "save_memory":
         content = (params.get("content") or "").strip()
@@ -181,15 +183,15 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> str:
         return "Memory saved."
 
     if name in {"create_note", "list_notes", "read_note", "update_note", "delete_note", "search_notes"}:
-        return await _run_notes_tool(name, params, context.get("session_id", ""))
+        return await _run_notes_tool(name, params, context.get("session_id", ""), context.get("_user_text", ""))
 
     if name in {"create_task", "list_tasks", "complete_task", "delete_task", "search_tasks"}:
-        return await _run_tasks_tool(name, params, context.get("session_id", ""))
+        return await _run_tasks_tool(name, params, context.get("session_id", ""), context.get("_user_text", ""))
 
     return "ERROR: Tool not found."
 
 
-async def _run_notes_tool(name: str, params: dict, session_id: str = "") -> str:
+async def _run_notes_tool(name: str, params: dict, session_id: str = "", user_text: str = "") -> str:
     """Dispatch note tool calls with session-aware ID resolution."""
     from nextcloud_notes import (
         create_note,
@@ -215,7 +217,8 @@ async def _run_notes_tool(name: str, params: dict, session_id: str = "") -> str:
                 # the model must ask the user for the content first.
                 return ("CLARIFY_REQUIRED: The note has no content. Ask the user ONE short "
                         "question (in their language) about what to write in the note. "
-                        "Do not call create_note again until they answer.")
+                        "Do not call create_note again until they answer. "
+                        f'The user\'s original message: "{user_text}"')
             return await create_note(
                 title=title,
                 content=content,
@@ -273,7 +276,7 @@ async def _run_notes_tool(name: str, params: dict, session_id: str = "") -> str:
     return "ERROR: Tool not found."
 
 
-async def _run_tasks_tool(name: str, params: dict, session_id: str = "") -> str:
+async def _run_tasks_tool(name: str, params: dict, session_id: str = "", user_text: str = "") -> str:
     """Dispatch task tool calls with session-aware UID resolution."""
     from nextcloud_tasks import (
         complete_task,
@@ -294,7 +297,8 @@ async def _run_tasks_tool(name: str, params: dict, session_id: str = "") -> str:
                 # Chip flow guard: no empty/placeholder tasks.
                 return ("CLARIFY_REQUIRED: The task has no text. Ask the user ONE short "
                         "question (in their language) about what the task should be. "
-                        "Do not call create_task again until they answer.")
+                        "Do not call create_task again until they answer. "
+                        f'The user\'s original message: "{user_text}"')
             priority = _safe_int(params.get("priority", 0), 0, "priority")
             return await create_task(
                 summary=summary,
@@ -345,7 +349,7 @@ async def _run_tasks_tool(name: str, params: dict, session_id: str = "") -> str:
     return "ERROR: Tool not found."
 
 
-async def _run_mail_tool(name: str, params: dict, session_id: str = "") -> str:
+async def _run_mail_tool(name: str, params: dict, session_id: str = "", user_text: str = "") -> str:
     """Dispatch email tool calls to the active mail client."""
     from mail import get_active_mail_client
     from prompt import cache_email_context
@@ -396,7 +400,8 @@ async def _run_mail_tool(name: str, params: dict, session_id: str = "") -> str:
                 return ("CLARIFY_REQUIRED: The email request is missing "
                         + " and ".join(missing) + ". Ask the user ONE short question "
                         "(in their language) for exactly those parts. "
-                        "Do not call send_email again until they answer.")
+                        "Do not call send_email again until they answer. "
+                        f'The user\'s original message: "{user_text}"')
             ok = await mc.send_message(account_id, to, subj, body, params.get("cc", ""), params.get("bcc", ""))
             detail = f"To: {to}"
             if params.get("cc"):

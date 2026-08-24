@@ -198,7 +198,14 @@ async def chat_with_ollama_stream(
     reasoning_effort: str = "",
 ):
     full_msgs = await _build_full_messages(messages, memories or [], summary, session_id, tool_group=tool_group)
-    context = {"user_id": user_id, "session_id": session_id}
+    context = {
+        "user_id": user_id,
+        "session_id": session_id,
+        # Guards (CLARIFY_REQUIRED etc.) anchor their clarifying question to
+        # the user's own words — small models mirror the LAST language they
+        # saw, and tool results are English meta-instructions.
+        "_user_text": next((m.get("content", "") for m in reversed(messages) if m.get("role") == "user"), ""),
+    }
     current_msgs: list[dict] = []
     memories_saved = 0
     client = _get_client()
