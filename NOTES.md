@@ -37,7 +37,7 @@ First external-hardware install (ollama + GPU laptop): **one-shot success**, no 
 | 4 | litert round-2 doubled-brace failure root cause location | Isolate: server grammar vs our result formatting |
 | ~~1~~ ✅ Confirmed 2026-08-24 | Hatch fires on real ollama (laptop log: TOOL_NEEDED marker detected → escalation) | closed |
 | ✅ Fixed 2026-08-24 | **Router swallowed everything after the first `gen_retry`** (`return` in the relay loop) — escalated-round tokens never reached clients; looked like "empty reply" | relay continues now; verified live end-to-end (retry→get_weather→TR answer→done) |
-| Open | Chip-origin create requests may still execute with placeholder titles ('yeni görev') when a model supplies one — proposed fix: frontend sends origin=chip flag, dispatcher then forces clarify | awaiting decision |
+| ~~Open~~ ✅ Fixed 2026-08-24 | Chip-origin placeholder titles — UI now sends `origin:"chip"` on chip sends; dispatcher forces CLARIFY for create_note/task/event/send_email regardless of supplied params (non-chip flows unchanged) |
 
 ## 2026-08-23 (20) — Hatch v2: group-scoped escalation + early abort; description trim
 

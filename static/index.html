@@ -2370,8 +2370,9 @@ async function sendMsg(){
   try{
     const headers={'Content-Type':'application/json'};
     const _k=getApiKey(); if(_k) headers['X-API-Key']=_k;
+    const originFlag = _chipOrigin ? 'chip' : ''; _chipOrigin = false;
     const resp=await fetch(API+'/chat/stream',{ method:'POST', headers,
-      body:JSON.stringify({ message: text, session_id: sid, user_id: config.username||'default', think_mode: thinkMode, images, reasoning_effort: thinkEffort })
+      body:JSON.stringify({ message: text, session_id: sid, user_id: config.username||'default', think_mode: thinkMode, images, reasoning_effort: thinkEffort, origin: originFlag })
     });
     if(!resp.ok) throw new Error('HTTP '+resp.status);
     const reader=resp.body.getReader(), dec=new TextDecoder(); let buf='';
@@ -2686,10 +2687,12 @@ const WELCOME_CHIPS = {
       'Create calendar event','Send an email']
 };
 
+let _chipOrigin = false;
 function chipSend(el){
   const inp = document.getElementById('msg-input');
   if(!inp) return;
   inp.value = el.textContent;
+  _chipOrigin = true;            // consumed by sendMsg -> request.origin
   sendMsg();
 }
 
