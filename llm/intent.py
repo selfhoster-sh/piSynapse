@@ -146,6 +146,17 @@ def _kw_hit(kw: str, ml: str) -> bool:
     return kw in ml
 
 
+async def _audit_intent(message: str, chosen_group: str | None,
+                        best_sim: float | None, margin: float | None,
+                        source: str) -> None:
+    """Fire-and-forget ambiguity record. Never raises, never delays routing."""
+    try:
+        from db import log_intent_audit
+        await log_intent_audit(message[:500], chosen_group, best_sim, margin, source)
+    except Exception as e:
+        logger.warning(f"Intent audit skipped (source={source}): {e}")
+
+
 def _keyword_group(message: str) -> str | None:
     """Cheap substring heuristics. Order matters: first hit wins."""
     ml = message.lower()
@@ -200,7 +211,10 @@ async def _classify_intent(message: str, query_embedding: bytes | None = None) -
                                 f"Embedding chose {best_group} but keyword says {kw_group} "
                                 f"(sim={best_sim:.2f}, margin={margin:.2f}) -> keyword wins (message={message!r})"
                             )
+                            await _audit_intent(message, kw_group, best_sim, margin, "thin_margin")
                             return "action", kw_group
+                    if margin < 0.10:
+                        await _audit_intent(message, best_group, best_sim, margin, "thin_margin")
                     logger.info(f"Intent=action group={best_group} via embedding (sim={best_sim:.2f}, margin={margin:.2f}, message={message!r})")
                     return "action", best_group
                 logger.info(f"Intent=question via embedding (sim={best_sim:.2f}, margin={margin:.2f}, message={message!r})")
@@ -211,6 +225,7 @@ async def _classify_intent(message: str, query_embedding: bytes | None = None) -
 
     kw_group = _keyword_group(message)
     if kw_group:
+        await _audit_intent(message, kw_group, None, None, "keyword_fallback")
         logger.info(f"Intent=action group={kw_group} via keyword (message={message!r})")
         return "action", kw_group
 
