@@ -712,13 +712,13 @@ ollama structured-outputs docs, FunctionGemma release.
 | # | Item | Decision / status |
 |---|---|---|
 | ~~1~~ ✅ Measured 2026-08-24 | Constrained decoding overhead ≈ **0%** (4+4 ölçüm: TR-clean 53.7s vs 53.7s avg; TR-detail 7.4 vs 7.5 — fark gürültü içinde, kısıtlı çoğu örnekte hafif hızlı) → **ADOPT** via Conversation API migration (next: #2/#8) |
-| 2 | Automatic schema path (Conversation/apply_chat_template) vs manual JSON — evaluate migration | EVALUATE |
+| ~~2~~ ✅ Already-on 2026-08-24 | piServe already runs per-request Conversation with RawSchemaTool passthrough (our exact schemas) + ATC off — verified in code & live |
 | 3 | FunctionGemma 270M as intent/slot router — wait for .litertlm packaging vs test HF form now | DECIDE |
-| 4 | Arg-arity diet: update_calendar_event(5p), send_email(5p), update_note(5p) sit past the E2B reliability cliff (3+ string args collapse; 4 args=0% pass) — split per-operation or shrink required set | TODO |
-| 5 | Official `tool_responses` result format — align piServe result feeding with gemma template | TODO |
+| 4 | Arg-arity diet — REVISED under constrained decoding: 5-param send_email extracted perfectly in 31s w/ full confirm card; update_note sequencing (search→update by title) still flaky → fold into #7 slot-extraction design instead of splitting tools | RE-EVALUATED |
+| ~~5~~ ✅ Done 2026-08-24 | `_convert_content` wraps role:tool results into structured `tool_response` blocks (name+response) matching gemma template expectations |
 | 6 | Dual-backend support continues; audit ollama official docs for equivalent gaps | ONGOING |
 | 7 | Constrained-decoding benchmarks both backends; ollama native FC constraints unavailable → use schema-constrained slot-extraction call (`format=json_schema`) instead | WITH #1 |
-| 8 | piServe scope review: what does it still provide over stock serve? (max_num_tokens>4096 needed at 8192 ctx ✓, OpenAI SSE translation ✓, admin/hot-reload ✓, legacy litert.service retirement ✓) → trim to necessity afterwards | REVIEW |
+| ~~8~~ ✅ Review complete 2026-08-24 | ALL current components necessary (8192 ctx cap lift, OpenAI SSE contract, admin/hot-reload); nothing to trim — incremental enhancements only |
 
 Consolidated earlier suggestions that were previously untracked: frontend modularization
 (Future Plan, new row), litert-lm version pinning/watch (Future Plan, new row).
