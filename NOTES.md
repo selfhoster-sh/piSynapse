@@ -720,6 +720,14 @@ ollama structured-outputs docs, FunctionGemma release.
 | 7 | Constrained-decoding benchmarks both backends; ollama native FC constraints unavailable → use schema-constrained slot-extraction call (`format=json_schema`) instead | WITH #1 |
 | ~~8~~ ✅ Review complete 2026-08-24 | ALL current components necessary (8192 ctx cap lift, OpenAI SSE contract, admin/hot-reload); nothing to trim — incremental enhancements only |
 
+**Embedding model comparison (2026-08-25):** multilingual-e5-large vs MiniLM-L12 on the
+14-case intent set (passage/query prefixes per E5 spec). Result: E5 margins COLLAPSED
+(avg 0.009 vs MiniLM 0.040; thin-margin 14/14 vs 13/14; confident-decision 0/14 vs 4/14),
+6× slower embed (9.8s vs 1.6s /98 sent), +~2.8 GB RSS. Verdict: STAY on MiniLM; improve
+margins via corpus coverage (done for notes verb-phrases). Caveat: table measures
+EMBEDDING-layer-only decisions; production adds keyword tie-break + LLM fallback on top.
+Experiment: experiments/intent_embed_compare.py.
+
 Consolidated earlier suggestions that were previously untracked: frontend modularization
 (Future Plan, new row), litert-lm version pinning/watch (Future Plan, new row).
 
