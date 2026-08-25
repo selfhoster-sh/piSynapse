@@ -22,12 +22,12 @@ decoding for tool-bearing turns. Test suite grows from 329 to 337 passing.
   as hatch triggers; group-scoped toolset selection on escalation; early
   abort of pure-chat rounds
 - Hallucinated non-offered tools rejected with a guidance result instead of
-  executing (field case: create_task during a calendar turn wrote junk tasks)
+  executing (observed in the field: create_task during a calendar turn wrote junk tasks)
 - Creates/send_email capped at ONE identical execution per turn (duplicate
   'Yarın için görev' ×2 class)
 - Chip-origin requests force clarify on create/send regardless of supplied
   params; decline replies ('yok / sadece oluştur') save title-only notes
-- Deterministic instant chip clarify (~0 ms model cost vs 15–40 s round)
+- Deterministic instant chip clarify (LLM call skipped — model cost ~0 ms; see Perf for end-to-end wall time)
 
 ### Fixed
 - **SSE relay swallowed all events after the first gen_retry** — escalated
@@ -36,7 +36,8 @@ decoding for tool-bearing turns. Test suite grows from 329 to 337 passing.
   child** — every task displayed as 'Untitled', poisoning delete/complete
   flows
 - Identical-execution counter incremented post-loop, letting two identical
-  creates inside one response bypass the cap
+  creates inside one response bypass the cap (single-shot cap landed earlier
+  this cycle; this bypass was a flaw in its first implementation)
 - Language mirroring recency bias: guard strings embed the user's original
   words as an anchor (TR stays TR on ollama-class backends)
 - LiteRT server-side doubled-brace parse failures recovered from the error
