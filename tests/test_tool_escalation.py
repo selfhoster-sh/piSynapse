@@ -431,3 +431,47 @@ def test_chip_origin_create_gets_instant_clarify(monkeypatch):
     # non-create chip (list) must NOT trigger the fast path
     events2, _ = asyncio.run(drain("görevlerimi listele"))
     assert not any("Görevin ne olsun" in e.get("token","") for e in events2)
+
+
+def test_create_tools_single_shot(monkeypatch):
+    # Two IDENTICAL create calls inside ONE response: second must be refused
+    # (cap=1 for creates) instead of double-writing to Nextcloud.
+    import sys as _s
+
+    async def fake_verify(*a, **k): pass
+
+    executed: list[str] = []
+    async def fake_run_tool(name, params, context=None):
+        executed.append(name); return "OK"
+
+    dup1 = _tc("create_task", '{"summary": "süt al"}', cid="d1", idx=0)
+    dup2 = _tc("create_task", '{"summary": "süt al"}', cid="d2", idx=1)
+    rounds = [
+        [dup1, dup2, _fin("tool_calls"), _DONE_LINE],
+        [_tok("bitti."), _fin("stop"), _DONE_LINE],
+    ]
+    state = {"n": 0}
+    class C:
+        def stream(self, method, url, json=None):
+            r = rounds[state["n"]]; state["n"] += 1
+            return _SeqResp(r)
+
+    monkeypatch.setattr(llm_stream, "_get_client", lambda: C())
+    monkeypatch.setattr(llm_stream, "run_verification", fake_verify)
+    monkeypatch.setattr(llm_stream, "run_tool", fake_run_tool)
+
+    async def drain():
+        events = []
+        async for ev in llm_stream.chat_with_ollama_stream(
+            [{"role": "user", "content": "görev"}],
+            memories=[], think=False, summary="", user_id="t",
+            session_id="s-single", intent="action", tool_group="tasks",
+            reasoning_effort="",
+        ):
+            events.append(ev)
+        return events
+
+    events = asyncio.run(drain())
+    refusals = [e for e in events if e.get("tool", {}).get("phase") == "refused"]
+    assert len(refusals) == 1 and refusals[0]["tool"]["max"] == 1
+
