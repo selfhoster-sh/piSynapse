@@ -38,6 +38,29 @@ build it without re-litigating:
 2. Rows where keyword overturned embedding's top pick (disagreements)
 3. Source distribution over time (fallback-rate trend = corpus health KPI)
 
+**IMPLEMENTED 2026-08-25:** db.log_intent_audit / purge_intent_audit(30d) +
+daily purge wired into periodic_rollup_loop; sources thin_margin &
+keyword_fallback instrumented in _classify_intent exits (fail-safe).
+Live-verified within minutes of deploy (real user queries captured).
+
+Shipped review SQL (weekly):
+```sql
+-- 1) en sık tekrar eden belirsiz cümleler
+SELECT message, COUNT(*) n FROM intent_audit_log
+ WHERE created_at > datetime('now','-7 days')
+ GROUP BY message ORDER BY n DESC LIMIT 20;
+
+-- 2) keyword'ün embedding ilk tercihini ezdiği durumlar
+--    (thin_margin + chosen != embedding'in seçtiği ayrımı ileride
+--     embedding_top_group kolonuyla zenginleştirilebilir)
+SELECT source, chosen_group, COUNT(*) FROM intent_audit_log
+ WHERE created_at > datetime('now','-7 days') GROUP BY source, chosen_group;
+
+-- 3) fallback sağlık trendi
+SELECT date(created_at) d, source, COUNT(*) FROM intent_audit_log
+ GROUP BY d, source ORDER BY d;
+```
+
 Review discipline: frequency ≠ error. Each candidate gets a correctness
 check; fixes prefer CORPUS additions when the pattern generalizes (strengthens
 embedding confidence) and keyword patches for exact-token quirks only.

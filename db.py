@@ -190,6 +190,18 @@ async def init_db():
     """)
 
     await db.execute("""
+        CREATE TABLE IF NOT EXISTS intent_audit_log (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            message      TEXT NOT NULL,
+            chosen_group TEXT,
+            best_sim     REAL,
+            margin       REAL,
+            source       TEXT NOT NULL,
+            created_at   DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    await db.execute("""
         CREATE TABLE IF NOT EXISTS email_session_map (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
             session_id TEXT NOT NULL,
@@ -207,6 +219,8 @@ async def init_db():
     await db.execute("CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id, importance DESC)")
     await db.execute("CREATE INDEX IF NOT EXISTS idx_tool_audit_created ON tool_audit_log(created_at)")
     await db.execute("CREATE INDEX IF NOT EXISTS idx_tool_audit_rollup ON tool_audit_log(is_summary, created_at)")
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_intent_audit_created ON intent_audit_log(created_at)")
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_intent_audit_source ON intent_audit_log(source, created_at)")
     await db.execute("CREATE INDEX IF NOT EXISTS idx_email_session_map_session ON email_session_map(session_id, seq)")
 
     await db.execute("""
@@ -403,6 +417,37 @@ async def log_tool_call(
         logger.warning(f"Tool audit log write failed for '{tool_name}': {e}")
 
 
+async def log_intent_audit(message: str, chosen_group: str | None,
+                           best_sim: float | None, margin: float | None,
+                           source: str) -> None:
+    """Fire-and-forget intent ambiguity record. Never raises."""
+    try:
+        db = await get_db()
+        await db.execute(
+            "INSERT INTO intent_audit_log (message, chosen_group, best_sim, margin, source) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (message[:500], chosen_group, best_sim, margin, source),
+        )
+        await db.commit()
+    except Exception as e:
+        logger.warning(f"Intent audit write failed (source={source}): {e}")
+
+
+async def purge_intent_audit(days: int = 30) -> int:
+    """Delete intent audit rows older than `days`. Never raises; returns deleted count."""
+    try:
+        db = await get_db()
+        cur = await db.execute(
+            "DELETE FROM intent_audit_log WHERE created_at < datetime('now', ?)",
+            (f"-{days} days",),
+        )
+        await db.commit()
+        return cur.rowcount
+    except Exception as e:
+        logger.warning(f"Intent audit purge failed: {e}")
+        return 0
+
+
 async def rollup_tool_audit(days: int = 14) -> int:
     """Compress detail rows older than `days` into one daily summary row per day.
 
@@ -510,6 +555,7 @@ async def periodic_rollup_loop(interval: float = ROLLUP_INTERVAL_SECONDS, sleep=
         await sleep(interval)
         try:
             await rollup_tool_audit()
+            await purge_intent_audit()
         except asyncio.CancelledError:
             raise
         except Exception as e:
