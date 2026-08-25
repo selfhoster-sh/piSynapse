@@ -12,6 +12,7 @@
 - The services/ layer was REMOVED (July 30, 2026) — legacy modules (db.py, llm/, tools/, embedding.py) do all the work. Don't propose a DI/service layer again unless the user explicitly asks.
 - Docker and WebSocket (/chat/ws) were removed — the frontend uses SSE only (/chat/stream); do not reintroduce them.
 - The Ollama service is stopped/disabled — LLM_BACKEND=litert is active. Don't restart Ollama or add dependencies on it unless the user asks.
+- Docker RAM-freeing rule (2026-08-26 incident): stopping containers breaks DEPENDENT long-running containers via cached DNS (nextcloud lost postgres IP -> 500s ~35 min). After any stop/start cycle restart affected high-level containers too and verify health endpoints.
 - Journal policy: entries are strictly reverse chronological (newest first), record project-relevant facts only — no meta/authority commentary ("full authority", "while user slept", approval statuses). Applies to every future edit.
 - Currency rule: before relying on a statement in this file, verify it against the code. Found-stale statements get struck through with a dated reason (invalid/unnecessary/done/fixed) — never silently deleted.
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
@@ -98,6 +99,7 @@ First external-hardware install (ollama + GPU laptop): **one-shot success**, no 
 | ~~1~~ ✅ Confirmed 2026-08-24 | Hatch fires on real ollama (laptop log: TOOL_NEEDED marker detected → escalation) | closed |
 | ✅ Fixed 2026-08-24 | **Router swallowed everything after the first `gen_retry`** (`return` in the relay loop) — escalated-round tokens never reached clients; looked like "empty reply" | relay continues now; verified live end-to-end (retry→get_weather→TR answer→done) |
 | ~~Open~~ ✅ Fixed 2026-08-24 | Chip-origin placeholder titles — UI now sends `origin:"chip"` on chip sends; dispatcher forces CLARIFY for create_note/task/event/send_email regardless of supplied params (non-chip flows unchanged) |
+| Incident 2026-08-26 (~35dk kesinti) | Nextcloud 500s: docker RAM-durdurma sonrasi nextcloud eski postgres IP'sini cache'lemisti; nextcloud restart ile cozuldu. Ayni pencerede intent_audit_log ilk gercek verilerini aldi (2x keyword_fallback/weather) |
 
 ## 2026-08-23 (20) — Hatch v2: group-scoped escalation + early abort; description trim
 
