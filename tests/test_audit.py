@@ -164,7 +164,6 @@ def test_rollup_retention_default_is_14_days(audit_db):
     a 5-day-old row is kept. (Under the old 30-day default the 26-day-old
     row would have survived, so this distinguishes the policy.)
     """
-
     from datetime import datetime, timedelta
     # Relative dates: hardcoded ones age past the threshold and turn the
     # test into a time bomb (the 2026-08-10 row detonated on 2026-08-24).
