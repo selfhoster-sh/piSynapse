@@ -8,11 +8,12 @@ Records wall time per turn and whether create_task executed with VALID args.
 Run:  sudo systemctl stop pisynapse   # free RAM first if needed
       ./venv/bin/python experiments/fc_constrained_test.py [model_path]
 """
-import json, sys, time
-from pathlib import Path
+import json
+import sys
+import time
+
 sys.path.insert(0, "/home/salih/.local/share/uv/tools/litert-lm/lib/python3.11/site-packages")
-from litert_lm import (Engine, Backend, ConstrainedDecodingConfig,
-                       LiteRtLmConstraintProviderType)
+from litert_lm import Backend, ConstrainedDecodingConfig, Engine, LiteRtLmConstraintProviderType
 
 CFG = json.load(open("/home/salih/piSynapse/litert_serve/config.json"))
 if len(sys.argv) > 1:
@@ -98,12 +99,12 @@ def main():
         order = variants if rnd % 2 == 0 else variants[::-1]   # sıra yanlılığını kır
         for name, constrained in order:
             res = run_variant(name, constrained, PROMPTS, engine)
-            results[name] += [(l, d, ok) for l, d, c, ok in res]
+            results[name] += [(lab, d, ok) for lab, d, c, ok in res]
     print("\n===== ÖZET (2 tur ortalaması) =====")
     for name, res in results.items():
         for label in ("TR-clean", "TR-detail"):
-            ds = [d for l, d, ok in res if l == label]
-            oks = [ok for l, d, ok in res if l == label]
+            ds = [d for lab, d, ok in res if lab == label]
+            oks = [ok for lab, d, ok in res if lab == label]
             avg = sum(ds)/len(ds)
             print(f"{name:12s} {label:9s} avg={avg:6.2f}s  valid={all(oks)} ({len(ds)} ölçüm)")
 engine = None
