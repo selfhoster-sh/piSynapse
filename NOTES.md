@@ -16,6 +16,40 @@
 - Currency rule: before relying on a statement in this file, verify it against the code. Found-stale statements get struck through with a dated reason (invalid/unnecessary/done/fixed) — never silently deleted.
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 
+## 2026-08-25 (22) — Intent audit-log design APPROVED (implementation pending)
+
+Night discussion (with external second opinion) settled how routing ambiguity
+gets observed going forward. Decision recorded here so the next session can
+build it without re-litigating:
+
+**Approved design** — `intent_audit_log` table following the existing
+`tool_audit_log` pattern:
+- Columns: created_at, message, chosen_group, best_sim, margin, source (+uid pk)
+- ACTIVE sources at launch: `thin_margin` (embedding chose a group but
+  margin<0.10 → keyword arbitration ran) and `keyword_fallback` (embedding
+  uncertain entirely → keyword decided)
+- SCHEMA RESERVED, logging code DEFERRED until real need: `default_question`,
+  `llm_fallback`, `hatch`
+- 30-day retention using the same rollup approach as tool_audit_log
+- Fail-safe insert: audit failure must never break classification
+
+**Weekly review workflow** (queries to be shipped WITH the implementation):
+1. Most frequent thin-margin messages, last 7 days (collision candidates)
+2. Rows where keyword overturned embedding's top pick (disagreements)
+3. Source distribution over time (fallback-rate trend = corpus health KPI)
+
+Review discipline: frequency ≠ error. Each candidate gets a correctness
+check; fixes prefer CORPUS additions when the pattern generalizes (strengthens
+embedding confidence) and keyword patches for exact-token quirks only.
+
+**Also documented (A/B evidence base):** the five static "ask if details are
+missing" prompt instructions (Rule-1 exception + four group lines) were REMOVED
+after an A/B experiment showed identical outcomes with them absent — backend
+CLARIFY guards carry asking duty contextually with language anchors. Nothing
+else was removed: dispatcher guards, decline-bypass, chip instant-clarify,
+hatch hint and the keyword/embedding intent layer all remain (keyword layer
+was EXPANDED today: verb-first TR phrases + boundary-safe 'kar').
+
 ## 2026-08-24 (21) — Laptop field report + language anchoring + clarify guards
 
 First external-hardware install (ollama + GPU laptop): **one-shot success**, no installer steps failed. Issues found & fixed:
