@@ -84,6 +84,9 @@ _TOOL_EMBED_CORPUS: list[tuple[str | None, str]] = [
     ("tasks", "görev güncelle, görevi değiştir, görevi ertele, görev tarihini değiştir, görevi tamamlandı işaretle"),
     ("notes", "create note, show notes, edit note, delete note, list notes, search notes, note taking"),
     ("notes", "not oluştur, notlarımı göster, notu düzenle, not sil, not ara, not defteri"),
+    # Verb-first TR patterns: chip-style phrasings ('not düş') previously had
+    # no seed here and embedding drifted to calendar on mixed sentences.
+    ("notes", "not düş, not yaz, not ekle, hatırlatıcı bırak"),
     ("notes", "notiz erstellen, notizen anzeigen, notiz bearbeiten, notiz suchen"),
     ("notes", "créer une note, afficher les notes, modifier une note, chercher des notes"),
     ("notes", "crear nota, mostrar notas, editar nota, buscar notas, bloc de notas"),
@@ -133,6 +136,16 @@ async def _get_tool_embeddings() -> list[tuple[str | None, str, bytes]]:
         return _tool_embed_cache
 
 
+# Short/ambiguous keywords matched with space boundaries — bare substring
+# collided with common words ('çıkar' contains 'kar'; 'kart' too).
+_AMBIGUOUS_KW = {"kar"}
+
+def _kw_hit(kw: str, ml: str) -> bool:
+    if kw in _AMBIGUOUS_KW:
+        return f" {kw} " in f" {ml} "
+    return kw in ml
+
+
 def _keyword_group(message: str) -> str | None:
     """Cheap substring heuristics. Order matters: first hit wins."""
     ml = message.lower()
@@ -144,11 +157,12 @@ def _keyword_group(message: str) -> str | None:
         # Bare "not" deliberately absent: it collides with English negation
         # ("I could NOT find it") and routed pure chat to the notes group.
         # Distinctive suffixed/frozen forms cover Turkish inflections instead.
-        (["notlar", "notu", "nota", "not defteri", "not oluştur", "not al", "note"], "notes"),
+        (["notlar", "notu", "nota", "not defteri", "not oluştur", "not al", "note",
+          "not düş", "not yaz"], "notes"),
         (["hatırla", "hatirla", "unutma", "sakla", "kaydet", "remember", "don't forget", "save"], "memory"),
     )
     for kws, group in checks:
-        if any(kw in ml for kw in kws):
+        if any(_kw_hit(kw, ml) for kw in kws):
             return group
     return None
 
