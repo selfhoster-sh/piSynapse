@@ -711,7 +711,7 @@ ollama structured-outputs docs, FunctionGemma release.
 
 | # | Item | Decision / status |
 |---|---|---|
-| ~~1~~ ✅ Measured 2026-08-24 | Constrained decoding overhead ≈ **0%** (4+4 ölçüm: TR-clean 53.7s vs 53.7s avg; TR-detail 7.4 vs 7.5 — fark gürültü içinde, kısıtlı çoğu örnekte hafif hızlı) → **ADOPT** via Conversation API migration (next: #2/#8) |
+| ~~1~~ ✅ Adopted+stress-verified 2026-08-24 | Constrained decoding overhead ≈ **0%** (8 ölçüm, fark gürültü seviyesinde); piServe artık araçlı turlarda LL_GUIDANCE kısıtı uyguluyor — stres bataryası (çok-tur, 5-param email, detaylı etkinlik) sıfır hata |
 | ~~2~~ ✅ Already-on 2026-08-24 | piServe already runs per-request Conversation with RawSchemaTool passthrough (our exact schemas) + ATC off — verified in code & live |
 | 3 | FunctionGemma 270M as intent/slot router — wait for .litertlm packaging vs test HF form now | DECIDE |
 | 4 | Arg-arity diet — REVISED under constrained decoding: 5-param send_email extracted perfectly in 31s w/ full confirm card; update_note sequencing (search→update by title) still flaky → fold into #7 slot-extraction design instead of splitting tools | RE-EVALUATED |
