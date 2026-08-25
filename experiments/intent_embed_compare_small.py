@@ -3,14 +3,16 @@
 
 E5-small pooling: mean-pool + L2 norm (resmi e5 usage); prefix'ler: query:/passage:.
 """
-import sys, time, json
+import sys
+import time
+
 sys.path.insert(0, "/home/salih/piSynapse")
 import numpy as np
 import onnxruntime as ort
-from tokenizers import Tokenizer
 from fastembed import TextEmbedding
+from tokenizers import Tokenizer
 
-from llm.intent import _TOOL_EMBED_CORPUS, _keyword_group
+from llm.intent import _TOOL_EMBED_CORPUS
 
 MINILM = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 E5_DIR = "/tmp/opencode/e5s"
@@ -77,7 +79,9 @@ def main():
     corpus_groups = [g for g, _ in _TOOL_EMBED_CORPUS]
     corpus_texts = [t for _, t in _TOOL_EMBED_CORPUS]
 
-    t0=time.perf_counter(); m_mini = load(MINILM); tl_mini=time.perf_counter()-t0
+    t0=time.perf_counter()
+    m_mini = load(MINILM)
+    tl_mini=time.perf_counter()-t0
     mini_corpus = vecs(m_mini, corpus_texts)
 
     # E5-small: onnxruntime ile doğrudan (fastembed desteklemiyor)
@@ -98,14 +102,18 @@ def main():
         rows.append((msg, expected, bm, mg_, ok_m, be, me_, ok_e))
 
     hdr = f"{'mesaj':38s} {'bekl':9s} | {'M sim':>7s} {'marg':>6s} {'ok':>4s} | {'E5s sim':>8s} {'marg':>6s} {'ok':>4s}"
-    print("\n" + hdr); print("-"*len(hdr))
+    print("\n" + hdr)
+    print("-"*len(hdr))
     for msg, exp, bm, mg, okm, be, me, oke in rows:
         print(f"{msg[:36]:38s} {exp:9s} | {bm:7.3f} {mg:6.3f} {str(okm):>4s} | {be:8.3f} {me:6.3f} {str(oke):>4s}")
 
     import statistics
-    mm=[r[3] for r in rows]; me=[r[6] for r in rows]
-    thin_m=sum(1 for x in mm if x<0.10); thin_e=sum(1 for x in me if x<0.10)
-    acc_m=sum(1 for r in rows if r[2]>=0.50 and r[4]); acc_e=sum(1 for r in rows if r[5]>=0.50 and r[7])
+    mm=[r[3] for r in rows]
+    me=[r[6] for r in rows]
+    thin_m=sum(1 for x in mm if x<0.10)
+    thin_e=sum(1 for x in me if x<0.10)
+    acc_m=sum(1 for r in rows if r[2]>=0.50 and r[4])
+    acc_e=sum(1 for r in rows if r[5]>=0.50 and r[7])
     print(f"\nORT MARGIN : MiniLM={statistics.mean(mm):.3f}  E5s={statistics.mean(me):.3f}")
     print(f"İNCE(<0.10): MiniLM={thin_m}/14  E5s={thin_e}/14")
     print(f"GÜVENLİ    : MiniLM={acc_m}/14  E5s={acc_e}/14")

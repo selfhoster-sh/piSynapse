@@ -4,6 +4,69 @@ All notable changes to piSynapse will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 uses [Semantic Versioning](https://semver.org/).
 
+## [1.6.0] - 2026-08-26
+
+This cycle hardens tool-calling against small-model failure modes end-to-end:
+detail-asking moved from static prompt rules to context-aware backend guards,
+hallucinated/unoffered tools are rejected with guidance instead of executed,
+duplicate creates became structurally impossible, and a new intent audit log
+turns routing uncertainty into reviewable data. piServe enables constrained
+decoding for tool-bearing turns. Test suite grows from 329 to 337 passing.
+
+### Added
+- **Intent audit log** (`intent_audit_log`): thin-margin and keyword-fallback
+  classifications recorded (message/group/sim/margin/source) with 30-day
+  retention, daily purge wired into the existing rollup loop; weekly review
+  SQL shipped in NOTES
+- **Escalation hardening**: bare-tool-name blurts join the TOOL_NEEDED marker
+  as hatch triggers; group-scoped toolset selection on escalation; early
+  abort of pure-chat rounds
+- Hallucinated non-offered tools rejected with a guidance result instead of
+  executing (field case: create_task during a calendar turn wrote junk tasks)
+- Creates/send_email capped at ONE identical execution per turn (duplicate
+  'Yarın için görev' ×2 class)
+- Chip-origin requests force clarify on create/send regardless of supplied
+  params; decline replies ('yok / sadece oluştur') save title-only notes
+- Deterministic instant chip clarify (~0 ms model cost vs 15–40 s round)
+
+### Fixed
+- **SSE relay swallowed all events after the first gen_retry** — escalated
+  and retried rounds looked like empty replies to users
+- **Task parser read fields from the VCALENDAR wrapper instead of the VTODO
+  child** — every task displayed as 'Untitled', poisoning delete/complete
+  flows
+- Identical-execution counter incremented post-loop, letting two identical
+  creates inside one response bypass the cap
+- Language mirroring recency bias: guard strings embed the user's original
+  words as an anchor (TR stays TR on ollama-class backends)
+- LiteRT server-side doubled-brace parse failures recovered from the error
+  payload instead of failing the turn
+- Boundary-safe ambiguous keywords ('kar' ⊂ 'çıkar'/'kart'; bare 'not' vs EN
+  negation)
+- complete_task card popped for delete requests (verb mapping pinned)
+
+### Changed
+- **UI_LANGUAGE default en** for fresh installs (existing settings untouched)
+- Prompt: enumerated ask-if-missing instructions removed — dispatcher guards
+  carry asking duty contextually (A/B verified identical outcomes);
+  destructive tools pop confirmation cards directly, no textual 'are you
+  sure'
+- Verb-first notes corpus seeds (embedding sim 0.45→0.53 on mixed sentences)
+- piServe passes ConstrainedDecodingConfig (LL_GUIDANCE) for tool-bearing
+  conversations; tool results fed back in the template's structured
+  tool_response form
+
+### Perf
+- Welcome-chip clarify wall time 15–40 s → ~2.4 s end-to-end (deterministic
+  path, LLM skipped)
+
+### Docs / Experiments
+- FC Restructure Roadmap (8 items; 7 closed this cycle) + open verification
+  register
+- Benchmarks: constrained decoding ≈0 % overhead (ADOPTED); MiniLM vs E5-large
+  intent comparison (E5 margins collapse — staying on MiniLM); operational
+  rule for docker stop/start dependency restarts
+
 ## [1.5.0] - 2026-08-23
 
 This cycle ships a backend-driven tool-call indicator, an intent-misroute
