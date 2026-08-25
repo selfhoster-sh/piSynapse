@@ -121,8 +121,7 @@ async def lifespan(app: FastAPI):
 
     # Compress old tool-audit detail rows into daily summaries (idempotent).
     # One-shot sweep on startup (clears any backlog), then a daily background task.
-    from db import (periodic_cleanup_loop, periodic_rollup_loop,
-                    purge_intent_audit, rollup_tool_audit)
+    from db import periodic_cleanup_loop, periodic_rollup_loop, purge_intent_audit, rollup_tool_audit
     await rollup_tool_audit()
     await purge_intent_audit()
     rollup_task = asyncio.create_task(periodic_rollup_loop())

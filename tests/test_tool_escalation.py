@@ -31,9 +31,16 @@ def _drain(monkeypatch, rounds):
     async def fake_verify(*a, **k):
         pass
 
+    executed: list[str] = []
+    async def fake_run_tool(name, params, context=None):
+        executed.append(name)
+        return "OK"
+
     client = _CaptureClient(rounds)
     monkeypatch.setattr(llm_stream, "_get_client", lambda: client)
     monkeypatch.setattr(llm_stream, "run_verification", fake_verify)
+    # Hermetik: gerçek dispatcher/Nextcloud'a asla çıkma
+    monkeypatch.setattr(llm_stream, "run_tool", fake_run_tool)
 
     async def drain():
         events = []
@@ -50,6 +57,14 @@ def _drain(monkeypatch, rounds):
 
 
 def test_marker_escalates_to_full_toolset(monkeypatch):
+    async def fake_verify(*a, **k):
+        pass
+
+    executed: list[str] = []
+    async def fake_run_tool(name, params, context=None):
+        executed.append(name)
+        return "OK"
+
     rounds = [
         [_tok("TOOL_NEEDED"), _fin("stop"), _DONE_LINE],
         [_tc("list_notes"), _fin("tool_calls"), _DONE_LINE],
@@ -78,6 +93,14 @@ def test_marker_escalates_to_full_toolset(monkeypatch):
 
 
 def test_leak_syntax_escalates_too(monkeypatch):
+    async def fake_verify(*a, **k):
+        pass
+
+    executed: list[str] = []
+    async def fake_run_tool(name, params, context=None):
+        executed.append(name)
+        return "OK"
+
     rounds = [
         [_tok("<|tool_call|>call:list_notes{}<|tool_call|>"), _fin("stop"), _DONE_LINE],
         [_tc("list_notes"), _fin("tool_calls"), _DONE_LINE],
@@ -248,8 +271,14 @@ def test_marker_aborts_round_before_it_finishes(monkeypatch):
     async def fake_verify(*a, **k):
         pass
 
+    executed: list[str] = []
+    async def fake_run_tool(name, params, context=None):
+        executed.append(name)
+        return "OK"
+
     monkeypatch.setattr(llm_stream, "_get_client", lambda: client)
     monkeypatch.setattr(llm_stream, "run_verification", fake_verify)
+    monkeypatch.setattr(llm_stream, "run_tool", fake_run_tool)
 
     from tests.test_stream_loop_guards import _SeqResp as _SR  # noqa: F401
 
@@ -436,13 +465,12 @@ def test_chip_origin_create_gets_instant_clarify(monkeypatch):
 def test_create_tools_single_shot(monkeypatch):
     # Two IDENTICAL create calls inside ONE response: second must be refused
     # (cap=1 for creates) instead of double-writing to Nextcloud.
-    import sys as _s
-
     async def fake_verify(*a, **k): pass
 
     executed: list[str] = []
     async def fake_run_tool(name, params, context=None):
-        executed.append(name); return "OK"
+        executed.append(name)
+        return "OK"
 
     dup1 = _tc("create_task", '{"summary": "süt al"}', cid="d1", idx=0)
     dup2 = _tc("create_task", '{"summary": "süt al"}', cid="d2", idx=1)
@@ -453,7 +481,8 @@ def test_create_tools_single_shot(monkeypatch):
     state = {"n": 0}
     class C:
         def stream(self, method, url, json=None):
-            r = rounds[state["n"]]; state["n"] += 1
+            r = rounds[state["n"]]
+            state["n"] += 1
             return _SeqResp(r)
 
     monkeypatch.setattr(llm_stream, "_get_client", lambda: C())
