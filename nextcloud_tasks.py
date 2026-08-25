@@ -83,7 +83,13 @@ def _get_task_calendar():
 def _todo_to_dict(todo) -> dict:
     """Extract a clean dict from a caldav Todo object."""
     try:
-        component = todo.icalendar_instance
+        component = getattr(todo, "icalendar_component", None) or todo.icalendar_instance
+        # caldav may return the VCALENDAR wrapper — drill into the VTODO
+        # child, otherwise every field reads as missing ('Untitled').
+        if getattr(component, "name", "") == "VCALENDAR":
+            vtodos = [sc for sc in component.subcomponents if sc.name == "VTODO"]
+            if vtodos:
+                component = vtodos[0]
         summary = str(component.get("SUMMARY", "Untitled"))
         uid = str(component.get("UID", ""))
         status = str(component.get("STATUS", "NEEDS-ACTION"))
