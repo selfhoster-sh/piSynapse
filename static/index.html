@@ -2501,9 +2501,8 @@ async function sendMsg(){
             if(bubble) bubble.textContent='\u26A0\uFE0F '+t('emptyReply'); else addMsg('assistant','\u26A0\uFE0F '+t('emptyReply'));
           }
           terminated=true;
-          if(currentSid === sid){
-            await saveSessionName(text);
-          }
+          // Title is set by backend (RAKE instant + LLM enriched background).
+          // Frontend must NOT call PATCH to override it.
           await loadSessions(false);
           // Don't reload the session — the stream bubble already has the full text.
           // Reloading calls clearMsgs()+DOM rebuild, which causes a visible flash.
@@ -2556,8 +2555,8 @@ async function sendMsg(){
     }
     if(userAborted && currentSid === sid){
       // Abort closes the SSE without a done event — do the light
-      // session bookkeeping here so sidebar/title stay consistent.
-      await saveSessionName(text);
+      // session bookkeeping here so sidebar stays consistent.
+      // Backend already set the RAKE title on first message.
       await loadSessions(false);
     }
     if(currentSid === sid){
@@ -2574,19 +2573,6 @@ async function sendMsg(){
       }
       lastInputWasVoice = false;
     }
-  }
-}
-
-async function saveSessionName(firstMsg){
-  const cached=sessionList.find(s=>s.session_id===currentSid);
-  if(!cached?.name){
-    const name=firstMsg.slice(0,38)+(firstMsg.length>38?'\u2026':'');
-    try{
-      await api('PATCH',`/chat/sessions/${encodeURIComponent(currentSid)}`,{name});
-      document.getElementById('sess-title').textContent=name;
-      if(cached) cached.name=name; else sessionList.unshift({session_id:currentSid,name,last_active:new Date().toISOString()});
-      renderSessions(sessionList);
-    } catch {}
   }
 }
 
@@ -3024,7 +3010,7 @@ let _settingsData = {};
 const SETTINGS_GROUPS = {
   'Generation':  ['LLM_TEMPERATURE','LLM_NUM_CTX','LLM_MAX_OUTPUT_TOKENS'],
   'Model':       ['LLM_MODEL'],
-  'Chat':        ['HISTORY_LIMIT','MEMORY_LIMIT'],
+  'Chat':        ['HISTORY_LIMIT','MEMORY_LIMIT','LLM_TITLE_ENRICHMENT'],
   'Voice':       ['TTS_VOICE','TTS_ENGINE','STT_ENGINE','AUTO_SEND_ON_VOICE','AUTO_TTS_ON_VOICE'],
   'Personal':    ['ASSISTANT_USER','MAIL_PROVIDER','DEFAULT_CITY'],
 };

@@ -13,7 +13,6 @@ LLM call runs as a background task — never blocks the chat response.
 
 import re
 
-
 # ═══════════════════════════════════════════════════════════════
 # Stop Words (Turkish + English + common chat filler)
 # ═══════════════════════════════════════════════════════════════
