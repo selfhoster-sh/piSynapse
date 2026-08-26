@@ -145,7 +145,7 @@ WEATHER_TIMEOUT = _safe_int("WEATHER_TIMEOUT", 10)
 NEXTCLOUD_URL = os.getenv("NEXTCLOUD_URL", "")
 NEXTCLOUD_USER = os.getenv("NEXTCLOUD_USER", "")
 NEXTCLOUD_PASSWORD = os.getenv("NEXTCLOUD_PASSWORD", "")
-NEXTCLOUD_TIMEOUT = _safe_int("NEXTCLOUD_TIMEOUT", 30)
+NEXTCLOUD_TIMEOUT = _safe_int("NEXTCLOUD_TIMEOUT", 10)
 
 # -- Gmail --
 GMAIL_USER = os.getenv("GMAIL_USER", "")
@@ -344,7 +344,7 @@ _NUMERIC_KEYS = {
     "SSE_READ_IDLE_TIMEOUT": (float, 300.0),
     "HISTORY_LIMIT": (int, 12), "MEMORY_LIMIT": (int, 10),
     "SUMMARY_BATCH_SIZE": (int, 5), "SUMMARY_EARLY_TRIGGER": (int, 6),
-    "WEATHER_TIMEOUT": (int, 10), "NEXTCLOUD_TIMEOUT": (int, 30),
+    "WEATHER_TIMEOUT": (int, 10), "NEXTCLOUD_TIMEOUT": (int, 10),
     "IMAP_PORT": (int, 993), "SMTP_PORT": (int, 465),
     "IMAP_TIMEOUT": (int, 20), "SMTP_TIMEOUT": (int, 20),
     "PROTON_IMAP_PORT": (int, 1143), "PROTON_SMTP_PORT": (int, 1025),
