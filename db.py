@@ -279,12 +279,37 @@ async def init_db():
         USING fts5(content, session_id, content='conversations', content_rowid='id',
                    tokenize='unicode61 remove_diacritics 2')
     """)
-    # Ensure the FTS index is always in sync with the conversations table.
-    # Handles: fresh DB, upgrade from old ascii tokenizer, or any drift.
+    # Migrate old ascii tokenizer → unicode61 (one-time, only if needed).
+    # CREATE IF NOT EXISTS won't recreate an existing table with the old
+    # tokenizer, so we must detect and rebuild the schema explicitly.
     try:
-        await db.execute("INSERT INTO conversations_fts(conversations_fts) VALUES('rebuild')")
-    except Exception:
-        pass  # first run on a fresh DB — rebuild is a no-op when empty
+        async with db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='conversations_fts'") as cur:
+            row = await cur.fetchone()
+            fts_sql = row[0] if row else ""
+        if fts_sql and "unicode61" not in fts_sql:
+            logger.info("FTS5 tokenizer migration: ascii → unicode61")
+            await db.execute("DROP TABLE IF EXISTS conversations_fts")
+            await db.execute("""
+                CREATE VIRTUAL TABLE conversations_fts
+                USING fts5(content, session_id, content='conversations', content_rowid='id',
+                           tokenize='unicode61 remove_diacritics 2')
+            """)
+            await db.execute("""
+                INSERT INTO conversations_fts (rowid, content, session_id)
+                SELECT id, content, session_id FROM conversations
+            """)
+        else:
+            # Light drift check: rebuild only if row counts diverge
+            # (e.g. crash mid-write). Avoids O(N) rebuild on every startup.
+            async with db.execute("SELECT COUNT(*) FROM conversations") as cur:
+                conv_count = (await cur.fetchone())[0]
+            async with db.execute("SELECT COUNT(*) FROM conversations_fts") as cur:
+                fts_count = (await cur.fetchone())[0]
+            if conv_count != fts_count:
+                logger.info(f"FTS5 drift detected (conversations={conv_count}, fts={fts_count}) — rebuilding")
+                await db.execute("INSERT INTO conversations_fts(conversations_fts) VALUES('rebuild')")
+    except Exception as e:
+        logger.warning(f"FTS5 migration/drift check failed (non-fatal): {e}")
 
     await _apply_migrations(db)
 
