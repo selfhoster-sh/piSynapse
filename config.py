@@ -108,6 +108,8 @@ AUTO_SEND_ON_VOICE = os.getenv("AUTO_SEND_ON_VOICE", "off")
 # "off" — text-only response even if input was voice
 AUTO_TTS_ON_VOICE = os.getenv("AUTO_TTS_ON_VOICE", "off")
 
+LLM_TITLE_ENRICHMENT = os.getenv("LLM_TITLE_ENRICHMENT", "on")
+
 # -- Security --
 API_KEY = os.getenv("API_KEY", "")
 CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
@@ -380,6 +382,7 @@ def sync_config():
         ("AUTO_SEND_ON_VOICE", "AUTO_SEND_ON_VOICE"),
         ("AUTO_TTS_ON_VOICE", "AUTO_TTS_ON_VOICE"),
         ("INTENT_LLM_FALLBACK", "INTENT_LLM_FALLBACK"),
+        ("LLM_TITLE_ENRICHMENT", "LLM_TITLE_ENRICHMENT"),
         ("DEFAULT_CITY", "DEFAULT_CITY"),
         ("DEFAULT_USER", "ASSISTANT_USER"),
         ("MAIL_PROVIDER", "MAIL_PROVIDER"),
