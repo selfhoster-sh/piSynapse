@@ -3367,8 +3367,33 @@ let _searchQuery = '';
 function filterSessions(q){
   _searchQuery = q.toLowerCase().trim();
   if(!_searchQuery){ renderSessions(sessionList); return; }
-  const filtered = sessionList.filter(s => sessName(s).toLowerCase().includes(_searchQuery));
-  renderSessions(filtered);
+  // Quick local filter on titles for instant feedback
+  const local = sessionList.filter(s => sessName(s).toLowerCase().includes(_searchQuery));
+  if(local.length){ renderSessions(local); }
+  // Then hit FTS5 backend for message-content search (may return more)
+  _debounceSearch(q);
+}
+
+let _searchTimer=null;
+function _debounceSearch(q){
+  clearTimeout(_searchTimer);
+  _searchTimer=setTimeout(async()=>{
+    try{
+      const h={}; const k=getApiKey(); if(k) h['X-API-Key']=k;
+      const r=await fetch(API+'/search?q='+encodeURIComponent(q),{headers:h});
+      if(!r.ok) return;
+      const d=await r.json();
+      if(!d.results||!d.results.length) return;
+      const ids=new Set(d.results.map(r=>r.session_id));
+      const merged=sessionList.filter(s=>ids.has(s.id));
+      // Merge with any local-title matches already shown
+      const existing=document.querySelectorAll('#session-list .session-item');
+      const existingIds=new Set([...existing].map(e=>e.dataset.id));
+      merged.forEach(s=>{ if(!existingIds.has(s.id)) existingIds.add(s.id); });
+      const final=sessionList.filter(s=>ids.has(s.id)||existingIds.has(s.id));
+      renderSessions(final);
+    }catch{}
+  },300);
 }
 
 function toggleSearch(){
