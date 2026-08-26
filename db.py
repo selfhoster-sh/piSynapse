@@ -108,6 +108,7 @@ MIGRATIONS: list[tuple[str, str, str]] = [
     ("sessions", "summarized_until", "INTEGER DEFAULT 0"),
     ("memories", "embedding", "BLOB"),
     ("conversations", "reasoning", "TEXT"),
+    ("conversations", "embedding", "BLOB"),
 ]
 
 
@@ -142,6 +143,7 @@ async def init_db():
             content    TEXT NOT NULL,
             images     TEXT,
             reasoning  TEXT,
+            embedding  BLOB,
             timestamp  DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -647,9 +649,18 @@ async def save_message(session_id: str, role: str, content: str, images: list[st
             if last and last[0] == "user" and last[1] == content:
                 return  # duplicate — do not insert
 
+    # Generate embedding for semantic search (best-effort, never blocks chat on failure)
+    embedding_blob = None
+    if content and content.strip():
+        try:
+            from embedding import embed_async
+            embedding_blob = await embed_async(content)
+        except Exception as e:
+            logger.warning(f"Embedding failed for save_message (non-fatal): {e}")
+
     await db.execute(
-        "INSERT INTO conversations (session_id, role, content, images, reasoning) VALUES (?, ?, ?, ?, ?)",
-        (session_id, role, content, images_json, reasoning),
+        "INSERT INTO conversations (session_id, role, content, images, reasoning, embedding) VALUES (?, ?, ?, ?, ?, ?)",
+        (session_id, role, content, images_json, reasoning, embedding_blob),
     )
     # Keep FTS5 index in sync
     async with db.execute("SELECT last_insert_rowid()") as cur:
@@ -734,10 +745,12 @@ async def clear_history(session_id: str):
 
 
 async def search_sessions(query: str, limit: int = 20) -> list[dict]:
-    """FTS5 full-text search across session messages.
+    """Hybrid search: FTS5 keyword + semantic embedding.
 
-    Returns a list of {session_id, name, snippet} dicts ordered by relevance.
-    Falls back to LIKE if FTS5 query fails (e.g. special characters).
+    FTS5 gives exact keyword matches (ranked by BM25), semantic gives meaning
+    matches (e.g. 'hava nasıl' ↔ 'weather outside') via cosine similarity.
+    Results are merged, deduplicated, and capped at `limit`.
+    Falls back to LIKE if FTS5 query fails.
     """
     import re as _re
     db = await get_db()
@@ -774,6 +787,41 @@ async def search_sessions(query: str, limit: int = 20) -> list[dict]:
         if r[0] not in seen:
             seen.add(r[0])
             results.append({"session_id": r[0], "name": r[1] or "", "snippet": r[2] or ""})
+
+    # Semantic supplement: finds meaning matches missed by FTS (e.g. synonyms,
+    # paraphrases, cross-language). Runs after FTS so keyword matches stay first.
+    # Limited to 200 recent messages to keep Pi CPU friendly; threshold 0.35
+    # mirrors memories (precision over recall). Budget is implicit via limit.
+    if len(results) < limit:
+        try:
+            from embedding import cosine_similarity, embed_async
+            query_emb = await embed_async(safe_q)
+            async with db.execute("""
+                SELECT c.session_id, s.name, c.content, c.embedding
+                FROM conversations c LEFT JOIN sessions s ON s.id = c.session_id
+                WHERE c.embedding IS NOT NULL
+                ORDER BY c.timestamp DESC LIMIT 200
+            """) as cur:
+                cand_rows = await cur.fetchall()
+            scored: list[tuple[float, str, str, str]] = []
+            for sess_id, name, content, blob in cand_rows:
+                if not blob or sess_id in seen:
+                    continue
+                try:
+                    sim = cosine_similarity(query_emb, blob)
+                except Exception:
+                    continue
+                if sim >= 0.35:
+                    scored.append((sim, sess_id, name or "", content))
+            scored.sort(key=lambda x: x[0], reverse=True)
+            for sim, sess_id, name, content in scored[: limit - len(results)]:
+                if sess_id not in seen:
+                    snippet = content[:80].replace("\n", " ").strip() + "…"
+                    results.append({"session_id": sess_id, "name": name, "snippet": snippet})
+                    seen.add(sess_id)
+        except Exception as e:
+            logger.warning(f"Semantic search supplement failed (non-fatal): {e}")
+
     return results
 
 
