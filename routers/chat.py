@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from config import get
 from db import (
     clear_history,
+    delete_last_assistant,
     delete_memory,
     get_all_memories,
     get_all_sessions,
@@ -388,6 +389,18 @@ async def delete_session(session_id: str):
     _validate_session_id(session_id)
     await clear_history(session_id)
     return {"ok": True, "message": f"Session '{session_id}' deleted."}
+
+
+@router.delete("/messages/last/{session_id}")
+async def delete_last_msg(session_id: str):
+    """Delete the last assistant message for regenerate.
+
+    Called by the frontend before re-sending the user message so the
+    stale reply never appears in the model's context window.
+    """
+    _validate_session_id(session_id)
+    removed = await delete_last_assistant(session_id)
+    return {"ok": True, "removed": removed}
 
 
 @router.post("/sessions")

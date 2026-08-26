@@ -590,6 +590,18 @@ async def save_message(session_id: str, role: str, content: str, images: list[st
     import json
     images_json = json.dumps(images) if images else None
     db = await get_db()
+
+    # Retry dedup: same user message as the last row → skip to avoid
+    # duplicate context when the frontend re-sends after regenerate.
+    if role == "user":
+        async with db.execute(
+            "SELECT role, content FROM conversations "
+            "WHERE session_id = ? ORDER BY id DESC LIMIT 1", (session_id,)
+        ) as cur:
+            last = await cur.fetchone()
+            if last and last[0] == "user" and last[1] == content:
+                return  # duplicate — do not insert
+
     await db.execute(
         "INSERT INTO conversations (session_id, role, content, images, reasoning) VALUES (?, ?, ?, ?, ?)",
         (session_id, role, content, images_json, reasoning),
@@ -609,6 +621,27 @@ async def save_message(session_id: str, role: str, content: str, images: list[st
                 (name, session_id),
             )
     await db.commit()
+
+
+async def delete_last_assistant(session_id: str) -> bool:
+    """Delete the last assistant message in a session.
+
+    Returns True if a row was removed, False if no assistant message existed.
+    Used by the regenerate flow: the old response is purged before the user
+    message is re-sent so the model never sees the stale reply in context.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT id FROM conversations "
+        "WHERE session_id = ? AND role = 'assistant' ORDER BY id DESC LIMIT 1",
+        (session_id,),
+    ) as cur:
+        row = await cur.fetchone()
+    if not row:
+        return False
+    await db.execute("DELETE FROM conversations WHERE id = ?", (row[0],))
+    await db.commit()
+    return True
 
 
 async def get_history(session_id: str, limit: int = 20, include_reasoning: bool = False) -> list[dict]:
