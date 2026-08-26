@@ -32,6 +32,7 @@ async def get_config():
         "tts_engine": get("TTS_ENGINE", "piper"),
         "auto_send_on_voice": get("AUTO_SEND_ON_VOICE", "off"),
         "auto_tts_on_voice": get("AUTO_TTS_ON_VOICE", "off"),
+        "llm_title_enrichment": get("LLM_TITLE_ENRICHMENT", "on"),
     }
 
 
