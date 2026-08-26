@@ -157,28 +157,55 @@ async def _audit_intent(message: str, chosen_group: str | None,
         logger.warning(f"Intent audit skipped (source={source}): {e}")
 
 
+_KEYWORD_CHECKS = (
+    (["hava", "derece", "sıcaklık", "sicaklik", "tahmini", "yağmur", "yagmur", "rüzgar", "ruzgar", "kar", "bulut"], "weather"),
+    (["etkinlik", "takvim", "randevu", "toplantı", "olay"], "calendar"),
+    # 'gönder' generic ama tek araç-evreninde gönderim=email; multi-domain
+    # tespiti için de kritik ('hava durumunu maille gönder' sınıfı).
+    (["email", "e-posta", "eposta", "posta", "gelen kutusu", "ileti", "mesaj", "mail",
+      "gönder", "gonder"], "email"),
+    (["görev", "gorev", "yapılacak", "yapilacak", "task", "todo", "yapmam gereken"], "tasks"),
+    # Bare "not" deliberately absent: it collides with English negation
+    # ("I could NOT find it") and routed pure chat to the notes group.
+    # Distinctive suffixed/frozen forms cover Turkish inflections instead.
+    (["notlar", "notu", "nota", "not defteri", "not oluştur", "not al", "note",
+      "not düş", "not yaz"], "notes"),
+    (["hatırla", "hatirla", "unutma", "sakla", "kaydet", "remember", "don't forget", "save"], "memory"),
+)
+
+
 def _keyword_group(message: str) -> str | None:
     """Cheap substring heuristics. Order matters: first hit wins."""
     ml = message.lower()
-    checks = (
-        (["hava", "derece", "sıcaklık", "sicaklik", "tahmini", "yağmur", "yagmur", "rüzgar", "ruzgar", "kar", "bulut"], "weather"),
-        (["etkinlik", "takvim", "randevu", "toplantı", "olay"], "calendar"),
-        (["email", "e-posta", "posta", "gelen kutusu", "ileti", "mesaj", "mail"], "email"),
-        (["görev", "gorev", "yapılacak", "yapilacak", "task", "todo", "yapmam gereken"], "tasks"),
-        # Bare "not" deliberately absent: it collides with English negation
-        # ("I could NOT find it") and routed pure chat to the notes group.
-        # Distinctive suffixed/frozen forms cover Turkish inflections instead.
-        (["notlar", "notu", "nota", "not defteri", "not oluştur", "not al", "note",
-          "not düş", "not yaz"], "notes"),
-        (["hatırla", "hatirla", "unutma", "sakla", "kaydet", "remember", "don't forget", "save"], "memory"),
-    )
-    for kws, group in checks:
+    for kws, group in _KEYWORD_CHECKS:
         if any(_kw_hit(kw, ml) for kw in kws):
             return group
     return None
 
 
+def _hit_groups(message: str) -> set[str]:
+    """All groups whose keywords appear in the message."""
+    ml = message.lower()
+    return {group for kws, group in _KEYWORD_CHECKS
+            if any(_kw_hit(kw, ml) for kw in kws)}
+
+
 async def _classify_intent(message: str, query_embedding: bytes | None = None) -> tuple[str, str | None]:
+    # Multi-domain free text ("hava durumu bilgisini maille gönder"): two or
+    # more distinct groups matched → offer the COMBINED toolset so the model
+    # can chain tools itself. Single-group routing would strand the second
+    # domain (field case: weather fetched but send_email never offered).
+    try:
+        hit_groups = _hit_groups(message)
+        if len(hit_groups) >= 2:
+            logger.info(f"Multi-domain keyword hits {sorted(hit_groups)} — combined tools (message={message!r})")
+            await _audit_intent(message[:500], ",".join(sorted(hit_groups)), None, None,
+                                "multi_domain_combined")
+            return "action", None
+    except Exception as e:
+        logger.warning(f"Multi-domain pre-check failed (non-fatal): {e}")
+
+
     try:
         from embedding import cosine_similarity, embed_async
         corpus = await _get_tool_embeddings()
