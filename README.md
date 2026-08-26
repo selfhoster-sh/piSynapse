@@ -34,7 +34,7 @@ When you disable all external integrations, **zero data leaves your device**. No
 
 ## Features
 
-- 💬 **Web UI** — Clean chat interface with session management, memory panel, think mode, and multi-language support (EN/TR)
+- 💬 **Web UI** — Clean chat interface with session management, memory panel, think mode (opt-in), and multi-language support (EN/TR)
 - 📅 **Calendar** — Nextcloud CalDAV integration for schedule management
 - 📧 **Email** — Gmail and ProtonMail (via ProtonBridge) read/send/search
 - 📝 **Notes** — Nextcloud Notes create/read/update/delete/search with offline cache
@@ -103,7 +103,7 @@ piSynapse/
 ├── install.py           # Interactive setup wizard
 ├── litert_serve/        # piServe — OpenAI-compatible LiteRT-LM server
 │   ├── server.py        # SSE streaming, tool-schema passthrough, MTP decoding
-│   └── config.json      # Installed model + context settings
+│   └── config.example.json  # Model + context settings (copied to config.json at startup)
 ├── example.env          # Configuration template
 ├── requirements.txt
 ├── LICENSE
@@ -160,7 +160,7 @@ The installer:
 ```bash
 # 1. Install LLM backend (pick one)
 #    LiteRT-LM (served via piServe, see below):
-#      pip install litert-lm
+#      uv tool install litert-lm
 #      litert-lm import --from-huggingface-repo litert-community/gemma-4-E2B-it-litert-lm gemma-4-E2B-it.litertlm gemma4-e2b
 #      python3 litert_serve/server.py          # OpenAI-compatible server on :9379
 #
@@ -202,7 +202,7 @@ All settings are in `.env`. See [`example.env`](example.env) for the full list w
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `LLM_BACKEND` | Backend: `litert` or `ollama` | `ollama` |
+| `LLM_BACKEND` | Backend: `litert` or `ollama` | `litert` |
 | `LLM_MODEL` | Model name | `gemma4-e2b` |
 | `LITERT_BASE_URL` | LiteRT server URL | `http://localhost:9379` |
 | `OLLAMA_BASE_URL` | Ollama server URL | `http://localhost:11434` |
@@ -298,7 +298,11 @@ curl http://localhost:8765/health
 - [x] **Security** — API key auth, CORS, rate limiting, trusted-host enforcement
 - [x] **Nextcloud Notes** — Create/read/update/delete/search
 - [x] **Nextcloud Tasks** — CalDAV VTODO create/list/complete/delete/search
-- [x] **Intent Classification** — LLM + embedding-based tool/no-tool routing
+- [x] **Intent Classification** — LLM + embedding + keyword fallback routing
+- [x] **Tool Confirmation Cards** — Destructive actions require user approval
+- [x] **Tool-Call Indicators** — Real-time status pills during tool execution
+- [x] **Multi-Domain Routing** — Combined toolset when request spans multiple domains
+- [x] **Constrained Decoding** — LL-guidance for reliable tool-call output
 - [ ] **Nextcloud Contacts** — CardDAV contact search
 - [ ] **Nextcloud News** — RSS feed integration
 
