@@ -126,7 +126,9 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 .sess-name{flex:1;font-size:14px;color:var(--text2);white-space:nowrap;padding-right:20px;
   overflow:hidden;text-overflow:ellipsis;transition:color .2s}
 .sess-time{font-size:11px;color:var(--text3);flex-shrink:0;transition:opacity .15s}
-.sess-item{position:relative}
+.sess-snippet{flex-basis:100%;font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;line-height:1.2}
+.sess-snippet b{color:var(--text1);font-weight:600}
+.sess-item{position:relative;flex-wrap:wrap}
 .sess-del{position:absolute;right:8px;top:50%;transform:translateY(-50%);
   opacity:0;pointer-events:none;background:none;border:none;color:var(--text3);
   cursor:pointer;padding:4px;border-radius:4px;line-height:1;transition:opacity .15s,color .15s}
@@ -2282,9 +2284,12 @@ function renderSessions(list, animate=true){
   if(!list.length){ el.innerHTML=`<div style="padding:14px 16px;font-size:13px;color:var(--text4)">${t('noChats')}</div>`; return; }
   el.innerHTML=list.map(s=>{
     const name=sessName(s), tm=relTime(s.last_active), act=s.session_id===currentSid?' active':'', sid=esc(s.session_id);
+    const rawSnippet=s._snippet||s.snippet||"";
+    const snippetHtml=rawSnippet?`<div class="sess-snippet">${esc(rawSnippet).replace(/&lt;b&gt;/g,'<b>').replace(/&lt;\/b&gt;/g,'</b>')}</div>`:"";
     return `<div class="sess-item${act}" data-sid="${sid}" onclick="loadSession('${sid}')">
       <div class="sess-name" title="${esc(name)}">${esc(name)}</div>
       <div class="sess-time">${tm}</div>
+      ${snippetHtml}
       <button class="sess-del" onclick="event.stopPropagation();triggerDelSession('${sid}')" title="${t('del')}">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
       </button></div>`;
@@ -2364,87 +2369,20 @@ async function regenerate(group){
   const userGroups=document.querySelectorAll('.msg-group.user');
   const lastUserGroup=userGroups[userGroups.length-1];
   if(!lastUserGroup) return;
-  const userText=(lastUserGroup.querySelector('.msg-content')?.textContent||'').trim();
+  const userText=(lastUserGroup.querySelector('.bubble')?.textContent||'').trim();
   if(!userText) return;
-  // 2) Remove the assistant bubble (and its actions/meta) from DOM
+  // 2) Remove the old user + assistant bubbles from DOM
   group.remove();
+  lastUserGroup.remove();
   // 3) DELETE last assistant from DB
   try{
     const h={'Content-Type':'application/json'}; const k=getApiKey(); if(k) h['X-API-Key']=k;
     await fetch(API+'/chat/messages/last/'+encodeURIComponent(sid),{method:'DELETE',headers:h});
   }catch{}
-  // 4) Re-send the user message (backend dedup skips the duplicate INSERT)
-  _chipOrigin=false; userAborted=false;
-  setLoading(true); showTyping();
-  let bubble=null, fullText='', thinkBox=null, fullReasoning='';
-  let gotReply=false, terminated=false, toolRow=null;
-  try{
-    const headers={'Content-Type':'application/json'};
-    const _k=getApiKey(); if(_k) headers['X-API-Key']=_k;
-    const resp=await fetch(API+'/chat/stream',{ method:'POST', headers,
-      body:JSON.stringify({ message: userText, session_id: sid, user_id: config.username||'default', think_mode: thinkMode, images: [], reasoning_effort: thinkEffort, origin: '' })
-    });
-    if(!resp.ok) throw new Error('HTTP '+resp.status);
-    const reader=resp.body.getReader(), dec=new TextDecoder(); let buf='';
-    while(true){
-      const {done,value}=await reader.read(); if(done) break;
-      buf+=dec.decode(value,{stream:true}); const lines=buf.split('\n'); buf = lines.pop() || '';
-      for(const rawLine of lines){
-        const line = rawLine.trim(); if(!line || !line.startsWith('data: ')) continue;
-        let data; try{ data=JSON.parse(line.slice(6)); } catch{ continue; }
-        if('token' in data){
-          document.querySelectorAll('#messages .tool-status').forEach(r=>r.remove());
-          toolRow=null;
-          if(!bubble){ bubble=createStreamBubble(); }
-          gotReply=true;
-          fullText+=data.token; bubble.innerHTML=withStreamCaret(renderMd(fullText)); scrollEnd(false);
-        } else if('reasoning' in data){
-          if(!bubble) bubble=createStreamBubble();
-          if(!thinkBox){
-            thinkBox=document.createElement('div'); thinkBox.className='think-box';
-            thinkBox.innerHTML='<span class="think-label">'+t('thinkingLive')+'</span><div class="think-content"></div>';
-            bubble.prepend(thinkBox);
-          }
-          fullReasoning+=data.reasoning;
-          thinkBox.querySelector('.think-content').innerHTML=renderMd(fullReasoning);
-        } else if(data.done){
-          if(bubble) bubble.innerHTML=renderMd(fullText);
-          if(thinkBox && fullReasoning) thinkBox.querySelector('.think-content').innerHTML=renderMd(fullReasoning);
-          gotReply=true; terminated=true;
-          if(fullText) addMsg('assistant',fullText);
-          if(fullReasoning && bubble){
-            const existing=bubble.querySelector('.think-box');
-            if(existing){ existing.remove(); addMsg('assistant',fullReasoning,false,null,null,fullReasoning); }
-          }
-          hideTyping(); setLoading(false); _pendingStream=null;
-          refreshSessions(); return;
-        } else if(data.confirm){
-          terminated=true; hideTyping();
-          showConfirmCard(data.confirm);
-          setLoading(false); _pendingStream=null; return;
-        } else if(data.error){
-          terminated=true; hideTyping();
-          const eMsg = /context too long/i.test(data.error) ? t('errContextTooLong') : data.error;
-          if(bubble) bubble.textContent='\u26A0\uFE0F '+eMsg;
-          else addMsg('assistant','\u26A0\uFE0F '+eMsg);
-          toast(t('connErr'),true); setLoading(false); _pendingStream=null; return;
-        }
-      }
-    }
-  }catch{
-    terminated=true;
-    hideTyping(); if(bubble) bubble.textContent='\u26A0\uFE0F '+t('connErr'); else addMsg('assistant','\u26A0\uFE0F '+t('connErr')); toast(t('connErr'),true);
-  }finally{
-    if(_pendingStream?.sid === sid) _pendingStream=null;
-    if(toolRow){ toolRow.remove(); toolRow=null; }
-    typingEl?.classList.remove('tool-pending');
-    if(!gotReply && !terminated){
-      const note=userAborted?t('stoppedMsg'):t('emptyReply');
-      if(bubble) bubble.textContent=note; else addMsg('assistant',note);
-    }
-    setLoading(false);
-    refreshSessions();
-  }
+  // 4) Re-send the user message — reuse sendMsg's stream logic
+  const el=document.getElementById('msg-input');
+  el.value=userText; el.style.height='auto';
+  await sendMsg();
 }
 
 async function sendMsg(){
@@ -2670,9 +2608,10 @@ function addMsg(role, content, forceScroll=true, ts=null, images=null, reasoning
   }
   if(role==='assistant'){
     b.innerHTML+=renderMd(content);
-    attachMsgActions(g, content);
   } else if(content) b.appendChild(document.createTextNode(content));
-  document.getElementById('messages').appendChild(g); scrollEnd(forceScroll);
+  document.getElementById('messages').appendChild(g);
+  if(role==='assistant') attachMsgActions(g, content);
+  scrollEnd(forceScroll);
 }
 
 function showTyping(){
@@ -3370,13 +3309,15 @@ function _debounceSearch(q){
       if(!r.ok) return;
       const d=await r.json();
       if(!d.results||!d.results.length) return;
-      const ids=new Set(d.results.map(r=>r.session_id));
-      const merged=sessionList.filter(s=>ids.has(s.id));
+      const snippetMap=new Map(d.results.map(r=>[r.session_id, r.snippet||""]));
+      const ids=new Set(snippetMap.keys());
+      const merged=sessionList.filter(s=>ids.has(s.session_id));
       // Merge with any local-title matches already shown
       const existing=document.querySelectorAll('#session-list .session-item');
-      const existingIds=new Set([...existing].map(e=>e.dataset.id));
-      merged.forEach(s=>{ if(!existingIds.has(s.id)) existingIds.add(s.id); });
-      const final=sessionList.filter(s=>ids.has(s.id)||existingIds.has(s.id));
+      const existingIds=new Set([...existing].map(e=>e.dataset.sid));
+      merged.forEach(s=>{ if(!existingIds.has(s.session_id)) existingIds.add(s.session_id); });
+      const final=sessionList.filter(s=>ids.has(s.session_id)||existingIds.has(s.session_id))
+        .map(s=>({...s, _snippet: snippetMap.get(s.session_id)||""}));
       renderSessions(final);
     }catch{}
   },300);
