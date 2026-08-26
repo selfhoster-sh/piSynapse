@@ -403,6 +403,14 @@ async def delete_last_msg(session_id: str):
     return {"ok": True, "removed": removed}
 
 
+@router.get("/search")
+async def search_messages(q: str = Query(..., min_length=1)):
+    """FTS5 full-text search across all session messages."""
+    from db import search_sessions
+    results = await search_sessions(q)
+    return {"ok": True, "results": results}
+
+
 @router.post("/sessions")
 async def create_session(req: RenameRequest | None = None):
     """Explicitly create a new session with an optional name."""

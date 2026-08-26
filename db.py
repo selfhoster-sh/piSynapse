@@ -271,6 +271,22 @@ async def init_db():
 
     await db.execute("CREATE INDEX IF NOT EXISTS idx_calendar_session_map_session ON calendar_session_map(session_id, seq)")
 
+    # FTS5 full-text index for session message search
+    await db.execute("""
+        CREATE VIRTUAL TABLE IF NOT EXISTS conversations_fts
+        USING fts5(content, session_id, content='conversations', content_rowid='id')
+    """)
+    # Backfill if the FTS table is empty but conversations is not
+    async with db.execute("SELECT COUNT(*) FROM conversations") as cur:
+        conv_count = (await cur.fetchone())[0]
+    async with db.execute("SELECT COUNT(*) FROM conversations_fts") as cur:
+        fts_count = (await cur.fetchone())[0]
+    if conv_count > 0 and fts_count == 0:
+        await db.execute("""
+            INSERT INTO conversations_fts (rowid, content, session_id)
+            SELECT id, content, session_id FROM conversations
+        """)
+
     await _apply_migrations(db)
 
     await cleanup_expired_data()
@@ -323,6 +339,11 @@ async def cleanup_expired_data() -> tuple[int, int]:
                 (f"-{CONVERSATION_RETENTION_DAYS} days",),
             )
             removed_conv = cur.rowcount if cur.rowcount else 0
+            # Purge matching FTS5 rows
+            await _write_with_retry(
+                db,
+                "DELETE FROM conversations_fts WHERE rowid NOT IN (SELECT id FROM conversations)",
+            )
             await _write_with_retry(
                 db,
                 "DELETE FROM sessions WHERE id NOT IN (SELECT DISTINCT session_id FROM conversations)"
@@ -606,6 +627,13 @@ async def save_message(session_id: str, role: str, content: str, images: list[st
         "INSERT INTO conversations (session_id, role, content, images, reasoning) VALUES (?, ?, ?, ?, ?)",
         (session_id, role, content, images_json, reasoning),
     )
+    # Keep FTS5 index in sync
+    async with db.execute("SELECT last_insert_rowid()") as cur:
+        rowid = (await cur.fetchone())[0]
+    await db.execute(
+        "INSERT INTO conversations_fts (rowid, content, session_id) VALUES (?, ?, ?)",
+        (rowid, content, session_id),
+    )
     await db.execute(
         """INSERT INTO sessions (id) VALUES (?)
            ON CONFLICT(id) DO UPDATE SET last_active = CURRENT_TIMESTAMP""",
@@ -640,6 +668,7 @@ async def delete_last_assistant(session_id: str) -> bool:
     if not row:
         return False
     await db.execute("DELETE FROM conversations WHERE id = ?", (row[0],))
+    await db.execute("DELETE FROM conversations_fts WHERE rowid = ?", (row[0],))
     await db.commit()
     return True
 
@@ -670,12 +699,57 @@ async def get_history(session_id: str, limit: int = 20, include_reasoning: bool 
 async def clear_history(session_id: str):
     db = await get_db()
     await db.execute("DELETE FROM conversations WHERE session_id = ?", (session_id,))
+    await db.execute("DELETE FROM conversations_fts WHERE session_id = ?", (session_id,))
     await db.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
     await db.execute("DELETE FROM email_session_map WHERE session_id = ?", (session_id,))
     await db.execute("DELETE FROM notes_session_map WHERE session_id = ?", (session_id,))
     await db.execute("DELETE FROM tasks_session_map WHERE session_id = ?", (session_id,))
     await db.execute("DELETE FROM calendar_session_map WHERE session_id = ?", (session_id,))
     await db.commit()
+
+
+async def search_sessions(query: str, limit: int = 20) -> list[dict]:
+    """FTS5 full-text search across session messages.
+
+    Returns a list of {session_id, name, snippet} dicts ordered by relevance.
+    Falls back to LIKE if FTS5 query fails (e.g. special characters).
+    """
+    import re as _re
+    db = await get_db()
+    # Sanitize for FTS5: strip special match characters
+    safe_q = _re.sub(r'[^\w\s]', '', query).strip()
+    if not safe_q:
+        return []
+    fts_query = " OR ".join(safe_q.split())
+    try:
+        async with db.execute("""
+            SELECT f.session_id, s.name,
+                   snippet(conversations_fts, 0, '<b>', '</b>', '…', 12) AS snippet
+            FROM conversations_fts f
+            LEFT JOIN sessions s ON s.id = f.session_id
+            WHERE conversations_fts MATCH ?
+            ORDER BY rank
+            LIMIT ?
+        """, (fts_query, limit)) as cur:
+            rows = await cur.fetchall()
+    except Exception:
+        # Fallback: LIKE on raw table
+        async with db.execute("""
+            SELECT DISTINCT c.session_id, s.name, c.content
+            FROM conversations c
+            LEFT JOIN sessions s ON s.id = c.session_id
+            WHERE c.content LIKE ?
+            ORDER BY c.timestamp DESC
+            LIMIT ?
+        """, (f"%{query}%", limit)) as cur:
+            rows = await cur.fetchall()
+    seen = set()
+    results = []
+    for r in rows:
+        if r[0] not in seen:
+            seen.add(r[0])
+            results.append({"session_id": r[0], "name": r[1] or "", "snippet": r[2] or ""})
+    return results
 
 
 # -- Email list-number → message-ID mapping --
