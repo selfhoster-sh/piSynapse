@@ -106,8 +106,10 @@ class TestLLMTitle:
     async def test_llm_failure_returns_none(self):
         """LLM failure must return None, never raise."""
         from title import generate_llm_title
-        # Force failure by patching
+        # Force failure by patching httpx (title.py now uses httpx, not requests)
         import unittest.mock as mock
-        with mock.patch("requests.post", side_effect=ConnectionError("no server")):
+        mock_client = mock.AsyncMock()
+        mock_client.__aenter__.return_value.post = mock.AsyncMock(side_effect=ConnectionError("no server"))
+        with mock.patch("httpx.AsyncClient", return_value=mock_client):
             result = await generate_llm_title("test", "test")
             assert result is None

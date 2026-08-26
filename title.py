@@ -127,20 +127,21 @@ async def generate_llm_title(user_msg: str, assistant_msg: str) -> str | None:
         )
 
         if backend == "litert":
-            import requests as _req
-            litert_url = get("LITERT_URL", "http://localhost:9379")
+            import httpx
+            litert_url = get("LITERT_BASE_URL", "http://localhost:9379")
             payload = {
                 "model": "gemma4-e2b",
                 "messages": [{"role": "user", "content": prompt}],
                 "max_tokens": 15,
                 "temperature": 0.1,
             }
-            r = _req.post(
-                f"{litert_url}/v1/chat/completions",
-                json=payload, timeout=15,
-            )
-            r.raise_for_status()
-            raw = r.json()["choices"][0]["message"]["content"].strip()
+            async with httpx.AsyncClient(timeout=15) as _client:
+                r = await _client.post(
+                    f"{litert_url}/v1/chat/completions",
+                    json=payload,
+                )
+                r.raise_for_status()
+                raw = r.json()["choices"][0]["message"]["content"].strip()
         else:
             # Ollama path — reuse existing chat_with_ollama
             from llm import chat_with_ollama
