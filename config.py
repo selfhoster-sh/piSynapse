@@ -314,6 +314,10 @@ SETTINGS_SCHEMA: dict = {
         {"value": "off",  "label": {"tr": "Kapal\u0131", "en": "Off"}},
         {"value": "on",   "label": {"tr": "A\u00e7\u0131k (sesli giri\u015fse sesli yan\u0131t ver)", "en": "On (speak response if voice input)"}},
     ]},
+    "LLM_TITLE_ENRICHMENT": {"type": "select", "default": "on", "label": {"tr": "Akıllı Başlık Oluşturma", "en": "Smart Title Generation"}, "options": [
+        {"value": "on",   "label": {"tr": "Açık (RAKE + arka planda LLM başlık)", "en": "On (RAKE instant + background LLM title)"}},
+        {"value": "off",  "label": {"tr": "Kapalı (sadece RAKE başlık)", "en": "Off (RAKE title only)"}},
+    ]},
     "INTENT_LLM_FALLBACK": {"type": "select", "default": "off", "label": {"tr": "Niyet Tespiti LLM Kullan\u0131m\u0131", "en": "Intent LLM Fallback"}, "options": [
         {"value": "off",  "label": {"tr": "Kapal\u0131 (h\u0131zl\u0131, embedding+keywords yeterli)", "en": "Off (fast, embedding+keywords)"}},
         {"value": "on",   "label": {"tr": "A\u00e7\u0131k (daha do\u011fru ama yan\u0131t +15sn gecikir)", "en": "On (more accurate, but +15s delay)"}},

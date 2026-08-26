@@ -152,11 +152,15 @@ async def _update_summary(session_id: str):
 async def _enrich_title(session_id: str):
     """Background task: replace the RAKE instant title with an LLM-generated one.
 
-    Only runs on the first assistant reply (when session has exactly 2 messages).
+    Only runs when LLM_TITLE_ENRICHMENT is enabled and on the first assistant
+    reply (when session has exactly 2 messages).
     Reads user + assistant messages from DB, calls LLM, updates session name.
     Failure is silent — the RAKE title stays as fallback.
     """
     try:
+        from config import get
+        if get("LLM_TITLE_ENRICHMENT", "on") != "on":
+            return
         messages = await get_history(session_id, limit=2)
         if len(messages) < 2:
             return

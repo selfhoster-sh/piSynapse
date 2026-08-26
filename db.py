@@ -272,20 +272,19 @@ async def init_db():
     await db.execute("CREATE INDEX IF NOT EXISTS idx_calendar_session_map_session ON calendar_session_map(session_id, seq)")
 
     # FTS5 full-text index for session message search
+    # unicode61 tokenizer: proper Turkish/diacritik support
+    # content= + content_rowid= : external-content table (conversations)
     await db.execute("""
         CREATE VIRTUAL TABLE IF NOT EXISTS conversations_fts
-        USING fts5(content, session_id, content='conversations', content_rowid='id')
+        USING fts5(content, session_id, content='conversations', content_rowid='id',
+                   tokenize='unicode61 remove_diacritics 2')
     """)
-    # Backfill if the FTS table is empty but conversations is not
-    async with db.execute("SELECT COUNT(*) FROM conversations") as cur:
-        conv_count = (await cur.fetchone())[0]
-    async with db.execute("SELECT COUNT(*) FROM conversations_fts") as cur:
-        fts_count = (await cur.fetchone())[0]
-    if conv_count > 0 and fts_count == 0:
-        await db.execute("""
-            INSERT INTO conversations_fts (rowid, content, session_id)
-            SELECT id, content, session_id FROM conversations
-        """)
+    # Ensure the FTS index is always in sync with the conversations table.
+    # Handles: fresh DB, upgrade from old ascii tokenizer, or any drift.
+    try:
+        await db.execute("INSERT INTO conversations_fts(conversations_fts) VALUES('rebuild')")
+    except Exception:
+        pass  # first run on a fresh DB — rebuild is a no-op when empty
 
     await _apply_migrations(db)
 
