@@ -149,6 +149,29 @@ async def _update_summary(session_id: str):
         logger.error(f"Summary update failed for {session_id}: {e}")
 
 
+async def _enrich_title(session_id: str):
+    """Background task: replace the RAKE instant title with an LLM-generated one.
+
+    Only runs on the first assistant reply (when session has exactly 2 messages).
+    Reads user + assistant messages from DB, calls LLM, updates session name.
+    Failure is silent — the RAKE title stays as fallback.
+    """
+    try:
+        messages = await get_history(session_id, limit=2)
+        if len(messages) < 2:
+            return
+        user_msg = messages[0]["content"] if messages[0]["role"] == "user" else ""
+        asst_msg = messages[1]["content"] if messages[1]["role"] == "assistant" else ""
+        if not user_msg or not asst_msg:
+            return
+        from title import generate_llm_title
+        title = await generate_llm_title(user_msg, asst_msg)
+        if title:
+            await update_session_name(session_id, title)
+    except Exception as e:
+        logger.error(f"Title enrichment failed for {session_id}: {e}")
+
+
 # -- Endpoints --
 
 @router.post("/", response_model=ChatResponse)
@@ -203,6 +226,7 @@ async def chat_endpoint(req: ChatRequest, background_tasks: BackgroundTasks):
         else:
             logger.warning("Non-stream assistant reply empty after sanitization — not saved (session %s)", req.session_id)
         background_tasks.add_task(_update_summary, req.session_id)
+        background_tasks.add_task(_enrich_title, req.session_id)
 
         return ChatResponse(
             reply=reply_text or result["reply"], session_id=req.session_id,
@@ -314,6 +338,7 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
 
     summary_bg = BackgroundTasks()
     summary_bg.add_task(_update_summary, req.session_id)
+    summary_bg.add_task(_enrich_title, req.session_id)
 
     return StreamingResponse(
         generate(),

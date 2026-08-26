@@ -643,7 +643,8 @@ async def save_message(session_id: str, role: str, content: str, images: list[st
         existing = await db.execute("SELECT name FROM sessions WHERE id = ?", (session_id,))
         row = await existing.fetchone()
         if not row or not row[0]:
-            name = content[:40] + ("\u2026" if len(content) > 40 else "")
+            from title import generate_rake_title
+            name = generate_rake_title(content)
             await db.execute(
                 "UPDATE sessions SET name = ? WHERE id = ?",
                 (name, session_id),
