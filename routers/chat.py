@@ -20,6 +20,7 @@ from db import (
     delete_memory,
     get_all_memories,
     get_all_sessions,
+    get_db,
     get_history,
     get_memories,
     get_messages_to_summarize,
@@ -152,8 +153,9 @@ async def _update_summary(session_id: str):
 async def _enrich_title(session_id: str):
     """Background task: replace the RAKE instant title with an LLM-generated one.
 
-    Only runs when LLM_TITLE_ENRICHMENT is enabled and on the first assistant
-    reply (when session has exactly 2 messages).
+    Only runs when LLM_TITLE_ENRICHMENT is enabled and ONLY on the very first
+    assistant reply of the session (when total message count in DB is exactly 2:
+    1 user + 1 assistant). Never runs on subsequent turns.
     Reads user + assistant messages from DB, calls LLM, updates session name.
     Failure is silent — the RAKE title stays as fallback.
     """
@@ -161,9 +163,15 @@ async def _enrich_title(session_id: str):
         from config import get
         if get("LLM_TITLE_ENRICHMENT", "on") != "on":
             return
-        messages = await get_history(session_id, limit=2)
-        if len(messages) < 2:
+        # Robust first-turn check: total row count must be exactly 2 (1 user + 1 assistant).
+        # Using COUNT(*) avoids race where get_history(limit=3) sees a transient 2
+        # while total is actually 50 (limit truncates, COUNT does not).
+        db = await get_db()
+        async with db.execute("SELECT COUNT(*) FROM conversations WHERE session_id = ?", (session_id,)) as cur:
+            total = (await cur.fetchone())[0]
+        if total != 2:
             return
+        messages = await get_history(session_id, limit=2)
         user_msg = messages[0]["content"] if messages[0]["role"] == "user" else ""
         asst_msg = messages[1]["content"] if messages[1]["role"] == "assistant" else ""
         if not user_msg or not asst_msg:
