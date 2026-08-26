@@ -437,6 +437,9 @@ body.glass-mode .tool-status{background:rgba(15,15,21,.94);backdrop-filter:blur(
   transition:all .2s;flex-shrink:0}@media (hover:hover){
 .tts-btn:hover:not(:focus){color:var(--text);background:var(--surface2)}}
 .tts-btn.tts-playing{color:var(--accent);animation:mic-pulse 1s ease-in-out infinite}
+.regen-btn{transition:all .3s}
+.regen-btn.spinning svg{animation:spin-once .6s linear}
+@keyframes spin-once{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
 .msg-actions{display:flex;gap:4px;margin-top:6px}
 .copy-btn.copied{color:var(--accent)}
 /* Respect the OS "reduce motion" setting: users with vestibular sensitivity
@@ -1199,7 +1202,8 @@ const STRINGS = {
     thinkNone:'Kapalı', thinkMin:'Min', thinkLow:'Düşük', thinkMed:'Orta', thinkHigh:'Yüksek', thinkMax:'Maks',
     thinkingTitle:'Düşünme', thinkingLive:'Düşünüyor…',
     send:'Gönder', stopGen:'Üretimi durdur', stoppedMsg:'Yanıt durduruldu.', listenTitle:'Sesli oku',
-    copyTitle:'Mesajı kopyala', copiedTitle:'Kopyalandı',
+    copyTitle:'Mesajı kopyala', copiedTitle:'Kopyalandı', regenTitle:'Yeniden üret',
+    regenerating:'Yeniden üretiliyor…',
     thinkEffortTitle:'Think seviyesi',
     toolAttempt:'deneme', toolCap:'tekrar sınırı',
     genRetryLabel:'Araç yanıtları sıkıştırılıp yeniden deneniyor…',
@@ -1251,7 +1255,8 @@ const STRINGS = {
     thinkNone:'Off', thinkMin:'Min', thinkLow:'Low', thinkMed:'Med', thinkHigh:'High', thinkMax:'Max',
     thinkingTitle:'Thinking', thinkingLive:'Thinking…',
     send:'Send', stopGen:'Stop generating', stoppedMsg:'Response stopped.', listenTitle:'Listen',
-    copyTitle:'Copy message', copiedTitle:'Copied',
+    copyTitle:'Copy message', copiedTitle:'Copied', regenTitle:'Regenerate',
+    regenerating:'Regenerating…',
     thinkEffortTitle:'Think effort',
     toolAttempt:'attempt', toolCap:'retry cap',
     genRetryLabel:'Compressing tool responses and retrying…',
@@ -2352,6 +2357,96 @@ async function abortStream(){
   }catch{}
 }
 
+async function regenerate(group){
+  if(loading) return;
+  const sid=currentSid; if(!sid) return;
+  // 1) Collect the last user message text from DOM
+  const userGroups=document.querySelectorAll('.msg-group.user');
+  const lastUserGroup=userGroups[userGroups.length-1];
+  if(!lastUserGroup) return;
+  const userText=(lastUserGroup.querySelector('.msg-content')?.textContent||'').trim();
+  if(!userText) return;
+  // 2) Remove the assistant bubble (and its actions/meta) from DOM
+  group.remove();
+  // 3) DELETE last assistant from DB
+  try{
+    const h={'Content-Type':'application/json'}; const k=getApiKey(); if(k) h['X-API-Key']=k;
+    await fetch(API+'/chat/messages/last/'+encodeURIComponent(sid),{method:'DELETE',headers:h});
+  }catch{}
+  // 4) Re-send the user message (backend dedup skips the duplicate INSERT)
+  _chipOrigin=false; userAborted=false;
+  setLoading(true); showTyping();
+  let bubble=null, fullText='', thinkBox=null, fullReasoning='';
+  let gotReply=false, terminated=false, toolRow=null;
+  try{
+    const headers={'Content-Type':'application/json'};
+    const _k=getApiKey(); if(_k) headers['X-API-Key']=_k;
+    const resp=await fetch(API+'/chat/stream',{ method:'POST', headers,
+      body:JSON.stringify({ message: userText, session_id: sid, user_id: config.username||'default', think_mode: thinkMode, images: [], reasoning_effort: thinkEffort, origin: '' })
+    });
+    if(!resp.ok) throw new Error('HTTP '+resp.status);
+    const reader=resp.body.getReader(), dec=new TextDecoder(); let buf='';
+    while(true){
+      const {done,value}=await reader.read(); if(done) break;
+      buf+=dec.decode(value,{stream:true}); const lines=buf.split('\n'); buf = lines.pop() || '';
+      for(const rawLine of lines){
+        const line = rawLine.trim(); if(!line || !line.startsWith('data: ')) continue;
+        let data; try{ data=JSON.parse(line.slice(6)); } catch{ continue; }
+        if('token' in data){
+          document.querySelectorAll('#messages .tool-status').forEach(r=>r.remove());
+          toolRow=null;
+          if(!bubble){ bubble=createStreamBubble(); }
+          gotReply=true;
+          fullText+=data.token; bubble.innerHTML=withStreamCaret(renderMd(fullText)); scrollEnd(false);
+        } else if('reasoning' in data){
+          if(!bubble) bubble=createStreamBubble();
+          if(!thinkBox){
+            thinkBox=document.createElement('div'); thinkBox.className='think-box';
+            thinkBox.innerHTML='<span class="think-label">'+t('thinkingLive')+'</span><div class="think-content"></div>';
+            bubble.prepend(thinkBox);
+          }
+          fullReasoning+=data.reasoning;
+          thinkBox.querySelector('.think-content').innerHTML=renderMd(fullReasoning);
+        } else if(data.done){
+          if(bubble) bubble.innerHTML=renderMd(fullText);
+          if(thinkBox && fullReasoning) thinkBox.querySelector('.think-content').innerHTML=renderMd(fullReasoning);
+          gotReply=true; terminated=true;
+          if(fullText) addMsg('assistant',fullText);
+          if(fullReasoning && bubble){
+            const existing=bubble.querySelector('.think-box');
+            if(existing){ existing.remove(); addMsg('assistant',fullReasoning,false,null,null,fullReasoning); }
+          }
+          hideTyping(); setLoading(false); _pendingStream=null;
+          refreshSessions(); return;
+        } else if(data.confirm){
+          terminated=true; hideTyping();
+          showConfirmCard(data.confirm);
+          setLoading(false); _pendingStream=null; return;
+        } else if(data.error){
+          terminated=true; hideTyping();
+          const eMsg = /context too long/i.test(data.error) ? t('errContextTooLong') : data.error;
+          if(bubble) bubble.textContent='\u26A0\uFE0F '+eMsg;
+          else addMsg('assistant','\u26A0\uFE0F '+eMsg);
+          toast(t('connErr'),true); setLoading(false); _pendingStream=null; return;
+        }
+      }
+    }
+  }catch{
+    terminated=true;
+    hideTyping(); if(bubble) bubble.textContent='\u26A0\uFE0F '+t('connErr'); else addMsg('assistant','\u26A0\uFE0F '+t('connErr')); toast(t('connErr'),true);
+  }finally{
+    if(_pendingStream?.sid === sid) _pendingStream=null;
+    if(toolRow){ toolRow.remove(); toolRow=null; }
+    typingEl?.classList.remove('tool-pending');
+    if(!gotReply && !terminated){
+      const note=userAborted?t('stoppedMsg'):t('emptyReply');
+      if(bubble) bubble.textContent=note; else addMsg('assistant',note);
+    }
+    setLoading(false);
+    refreshSessions();
+  }
+}
+
 async function sendMsg(){
   if(loading){ if(_pendingStream) abortStream(); return; }
   userAborted=false;
@@ -2436,7 +2531,9 @@ async function sendMsg(){
           const eMsg = /connection error/i.test(data.error) ? t('errConnLost')
             : /context too long/i.test(data.error) ? t('errContextTooLong')
             : data.error;
-          if(bubble) bubble.textContent='\u26A0\uFE0F '+eMsg; else addMsg('assistant','\u26A0\uFE0F '+eMsg);
+          const errText = '\u26A0\uFE0F '+eMsg;
+          if(bubble){ bubble.textContent=errText; }
+          else { addMsg('assistant',errText); }
           toast(t('connErr'),true); setLoading(false); _pendingStream=null; return;
         }
       }
@@ -2515,6 +2612,7 @@ function setLoading(v){
 }
  const _SPEAKER_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>';
 const _CLIPBOARD_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+const _REGEN_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 const _CHECK_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
 
 async function copyMessage(text, btn){
@@ -2539,8 +2637,7 @@ async function copyMessage(text, btn){
 }
 
 function attachMsgActions(group, text){
-  // Copy + listen buttons under assistant messages — survives minimal mode
-  // (they used to live in .msg-meta, which minimal mode hides).
+  // Copy + listen + regenerate buttons under assistant messages.
   if(!group || group.querySelector('.msg-actions')) return;
   const row=document.createElement('div'); row.className='msg-actions';
   const copyBtn=document.createElement('button');
@@ -2552,6 +2649,15 @@ function attachMsgActions(group, text){
   ttsBtn.innerHTML=_SPEAKER_SVG;
   ttsBtn.onclick=()=>toggleTTS(text,ttsBtn);
   row.appendChild(copyBtn); row.appendChild(ttsBtn);
+  // Regenerate button — only on the last assistant bubble
+  const lastAssistant=document.querySelector('.msg-group.assistant:last-of-type');
+  if(lastAssistant===group){
+    const regenBtn=document.createElement('button');
+    regenBtn.className='tts-btn regen-btn'; regenBtn.title=t('regenTitle');
+    regenBtn.innerHTML=_REGEN_SVG;
+    regenBtn.onclick=()=>regenerate(group);
+    row.appendChild(regenBtn);
+  }
   group.appendChild(row);
 }
 
