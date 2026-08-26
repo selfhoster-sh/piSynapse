@@ -269,12 +269,14 @@ app = FastAPI(
 )
 
 # CORS — restrict to specific origins when set, otherwise same-origin only
+# allow_headers must be explicit when allow_credentials=True (spec forbids "*")
+_CORS_HEADERS = ["X-API-Key", "Content-Type", "X-Request-ID", "Authorization"]
 if CORS_ORIGINS:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=CORS_ORIGINS,
         allow_methods=["GET", "POST", "PATCH", "DELETE"],
-        allow_headers=["*"],
+        allow_headers=_CORS_HEADERS,
         allow_credentials=True,
     )
 else:
@@ -283,7 +285,7 @@ else:
         CORSMiddleware,
         allow_origins=[],
         allow_methods=["GET", "POST", "PATCH", "DELETE"],
-        allow_headers=["*"],
+        allow_headers=_CORS_HEADERS,
         allow_credentials=True,
     )
 
