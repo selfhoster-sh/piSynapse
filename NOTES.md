@@ -17,6 +17,28 @@
 - Currency rule: before relying on a statement in this file, verify it against the code. Found-stale statements get struck through with a dated reason (invalid/unnecessary/done/fixed) — never silently deleted.
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 
+## 2026-08-26 (23) — litert-lm 0.16.1 upgrade + thinking tracking
+
+**Upgrade**: 0.16.0 → 0.16.1 (Windows JVM crash fix only, no Python API changes).
+Health check passed post-upgrade.
+
+**Thinking mode status**: litert-lm Python API exposes `ThinkingConfig(enable_thinking, thinking_token_budget)`
+but NOT a higher-level `reasoning_effort` string. Our piServe manually maps effort → ThinkingConfig.
+Raw A/B test confirmed:
+- think-off (no ThinkingConfig passed) = 3.2–3.5s, no hidden reasoning ✓
+- effort="medium" = 42s + 925-char hidden reasoning + empty visible content
+→ Think-off path is clean. Think-on path works but is slow on E2B (model budget-dependent).
+
+**Upstream watch item**: `litert-lm 0.17.0` (nightly 0.17.0.dev active on PyPI).
+When stable ships, check if `reasoning_effort` becomes a first-class API param
+(mirroring OpenAI convention). If so → unhide UI effort selector and expose
+per-level toggle to user (default: off/minimal, not medium).
+Until then: think effort UI stays hidden (flag-gated), current behavior unchanged.
+
+**Multi-domain routing** also deployed this session: ≥2 keyword-group hits →
+combined 22-tool set. Live-verified: "hava durumunu maille gönder" →
+get_weather executed → send_email confirm card auto-filled with real weather data.
+
 ## 2026-08-25 (22) — Intent audit-log design APPROVED (implementation pending)
 
 Night discussion (with external second opinion) settled how routing ambiguity
