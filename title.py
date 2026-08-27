@@ -129,8 +129,9 @@ async def generate_llm_title(user_msg: str, assistant_msg: str) -> str | None:
         if backend == "litert":
             import httpx
             litert_url = get("LITERT_BASE_URL", "http://localhost:9379")
+            model = get("LLM_MODEL", "gemma4-e2b").replace(":", "-")
             payload = {
-                "model": "gemma4-e2b",
+                "model": model,
                 "messages": [{"role": "user", "content": prompt}],
                 "max_tokens": 15,
                 "temperature": 0.1,
@@ -143,12 +144,15 @@ async def generate_llm_title(user_msg: str, assistant_msg: str) -> str | None:
                 r.raise_for_status()
                 raw = r.json()["choices"][0]["message"]["content"].strip()
         else:
-            # Ollama path — reuse existing chat_with_ollama
+            # Ollama path — reuse existing chat_with_ollama (no tools for title)
             from llm import chat_with_ollama
             raw = await chat_with_ollama(
                 [{"role": "user", "content": prompt}],
-                think=False, use_tools=False,
+                think=False, intent="question", tool_group=None,
             )
+            # chat_with_ollama returns dict, extract reply
+            if isinstance(raw, dict):
+                raw = raw.get("reply", "") or raw.get("content", "") or str(raw)
 
         # Clean output
         title = raw.strip('"\'')
