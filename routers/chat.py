@@ -11,7 +11,7 @@ import traceback
 
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from config import get
 from db import (
@@ -549,6 +549,13 @@ class SyncCommand(BaseModel):
     params: dict
     timestamp: str
     session_id: str = "default_session"
+
+    @field_validator("session_id")
+    @classmethod
+    def validate_sid(cls, v: str) -> str:
+        if not _SESSION_ID_RE.match(v):
+            raise ValueError("Invalid session_id: use only letters, numbers, hyphens, underscores (max 64 chars).")
+        return v
 
 
 class SyncRequest(BaseModel):
