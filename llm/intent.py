@@ -17,6 +17,66 @@ _EMAIL_CTX_MARKERS = (
     "mail", "gelen kutusu", "mesaj", "email",
 )
 
+# -- Reminder disambiguation (calendar vs memory) --
+#
+# "hatırlat" / "remind" + a time or date ("perşembe saat 9'da hatırlat")
+# is a calendar action; a bare "remember this" / "bunu hatırla" request is a
+# memory fact. The distinction is deterministic (regex, no model call) so the
+# routing can never flip on embedding noise for the ~80% of real reminder
+# phrasings. Note the memory keyword "hatırla" must NOT substring-match the
+# reminder family — handled in _kw_hit below.
+_REMINDER_WORDS = (
+    "hatırlat", "hatirlat", "hatırlatıcı", "hatirlatici", "hatırlatma",
+    "remind", "reminder", "erinner", "rappelle", "rappel", "recuerd", "recuérd",
+)
+
+# Time/date signals that turn a reminder request into a calendar event.
+# Numeric hours with the Turkish locative suffixes (9'da / 3'te / 09:00),
+# clock words, day names and relative terms — EN/TR/DE/FR/ES, matching the
+# embedding corpus languages.
+_TIME_SIGNAL_PATTERN = re.compile(
+    r"("
+    # 9'da / 3'te / 9da / 09:00'da · also bare HH:MM clocks
+    r"\b\d{1,2}(?::\d{2})?\s*'?[tdTD]?[ae]\b"
+    r"|\b\d{1,2}:\d{2}(?:\s*'?[tdTD]?[ae]\b|\s*(?:am|pm)\b)?"
+    r"|\b\d{1,2}\s*(?:saat|o'?clock|am|pm|uhr|heures?|hora)\b"
+    # day names
+    r"|\b(?:pazartesi|sal[ıi]|çarşamba|carsamba|perşembe|persembe|cuma|cumartesi|pazar"
+    r"|monday|tuesday|wednesday|thursday|friday|saturday|sunday"
+    r"|montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag"
+    r"|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche"
+    r"|lunes|martes|mi[ée]rcoles|jueves|viernes|s[áa]bado|domingo)\b"
+    # clock words on their own (saat dokuzda)
+    r"|\b(?:saat|o'?clock|uhr|heure|hora)\b"
+    # relative terms
+    r"|\b(?:yarın|yarin|bugün|bugun|öbür gün|obur gun|haftaya|gelecek hafta|sonraki hafta"
+    r"|akşam|aksam|sabah|öğle|öğlen|ogle|oglen|gece|hafta sonu|haftasonu"
+    r"|\d+\s*(?:gün|saat|dakika)\s*sonra|sonraki\s+\d+\s*(?:gün|saat)"
+    r"|tomorrow|today|tonight|next week|this week|this evening|this morning|this afternoon"
+    r"|in\s+\d+\s*(?:hour|hours|minute|minutes|week|weeks|day|days)"
+    r"|morgen|heute|übermorgen|ubermorgen|heute abend|nächste woche|naechste woche"
+    r"|in\s+\d+\s*(?:stunde|stunden|minuten?|tag|tage|tagen|woche|wochen)"
+    r"|demain|ce soir|cet après-midi|cette semaine|la semaine prochaine"
+    r"|dans\s+\d+\s*(?:heure|heures|minute|minutes|jour|jours)"
+    r"|mañana|manana|hoy|esta tarde|esta noche|la semana que viene"
+    r"|en\s+\d+\s*(?:hora|horas|minuto|minutos|d[ií]a|d[ií]as))"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def reminder_group(message: str) -> str | None:
+    """Deterministically route reminder phrasings.
+
+    Returns 'calendar' when a reminder verb/word appears together with a
+    time or date signal, 'memory' for a bare 'remember this' recollection,
+    and None when no reminder wording is present at all.
+    """
+    ml = message.lower()
+    if not any(w in ml for w in _REMINDER_WORDS):
+        return None
+    return "calendar" if _TIME_SIGNAL_PATTERN.search(ml) else "memory"
+
 
 def _has_recent_email_context(history: list[dict]) -> bool:
     for m in history[-8:]:
@@ -75,6 +135,9 @@ _TOOL_EMBED_CORPUS: list[tuple[str | None, str]] = [
     ("calendar", "modifier événement, changer l'heure, déplacer, reprogrammer"),
     ("calendar", "crear evento, añadir al calendario, reunión, qué tengo en el calendario"),
     ("calendar", "cambiar evento, modificar evento, actualizar evento, cambiar hora"),
+    ("calendar", "remind me, set a reminder, reminder at 9am, remind me tomorrow, scheduled reminder, "
+                  "hatırlat, hatırlatıcı kur, saat dokuzda hatırlat, "
+                  "erinnere mich, rappel-moi, recuérdame, pon un recordatorio"),
     ("tasks", "create task, to-do list, complete task, delete task, search tasks, what do I need to do"),
     ("tasks", "görev oluştur, yapılacaklar listesi, görevi tamamla, görev ara, görev sil"),
     ("tasks", "aufgabe erstellen, to-do-liste, aufgabe erledigen, aufgabe suchen"),
@@ -140,7 +203,16 @@ async def _get_tool_embeddings() -> list[tuple[str | None, str, bytes]]:
 # collided with common words ('çıkar' contains 'kar'; 'kart' too).
 _AMBIGUOUS_KW = {"kar"}
 
+# "hatırla" (remember) must not swallow the reminder family ("hatırlat",
+# "hatırlatıcı", "hatırlatma") — those route to calendar via reminder_group()
+# when a time/date is present and to memory otherwise, never as an
+# accidental substring hit.
+_HATIRLA_NOT_REMIND = re.compile(r"hatırla(?!t)", re.IGNORECASE)
+
+
 def _kw_hit(kw: str, ml: str) -> bool:
+    if kw == "hatırla":
+        return bool(_HATIRLA_NOT_REMIND.search(ml))
     if kw in _AMBIGUOUS_KW:
         return f" {kw} " in f" {ml} "
     return kw in ml
@@ -177,6 +249,9 @@ _KEYWORD_CHECKS = (
 def _keyword_group(message: str) -> str | None:
     """Cheap substring heuristics. Order matters: first hit wins."""
     ml = message.lower()
+    reminder = reminder_group(message)
+    if reminder:
+        return reminder
     for kws, group in _KEYWORD_CHECKS:
         if any(_kw_hit(kw, ml) for kw in kws):
             return group
@@ -186,11 +261,26 @@ def _keyword_group(message: str) -> str | None:
 def _hit_groups(message: str) -> set[str]:
     """All groups whose keywords appear in the message."""
     ml = message.lower()
+    reminder = reminder_group(message)
+    if reminder:
+        # A reminder with a time is calendar, period — never merge it with
+        # memory just because "hatırlatıcı" contains "hatırla" as substring.
+        return {reminder}
     return {group for kws, group in _KEYWORD_CHECKS
             if any(_kw_hit(kw, ml) for kw in kws)}
 
 
 async def _classify_intent(message: str, query_embedding: bytes | None = None) -> tuple[str, str | None]:
+    # Reminder routing is deterministic and trumps embedding/keywords so it
+    # can never flip on margin noise ("perşembe saat 9'da hatırlat" -> memory).
+    try:
+        reminder = reminder_group(message)
+        if reminder:
+            await _audit_intent(message, reminder, None, None, "reminder_rule")
+            logger.info(f"Intent=action group={reminder} via reminder rule (message={message!r})")
+            return "action", reminder
+    except Exception as e:
+        logger.warning(f"Reminder pre-check failed (non-fatal): {e}")
     # Multi-domain free text ("hava durumu bilgisini maille gönder"): two or
     # more distinct groups matched → offer the COMBINED toolset so the model
     # can chain tools itself. Single-group routing would strand the second
