@@ -3300,9 +3300,18 @@ function _debounceSearch(q){
   clearTimeout(_searchTimer);
   _searchTimer=setTimeout(async()=>{
     const qq=q.toLowerCase().trim();
+    // Offline fast-path: no network, local title filter instantly
+    if(!navigator.onLine){
+      const local=sessionList.filter(s=>sessName(s).toLowerCase().includes(qq));
+      renderSessions(local);
+      return;
+    }
+    const ctrl=new AbortController();
+    const to=setTimeout(()=>ctrl.abort(), 800);
     try{
       const h={}; const k=getApiKey(); if(k) h['X-API-Key']=k;
-      const r=await fetch(API+'/chat/search?q='+encodeURIComponent(q),{headers:h});
+      const r=await fetch(API+'/chat/search?q='+encodeURIComponent(q),{headers:h, signal: ctrl.signal});
+      clearTimeout(to);
       if(!r.ok) throw new Error('search failed');
       const d=await r.json();
       if(!d.results||!d.results.length){
@@ -3316,6 +3325,7 @@ function _debounceSearch(q){
         .map(s=>({...s, _snippet: snippetMap.get(s.session_id)||""}));
       renderSessions(final);
     }catch{
+      clearTimeout(to);
       const local=sessionList.filter(s=>sessName(s).toLowerCase().includes(qq));
       renderSessions(local);
     }
