@@ -1,5 +1,7 @@
 """System/group prompt hygiene: no dangling fragments, coherent instructions."""
 
+from tools.definitions import TOOLS
+
 import prompt as pm
 
 
@@ -31,3 +33,23 @@ def test_group_prompt_search_tasks_sentence_continues_properly():
     # glued to a truncated clause.
     tail = text[idx:idx + 40]
     assert "..." not in tail
+
+
+def _desc(name):
+    for t in TOOLS:
+        if t["function"]["name"] == name:
+            return t["function"]["description"]
+    raise KeyError(name)
+
+
+def test_list_and_search_emails_are_distinguished():
+    # Eval: mail-01 was ambiguous between the two; descriptions now point the
+    # model at the right one per phrasing.
+    assert "general overview" in _desc("list_emails")
+    assert "search_emails instead" in _desc("list_emails")
+    assert "Search specific emails" in _desc("search_emails") or "Find specific emails" in _desc("search_emails")
+    assert "list_emails" in _desc("search_emails")
+
+
+def test_calendar_create_mentions_reminders():
+    assert "remind" in _desc("create_calendar_event").lower()

@@ -69,7 +69,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "create_calendar_event",
-            "description": "Add a new event to the user's calendar. Call this when the user asks to schedule something.",
+            "description": "Add a new event to the user's calendar. Call this when the user asks to schedule something OR asks to be reminded at a specific time/date (e.g. 'remind me at 9am on Thursday', 'yarın saat 9'da hatırlat').",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -132,7 +132,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "list_emails",
-            "description": "List recent inbox emails (sender, subject, date, preview), numbered 1., 2., ... Refer to emails only by list number.",
+            "description": "Give a general overview of the inbox: recent emails (sender, subject, date, preview), numbered 1., 2., ... Use for 'what's in my inbox', 'any messages from X', 'new/unread email'. When the user asks about a SPECIFIC mail by subject, sender, or topic, use search_emails instead. Refer to emails only by list number.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -178,7 +178,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "search_emails",
-            "description": "Search emails by subject, sender, or body; returns numbered matches with previews.",
+            "description": "Find specific emails about a given subject, sender, or topic anywhere in the mailbox; returns numbered matches with previews. Use when the user names a particular mail, person, or topic ('the Netdata email', 'mails about the invoice'). For a general inbox overview use list_emails. Refer to results only by list number.",
             "parameters": {
                 "type": "object",
                 "properties": {
