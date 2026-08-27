@@ -615,15 +615,15 @@ async def chat_with_ollama_stream(
             yield {"done": True, "memories_saved": memories_saved, "reasoning": clean_reasoning(full_reasoning)}
             return
 
+        # Tools offered THIS turn (filtered group / combined set). Small
+        # models sometimes hallucinate a known-but-unoffered tool from
+        # memory — executing it would write to the wrong domain (seen:
+        # create_task during a calendar turn). Reject with guidance so
+        # the model self-corrects using the tools it was given.
+        allowed_names = ({t["function"]["name"] for t in filtered_tools}
+                         if use_tools and filtered_tools else None)
         if non_confirm_calls:
             current_msgs.append({"role": "assistant", "content": "", "tool_calls": non_confirm_calls})
-            # Tools offered THIS turn (filtered group / combined set). Small
-            # models sometimes hallucinate a known-but-unoffered tool from
-            # memory — executing it would write to the wrong domain (seen:
-            # create_task during a calendar turn). Reject with guidance so
-            # the model self-corrects using the tools it was given.
-            allowed_names = ({t["function"]["name"] for t in filtered_tools}
-                             if use_tools and filtered_tools else None)
             for call in non_confirm_calls:
                 fn = call.get("function", {})
                 tn = fn.get("name", "")
@@ -703,6 +703,11 @@ async def chat_with_ollama_stream(
 
         for call in confirm_calls:
             tn = call.get("function", {}).get("name", "")
+            if allowed_names is not None and tn not in allowed_names:
+                logger.warning(f"Confirm tool {tn} hallucinated (not offered this turn) — rejected")
+                yield {"token": f"[Rejected: '{tn}' is NOT available this turn. Available: {', '.join(sorted(allowed_names))}. Answer in plain text.]"}
+                yield {"done": True, "memories_saved": memories_saved, "reasoning": clean_reasoning(full_reasoning)}
+                return
             params = parse_tool_args(call["function"].get("arguments"))
             err = validate_confirm_params(tn, params)
             if err:
