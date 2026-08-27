@@ -3331,6 +3331,15 @@ function _debounceSearch(q){
     }
   },150);
 }
+window.addEventListener('online', ()=>{
+  if(_searchQuery) _debounceSearch(_searchQuery);
+});
+window.addEventListener('offline', ()=>{
+  if(_searchQuery){
+    const local=sessionList.filter(s=>sessName(s).toLowerCase().includes(_searchQuery));
+    renderSessions(local);
+  }
+});
 
 function toggleSearch(){
   const box = document.getElementById('sb-search'), toggle = document.getElementById('search-toggle');
