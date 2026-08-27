@@ -38,7 +38,11 @@ from .utils import (
     FINALIZE_NUDGE as _FINALIZE_NUDGE,
 )
 from .utils import (
+    CONTINUATION_NOTE,
     MAX_IDENTICAL_EXECUTIONS as _MAX_IDENTICAL_EXECUTIONS,
+    is_lookup_tool,
+    is_mutation_tool,
+    user_requested_action,
 )
 from .utils import (
     empty_answer_fallback as _empty_answer_fallback,
@@ -178,7 +182,11 @@ async def chat_with_ollama(
     reasoning_effort: str = "",
 ) -> dict:
     full_msgs = await _build_full_messages(messages, memories or [], summary, session_id, tool_group=tool_group)
-    context = {"user_id": user_id, "session_id": session_id}
+    context = {
+        "user_id": user_id,
+        "session_id": session_id,
+        "_user_text": next((m.get("content", "") for m in reversed(messages) if m.get("role") == "user"), ""),
+    }
     current_msgs: list[dict] = []
     memories_saved = 0
     thinking = ""
@@ -199,6 +207,8 @@ async def chat_with_ollama(
     executed_tool_sigs: set[str] = set()
     sig_exec_counts: dict[str, int] = {}
     final_nudge_used = False
+    mutation_executed = False
+    continuation_noted = False
     tools_tokens = 0
     if use_tools and filtered_tools:
         tools_tokens = len(json.dumps(filtered_tools, ensure_ascii=False)) // 4
@@ -342,6 +352,8 @@ async def chat_with_ollama(
                 # Per-call accounting MUST happen here (not post-loop) to catch same-round duplicates
                 executed_tool_sigs.add(probe_sig)
                 sig_exec_counts[probe_sig] = sig_exec_counts.get(probe_sig, 0) + 1
+                if is_mutation_tool(tn):
+                    mutation_executed = True
 
         for call in confirm_calls:
             tn = call.get("function", {}).get("name", "")
@@ -396,13 +408,24 @@ async def chat_with_ollama(
                     "memories_saved": memories_saved, "thinking": thinking}
 
         if non_confirm_calls and iteration < get("LLM_MAX_TOOL_ITERATIONS", 5) - 1:
+            round_names = {c["function"]["name"] for c in non_confirm_calls}
+            lookup_only = bool(round_names) and all(is_lookup_tool(n) for n in round_names)
             for m in reversed(current_msgs):
                 if m.get("role") == "tool":
-                    m["content"] += (
-                        "\n\n[Note: If the user's request requires additional actions "
-                        "(e.g. sending this data via email, creating another event), "
-                        "call the next tool NOW. Do NOT reply until all actions are done.]"
-                    )
+                    if (
+                        lookup_only
+                        and not mutation_executed
+                        and not continuation_noted
+                        and user_requested_action(context["_user_text"])
+                    ):
+                        continuation_noted = True
+                        m["content"] += CONTINUATION_NOTE
+                    else:
+                        m["content"] += (
+                            "\n\n[Note: If the user's request requires additional actions "
+                            "(e.g. sending this data via email, creating another event), "
+                            "call the next tool NOW. Do NOT reply until all actions are done.]"
+                        )
                     break
 
     logger.warning(f"Max tool iterations ({get('LLM_MAX_TOOL_ITERATIONS', 5)}) exceeded")

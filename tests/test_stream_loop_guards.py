@@ -122,6 +122,76 @@ def _run(monkeypatch, rounds):
     return events, executed, client
 
 
+def _run_with_text(monkeypatch, rounds, user_text, group="notes"):
+    monkeypatch.setattr(_cfg, "LLM_BACKEND", "litert")
+    executed = []
+
+    async def fake_run_tool(name, params, context=None):
+        executed.append(name)
+        return f"OK {name} sonucu"
+
+    async def fake_verify(*a, **k):
+        pass
+
+    client = _SeqClient(rounds)
+    monkeypatch.setattr(llm_stream, "_get_client", lambda: client)
+    monkeypatch.setattr(llm_stream, "run_tool", fake_run_tool)
+    monkeypatch.setattr(llm_stream, "run_verification", fake_verify)
+
+    async def drain():
+        events = []
+        async for ev in llm_stream.chat_with_ollama_stream(
+            [{"role": "user", "content": user_text}],
+            memories=[], think=False, summary="", user_id="t",
+            session_id="s", intent="action", tool_group=group,
+            reasoning_effort="",
+        ):
+            events.append(ev)
+        return events
+
+    events = asyncio.run(drain())
+    return events, executed, client
+
+
+def test_lookup_then_action_request_injects_continuation_note(monkeypatch):
+    rounds = [
+        [_tc("list_notes", cid="c1", idx=0), _fin("tool_calls"), _DONE_LINE],
+        # Model completes the asked deletion in the 2nd round.
+        [_tc("delete_note", '{"note_id":"2"}', cid="c2", idx=0), _fin("tool_calls"), _DONE_LINE],
+        [_tok("Silindi."), _fin("stop"), _DONE_LINE],
+    ]
+    _events, executed, client = _run_with_text(
+        monkeypatch, rounds, "az önce listelediğin ikinci notu sil")
+
+    # Delete is confirm-gated: it never executes in-loop; the important part
+    # is that the SECOND round's prompt carried the continuation nudge.
+    assert executed == ["list_notes"]
+    joined = "".join(
+        json.dumps(m, ensure_ascii=False)
+        for msg in client.payloads[1]["messages"]
+        for m in ([msg] if isinstance(msg, dict) else msg)
+    )
+    assert "Continuation required" in joined
+    assert "delete" in joined
+
+
+def test_lookup_only_request_gets_no_continuation_note(monkeypatch):
+    rounds = [
+        [_tc("list_notes", cid="c1", idx=0), _fin("tool_calls"), _DONE_LINE],
+        [_tok("İşte notların."), _fin("stop"), _DONE_LINE],
+    ]
+    _events, executed, client = _run_with_text(
+        monkeypatch, rounds, "notlarımı listele")
+
+    assert executed == ["list_notes"]
+    joined = "".join(
+        json.dumps(m, ensure_ascii=False)
+        for msg in client.payloads[1]["messages"]
+        for m in ([msg] if isinstance(msg, dict) else msg)
+    )
+    assert "Continuation required" not in joined
+
+
 def test_dedup_empty_text_triggers_one_textonly_round(monkeypatch, caplog):
     rounds = [
         [_tc("list_notes"), _fin("tool_calls"), _DONE_LINE],

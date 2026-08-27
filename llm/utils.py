@@ -24,6 +24,87 @@ EMPTY_ANSWER_FALLBACK = (
     "İşlem tamamlandı ancak özet oluşturulamadı. Lütfen isteğini tekrar dener misin?"
 )
 
+# -- Lookup-vs-mutation classification -------------------------------#
+# Tools that only gather data. When a round calls nothing but lookups and the
+# user's request asked for an action on what was found, a small model tends to
+# stop and summarise instead of completing the mutation — the eval's dominant
+# failure mode (cal-03/cal-05, task-04, note-03). These sets drive the
+# deterministic continuation nudge in the tool loops.
+LOOKUP_TOOLS = {
+    "get_datetime", "get_weather",
+    "list_emails", "read_email", "search_emails",
+    "list_calendar_events", "list_notes", "read_note", "search_notes",
+    "list_tasks", "search_tasks",
+}
+
+MUTATION_TOOLS = {
+    "create_calendar_event", "create_note", "create_task",
+    "update_calendar_event", "update_note",
+    "delete_calendar_event", "delete_note", "delete_task",
+    "complete_task", "send_email",
+}
+
+
+def is_lookup_tool(name: str) -> bool:
+    return name in LOOKUP_TOOLS
+
+
+def is_mutation_tool(name: str) -> bool:
+    return name in MUTATION_TOOLS
+
+
+# User-request cues that the message wants an ACTION on data the model must
+# look up first. Turkish stems deliberately match with suffixes ("göndermem
+# lazım"), other languages match whole words so "add" never fires on
+# "address". Only feeds a nudge — misses are harmless, over-matching only
+# appends one extra instruction to the context.
+_ACTION_CUE_STEMS = (
+    "hatırlat", "hatirlat", "kur", "oluştur", "olustur", "ekle", "kaydet",
+    "sil", "kaldır", "kaldir", "düzenle", "duzenle", "güncelle", "guncelle",
+    "değiştir", "degistir", "tamamla", "tamamlandı", "tamamlandi", "işaretle",
+    "isaretle", "gönder", "gonder", "yolla", "hazırla", "ertele", "cevapla",
+    "yeni etkinlik", "yeni görev", "yeni gorev", "yeni not", "yeni hatırlatıcı",
+)
+_ACTION_CUE_WORDS = (
+    "create", "add", "make", "delete", "remove", "erase", "update", "edit",
+    "change", "modify", "reschedule", "postpone", "complete", "mark as done",
+    "send", "reply", "draft", "schedule", "set up", "remind",
+    "löschen", "loeschen", "erstellen", "hinzufügen", "hinzufuegen", "ändern",
+    "aendern", "verschieben", "erledigen", "senden", "schreiben", "beantworten",
+    "erinnere", "supprime", "supprimer", "créer", "creer", "ajouter", "modifier",
+    "changer", "déplacer", "deplacer", "envoyer", "répondre", "repondre",
+    "terminer", "rappelle", "borrar", "crear", "agregar", "modificar",
+    "cambiar", "mover", "enviar", "responder", "completar", "recordar",
+    "recuérdame", "programar",
+)
+_ACTION_WORD_RE = re.compile(
+    r"\b(" + "|".join(sorted(_ACTION_CUE_WORDS, key=len, reverse=True)) + r")\b",
+    re.IGNORECASE,
+)
+
+
+def user_requested_action(user_text: str) -> bool:
+    """True when the user's request clearly asks for an action on data
+    (create/update/delete/complete/send/draft). Used only to decide whether
+    to nudge the model to continue — never gates actual execution.
+    """
+    if not user_text:
+        return False
+    ml = user_text.lower()
+    return any(stem in ml for stem in _ACTION_CUE_STEMS) or bool(_ACTION_WORD_RE.search(ml))
+
+
+# Appended to the last tool result when a lookup-only round ends while the
+# user's request still expects an action. Explicitly references the pattern
+# the eval proved the model of record falls into (list -> stop).
+CONTINUATION_NOTE = (
+    "\n\n[Continuation required: the tools called so far only LOOKED information "
+    "up, but the user's request asked for an action on it (create, update, "
+    "delete, complete, mark done, or send). The details you need are in the "
+    "results above — call the matching action tool NOW with the matching item. "
+    "Do NOT write a final reply until that action has been performed.]"
+)
+
 
 def empty_answer_fallback() -> str:
     """User-facing fallback in the instance's UI_LANGUAGE.
