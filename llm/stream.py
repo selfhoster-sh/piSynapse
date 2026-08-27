@@ -636,17 +636,17 @@ async def chat_with_ollama_stream(
                 max_exec = 1 if tn.startswith("create_") or tn == "send_email" else _MAX_IDENTICAL_EXECUTIONS
                 if sig_exec_counts.get(probe_sig, 0) >= max_exec:
                     # Side-effect safety: never run the exact same call more
-                    # than _MAX_IDENTICAL_EXECUTIONS times per request.
+                    # than max_exec times per request.
                     logger.warning(
                         f"Tool {tn} identical signature already executed "
-                        f"{_MAX_IDENTICAL_EXECUTIONS}x — refusing re-execution"
+                        f"{max_exec}x — refusing re-execution"
                     )
                     tool_msg = {
                         "role": "tool",
                         "tool_name": tn,
                         "content": (
                             "[Refused: this exact tool call has already been "
-                            f"executed {_MAX_IDENTICAL_EXECUTIONS} times. Its "
+                            f"executed {max_exec} times. Its "
                             "result is in the messages above — do not call it "
                             "again, answer from the existing result.]"
                         ),
