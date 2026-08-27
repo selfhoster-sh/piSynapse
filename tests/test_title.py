@@ -6,68 +6,68 @@ from title import generate_rake_title
 
 
 class TestRakeTitle:
-    """Unit tests for the RAKE instant title function."""
+    """Unit tests for first-4-words instant title."""
 
     def test_turkish_weather(self):
         result = generate_rake_title("İstanbul için yarınki hava durumu bilgisini gönder")
-        assert "İstanbul" in result or "hava" in result.lower()
+        assert result == "İstanbul için yarınki hava"
 
     def test_turkish_email(self):
         result = generate_rake_title("Bana gelen son e-postaları özetleyip önemli olanları işaretler misin")
-        # RAKE picks longest phrase — may include verbs. LLM will fix this.
-        assert len(result) > 0
-        assert len(result.split()) <= 8  # reasonable length
+        assert result == "Bana gelen son e-postaları"
+        assert len(result.split()) == 4
 
     def test_english_weather(self):
         result = generate_rake_title("What is the current weather forecast for London tomorrow")
-        assert "weather" in result.lower() or "forecast" in result.lower() or "london" in result.lower()
+        assert result == "What is the current"
 
     def test_english_technical(self):
         result = generate_rake_title("How do I fix memory leak issues in Node.js express application")
-        # RAKE picks longest phrase — may miss "memory leak". LLM enriches this.
-        assert len(result) > 0
-        assert "node" in result.lower() or "memory" in result.lower()
+        assert result == "How do I fix"
 
     def test_strips_email(self):
         result = generate_rake_title("hava durumu bilgisini sa.dg725@proton.me adresine gönder")
-        assert "sa.dg725" not in result.lower()
-        assert "proton" not in result.lower()
+        # No stripping — first 4 words
+        assert result == "hava durumu bilgisini sa.dg725@proton.me"
 
     def test_strips_url(self):
         result = generate_rake_title("Bu sayfadaki bilgileri özetle https://example.com")
-        assert "example.com" not in result.lower()
+        assert result == "Bu sayfadaki bilgileri özetle"
 
     def test_short_input(self):
         result = generate_rake_title("Hava durumu")
-        assert len(result) > 0
-        assert len(result.split()) <= 5
+        assert result == "Hava durumu"
+        assert len(result.split()) <= 4
 
     def test_single_word(self):
         result = generate_rake_title("Merhaba")
-        assert len(result) > 0
+        assert result == "Merhaba"
 
     def test_max_words_limit(self):
         result = generate_rake_title("Python aiosqlite veritabanı bağlantısı kilitlenme hatası çözümü", max_words=3)
-        assert len(result.split()) <= 3
+        # max_words ignored — always 4
+        assert result == "Python aiosqlite veritabanı bağlantısı"
+        assert len(result.split()) == 4
 
     def test_empty_input(self):
         result = generate_rake_title("")
-        assert isinstance(result, str)
+        assert result == "Yeni Sohbet"
 
     def test_only_stop_words(self):
         result = generate_rake_title("bir ve bu ile için ne var")
-        assert len(result) > 0
+        assert result == "bir ve bu ile"
 
     def test_numbers_stripped(self):
         result = generate_rake_title("toplantı saat 14:00'da başlayacak")
-        assert "14" not in result
+        assert result == "toplantı saat 14:00'da başlayacak"
+        assert "14" in result
 
     def test_turkish_technical(self):
         result = generate_rake_title("Python aiosqlite veritabanı bağlantısı kilitlenme hatasını nasıl çözerim")
-        assert "python" in result.lower()
+        assert result == "Python aiosqlite veritabanı bağlantısı"
 
     def test_performance(self):
-        """RAKE must be under 1ms — this is the whole point of instant titles."""
+        """First-4-words must be under 1ms."""
         import time
         times = []
         for _ in range(100):
@@ -75,13 +75,11 @@ class TestRakeTitle:
             generate_rake_title("İstanbul için yarınki hava durumu bilgisini gönder")
             times.append((time.perf_counter() - t0) * 1000)
         avg = sum(times) / len(times)
-        assert avg < 1.0, f"RAKE too slow: {avg:.3f}ms avg (must be <1ms)"
+        assert avg < 1.0, f"Too slow: {avg:.3f}ms avg (must be <1ms)"
 
     def test_casing_preserved(self):
         result = generate_rake_title("python async hatası çözümü")
-        # First word should be capitalized
-        if result:
-            assert result[0].isupper()
+        assert result == "python async hatası çözümü"
 
 
 class TestLLMTitle:
@@ -99,6 +97,7 @@ class TestLLMTitle:
             )
             if title is not None:
                 assert len(title) > 0
+                assert 2 <= len(title.split()) <= 5
                 assert len(title) <= 60
         except Exception:
             pytest.skip("LLM backend not available")
