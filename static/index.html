@@ -3292,10 +3292,6 @@ let _searchQuery = '';
 function filterSessions(q){
   _searchQuery = q.toLowerCase().trim();
   if(!_searchQuery){ renderSessions(sessionList); return; }
-  // Quick local filter on titles for instant feedback
-  const local = sessionList.filter(s => sessName(s).toLowerCase().includes(_searchQuery));
-  if(local.length){ renderSessions(local); }
-  // Then hit FTS5 backend for message-content search (may return more)
   _debounceSearch(q);
 }
 
@@ -3303,24 +3299,27 @@ let _searchTimer=null;
 function _debounceSearch(q){
   clearTimeout(_searchTimer);
   _searchTimer=setTimeout(async()=>{
+    const qq=q.toLowerCase().trim();
     try{
       const h={}; const k=getApiKey(); if(k) h['X-API-Key']=k;
       const r=await fetch(API+'/search?q='+encodeURIComponent(q),{headers:h});
-      if(!r.ok) return;
+      if(!r.ok) throw new Error('search failed');
       const d=await r.json();
-      if(!d.results||!d.results.length) return;
+      if(!d.results||!d.results.length){
+        const local=sessionList.filter(s=>sessName(s).toLowerCase().includes(qq));
+        renderSessions(local);
+        return;
+      }
       const snippetMap=new Map(d.results.map(r=>[r.session_id, r.snippet||""]));
       const ids=new Set(snippetMap.keys());
-      const merged=sessionList.filter(s=>ids.has(s.session_id));
-      // Merge with any local-title matches already shown
-      const existing=document.querySelectorAll('#session-list .session-item');
-      const existingIds=new Set([...existing].map(e=>e.dataset.sid));
-      merged.forEach(s=>{ if(!existingIds.has(s.session_id)) existingIds.add(s.session_id); });
-      const final=sessionList.filter(s=>ids.has(s.session_id)||existingIds.has(s.session_id))
+      const final=sessionList.filter(s=>ids.has(s.session_id))
         .map(s=>({...s, _snippet: snippetMap.get(s.session_id)||""}));
       renderSessions(final);
-    }catch{}
-  },300);
+    }catch{
+      const local=sessionList.filter(s=>sessName(s).toLowerCase().includes(qq));
+      renderSessions(local);
+    }
+  },150);
 }
 
 function toggleSearch(){
