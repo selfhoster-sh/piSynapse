@@ -30,36 +30,52 @@ _REMINDER_WORDS = (
     "remind", "reminder", "erinner", "rappelle", "rappel", "recuerd", "recuérd",
 )
 
-# Time/date signals that turn a reminder request into a calendar event.
-# Numeric hours with the Turkish locative suffixes (9'da / 3'te / 09:00),
-# clock words, day names and relative terms — EN/TR/DE/FR/ES, matching the
-# embedding corpus languages.
+# Additional reminder verbs outside the classic family ("alarm kur",
+# "beni uyar", "haber ver", "asmayı unutma") so clock-anchored requests are
+# not skipped just because the wording isn't literally "hatırlat".
+_REMINDER_VERBS = (
+    "alarm",                                     # set an alarm (tr/en/de/fr/es)
+    "uyar", "bildir", "haber ver",               # TR
+    "unutm",                                     # unutma / unutmayı / unutmasın
+    "don't forget", "dont forget", "do not forget",  # EN
+    "nudge me", "ping me",
+    "nicht vergessen", "vergess",                # DE
+    "n'oublie", "oublie pas", "réveille", "reveille",   # FR
+    "no olvides", "avísame", "avisame", "despiértame", "despiertame",  # ES
+)
+
+# A reminder becomes a CALENDAR event only when a place-able CLOCK is present
+# (numeric "9'da"/"09:00"/"9am", clock nouns "8 Uhr", spelled-out TR
+# cardinals "sekizde"/"buçukta", or single-instant words like noon/öğle/midi).
+# A bare day name or relative term ("yarın", "el domingo") carries NO clock —
+# routing it to calendar would make create_calendar_event guess a start time,
+# so such reminders are MEMORY notes instead.
 _TIME_SIGNAL_PATTERN = re.compile(
     r"("
-    # 9'da / 3'te / 9da / 09:00'da · also bare HH:MM clocks
+    # numeric clocks: 9'da / 09:00'da / 9da / 19:30 / 8 Uhr / 9am
     r"\b\d{1,2}(?::\d{2})?\s*'?[tdTD]?[ae]\b"
-    r"|\b\d{1,2}:\d{2}(?:\s*'?[tdTD]?[ae]\b|\s*(?:am|pm)\b)?"
+    r"|\b\d{1,2}:\d{2}\b"
     r"|\b\d{1,2}\s*(?:saat|o'?clock|am|pm|uhr|heures?|hora)\b"
-    # day names
-    r"|\b(?:pazartesi|sal[ıi]|çarşamba|carsamba|perşembe|persembe|cuma|cumartesi|pazar"
-    r"|monday|tuesday|wednesday|thursday|friday|saturday|sunday"
-    r"|montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag"
-    r"|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche"
-    r"|lunes|martes|mi[ée]rcoles|jueves|viernes|s[áa]bado|domingo)\b"
-    # clock words on their own (saat dokuzda)
-    r"|\b(?:saat|o'?clock|uhr|heure|hora)\b"
-    # relative terms
-    r"|\b(?:yarın|yarin|bugün|bugun|öbür gün|obur gun|haftaya|gelecek hafta|sonraki hafta"
-    r"|akşam|aksam|sabah|öğle|öğlen|ogle|oglen|gece|hafta sonu|haftasonu"
-    r"|\d+\s*(?:gün|saat|dakika)\s*sonra|sonraki\s+\d+\s*(?:gün|saat)"
-    r"|tomorrow|today|tonight|next week|this week|this evening|this morning|this afternoon"
-    r"|in\s+\d+\s*(?:hour|hours|minute|minutes|week|weeks|day|days)"
-    r"|morgen|heute|übermorgen|ubermorgen|heute abend|nächste woche|naechste woche"
-    r"|in\s+\d+\s*(?:stunde|stunden|minuten?|tag|tage|tagen|woche|wochen)"
-    r"|demain|ce soir|cet après-midi|cette semaine|la semaine prochaine"
-    r"|dans\s+\d+\s*(?:heure|heures|minute|minutes|jour|jours)"
-    r"|mañana|manana|hoy|esta tarde|esta noche|la semana que viene"
-    r"|en\s+\d+\s*(?:hora|horas|minuto|minutos|d[ií]a|d[ií]as))"
+    r"|\b(?:saat|uhr|heure|hora)\s+\d{1,2}\b"
+    # Turkish spelled-out cardinals: standalone ("sekiz buçukta") or glued
+    # locative suffix ("sekizde" / "üçte" / "altıda" — no \b, one word)
+    r"|\b(?:bir|iki|üç|uc|dört|dort|beş|bes|altı|alti|yedi|sekiz|dokuz"
+    r"|on|on\s*bir|onbir|on\s*iki|oniki)\b\s*b[ıu]çuk\s*'?[td][ae]\b"
+    r"|\b(?:bir|iki|üç|uc|dört|dort|beş|bes|altı|alti|yedi|sekiz|dokuz"
+    r"|on|on\s*bir|onbir|on\s*iki|oniki)(?:'?)(?:da|de|ta|te)\b"
+    # anchored relative durations near a clock: 10 dakika sonra / in 10 minutes
+    r"|\b\d+\s*(?:dakika|saat)\s*sonra\b"
+    r"|\bin\s+\d+\s*(?:hours?|minutes?)\b"
+    r"|\bin\s+\d+\s*(?:stunden?|minuten?)\b"
+    r"|\bdans\s+\d+\s*(?:heures?|minutes?)\b"
+    r"|\ben\s+\d+\s*(?:horas?|minutos?)\b"
+    # hour connectors: a las 9 / à 9 / um 8
+    r"|\b(?:a\s+las|à\s+les?|um)\s*\d{1,2}\b"
+    # half past three
+    r"|\bhalf\s*past\s*\d{1,2}\b"
+    # single-instant clock words (noon family): öğle / gece yarısı (midnight)
+    r"|\b(?:öğle|öğlen|ogle|oglen|gece yarısı|geceyarısı|noon|midday|midnight"
+    r"|mittag|mitternacht|midi|minuit|mediodia|mediodía|medianoche)\b"
     r")",
     re.IGNORECASE,
 )
@@ -68,12 +84,16 @@ _TIME_SIGNAL_PATTERN = re.compile(
 def reminder_group(message: str) -> str | None:
     """Deterministically route reminder phrasings.
 
-    Returns 'calendar' when a reminder verb/word appears together with a
-    time or date signal, 'memory' for a bare 'remember this' recollection,
-    and None when no reminder wording is present at all.
+    Returns 'calendar' when a reminder wording appears together with a
+    place-able clock (numeric hour, spoken clock, noon family), 'memory'
+    for a bare 'remember this' recollection or a day/relative-only note, and
+    None when no reminder wording is present at all.
     """
     ml = message.lower()
-    if not any(w in ml for w in _REMINDER_WORDS):
+    if not (
+        any(w in ml for w in _REMINDER_WORDS)
+        or any(w in ml for w in _REMINDER_VERBS)
+    ):
         return None
     return "calendar" if _TIME_SIGNAL_PATTERN.search(ml) else "memory"
 
