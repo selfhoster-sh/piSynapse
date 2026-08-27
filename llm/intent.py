@@ -261,13 +261,15 @@ def _keyword_group(message: str) -> str | None:
 def _hit_groups(message: str) -> set[str]:
     """All groups whose keywords appear in the message."""
     ml = message.lower()
+    groups = {group for kws, group in _KEYWORD_CHECKS
+              if any(_kw_hit(kw, ml) for kw in kws)}
     reminder = reminder_group(message)
     if reminder:
-        # A reminder with a time is calendar, period — never merge it with
-        # memory just because "hatırlatıcı" contains "hatırla" as substring.
-        return {reminder}
-    return {group for kws, group in _KEYWORD_CHECKS
-            if any(_kw_hit(kw, ml) for kw in kws)}
+        # 'hatırlatıcı' must never re-enter memory via the 'hatırla' substring,
+        # but a reminder may still coexist with another domain ('... hatırlat
+        # ve görev oluştur') — keep the union so multi-domain routing sees it.
+        groups.add(reminder)
+    return groups
 
 
 async def _classify_intent(message: str, query_embedding: bytes | None = None) -> tuple[str, str | None]:
@@ -276,6 +278,14 @@ async def _classify_intent(message: str, query_embedding: bytes | None = None) -
     try:
         reminder = reminder_group(message)
         if reminder:
+            others = _hit_groups(message) - {reminder}
+            if others:
+                # "... hatırlat ve görev oluştur" — a reminder plus another
+                # domain needs the combined toolset, not calendar alone.
+                await _audit_intent(message, ",".join(sorted({reminder} | others)), None, None,
+                                    "reminder_multi")
+                logger.info(f"Reminder {reminder} + other domains {sorted(others)} — combined (message={message!r})")
+                return "action", None
             await _audit_intent(message, reminder, None, None, "reminder_rule")
             logger.info(f"Intent=action group={reminder} via reminder rule (message={message!r})")
             return "action", reminder

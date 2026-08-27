@@ -61,6 +61,14 @@ def test_hit_groups_no_memory_collision_on_reminder():
     assert li_mod._hit_groups("bana perşembe için bir hatırlatıcı kur") == {"calendar"}
 
 
+def test_hit_groups_reminder_plus_other_domain_stays_combined():
+    # A reminder that also carries another domain keeps the union so
+    # multi-domain routing still offers the matching tools.
+    groups = li_mod._hit_groups("yarın saat 9'da toplantıyı hatırlat ve görev oluştur")
+    assert "calendar" in groups and "tasks" in groups
+    assert li_mod._hit_groups("perşembe saat 9'da hatırlat") == {"calendar"}
+
+
 def test_classify_reminder_never_consults_embedding(audit_db, monkeypatch):
     # Deterministic routing must fire before embedding can flip it — this is
     # the exact eval case that previously produced save_memory junk.
@@ -70,3 +78,6 @@ def test_classify_reminder_never_consults_embedding(audit_db, monkeypatch):
     assert asyncio.run(li_mod._classify_intent("bana perşembe için bir hatırlatıcı kur, saat 9'da")) == ("action", "calendar")
     assert asyncio.run(li_mod._classify_intent("şunu hatırla: en sevdiğim renk mavi")) == ("action", "memory")
     assert asyncio.run(li_mod._classify_intent("bunu hatırlat: eve döndüğümde çamaşırları as")) == ("action", "memory")
+    # Reminder + a second domain -> combined toolset, not calendar alone.
+    assert asyncio.run(li_mod._classify_intent(
+        "yarın saat 9'da toplantıyı hatırlat ve görev oluştur"))[0] == "action"
