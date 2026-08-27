@@ -273,7 +273,7 @@ curl -X DELETE "http://localhost:8765/chat/memories?user_id=default" \
   -H "X-API-Key: YOUR_API_KEY"
 
 # Search sessions (hybrid keyword + semantic)
-curl "http://localhost:8765/chat/search?q=omlet" \
+curl "http://localhost:8765/chat/search?q=your+query" \
   -H "X-API-Key: YOUR_API_KEY"
 
 # Health check (no auth required)
