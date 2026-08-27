@@ -386,14 +386,24 @@ async def security_middleware(request: Request, call_next):
     if request.method == "OPTIONS" and "access-control-request-method" in request.headers:
         is_exempt = True
 
-    # --- Debug beacon: navigator.sendBeacon cannot set headers, so it
-    # authenticates via the ?k= query param (still protected by API_KEY).
+    # --- Debug beacon: sendBeacon cannot set headers, so key is in JSON body as _k
+    # (legacy ?k= query param still accepted for backward compat, but not used by frontend).
     # Always require auth for /debug — never leave it open. ---
     is_debug = path == "/debug"
     if is_debug:
         if not API_KEY:
             return JSONResponse(status_code=403, content={"detail": "Debug endpoint disabled: API_KEY not configured"})
-        key = request.query_params.get("k", "")
+        key = request.headers.get("x-api-key", "") or request.query_params.get("k", "")
+        if not key:
+            # Try JSON body (_k from sendBeacon)
+            try:
+                body = await request.body()
+                if body:
+                    import json as _json
+                    data = _json.loads(body.decode())
+                    key = data.get("_k", "") or data.get("k", "")
+            except Exception:
+                pass
         if not hmac.compare_digest(key, API_KEY):
             return JSONResponse(status_code=401, content={"detail": "Invalid or missing API key"})
 
@@ -554,6 +564,9 @@ async def collect_health() -> dict:
 async def debug_ingest(request: Request):
     try:
         body = await request.json()
+        # Never log the API key (_k/k) even in debug
+        body.pop("_k", None)
+        body.pop("k", None)
         print(f"DBG|{json.dumps(body, ensure_ascii=False)[:2000]}")
     except Exception as e:
         print(f"DBG|bad payload: {e}")
