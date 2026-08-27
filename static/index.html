@@ -2485,6 +2485,12 @@ async function sendMsg(){
           // Title is set by backend (RAKE instant + LLM enriched background).
           // Frontend must NOT call PATCH to override it.
           await loadSessions(false);
+          // Enriched title arrives ~4-5s later via background LLM — refresh again
+          setTimeout(async()=>{
+            await loadSessions(false);
+            const s=sessionList.find(x=>x.session_id===sid);
+            if(s && currentSid===sid) document.getElementById('sess-title').textContent=sessName(s);
+          }, 5500);
           // Don't reload the session — the stream bubble already has the full text.
           // Reloading calls clearMsgs()+DOM rebuild, which causes a visible flash.
           // If the user navigated away during streaming, loadSessions() updates the sidebar.
@@ -2539,6 +2545,11 @@ async function sendMsg(){
       // session bookkeeping here so sidebar stays consistent.
       // Backend already set the RAKE title on first message.
       await loadSessions(false);
+      setTimeout(async()=>{
+        await loadSessions(false);
+        const s=sessionList.find(x=>x.session_id===sid);
+        if(s && currentSid===sid) document.getElementById('sess-title').textContent=sessName(s);
+      }, 5500);
     }
     if(currentSid === sid){
       // Stream finished: drop the caret, keep final markdown render
