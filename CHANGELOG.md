@@ -4,6 +4,14 @@ All notable changes to piSynapse will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed (hardening, 17 fixes — parallel audit, no false positives, each 1 commit + 365 passed)
+- **Security:** HEAD/OPTIONS auth bypass (`main.py:383`), Body-Size `Content-Length` missing bypass (`main.py:425` → 411), stored XSS `onclick` (`static/index.html:2940,2289` → data-* delegation), API key URL leak `/debug?k=` (`main.py:389` → body `_k`).
+- **Logic:** duplicate-create race `llm/chat.py:280` per-call + cap 1, hallucinated tool `allowed_names` (`llm/chat.py:280`), `title.py:147` Ollama crash + hardcoded model, `retrieval.py:17` threshold/window, prompt injection `prompt.py:184` delimiters + Rule 15.
+- **Consistency:** upload 4MB→100MB (`main.py:425`), trusted host empty bypass (`main.py:366`), `/sync` session_id validator (`routers/chat.py:547`), LIKE `safe_q` escape (`db.py:798`), `UI_LANGUAGE` sync (`config.py:374`), `.env` TOCTOU lock (`routers/config.py:148`).
+- **Robustness/a11y:** calendar cache lock (`calendar_ops.py:22`), payload orphan trailing `tool_calls` (`llm/payload.py:184`), theme-swatch `role=button` + search/msg `aria-label` + modal `Esc` (`static/index.html:1563`).
+
 ## [1.7.0] - 2026-08-27
 
 This cycle ships session UX (titles, retry, search) and hardens cross-cutting concerns:

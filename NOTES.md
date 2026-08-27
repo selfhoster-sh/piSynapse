@@ -17,6 +17,40 @@
 - Currency rule: before relying on a statement in this file, verify it against the code. Found-stale statements get struck through with a dated reason (invalid/unnecessary/done/fixed) — never silently deleted.
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 
+## 2026-08-28 (26) — Hardening v1.7.1 (17 fixes, parallel audit)
+
+**Parallel audit (2 agents + manual, very thorough, no false positives):** backend (`main.py`, `config.py`, `db.py`, `routers/*`), LLM/tools (`llm/*`, `tools/*`, `prompt.py`, `retrieval.py`), frontend (`static/index.html`, `sw.js`). Findings: 11 backend (2 high, 5 medium, 4 low), 7 LLM (5 high), 2 critical XSS frontend + 2 high API-key. All verified file:line.
+
+**Fixes (each: sorgula → why before? → negative? → efficient? → quality? → 1 commit + py_compile + pytest 365 passed + ruff):**
+
+*F1 Critical Security (4):*
+- `main.py:383` HEAD/OPTIONS bypass → only `OPTIONS + Access-Control-Request-Method` exempt (`3d47e10`).
+- `main.py:425` Body-Size `if cl:` → `if cl is None: 411` (was 50MB DoS via omitted Content-Length) (`3b36692`).
+- `static/index.html:2940,2289` stored XSS `onclick='${esc()}'` → `data-*` + delegation (`ab7a42e`, `SW v33`).
+- `main.py:389` + `static/index.html:1148` `/debug?k=` URL leak → `sendBeacon` body `_k` + header/body/query check + pop before log (`5c2051f`, `SW v34`).
+
+*F2 High Logic (5):*
+- `llm/chat.py:280` duplicate-create race per-call + `create` cap 1 (was post-loop, 2nd identical bypass) (`6eca083`).
+- `llm/chat.py:280` hallucinated tool `allowed_names` (parity `stream.py:619`) (`8f90cc2`).
+- `title.py:147` Ollama `use_tools` TypeError → `intent="question"` + `LLM_MODEL` dynamic (`7122bb2`).
+- `retrieval.py:17` `SIM 0.20→0.35`, `RECENT 8→6`, `TOP_K 6→4`, `ORDER BY timestamp→id` (`9201718`).
+- `prompt.py:184` untrusted email delimiters + Rule 15 (`67f38fc`).
+
+*F3 Medium (6):*
+- `main.py:425` `_large_body_paths` add `/chat/upload` (4MB→100MB) (`7ce986e`).
+- `main.py:366` `if host and ...` → `if not host or ...` (empty Host bypass) (`df2c233`).
+- `routers/chat.py:547` `/sync` `SyncCommand.session_id` `field_validator` (`0aa4fb7`).
+- `db.py:798` LIKE `f"%{query}%"` → `safe_q` + `ESCAPE '\'` (`16e65d8`).
+- `config.py:374` `sync_config` add `UI_LANGUAGE` (`62c5586`).
+- `routers/config.py:148` `.env` TOCTOU read-before-lock → read inside `LOCK_EX` (`2b6a3b5`).
+
+*F4 Medium/Low (3):*
+- `calendar_ops.py:22` `_cache_lock` for `_today_cache`/`_find_events_cache` (`aeef292`).
+- `llm/payload.py:184` trailing orphan `assistant tool_calls` drop (`fe0994b`).
+- `static/index.html:1563` `theme-swatch` `role=button`, `sess-search`/`msg-input` `aria-label`, modal `Esc` handler (`fe0994b`, `SW v35`).
+
+**Plan discipline:** 4 faz, 17 adım, her adım sorgulamalı, düşük dahil pas geçmeden, `TODO` ile tek tek, `git log` 17 commit.
+
 ## 2026-08-27 (25) — Hybrid search (FTS5 + semantic) + offline + search UI
 
 **Hybrid search — future-proof (write-time embed, 90ms query):**
