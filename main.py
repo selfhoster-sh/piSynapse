@@ -382,8 +382,8 @@ async def security_middleware(request: Request, call_next):
     # --- Skip auth for exempt paths ---
     is_exempt = path == "/health" or path == "/" or path == "/favicon.ico" or path == "/sw.js" or path.startswith("/static")
 
-    # --- Skip auth for CORS preflight (HEAD/OPTIONS never carry API key) ---
-    if request.method in ("HEAD", "OPTIONS"):
+    # --- Skip auth for CORS preflight (only OPTIONS with Access-Control-Request-Method) ---
+    if request.method == "OPTIONS" and "access-control-request-method" in request.headers:
         is_exempt = True
 
     # --- Debug beacon: navigator.sendBeacon cannot set headers, so it
