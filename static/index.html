@@ -3451,7 +3451,7 @@ document.addEventListener('touchstart', e => {
   _swipeStartX = touch.clientX;
   _swipeStartY = touch.clientY;
   _swipeOnThink = !!(e.target && e.target.closest && e.target.closest('#think-popover'));
-  _swipeInScrollable = !!(e.target && e.target.closest && e.target.closest('.code-wrapper,pre,.bubble,textarea,#msg-input,.sess-list,.chip-track,.w-chip,table'));
+  _swipeInScrollable = !!(e.target && e.target.closest && e.target.closest('.code-wrapper,pre,table,.chip-track,.w-chip,textarea,#msg-input,.sess-list'));
 }, {passive: true});
 document.addEventListener('touchend', _resetSwipe, {passive: true});
 document.addEventListener('touchcancel', _resetSwipe, {passive: true});
