@@ -145,25 +145,23 @@ async def update_settings(body: SettingsUpdate):
     for key, value in validated.items():
         os.environ[key] = value
 
-    # Read .env, modify, then write back
-    lines = ENV_PATH.read_text(encoding="utf-8").splitlines()
-    for key, value in validated.items():
-        found = False
-        for i, line in enumerate(lines):
-            stripped = line.strip()
-            if stripped.startswith(f"{key}=") or stripped.startswith(f"{key} ="):
-                lines[i] = f"{key}={value}"
-                found = True
-                break
-        if not found:
-            lines.append(f"{key}={value}")
-
-    new_content = "\n".join(lines) + "\n"
-
     if _HAS_FCNTL:
         with open(ENV_PATH, "r+", encoding="utf-8") as f:
             fcntl.flock(f, fcntl.LOCK_EX)
             try:
+                # Read inside lock to prevent TOCTOU (lost-update)
+                lines = f.read().splitlines()
+                for key, value in validated.items():
+                    found = False
+                    for i, line in enumerate(lines):
+                        stripped = line.strip()
+                        if stripped.startswith(f"{key}=") or stripped.startswith(f"{key} ="):
+                            lines[i] = f"{key}={value}"
+                            found = True
+                            break
+                    if not found:
+                        lines.append(f"{key}={value}")
+                new_content = "\n".join(lines) + "\n"
                 f.seek(0)
                 f.truncate()
                 f.write(new_content)
@@ -171,6 +169,18 @@ async def update_settings(body: SettingsUpdate):
                 fcntl.flock(f, fcntl.LOCK_UN)
     else:
         logger.warning("fcntl not available (Windows?) — .env writes are not file-locked")
+        lines = ENV_PATH.read_text(encoding="utf-8").splitlines()
+        for key, value in validated.items():
+            found = False
+            for i, line in enumerate(lines):
+                stripped = line.strip()
+                if stripped.startswith(f"{key}=") or stripped.startswith(f"{key} ="):
+                    lines[i] = f"{key}={value}"
+                    found = True
+                    break
+            if not found:
+                lines.append(f"{key}={value}")
+        new_content = "\n".join(lines) + "\n"
         ENV_PATH.write_text(new_content, encoding="utf-8")
 
     # Sync numeric config values into running process (avoids restart)
