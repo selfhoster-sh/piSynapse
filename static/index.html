@@ -3302,7 +3302,7 @@ function _debounceSearch(q){
     const qq=q.toLowerCase().trim();
     try{
       const h={}; const k=getApiKey(); if(k) h['X-API-Key']=k;
-      const r=await fetch(API+'/search?q='+encodeURIComponent(q),{headers:h});
+      const r=await fetch(API+'/chat/search?q='+encodeURIComponent(q),{headers:h});
       if(!r.ok) throw new Error('search failed');
       const d=await r.json();
       if(!d.results||!d.results.length){
