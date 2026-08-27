@@ -994,7 +994,7 @@ body.glass-mode ::selection{background:color-mix(in srgb, var(--accent) 35%, tra
     </div>
     <div class="sb-search" id="sb-search">
       <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-      <input type="text" id="sess-search" placeholder="Ara..." oninput="filterSessions(this.value)">
+      <input type="text" id="sess-search" placeholder="Ara..." aria-label="Ara" oninput="filterSessions(this.value)">
     </div>
     <div id="session-list"></div>
 
@@ -1069,7 +1069,7 @@ body.glass-mode ::selection{background:color-mix(in srgb, var(--accent) 35%, tra
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
       </button>
       </div>
-      <textarea id="msg-input" rows="1"></textarea>
+      <textarea id="msg-input" rows="1" aria-label="Mesaj"></textarea>
       <div class="input-right">
       <button class="inline-think-btn" id="mic-btn" onclick="toggleVoice()" title="Voice input">
         <svg id="mic-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="22"></line></svg>
@@ -1561,8 +1561,8 @@ function renderThemeGrid(){
   const grid = document.getElementById('theme-grid');
   if(!grid) return;
   grid.innerHTML = THEMES.map(th =>
-    `<div class="theme-swatch${theme===th.id?' active':''}" data-theme="${th.id}"
-          style="color:${th.color}" onclick="applyTheme('${th.id}')" title="${th.label[lang]||th.id}"></div>`
+    `<div class="theme-swatch${theme===th.id?' active':''}" role="button" tabindex="0" data-theme="${th.id}"
+          style="color:${th.color}" onclick="applyTheme('${th.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();applyTheme('${th.id}')}" title="${th.label[lang]||th.id}" aria-label="${th.label[lang]||th.id}"></div>`
   ).join('');
 }
 
@@ -3145,6 +3145,14 @@ function toggleSettingInfo(key){
 }
 
 function closeSettings(){ document.getElementById('settings-modal').classList.remove('open'); }
+document.addEventListener('keydown', (e)=>{
+  if(e.key==='Escape'){
+    const cm=document.getElementById('confirm-modal');
+    if(cm&&cm.classList.contains('open')){ cancelAction(); return; }
+    const sm=document.getElementById('settings-modal');
+    if(sm&&sm.classList.contains('open')) closeSettings();
+  }
+});
 
 async function saveSettings(){
   const values = {};
