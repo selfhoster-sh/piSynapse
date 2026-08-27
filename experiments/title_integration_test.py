@@ -11,8 +11,6 @@ Tests the FULL piSynapse flow via real API:
 Uses real litert:9379 endpoint.
 """
 
-import asyncio
-import json
 import re
 import time
 

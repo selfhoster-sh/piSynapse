@@ -1,6 +1,7 @@
 """Tests for hybrid title generation: RAKE instant + LLM enriched."""
 
 import pytest
+
 from title import generate_rake_title
 
 
@@ -105,9 +106,10 @@ class TestLLMTitle:
     @pytest.mark.asyncio
     async def test_llm_failure_returns_none(self):
         """LLM failure must return None, never raise."""
-        from title import generate_llm_title
         # Force failure by patching httpx (title.py now uses httpx, not requests)
         import unittest.mock as mock
+
+        from title import generate_llm_title
         mock_client = mock.AsyncMock()
         mock_client.__aenter__.return_value.post = mock.AsyncMock(side_effect=ConnectionError("no server"))
         with mock.patch("httpx.AsyncClient", return_value=mock_client):
