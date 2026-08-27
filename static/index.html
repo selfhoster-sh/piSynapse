@@ -134,8 +134,9 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 .sess-item{position:relative;flex-wrap:wrap}
 .sess-del{position:absolute;right:8px;top:50%;transform:translateY(-50%);
   opacity:0;pointer-events:none;background:none;border:none;color:var(--text3);
-  cursor:pointer;padding:4px;border-radius:4px;line-height:1;transition:opacity .15s,color .15s}
+  cursor:pointer;padding:4px;border-radius:4px;line-height:1;transition:opacity .15s,color .15s,background .15s,transform .15s}
 @media (hover:hover){
+.sess-item:hover:not(:focus){background:var(--surface3);border-color:rgba(255,255,255,.05)}
 .sess-item:hover:not(:focus) .sess-time{opacity:0}
 .sess-item:hover .sess-del{opacity:1;pointer-events:auto}
 .sess-del:hover:not(:focus){color:var(--danger);background:rgba(224,85,85,.1)}}
@@ -3390,7 +3391,8 @@ function toggleSearch(){
   else {
     if(inp){ inp.value=''; inp.blur(); }
     clearTimeout(_searchTimer);
-    _searchQuery=''; renderSessions(sessionList, false);
+    _searchQuery='';
+    requestAnimationFrame(()=> renderSessions(sessionList, false));
   }
 }
 
