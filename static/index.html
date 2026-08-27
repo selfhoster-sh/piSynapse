@@ -2285,6 +2285,14 @@ function reenterKey(){
 }
 
 function sessName(s){ return s.name || (t('chatPrefix')+' '+s.session_id.slice(-6)); }
+function generateRakeTitleJS(text){
+  const clean=text.trim();
+  if(!clean) return "Yeni Sohbet";
+  const words=clean.split(/\s+/);
+  let first4=words.slice(0,4).join(' ');
+  if(first4.length>40) first4=first4.slice(0,40).split(' ').slice(0,-1).join(' ')+'...';
+  return first4;
+}
 
 function renderSessions(list, animate=true){
   const el=document.getElementById('session-list');
@@ -2435,6 +2443,14 @@ async function sendMsg(){
   const images=pendingImages.map(i=>i.base64);
   if(!text && !images.length) return; if(!currentSid) currentSid=newSid();
   const sid = currentSid;
+  // Optimistic RAKE title: show in sidebar instantly, before model responds
+  if(!sessionList.find(s=>s.session_id===sid)){
+    const rakeTitle=generateRakeTitleJS(text);
+    const newSess={session_id:sid, name:rakeTitle, last_active:new Date().toISOString(), message_count:1};
+    sessionList.unshift(newSess);
+    renderSessions(sessionList);
+    document.getElementById('sess-title').textContent=rakeTitle;
+  }
   _pendingStream = { sid };
   el.value=''; el.style.height='auto'; pendingImages=[]; renderImagePreview();
   addMsg('user',text,true,null,images); showTyping(); setLoading(true);
@@ -2482,15 +2498,17 @@ async function sendMsg(){
             if(bubble) bubble.textContent='\u26A0\uFE0F '+t('emptyReply'); else addMsg('assistant','\u26A0\uFE0F '+t('emptyReply'));
           }
           terminated=true;
-          // Title is set by backend (RAKE instant + LLM enriched background).
+          // Title is set by backend (first 4 words instant + LLM enriched background if enabled).
           // Frontend must NOT call PATCH to override it.
           await loadSessions(false);
-          // Enriched title arrives ~4-5s later via background LLM — refresh again
-          setTimeout(async()=>{
-            await loadSessions(false);
-            const s=sessionList.find(x=>x.session_id===sid);
-            if(s && currentSid===sid) document.getElementById('sess-title').textContent=sessName(s);
-          }, 5500);
+          // Enriched title arrives ~4-5s later via background LLM — refresh again if smart title on
+          if(config.llm_title_enrichment !== 'off'){
+            setTimeout(async()=>{
+              await loadSessions(false);
+              const s=sessionList.find(x=>x.session_id===sid);
+              if(s && currentSid===sid) document.getElementById('sess-title').textContent=sessName(s);
+            }, 5500);
+          }
           // Don't reload the session — the stream bubble already has the full text.
           // Reloading calls clearMsgs()+DOM rebuild, which causes a visible flash.
           // If the user navigated away during streaming, loadSessions() updates the sidebar.
@@ -2543,13 +2561,15 @@ async function sendMsg(){
     if(userAborted && currentSid === sid){
       // Abort closes the SSE without a done event — do the light
       // session bookkeeping here so sidebar stays consistent.
-      // Backend already set the RAKE title on first message.
+      // Backend already set the first-4-words title on first message.
       await loadSessions(false);
-      setTimeout(async()=>{
-        await loadSessions(false);
-        const s=sessionList.find(x=>x.session_id===sid);
-        if(s && currentSid===sid) document.getElementById('sess-title').textContent=sessName(s);
-      }, 5500);
+      if(config.llm_title_enrichment !== 'off'){
+        setTimeout(async()=>{
+          await loadSessions(false);
+          const s=sessionList.find(x=>x.session_id===sid);
+          if(s && currentSid===sid) document.getElementById('sess-title').textContent=sessName(s);
+        }, 5500);
+      }
     }
     if(currentSid === sid){
       // Stream finished: drop the caret, keep final markdown render

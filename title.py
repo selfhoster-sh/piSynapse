@@ -1,94 +1,28 @@
-"""Hybrid session title generation: RAKE (instant) + LLM (enriched).
+"""Session title generation: first 4 words (instant) + LLM (enriched).
 
-Layer 1 — RAKE: Generates a title from the first user message in <1ms.
-           Used as the instant sidebar label when the session is created.
-
-Layer 2 — LLM: Generates an enriched title from the full conversation
-           (user + assistant) in the background after the first reply.
-           Replaces the RAKE title with a higher-quality one.
-
-No external dependencies. Zero RAM overhead for RAKE.
-LLM call runs as a background task — never blocks the chat response.
+Layer 1 — First 4 words: instant sidebar title from the first user message.
+Layer 2 — LLM: 2-5 word enriched title from full conversation (background).
 """
 
 import re
 
-# ═══════════════════════════════════════════════════════════════
-# Stop Words (Turkish + English + common chat filler)
-# ═══════════════════════════════════════════════════════════════
 
-_STOP_WORDS = frozenset({
-    # Turkish
-    "bir", "ve", "bu", "da", "de", "ile", "için", "mı", "mi", "mu", "mü",
-    "ne", "nasıl", "var", "yok", "olan", "gibi", "daha", "çok", "az",
-    "ben", "sen", "biz", "siz", "onlar", "o", "şu", "her", "hiç",
-    "ama", "fakat", "çünkü", "eğer", "ki", "bile", "sadece", "yalnız",
-    "hem", "ya", "veya", "ise", "sonra", "önce", "arasında",
-    "bana", "sana", "onu", "bunu", "şunu", "bize", "size", "onlara",
-    "gönder", "söyle", "ver", "et", "yap", "yapmak", "etmek", "olmak",
-    "lütfen", "şimdi", "olur", "olsun", "olarak", "göster", "bul",
-    # English
-    "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
-    "have", "has", "had", "do", "does", "did", "will", "would", "could",
-    "should", "can", "may", "might", "shall", "need", "dare", "ought",
-    "i", "you", "he", "she", "it", "we", "they", "me", "him", "her",
-    "us", "them", "my", "your", "his", "its", "our", "their",
-    "this", "that", "these", "those", "what", "which", "who", "whom",
-    "in", "on", "at", "to", "for", "of", "with", "by", "from", "as",
-    "into", "about", "between", "through", "after", "before", "above",
-    "over", "under", "up", "down", "out", "off", "not", "no", "nor",
-    "but", "or", "and", "if", "then", "than", "so", "very", "just",
-    "also", "too", "more", "most", "some", "any", "how", "when",
-    "where", "why", "all", "each", "every", "both", "few", "many",
-    "much", "own", "same", "other", "such", "please", "check",
-    "create", "explain", "get", "show", "write", "give", "tell", "use",
-    "could", "please", "thanks", "thank",
-})
-
-
-def generate_rake_title(text: str, max_words: int = 5) -> str:
-    """Extract a session title from user input using RAKE.
-
-    - Strips emails, URLs, special characters
-    - Splits on stop words to find candidate phrases
-    - Returns the longest/most meaningful phrase
-    - < 1ms execution time, zero dependencies
-    """
-    # Sanitize: strip emails, URLs
-    clean = re.sub(r'\S+@\S+\.\S+', '', text)
-    clean = re.sub(r'https?://\S+', '', clean)
-    clean = re.sub(r'[^\w\s]', ' ', clean)
-    clean = clean.strip()
+def generate_title_first4(text: str) -> str:
+    """First 4 words of user message as instant title. No language list."""
+    clean = text.strip()
     if not clean:
-        return text[:40] + ('\u2026' if len(text) > 40 else '')
+        return "Yeni Sohbet"
+    # Split on whitespace, take first 4, strip trailing punctuation
+    words = clean.split()
+    first4 = " ".join(words[:4])
+    # Truncate to 40 chars max to avoid overflow, add ellipsis if needed
+    if len(first4) > 40:
+        first4 = first4[:40].rsplit(" ", 1)[0] + "…"
+    return first4
 
-    words = re.findall(r'\w+', clean.lower())
-    phrases: list[list[str]] = []
-    current: list[str] = []
-    for w in words:
-        if w in _STOP_WORDS or len(w) < 2 or w.isdigit():
-            if current:
-                phrases.append(current)
-                current = []
-        else:
-            current.append(w)
-    if current:
-        phrases.append(current)
-
-    if not phrases:
-        fallback = [w for w in words if w not in _STOP_WORDS and not w.isdigit()]
-        if fallback:
-            return ' '.join(fallback[:max_words]).title()
-        return text[:40] + ('\u2026' if len(text) > 40 else '')
-
-    best = max(phrases, key=lambda p: (len(p), sum(len(w) for w in p)))
-    phrase_str = ' '.join(best[:max_words])
-
-    # Restore original casing if possible
-    match = re.search(re.escape(phrase_str), clean, re.IGNORECASE)
-    if match:
-        return match.group(0).strip().title()
-    return phrase_str.title()
+# Keep alias for backward compat (db.py still imports this name)
+def generate_rake_title(text: str, max_words: int = 5) -> str:  # noqa: D401
+    return generate_title_first4(text)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -158,8 +92,9 @@ async def generate_llm_title(user_msg: str, assistant_msg: str) -> str | None:
         title = raw.strip('"\'')
         title = re.sub(r'^Title:\s*', '', title, flags=re.IGNORECASE)
         title = title.strip('.').strip()
-        # Sanity: must be non-empty and reasonable length
-        if title and 2 <= len(title) <= 60:
+        # Sanity: 2-5 words, 2-60 chars
+        words = title.split()
+        if title and 2 <= len(words) <= 5 and 2 <= len(title) <= 60:
             return title
         return None
     except Exception:
