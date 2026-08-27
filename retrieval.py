@@ -14,9 +14,9 @@ from config import get
 
 logger = logging.getLogger("piSynapse")
 
-RECENT_WINDOW = 8      # last N messages kept verbatim
-TOP_K = 6              # most relevant older messages to retain
-SIM_THRESHOLD = 0.20   # ignore older messages below this similarity
+RECENT_WINDOW = 6      # last N messages kept verbatim (was 8, left only 4 candidates with HISTORY_LIMIT 12)
+TOP_K = 4              # most relevant older messages to retain (was 6, never filled)
+SIM_THRESHOLD = 0.35   # ignore older messages below this (was 0.20, too loose; 0.35 matches memories)
 TIME_BUDGET_MS = 1500  # hard budget for the whole retrieval (wall clock)
 
 
@@ -47,7 +47,7 @@ async def _fetch_candidates(session_id: str, recent_window: int = RECENT_WINDOW)
     db = await get_db()
     async with db.execute(
         """SELECT role, content, timestamp FROM conversations
-           WHERE session_id = ? ORDER BY timestamp DESC LIMIT ? OFFSET ?""",
+           WHERE session_id = ? ORDER BY id DESC LIMIT ? OFFSET ?""",
         (session_id, limit, recent_window),
     ) as cur:
         rows = await cur.fetchall()
