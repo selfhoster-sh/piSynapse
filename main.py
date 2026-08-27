@@ -428,20 +428,21 @@ async def security_middleware(request: Request, call_next):
         if "chunked" in te.lower():
             return JSONResponse(status_code=413, content={"detail": "Chunked transfer encoding not allowed"})
         cl = request.headers.get("content-length")
-        if cl:
-            try:
-                body_size = int(cl)
-            except (ValueError, TypeError):
-                return JSONResponse(status_code=400, content={"detail": "Invalid Content-Length header"})
-            if is_debug:
-                limit = _DEBUG_MAX_BODY_BYTES
-            elif request.url.path in _large_body_paths:
-                limit = MEDIA_MAX_MB * 1024 * 1024
-            else:
-                limit = _MAX_BODY_BYTES
-            limit_str = f"{limit // (1024 * 1024)} MB" if limit >= 1024 * 1024 else f"{limit // 1024} KB"
-            if body_size > limit:
-                return JSONResponse(status_code=413, content={"detail": f"Request body too large (max {limit_str})"})
+        if cl is None:
+            return JSONResponse(status_code=411, content={"detail": "Content-Length required"})
+        try:
+            body_size = int(cl)
+        except (ValueError, TypeError):
+            return JSONResponse(status_code=400, content={"detail": "Invalid Content-Length header"})
+        if is_debug:
+            limit = _DEBUG_MAX_BODY_BYTES
+        elif request.url.path in _large_body_paths:
+            limit = MEDIA_MAX_MB * 1024 * 1024
+        else:
+            limit = _MAX_BODY_BYTES
+        limit_str = f"{limit // (1024 * 1024)} MB" if limit >= 1024 * 1024 else f"{limit // 1024} KB"
+        if body_size > limit:
+            return JSONResponse(status_code=413, content={"detail": f"Request body too large (max {limit_str})"})
 
     response = await call_next(request)
     if client_ip:
