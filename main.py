@@ -364,7 +364,7 @@ async def trusted_host_middleware(request: Request, call_next):
     # Unset → auto-allow this machine's local names/IPs (safe default).
     allowed = _LOCAL_TRUSTED_HOSTS if not TRUSTED_HOSTS else {h.lower() for h in TRUSTED_HOSTS}
     host = request.headers.get("host", "").split(":")[0].lower()
-    if host and host not in allowed:
+    if not host or host not in allowed:
         return JSONResponse(status_code=403, content={"detail": "Invalid Host header"})
     return await call_next(request)
 
