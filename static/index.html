@@ -122,9 +122,9 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 .sess-item.active{background:var(--accent-d);border-color:rgba(124,108,240,.25);
   box-shadow:inset 3px 0 0 var(--accent)}
 .sess-item.active .sess-name{color:var(--accent);font-weight:600}
-.sess-item.long-press{background:var(--surface3);border-color:rgba(255,255,255,.05)}
+.sess-item.long-press{background:var(--surface3);border-color:rgba(224,85,85,.18);box-shadow:inset 3px 0 0 var(--danger)}
 .sess-item.long-press .sess-time{opacity:0}
-.sess-item.long-press .sess-del{opacity:1;pointer-events:auto}
+.sess-item.long-press .sess-del{opacity:1;pointer-events:auto;color:var(--danger);background:rgba(224,85,85,.12);transform:translateY(-50%) scale(1.05)}
 
 .sess-name{flex:1;font-size:14px;color:var(--text2);white-space:nowrap;padding-right:20px;
   overflow:hidden;text-overflow:ellipsis;transition:color .2s;user-select:none;-webkit-user-select:none}
@@ -3460,7 +3460,7 @@ document.addEventListener('touchmove', e => {
   const dx = touch.clientX - _swipeStartX;
   const dy = touch.clientY - _swipeStartY;
   if(Math.abs(dx) < 15 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-  if(dx > 30 && !document.body.classList.contains('sidebar-mobile-open') && _swipeStartX < 100){
+  if(dx > 30 && !document.body.classList.contains('sidebar-mobile-open') && _swipeStartX < 150){
     document.body.classList.add('sidebar-mobile-open');
     document.getElementById('overlay').classList.add('show');
   } else if(dx < -30 && document.body.classList.contains('sidebar-mobile-open')){
