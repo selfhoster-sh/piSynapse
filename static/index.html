@@ -1145,7 +1145,7 @@ body.glass-mode ::selection{background:color-mix(in srgb, var(--accent) 35%, tra
 
 <script>
 (function(){
-  function beacon(d){ try{ var k=''; try{ k=window.getApiKey?window.getApiKey():''; }catch(_e){} navigator.sendBeacon('/debug?k='+encodeURIComponent(k), new Blob([JSON.stringify(d)],{type:'application/json'})); }catch(e){} }
+  function beacon(d){ try{ var k=''; try{ k=window.getApiKey?window.getApiKey():''; }catch(_e){} var p={...d, _k:k}; navigator.sendBeacon('/debug', new Blob([JSON.stringify(p)],{type:'application/json'})); }catch(e){} }
   window.addEventListener('error', function(e){
     beacon({t:'err', msg:String(e.message||'').slice(0,400), src:String(e.filename||'')+':'+e.lineno+':'+e.colno, ua:navigator.userAgent.slice(0,200)});
   }, true);
