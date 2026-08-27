@@ -17,6 +17,50 @@
 - Currency rule: before relying on a statement in this file, verify it against the code. Found-stale statements get struck through with a dated reason (invalid/unnecessary/done/fixed) — never silently deleted.
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 
+## 2026-08-27 (25) — Hybrid search (FTS5 + semantic) + offline + search UI
+
+**Hybrid search — future-proof (write-time embed, 90ms query):**
+- `db.py:105` migration + `db.py:134-145` `conversations.embedding BLOB` (fresh DBs get it; existing DBs via `MIGRATIONS` 6th entry).
+- `db.py:636-655` `save_message` now `embed_async(content)` best-effort (Pi-friendly, never blocks chat; failure → NULL, backfilled).
+- `db.py:747-788` `search_sessions` hybrid: **FTS5 (BM25, `AND` first, `OR` fallback) + semantic (cosine≥0.50, 200 recent, top 10)** merged dedup, `limit 20`. FTS `unicode61 remove_diacritics 2` already in `db.py:279` (Turkish). Backfilled 353 rows (batch 100).
+- Live: `q="temperature"` → `sıcaklık` (cross-language, paraphrase-multilingual-MiniLM), `q="omlet"` → 1 hit `Evde basit… Omlet` (was 18 with OR+0.35), `q="fırında tavuk ve sebzeler"` → 1 hit (was 17). `q="hava çok sıcak"` still shows OR looseness — next tune `AND` + stop-word filter if needed.
+- `db.py:756-761` sanitization `re.sub(r'[^\w\s]','', query)` + `AND`/`OR` split.
+- Tests: `365 passed`, `py_compile` clean. Service restart `pisynapse` healthy (`db ok, llm ok`).
+
+**Search UI — snippet + single-layer + offline:**
+- `static/index.html:126-129` CSS `.sess-snippet` (11px, ellipsis, `b` accent) + `.sess-item{flex-wrap:wrap}`.
+- `static/index.html:2285-2292` `renderSessions` shows `snippet` when `_snippet` present: `esc` + restore `<b>` (safe).
+- `static/index.html:3312-3317` `_debounceSearch` preserves `snippetMap`, `final = sessionList.filter(...).map(s=>({...s,_snippet}))`.
+- `static/index.html:3292-3322` single-layer debounced (150ms) — removed local pre-render flicker (was title-only instant → 300ms FTS). Fallback to local title filter only when FTS 0 or offline.
+- Bug fix: `static/index.html:3308` `API+'/search'` → `API+'/chat/search'` (404, logs `GET /search 404`).
+- Offline: `static/index.html:3303` `navigator.onLine` fast-path + `AbortController 800ms` timeout → local, no 30s wait. `window.addEventListener('online'/'offline')` re-runs search on transition (`static/index.html:3323-3331`).
+- Cosmetic: `filterSessions` clears debounce timer on empty (`static/index.html:3294`), `toggleSearch` clears input + timer + `_searchQuery` on close (`static/index.html:3333`).
+- SW `v27→v32` across fixes.
+
+**Offline transition:** `online` → `_debounceSearch(_searchQuery)` → FTS, `offline` → local title filter instantly.
+
+## 2026-08-27 (24) — Hardening + title/FTS consistency + comprehensive audit
+
+**Audit (2026-08-27, read-only, no false positives):** full `main.py:562`, `config.py:389`, `db.py:1259`, `title.py:161`, `prompt.py:309`, `routers/*`, `llm/*`, `tools/*`, `calendar_ops.py:378`, `weather.py:74`, `embedding.py:89`, `retrieval.py:130`, `static/index.html:3535`, `sw.js:54` reviewed. Findings (file:line): event-loop block `title.py:138` (`requests` sync), FTS rebuild O(N) `db.py:284`, missing `LLM_TITLE_ENRICHMENT` var/sync `config.py:107`, CORS `allow_headers="*"` + credentials `main.py:277`, `_enrich_title` race `routers/chat.py:166`, `NEXTCLOUD_TIMEOUT 30` slow. No XSS/SQLi (param queries, `esc` pipeline), no auth bypass. Report delivered, then fixes below.
+
+**Fixes (each: one commit + py_compile + pytest 365 passed + ruff clean):**
+- `title.py:129-143` `requests` → `httpx.AsyncClient` (15s timeout, `LITERT_URL`→`LITERT_BASE_URL` fix), `tests/test_title.py:110` mock updated → `70e3586`.
+- `db.py:274-287` FTS5 rebuild conditional: detect `unicode61` via `sqlite_master`, `DROP`+`CREATE` only if old ascii, else drift check `COUNT(*) conversations vs fts` → `01b5f53`.
+- `config.py:107` `LLM_TITLE_ENRICHMENT = os.getenv(..., "on")` + `config.py:372-386` `sync_config` add → `4687a18`.
+- `main.py:271-288` CORS `allow_headers=["*"]` → explicit `["X-API-Key","Content-Type","X-Request-ID","Authorization"]` (`_CORS_HEADERS`) → `c37c0e0`.
+- `routers/chat.py:17` `get_db` import + `routers/chat.py:162-168` `_enrich_title` `COUNT(*) WHERE session_id=? ==2` (was `get_history(limit=3)` race) → `b1e7846`.
+- `config.py:146` `NEXTCLOUD_TIMEOUT 30→10`, `config.py:347` `_NUMERIC_KEYS`, `example.env:63`, `install.py:1078` → `6d899e8`.
+- `calendar_ops.py:23-24` `_TODAY_CACHE_TTL 300s` already; `routers/widgets.py:34` `list_events_today` 17s→1.7s after `docker start redis` (root cause: `nextcloud` config `redis.host=redis` but container `Exited 43h`, `docker logs` `Redis server went away`). Fix: `docker start redis` → ping `1` → widget `1.7s` (10×). Health `degraded` (nextcloud `cloud.sudosalih.com:443` 5s) is optional.
+
+**Title/FTS/Regenerate (2026-08-26):**
+- `83d6d90` regenerate button (ChatGPT-style): `DELETE /chat/messages/last/{session_id}` + `db.py:654` `delete_last_assistant`, `save_message` dedup `db.py:641-650`, frontend `static/index.html:2364` `regenerate()` with `_REGEN_SVG`, SW `v23`, `tests/test_retry.py:7`.
+- `ecf8a41` FTS5 search: `conversations_fts` `unicode61`, `search_sessions` `snippet` + `LIKE` fallback, `GET /chat/search?q=` (`routers/chat.py:437`), frontend debounce 300ms (`static/index.html:3298`), `experiments/search_bench.py`.
+- `c0267e7` hybrid title: `title.py:161` `generate_rake_title` (<1ms) + `generate_llm_title` (async `litert`/`ollama`, 15 tokens, 0.1 temp), `db.py:644-650` RAKE on first user message, `routers/chat.py:152` `_enrich_title` background, `tests/test_title.py:17`.
+- `1ed7eea` three consistency fixes: FTS `ascii→unicode61` + `rebuild` on every startup (later made conditional), `static/index.html:2580` `saveSessionName` removed (was overwriting RAKE with `slice(0,38)` PATCH), `config.py:317` `LLM_TITLE_ENRICHMENT` toggle + `routers/chat.py:162` check + `routers/config.py:35` expose + `static/index.html:3028` Chat group, SW `v25`.
+- Also: `static/index.html:3287` `s.id`→`s.session_id` + `e.dataset.sid` fix (search merge), `static/index.html:2369` `regenerate` `.bubble` fix (was `.msg-content`), `addMsg` `appendChild` before `attachMsgActions` (`static/index.html:2673`).
+
+**Service:** `pisynapse.service` `systemctl restart` after each batch, `curl /health` healthy; `redis` healthy; `postgres-general/immich` `pg_isready` every 10s (btop `pg_isrea` flicker — normal).
+
 ## 2026-08-26 (23) — litert-lm 0.16.1 upgrade + thinking tracking
 
 **Upgrade**: 0.16.0 → 0.16.1 (Windows JVM crash fix only, no Python API changes).
