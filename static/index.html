@@ -2286,14 +2286,19 @@ function renderSessions(list, animate=true){
     const name=sessName(s), tm=relTime(s.last_active), act=s.session_id===currentSid?' active':'', sid=esc(s.session_id);
     const rawSnippet=s._snippet||s.snippet||"";
     const snippetHtml=rawSnippet?`<div class="sess-snippet">${esc(rawSnippet).replace(/&lt;b&gt;/g,'<b>').replace(/&lt;\/b&gt;/g,'</b>')}</div>`:"";
-    return `<div class="sess-item${act}" data-sid="${sid}" onclick="loadSession('${sid}')">
+    return `<div class="sess-item${act}" data-sid="${sid}">
       <div class="sess-name" title="${esc(name)}">${esc(name)}</div>
       <div class="sess-time">${tm}</div>
       ${snippetHtml}
-      <button class="sess-del" onclick="event.stopPropagation();triggerDelSession('${sid}')" title="${t('del')}">
+      <button class="sess-del" data-sid="${sid}" title="${t('del')}">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
       </button></div>`;
   }).join('');
+  el.querySelectorAll('.sess-item').forEach(item=>{
+    item.addEventListener('click', ()=> loadSession(item.dataset.sid));
+    const delBtn=item.querySelector('.sess-del');
+    if(delBtn) delBtn.addEventListener('click', (e)=>{ e.stopPropagation(); triggerDelSession(delBtn.dataset.sid); });
+  });
   if(animate) applyStagger();
 }
 
@@ -2937,8 +2942,11 @@ async function loadMem(){
     }
     list.innerHTML=mems.map(m=>{
       const cat=m.category||'general', mid=m.id || m.content, imp=m.importance||5;
-      return `<div class="mem-card" data-imp="${imp}"><div class="mem-cat cat-${esc(cat)}">${esc(cat)}</div><div class="mem-content">${esc(m.content)}</div><div class="mem-date">${relTime(m.created_at)} · importance: ${imp}</div><button class="mem-del-btn" onclick="triggerDelMemory('${esc(mid)}', '${esc(m.content)}')" title="${t('del')}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button></div>`;
+      return `<div class="mem-card" data-imp="${imp}"><div class="mem-cat cat-${esc(cat)}">${esc(cat)}</div><div class="mem-content">${esc(m.content)}</div><div class="mem-date">${relTime(m.created_at)} · importance: ${imp}</div><button class="mem-del-btn" data-mid="${esc(String(mid))}" data-content="${esc(m.content)}" title="${t('del')}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button></div>`;
     }).join('');
+    list.querySelectorAll('.mem-del-btn').forEach(btn=>{
+      btn.addEventListener('click', ()=> triggerDelMemory(btn.dataset.mid, btn.dataset.content));
+    });
   } catch{ list.innerHTML=`<div class="mem-empty">${t('connErr')}</div>`; }
 }
 function triggerDelMemory(id, content) { showConfirmModal({ tool: 'delete_memory', params: { id: id, content: content } }); }
