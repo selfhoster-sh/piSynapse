@@ -758,7 +758,11 @@ async def search_sessions(query: str, limit: int = 20) -> list[dict]:
     safe_q = _re.sub(r'[^\w\s]', '', query).strip()
     if not safe_q:
         return []
-    fts_query = " OR ".join(safe_q.split())
+    # FTS: try AND first (precise), fallback to OR if no hits
+    terms = safe_q.split()
+    fts_query_and = " AND ".join(terms)
+    fts_query_or = " OR ".join(terms)
+    rows: list = []
     try:
         async with db.execute("""
             SELECT f.session_id, s.name,
@@ -768,8 +772,20 @@ async def search_sessions(query: str, limit: int = 20) -> list[dict]:
             WHERE conversations_fts MATCH ?
             ORDER BY rank
             LIMIT ?
-        """, (fts_query, limit)) as cur:
+        """, (fts_query_and, limit)) as cur:
             rows = await cur.fetchall()
+        # If AND gave no results and query has multiple terms, try OR for recall
+        if not rows and len(terms) > 1:
+            async with db.execute("""
+                SELECT f.session_id, s.name,
+                       snippet(conversations_fts, 0, '<b>', '</b>', '…', 12) AS snippet
+                FROM conversations_fts f
+                LEFT JOIN sessions s ON s.id = f.session_id
+                WHERE conversations_fts MATCH ?
+                ORDER BY rank
+                LIMIT ?
+            """, (fts_query_or, limit)) as cur:
+                rows = await cur.fetchall()
     except Exception:
         # Fallback: LIKE on raw table
         async with db.execute("""
@@ -788,11 +804,11 @@ async def search_sessions(query: str, limit: int = 20) -> list[dict]:
             seen.add(r[0])
             results.append({"session_id": r[0], "name": r[1] or "", "snippet": r[2] or ""})
 
-    # Semantic supplement: finds meaning matches missed by FTS (e.g. synonyms,
-    # paraphrases, cross-language). Runs after FTS so keyword matches stay first.
-    # Limited to 200 recent messages to keep Pi CPU friendly; threshold 0.35
-    # mirrors memories (precision over recall). Budget is implicit via limit.
-    if len(results) < limit:
+    # Semantic supplement: only for multi-word queries and when FTS is sparse.
+    # Single-word exact matches are better served by FTS (semantic gives many
+    # false positives for short queries: "omlet" vs "teşekkürler" 0.637).
+    # Threshold 0.50 for higher precision (memories uses 0.35, but search needs stricter).
+    if len(results) < 5 and len(terms) > 1 and len(results) < limit:
         try:
             from embedding import cosine_similarity, embed_async
             query_emb = await embed_async(safe_q)
@@ -811,7 +827,7 @@ async def search_sessions(query: str, limit: int = 20) -> list[dict]:
                     sim = cosine_similarity(query_emb, blob)
                 except Exception:
                     continue
-                if sim >= 0.35:
+                if sim >= 0.50:
                     scored.append((sim, sess_id, name or "", content))
             scored.sort(key=lambda x: x[0], reverse=True)
             for sim, sess_id, name, content in scored[: limit - len(results)]:
