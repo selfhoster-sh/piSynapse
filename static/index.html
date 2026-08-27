@@ -2301,14 +2301,26 @@ function renderSessions(list, animate=true){
     let pressTimer=null;
     item.addEventListener('click', ()=>{
       if(item.classList.contains('long-press')){ item.classList.remove('long-press'); return; }
+      // Close any other long-press before opening new session
+      document.querySelectorAll('.sess-item.long-press').forEach(el=> el.classList.remove('long-press'));
       loadSession(item.dataset.sid);
     });
     const delBtn=item.querySelector('.sess-del');
     if(delBtn) delBtn.addEventListener('click', (e)=>{ e.stopPropagation(); item.classList.remove('long-press'); triggerDelSession(delBtn.dataset.sid); });
-    item.addEventListener('touchstart', ()=>{ clearTimeout(pressTimer); pressTimer=setTimeout(()=> item.classList.add('long-press'), 500); }, {passive:true});
+    item.addEventListener('touchstart', ()=>{
+      clearTimeout(pressTimer);
+      pressTimer=setTimeout(()=>{
+        document.querySelectorAll('.sess-item.long-press').forEach(el=>{ if(el!==item) el.classList.remove('long-press'); });
+        item.classList.add('long-press');
+      }, 350);
+    }, {passive:true});
     item.addEventListener('touchend', ()=> clearTimeout(pressTimer));
     item.addEventListener('touchmove', ()=> clearTimeout(pressTimer));
     item.addEventListener('touchcancel', ()=> clearTimeout(pressTimer));
+  });
+  // Tap outside list closes long-press
+  document.getElementById('session-list')?.addEventListener('click', (e)=>{
+    if(!e.target.closest('.sess-item')) document.querySelectorAll('.sess-item.long-press').forEach(el=> el.classList.remove('long-press'));
   });
   if(animate) applyStagger();
 }
@@ -3447,11 +3459,11 @@ document.addEventListener('touchmove', e => {
   const touch = e.touches[0];
   const dx = touch.clientX - _swipeStartX;
   const dy = touch.clientY - _swipeStartY;
-  if(Math.abs(dx) < 20 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-  if(dx > 40 && !document.body.classList.contains('sidebar-mobile-open') && _swipeStartX < 80){
+  if(Math.abs(dx) < 15 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+  if(dx > 30 && !document.body.classList.contains('sidebar-mobile-open') && _swipeStartX < 100){
     document.body.classList.add('sidebar-mobile-open');
     document.getElementById('overlay').classList.add('show');
-  } else if(dx < -40 && document.body.classList.contains('sidebar-mobile-open')){
+  } else if(dx < -30 && document.body.classList.contains('sidebar-mobile-open')){
     closeSidebar();
   }
 }, {passive: true});
