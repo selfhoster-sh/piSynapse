@@ -1,7 +1,10 @@
 # v1.7.2 — Tool-calling fine-tune (eval-driven)
 
-**Eval:** 24 realistic first-turn cases vs the real service; first-turn accuracy
-14/24 → each dominant failure fixed as its own commit. Suite 365→**380**.
+**Eval:** user-provided harness adapted to the live service (`~/test-files/`): 24
+first-turn cases → 14/24 (58.3%); a deliberate **own-opinion assessment**
+(model+product+script flaws separated, per user request) singled out two fixes:
+"hatırlat + time → calendar" and "continue to the mutation after a lookup".
+Suite 365→**380**. Commits local only (push pending approval).
 
 ## Routing: "reminder + time" → calendar (`913429a`, `098a435`)
 - Deterministic `reminder_group()`: reminder word + time/date → **calendar**;
