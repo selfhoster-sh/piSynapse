@@ -28,12 +28,15 @@ _today_cache: tuple[float, list[dict]] | None = None
 _find_events_cache: tuple[float, list] | None = None
 _FIND_EVENTS_CACHE_TTL = 5.0  # seconds
 
+_cache_lock = threading.Lock()
+
 
 def _invalidate_today_cache() -> None:
     """Drop cached today's events after a calendar write (create/update/delete)."""
     global _today_cache, _find_events_cache
-    _today_cache = None
-    _find_events_cache = None
+    with _cache_lock:
+        _today_cache = None
+        _find_events_cache = None
 
 
 def _get_nextcloud_client():
@@ -116,15 +119,17 @@ def _find_events(search_window_days_back: int = 30, search_window_days_ahead: in
     """Return all events in the search window (cached for 5s to avoid redundant CalDAV calls)."""
     global _find_events_cache
     now = time.time()
-    if _find_events_cache and (now - _find_events_cache[0]) < _FIND_EVENTS_CACHE_TTL:
-        return _find_events_cache[1]
+    with _cache_lock:
+        if _find_events_cache and (now - _find_events_cache[0]) < _FIND_EVENTS_CACHE_TTL:
+            return _find_events_cache[1]
     try:
         calendar = _get_calendar()
         events = calendar.date_search(
             datetime.now() - timedelta(days=search_window_days_back),
             datetime.now() + timedelta(days=search_window_days_ahead),
         )
-        _find_events_cache = (now, events)
+        with _cache_lock:
+            _find_events_cache = (now, events)
         return events
     except Exception as e:
         logger.error("Failed to search calendar events: %s", e)
@@ -233,10 +238,11 @@ def list_events(days_ahead: int = 7) -> tuple[str, list[dict]]:
 def list_events_today() -> list[dict]:
     """Structured today's events for the widget (TTL-cached, see ``_TODAY_CACHE_TTL``)."""
     global _today_cache
-    if _today_cache is not None:
-        cached_at, cached = _today_cache
-        if time.monotonic() - cached_at < _TODAY_CACHE_TTL:
-            return cached
+    with _cache_lock:
+        if _today_cache is not None:
+            cached_at, cached = _today_cache
+            if time.monotonic() - cached_at < _TODAY_CACHE_TTL:
+                return cached
     try:
         from datetime import date
         try:
@@ -255,7 +261,8 @@ def list_events_today() -> list[dict]:
             uid = _get_uid(d)
             result.append({"time": ts, "title": s, "uid": uid})
         result = sorted(result, key=lambda x: x["time"])
-        _today_cache = (time.monotonic(), result)
+        with _cache_lock:
+            _today_cache = (time.monotonic(), result)
         return result
     except Exception as e:
         logger.error("Failed to list today's events: %s", e)
