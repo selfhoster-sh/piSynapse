@@ -321,7 +321,7 @@ body.glass-mode .tool-status{background:rgba(15,15,21,.94);backdrop-filter:blur(
 .sel-menu{display:none;position:absolute;top:calc(100% + 5px);left:0;right:0;
   /* semi-transparent surface composited over solid bg => readable even on glass */
   background:linear-gradient(var(--surface),var(--surface)), var(--bg);
-  backdrop-filter:blur(18px);
+  backdrop-filter:blur(10px);
   border:1px solid var(--border);border-radius:var(--r-sm);
   box-shadow:var(--shadow-lg);z-index:2100;max-height:230px;overflow:auto;padding:4px}
 .sel-wrap.open .sel-menu{display:block;animation:msgSlideIn .16s ease-out both}
@@ -336,8 +336,9 @@ body.glass-mode .tool-status{background:rgba(15,15,21,.94);backdrop-filter:blur(
   margin-top:8px;overflow:hidden;padding:2px 0;
   -webkit-mask-image:linear-gradient(90deg,transparent,#000 11%,#000 89%,transparent);
   mask-image:linear-gradient(90deg,transparent,#000 11%,#000 89%,transparent)}
-.chip-track{display:flex;gap:8px;width:max-content;will-change:transform;
+.chip-track{display:flex;gap:8px;width:max-content;
   touch-action:pan-y;cursor:grab;user-select:none;-webkit-user-select:none}
+body.generating .chip-track{will-change:transform}
 .chip-track:active{cursor:grabbing}
 .chip-set{display:flex;gap:8px;padding-right:8px}
 .w-chip{border:1px solid var(--border);background:var(--surface2);color:var(--text2);
@@ -634,7 +635,7 @@ body.glass-mode .tool-status{background:rgba(15,15,21,.94);backdrop-filter:blur(
   #messages{padding:66px 14px 130px}
   #input-area{padding:0 12px;bottom:calc(10px + env(safe-area-inset-bottom,0px));position:absolute;left:0;right:0}
   #input-container{max-width:100%;width:100%;padding:8px 10px;gap:8px;border-radius:20px;flex-wrap:wrap}
-  #msg-input{order:1;flex:1 1 100%;min-height:24px;font-size:15px}
+  #msg-input{order:1;flex:1 1 100%;min-height:24px;max-height:200px;font-size:15px;field-sizing:content}
   .input-left{order:2}
   .input-right{order:3;margin-left:auto}
   .think-split{height:36px}
@@ -753,8 +754,8 @@ body.glass-mode .w-icon,
 body.glass-mode .preview-item,
 body.glass-mode #toast{
   background-image:linear-gradient(135deg, rgba(255,255,255,.06), rgba(255,255,255,.015) 45%, transparent 68%);
-  backdrop-filter:blur(22px) saturate(160%);
-  -webkit-backdrop-filter:blur(22px) saturate(160%);
+  backdrop-filter:blur(12px) saturate(160%);
+  -webkit-backdrop-filter:blur(12px) saturate(160%);
 }
 body.glass-mode #sidebar{background-color:var(--surface)}
 body.glass-mode #topbar{background-color:color-mix(in srgb, var(--accent) 7%, rgba(12,12,18,.38));border-bottom-color:var(--border)}
@@ -771,7 +772,7 @@ body.glass-mode #ticker,
 body.glass-mode #top-ticker,
 body.glass-mode .sb-search input,
 body.glass-mode .lang-select,
-body.glass-mode .setting-input{backdrop-filter:blur(14px) saturate(150%);-webkit-backdrop-filter:blur(14px) saturate(150%)}
+body.glass-mode .setting-input{backdrop-filter:blur(8px) saturate(150%);-webkit-backdrop-filter:blur(8px) saturate(150%)}
 body.glass-mode #ticker,
 body.glass-mode #top-ticker,
 body.glass-mode .lang-select,
@@ -815,8 +816,8 @@ body.glass-mode .modal-confirm:not(.danger){
   background:linear-gradient(135deg, color-mix(in srgb, var(--accent) 30%, transparent), color-mix(in srgb, var(--accent) 10%, transparent));
   color:var(--text);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.2), 0 4px 18px color-mix(in srgb, var(--accent) 22%, transparent);
-  backdrop-filter:blur(24px) saturate(180%);
-  -webkit-backdrop-filter:blur(24px) saturate(180%);
+  backdrop-filter:blur(12px) saturate(180%);
+  -webkit-backdrop-filter:blur(12px) saturate(180%);
 }@media (hover:hover){
 body.glass-mode .new-btn:hover:not(:focus),
 body.glass-mode .top-new-btn:hover:not(:focus),
@@ -2241,7 +2242,11 @@ document.addEventListener('DOMContentLoaded', async ()=>{
 function setupInput(){
   const el=document.getElementById('msg-input');
   el.addEventListener('keydown', e=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendMsg(); } });
-  el.addEventListener('input', ()=>{ el.style.height='auto'; el.style.height=Math.min(el.scrollHeight,200)+'px'; });
+  let _inputRaf=null;
+  el.addEventListener('input', ()=>{
+    if(_inputRaf) cancelAnimationFrame(_inputRaf);
+    _inputRaf=requestAnimationFrame(()=>{ el.style.height='auto'; el.style.height=Math.min(el.scrollHeight,200)+'px'; });
+  });
 }
 
 function setupMobileKeyboard(){
@@ -2298,27 +2303,33 @@ function renderSessions(list, animate=true){
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
       </button></div>`;
   }).join('');
-  el.querySelectorAll('.sess-item').forEach(item=>{
-    let pressTimer=null;
-    item.addEventListener('click', ()=>{
+  // Event delegation: single listener for all session items (400→1)
+  if(!el._hasDelegation){
+    el.addEventListener('click', (e)=>{
+      const delBtn=e.target.closest('.sess-del');
+      if(delBtn){ e.stopPropagation(); delBtn.closest('.sess-item')?.classList.remove('long-press'); triggerDelSession(delBtn.dataset.sid); return; }
+      const item=e.target.closest('.sess-item');
+      if(!item) return;
       if(item.classList.contains('long-press')){ item.classList.remove('long-press'); return; }
-      // Close any other long-press before opening new session
       document.querySelectorAll('.sess-item.long-press').forEach(el=> el.classList.remove('long-press'));
       loadSession(item.dataset.sid);
     });
-    const delBtn=item.querySelector('.sess-del');
-    if(delBtn) delBtn.addEventListener('click', (e)=>{ e.stopPropagation(); item.classList.remove('long-press'); triggerDelSession(delBtn.dataset.sid); });
-    item.addEventListener('touchstart', ()=>{
-      clearTimeout(pressTimer);
-      pressTimer=setTimeout(()=>{
+    const pressMap=new WeakMap();
+    el.addEventListener('touchstart', (e)=>{
+      const item=e.target.closest('.sess-item');
+      if(!item) return;
+      clearTimeout(pressMap.get(item));
+      const t=setTimeout(()=>{
         document.querySelectorAll('.sess-item.long-press').forEach(el=>{ if(el!==item) el.classList.remove('long-press'); });
         item.classList.add('long-press');
       }, 350);
+      pressMap.set(item,t);
     }, {passive:true});
-    item.addEventListener('touchend', ()=> clearTimeout(pressTimer));
-    item.addEventListener('touchmove', ()=> clearTimeout(pressTimer));
-    item.addEventListener('touchcancel', ()=> clearTimeout(pressTimer));
-  });
+    el.addEventListener('touchend', (e)=>{ const it=e.target.closest('.sess-item'); if(it) clearTimeout(pressMap.get(it)); });
+    el.addEventListener('touchmove', (e)=>{ const it=e.target.closest('.sess-item'); if(it) clearTimeout(pressMap.get(it)); });
+    el.addEventListener('touchcancel', (e)=>{ const it=e.target.closest('.sess-item'); if(it) clearTimeout(pressMap.get(it)); });
+    el._hasDelegation=true;
+  }
   // Tap outside list closes long-press
   document.getElementById('session-list')?.addEventListener('click', (e)=>{
     if(!e.target.closest('.sess-item')) document.querySelectorAll('.sess-item.long-press').forEach(el=> el.classList.remove('long-press'));
