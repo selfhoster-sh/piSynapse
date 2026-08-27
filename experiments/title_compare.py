@@ -13,10 +13,11 @@ Measures:
 - Readability & Grammar integrity across TR, EN, and Mixed queries
 """
 
-import time
 import re
-import yake
+import time
+
 import spacy
+import yake
 
 # Load spaCy model for English (and blank pipeline for fallback)
 nlp_en = spacy.load("en_core_web_sm")
@@ -79,7 +80,7 @@ def title_spacy_np(text: str) -> str:
         # Clean leading articles/determiners (a, an, the)
         best = re.sub(r"^(the|a|an)\s+", "", best, flags=re.IGNORECASE)
         return best.capitalize()
-    
+
     # Fallback for non-EN or failed NP: extract NOUN/PROPN tokens
     nouns = [tok.text for tok in doc if tok.pos_ in ("NOUN", "PROPN")]
     if nouns:

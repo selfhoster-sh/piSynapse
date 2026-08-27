@@ -37,7 +37,8 @@ async def _last_role(session_id: str) -> str | None:
 class TestDedup:
     def test_identical_user_message_not_duplicated(self, retry_db):
         """Simulate the real regenerate flow: DELETE last assistant then
-        re-send the user message — dedup must prevent a duplicate row."""
+        re-send the user message — dedup must prevent a duplicate row.
+        """
         sid = "dedup-test"
         asyncio.run(dbmod.save_message(sid, "user", "hello"))
         asyncio.run(dbmod.save_message(sid, "assistant", "hi there"))

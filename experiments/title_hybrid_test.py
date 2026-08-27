@@ -9,8 +9,8 @@ Flow:
 This tests: does the LLM-generated title actually improve over RAKE?
 """
 
-import time
 import re
+import time
 
 # --- RAKE (Same as title_compare.py) ---
 STOP_WORDS = {
@@ -55,16 +55,16 @@ def title_rake(text: str) -> str:
 
 def title_llm_simulated(user_msg: str, assistant_reply: str) -> str:
     """Simulate what the LLM would generate as a title.
-    
+
     A real LLM would receive:
     "Based on this conversation, generate a short session title (3-6 words).
      Only output the title, nothing else."
-    
+
     We simulate the LLM's ideal output for comparison.
     """
     # The LLM sees BOTH messages and can extract the true intent
     combined = f"User: {user_msg}\nAssistant: {assistant_reply}"
-    
+
     # Simulate LLM behavior: extract the core topic from the exchange
     # This is what the LLM would ideally produce
     simulated_outputs = {
@@ -81,12 +81,12 @@ def title_llm_simulated(user_msg: str, assistant_reply: str) -> str:
         "Node.js memory leak": "Node.js Memory Leak Fix",
         "quantum computing simple": "Quantum Computing Basics",
     }
-    
+
     # Simple matching for simulation
     for key, val in simulated_outputs.items():
         if key.lower() in combined.lower():
             return val
-    
+
     # Fallback: what a real LLM would do
     return "Yeni Sohbet"
 
@@ -125,20 +125,20 @@ def run_hybrid_test():
     print()
 
     rake_times = []
-    
+
     for i, tc in enumerate(TEST_CASES):
         user = tc["user"]
         assistant = tc["assistant"]
-        
+
         # Step 1: RAKE instant title (on user message arrival)
         t0 = time.perf_counter()
         rake_title = title_rake(user)
         rake_ms = (time.perf_counter() - t0) * 1000
         rake_times.append(rake_ms)
-        
+
         # Step 2: LLM enriched title (after assistant response)
         llm_title = title_llm_simulated(user, assistant)
-        
+
         print(f"--- Test {i+1} ---")
         print(f"  User: {user[:80]}...")
         print(f"  Assistant: {assistant[:80]}...")
@@ -146,12 +146,12 @@ def run_hybrid_test():
         print(f"  [Instant] RAKE title:  {rake_title:<35} ({rake_ms:.3f} ms)")
         print(f"  [After]   LLM title:   {llm_title:<35} (simulated)")
         print()
-    
+
     avg_rake = sum(rake_times) / len(rake_times)
     print("=" * 120)
-    print(f"SUMMARY:")
+    print("SUMMARY:")
     print(f"  RAKE avg latency: {avg_rake:.3f} ms (instant, on first message)")
-    print(f"  LLM title:        generated after assistant response (one extra call)")
+    print("  LLM title:        generated after assistant response (one extra call)")
     print()
     print("CONCLUSION:")
     print("  RAKE gives a 'good enough' instant title for the sidebar.")

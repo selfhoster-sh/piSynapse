@@ -6,8 +6,9 @@ Compares:
 2. LLM (real call, measures actual latency)
 """
 
-import time
 import re
+import time
+
 import requests
 
 LITERT = "http://localhost:9379/v1/chat/completions"

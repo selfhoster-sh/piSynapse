@@ -5,10 +5,8 @@ Creates a realistic conversation DB, populates it, then measures
 query performance for both approaches across varying data sizes.
 """
 
-import asyncio
 import random
 import sqlite3
-import string
 import time
 from pathlib import Path
 
