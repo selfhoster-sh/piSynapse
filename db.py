@@ -787,15 +787,16 @@ async def search_sessions(query: str, limit: int = 20) -> list[dict]:
             """, (fts_query_or, limit)) as cur:
                 rows = await cur.fetchall()
     except Exception:
-        # Fallback: LIKE on raw table
+        # Fallback: LIKE on raw table (safe_q, escape %/_)
+        safe_like = safe_q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         async with db.execute("""
             SELECT DISTINCT c.session_id, s.name, c.content
             FROM conversations c
             LEFT JOIN sessions s ON s.id = c.session_id
-            WHERE c.content LIKE ?
+            WHERE c.content LIKE ? ESCAPE '\\'
             ORDER BY c.timestamp DESC
             LIMIT ?
-        """, (f"%{query}%", limit)) as cur:
+        """, (f"%{safe_like}%", limit)) as cur:
             rows = await cur.fetchall()
     seen = set()
     results = []
