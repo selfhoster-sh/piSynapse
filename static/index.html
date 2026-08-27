@@ -97,7 +97,8 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
   cursor:pointer;text-align:left;font-family:inherit;
   transition:transform .15s,opacity .15s;display:flex;align-items:center;gap:8px}@media (hover:hover){
 .new-btn:hover:not(:focus){opacity:.9}}
-.new-btn:active{transform:scale(.98)}
+.new-btn:active{transform:scale(.98);opacity:.85}
+.top-new-btn:active{transform:scale(.98);opacity:.85}
 
 #sidebar-scroll-container{flex:1;overflow-y:auto;display:flex;flex-direction:column;padding-bottom:10px}
 .sb-label{padding:12px 12px 6px;font-size:11px;font-weight:700;
@@ -858,19 +859,7 @@ body.glass-mode .mem-btn:hover,
 body.glass-mode #search-toggle:hover,
 body.glass-mode #compact-toggle:hover{box-shadow:0 0 14px color-mix(in srgb, var(--accent) 30%, transparent)}}
 
-/* ── Glass shine sweep on primary CTAs (cheap: pseudo + transform only) */
-body.glass-mode .new-btn,
-body.glass-mode .top-new-btn,
-body.glass-mode .w-start{position:relative;overflow:hidden}
-body.glass-mode .new-btn::after,
-body.glass-mode .top-new-btn::after,
-body.glass-mode .w-start::after{
-  content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;
-  background:linear-gradient(115deg, transparent 35%, rgba(255,255,255,.08) 50%, transparent 65%);
-  transform:translateX(-135%);transition:transform .55s ease}@media (hover:hover){
-body.glass-mode .new-btn:hover:not(:focus)::after,
-body.glass-mode .top-new-btn:hover:not(:focus)::after,
-body.glass-mode .w-start:hover:not(:focus)::after{transform:translateX(135%)}}
+
 
 /* Glass press: quick scale-down + accent glow burst */
 body.glass-mode .new-btn:active,
