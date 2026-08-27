@@ -183,6 +183,9 @@ def trim_messages_for_context(
     extra.reverse()
     while extra and extra[0].get("role") == "tool":
         extra.pop(0)
+    # Also drop trailing orphan assistant with tool_calls but no following tool results
+    while extra and extra[-1].get("role") == "assistant" and extra[-1].get("tool_calls"):
+        extra.pop()
     logger.debug(
         "Context trim: %d -> %d history msgs (ctx=%d, fixed=%d, reserve=%d)",
         len(older), len(extra), context_window, fixed, reserve,
