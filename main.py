@@ -432,7 +432,7 @@ async def security_middleware(request: Request, call_next):
     # Only the transcription endpoints accept larger payloads (audio recordings);
     # everything else (chat text, TTS text, config JSON) stays at the 4 MB cap.
     # Exact match, not prefix: "/chat" must not widen the limit for sub-routes.
-    _large_body_paths = frozenset({"/chat/transcribe", "/chat/transcribe-gemma4"})
+    _large_body_paths = frozenset({"/chat/transcribe", "/chat/transcribe-gemma4", "/chat/upload"})
     if request.method in ("POST", "PATCH"):
         te = request.headers.get("transfer-encoding", "")
         if "chunked" in te.lower():
