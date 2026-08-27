@@ -31,7 +31,11 @@ from .utils import (
     FINALIZE_NUDGE as _FINALIZE_NUDGE,
 )
 from .utils import (
+    CONTINUATION_NOTE,
     MAX_IDENTICAL_EXECUTIONS as _MAX_IDENTICAL_EXECUTIONS,
+    is_lookup_tool,
+    is_mutation_tool,
+    user_requested_action,
 )
 from .utils import (
     _check_tool_leak,
@@ -345,6 +349,8 @@ async def chat_with_ollama_stream(
     final_nudge_used = False
     tools_escalated = False
     litert_parse_recovered = False
+    mutation_executed = False
+    continuation_noted = False
 
     for iteration in range(get("LLM_MAX_TOOL_ITERATIONS", 5)):
         if truncation_retried or final_nudge_used:
@@ -688,6 +694,8 @@ async def chat_with_ollama_stream(
                 # bypass the cap and execute twice (duplicate-create bug).
                 executed_tool_sigs.add(probe_sig)
                 sig_exec_counts[probe_sig] = sig_exec_counts.get(probe_sig, 0) + 1
+                if is_mutation_tool(tn):
+                    mutation_executed = True
                 tool_msg = {"role": "tool", "tool_name": tn, "content": result}
                 if call.get("id"):
                     tool_msg["tool_call_id"] = call["id"]
@@ -745,13 +753,27 @@ async def chat_with_ollama_stream(
             return
 
         if non_confirm_calls and iteration < get("LLM_MAX_TOOL_ITERATIONS", 5) - 1:
+            round_names = {c["function"]["name"] for c in non_confirm_calls}
+            lookup_only = bool(round_names) and all(is_lookup_tool(n) for n in round_names)
             for m in reversed(current_msgs):
                 if m.get("role") == "tool":
-                    m["content"] += (
-                        "\n\n[Note: If the user's request requires additional actions "
-                        "(e.g. sending this data via email, creating another event), "
-                        "call the next tool NOW. Do NOT reply until all actions are done.]"
-                    )
+                    if (
+                        lookup_only
+                        and not mutation_executed
+                        and not continuation_noted
+                        and user_requested_action(context["_user_text"])
+                    ):
+                        # List/read succeeded but the user wanted an action on
+                        # what was found — push the model to finish the job
+                        # (eval's dominant failure mode: list-then-stop).
+                        continuation_noted = True
+                        m["content"] += CONTINUATION_NOTE
+                    else:
+                        m["content"] += (
+                            "\n\n[Note: If the user's request requires additional actions "
+                            "(e.g. sending this data via email, creating another event), "
+                            "call the next tool NOW. Do NOT reply until all actions are done.]"
+                        )
                     break
 
     logger.warning(f"Max tool iterations ({get('LLM_MAX_TOOL_ITERATIONS', 5)}) exceeded in streaming")
