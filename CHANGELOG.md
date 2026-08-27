@@ -4,6 +4,36 @@ All notable changes to piSynapse will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 uses [Semantic Versioning](https://semver.org/).
 
+## [1.7.0] - 2026-08-27
+
+This cycle ships session UX (titles, retry, search) and hardens cross-cutting concerns:
+
+### Added
+- **Hybrid session titles (RAKE instant + LLM enriched):** first user message gets a <1ms RAKE title (`title.py`), then a background `httpx` LLM call replaces it with a 2-5 word topic title (dual-backend `litert`/`ollama`, 15 tokens, temp 0.1). Toggle `LLM_TITLE_ENRICHMENT` in Settings → Chat.
+- **Regenerate button (ChatGPT-style):** `DELETE /chat/messages/last/{session_id}` + `delete_last_assistant` + dedup in `save_message`; frontend reuses `sendMsg()` (no duplicate SSE loop), `.bubble` fix, SW `v23→v28`.
+- **FTS5 session search:** `conversations_fts` (`unicode61 remove_diacritics 2`, external-content), `search_sessions` with `snippet` + `LIKE` fallback, `GET /chat/search?q=`; frontend debounced 150ms single-layer (was 300ms dual-layer flicker) with `X-API-Key` and `AbortController 800ms` offline fallback.
+- **Hybrid search (FTS5 + semantic):** `conversations.embedding` (`BLOB`, migration 6th, 353 backfilled), `save_message` embeds on write, `search_sessions` merges FTS (`AND` first, `OR` fallback) + semantic (`cosine≥0.50`, 200 recent, top 10) — cross-language `temperature`→`sıcaklık`, paraphrase tolerant, 90ms.
+- **Offline search:** `navigator.onLine` fast-path + `online`/`offline` event listeners re-run search on transition; clear restores full list (no stale filter).
+- **Snippet UI:** `renderSessions` shows FTS `<b>` snippet (11px, ellipsis) via `snippetMap`.
+
+### Fixed
+- **Search API path** `API+'/search'` → `API+'/chat/search'` (404 → 200; logs `GET /search 404`).
+- **Search precision:** `OR` (18 hits for `omlet`) → `AND` first (1 hit), semantic threshold `0.35→0.50`, single-word disables semantic (was `teşekkürler` 0.637 false positive).
+- **Title:** `requests` (sync, 15s loop block) → `httpx.AsyncClient` + `LITERT_URL`→`LITERT_BASE_URL` fix.
+- **FTS rebuild:** every startup O(N) → conditional (detect `unicode61` via `sqlite_master`, drift `COUNT(*)`).
+- **Config:** missing `LLM_TITLE_ENRICHMENT` module var + `sync_config` entry (always returned default).
+- **CORS:** `allow_headers=["*"]` + credentials violates Fetch spec → explicit `["X-API-Key","Content-Type","X-Request-ID","Authorization"]`.
+- **`_enrich_title` race:** `get_history(limit=3)` → `COUNT(*) ==2` (true total).
+- **`NEXTCLOUD_TIMEOUT` 30→10** (fast fail; widget 17s→1.7s after `docker start redis`).
+- **Search UI:** `s.id`→`s.session_id`, `e.dataset.sid`, `.bubble` vs `.msg-content`, `appendChild` before `attachMsgActions`, clear restores full list.
+
+### Changed
+- Search debounce 300→150ms, single-layer (no flicker, no kopukluk).
+- SW cache `v23→v32`.
+
+### Tests
+- Suite 341→365 passing (`test_retry.py` 7, `test_title.py` 17).
+
 ## [1.6.0] - 2026-08-26
 
 This cycle hardens tool-calling against small-model failure modes end-to-end:
