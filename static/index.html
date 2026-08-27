@@ -3291,7 +3291,7 @@ let _searchQuery = '';
 
 function filterSessions(q){
   _searchQuery = q.toLowerCase().trim();
-  if(!_searchQuery){ renderSessions(sessionList); return; }
+  if(!_searchQuery){ clearTimeout(_searchTimer); renderSessions(sessionList); return; }
   _debounceSearch(q);
 }
 
@@ -3330,10 +3330,9 @@ function toggleSearch(){
   const inp = document.getElementById('sess-search');
   if(open){ if(inp) inp.focus(); }
   else {
-    if(inp) inp.blur();
-    // Restore the unfiltered list only when a filter was actually applied —
-    // rebuilding on every toggle replayed the item animation (looked like a redraw).
-    if(_searchQuery){ _searchQuery = ''; renderSessions(sessionList, false); }
+    if(inp){ inp.value=''; inp.blur(); }
+    clearTimeout(_searchTimer);
+    _searchQuery=''; renderSessions(sessionList, false);
   }
 }
 
