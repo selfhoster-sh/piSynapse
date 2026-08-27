@@ -116,15 +116,18 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 
 .sess-item{display:flex;align-items:center;gap:8px;padding:9px 10px;margin-bottom:2px;
   border-radius:var(--r-sm);cursor:pointer;border:1px solid transparent;
-  transition:background-color .15s,border-color .15s}
+  transition:background-color .15s,border-color .15s;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 @media (hover:hover){
 .sess-item:hover:not(:focus){background:var(--surface3);border-color:rgba(255,255,255,.05)}}
 .sess-item.active{background:var(--accent-d);border-color:rgba(124,108,240,.25);
   box-shadow:inset 3px 0 0 var(--accent)}
 .sess-item.active .sess-name{color:var(--accent);font-weight:600}
+.sess-item.long-press{background:var(--surface3);border-color:rgba(255,255,255,.05)}
+.sess-item.long-press .sess-time{opacity:0}
+.sess-item.long-press .sess-del{opacity:1;pointer-events:auto}
 
 .sess-name{flex:1;font-size:14px;color:var(--text2);white-space:nowrap;padding-right:20px;
-  overflow:hidden;text-overflow:ellipsis;transition:color .2s}
+  overflow:hidden;text-overflow:ellipsis;transition:color .2s;user-select:none;-webkit-user-select:none}
 .sess-time{font-size:11px;color:var(--text3);flex-shrink:0;transition:opacity .15s}
 .sess-snippet{flex-basis:100%;font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;line-height:1.2}
 .sess-snippet b{color:var(--text1);font-weight:600}
@@ -2295,9 +2298,17 @@ function renderSessions(list, animate=true){
       </button></div>`;
   }).join('');
   el.querySelectorAll('.sess-item').forEach(item=>{
-    item.addEventListener('click', ()=> loadSession(item.dataset.sid));
+    let pressTimer=null;
+    item.addEventListener('click', ()=>{
+      if(item.classList.contains('long-press')){ item.classList.remove('long-press'); return; }
+      loadSession(item.dataset.sid);
+    });
     const delBtn=item.querySelector('.sess-del');
-    if(delBtn) delBtn.addEventListener('click', (e)=>{ e.stopPropagation(); triggerDelSession(delBtn.dataset.sid); });
+    if(delBtn) delBtn.addEventListener('click', (e)=>{ e.stopPropagation(); item.classList.remove('long-press'); triggerDelSession(delBtn.dataset.sid); });
+    item.addEventListener('touchstart', ()=>{ clearTimeout(pressTimer); pressTimer=setTimeout(()=> item.classList.add('long-press'), 500); }, {passive:true});
+    item.addEventListener('touchend', ()=> clearTimeout(pressTimer));
+    item.addEventListener('touchmove', ()=> clearTimeout(pressTimer));
+    item.addEventListener('touchcancel', ()=> clearTimeout(pressTimer));
   });
   if(animate) applyStagger();
 }
@@ -3426,7 +3437,7 @@ document.addEventListener('touchstart', e => {
   _swipeStartX = touch.clientX;
   _swipeStartY = touch.clientY;
   _swipeOnThink = !!(e.target && e.target.closest && e.target.closest('#think-popover'));
-  _swipeInScrollable = !!(e.target && e.target.closest && e.target.closest('.code-wrapper,pre,bubble,textarea,#msg-input,.sess-list'));
+  _swipeInScrollable = !!(e.target && e.target.closest && e.target.closest('.code-wrapper,pre,.bubble,textarea,#msg-input,.sess-list,.chip-track,.w-chip,table'));
 }, {passive: true});
 document.addEventListener('touchend', _resetSwipe, {passive: true});
 document.addEventListener('touchcancel', _resetSwipe, {passive: true});
@@ -3436,11 +3447,11 @@ document.addEventListener('touchmove', e => {
   const touch = e.touches[0];
   const dx = touch.clientX - _swipeStartX;
   const dy = touch.clientY - _swipeStartY;
-  if(Math.abs(dx) < 30 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-  if(dx > 60 && !document.body.classList.contains('sidebar-mobile-open') && _swipeStartX < 48){
+  if(Math.abs(dx) < 20 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+  if(dx > 40 && !document.body.classList.contains('sidebar-mobile-open') && _swipeStartX < 80){
     document.body.classList.add('sidebar-mobile-open');
     document.getElementById('overlay').classList.add('show');
-  } else if(dx < -60 && document.body.classList.contains('sidebar-mobile-open')){
+  } else if(dx < -40 && document.body.classList.contains('sidebar-mobile-open')){
     closeSidebar();
   }
 }, {passive: true});
