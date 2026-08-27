@@ -34,7 +34,8 @@ When you disable all external integrations, **zero data leaves your device**. No
 
 ## Features
 
-- 💬 **Web UI** — Clean chat interface with session management, memory panel, think mode (opt-in), and multi-language support (EN/TR)
+- 💬 **Web UI** — Clean chat interface with session management, **hybrid titles (RAKE instant + LLM)**, **regenerate**, memory panel, think mode (opt-in), and multi-language support (EN/TR)
+- 🔍 **Search** — **Hybrid FTS5 + semantic** (keyword + meaning, cross-language, offline fallback) over all sessions with highlighted snippets
 - 📅 **Calendar** — Nextcloud CalDAV integration for schedule management
 - 📧 **Email** — Gmail and ProtonMail (via ProtonBridge) read/send/search
 - 📝 **Notes** — Nextcloud Notes create/read/update/delete/search with offline cache
@@ -59,7 +60,8 @@ When you disable all external integrations, **zero data leaves your device**. No
 | **LLM Serving** | **piServe** — OpenAI-compatible LiteRT server (`litert_serve/`); Ollama as the alternative backend |
 | **Tool Calling** | LLM-native function calling (JSON schema) |
 | **Intent Classification** | Lightweight LLM call (5 tokens) + embedding similarity |
-| **Storage** | SQLite + aiosqlite |
+| **Storage** | SQLite + aiosqlite + FTS5 (`unicode61`) |
+| **Search** | Hybrid FTS5 (BM25) + semantic (FastEmbed, cosine) |
 | **Embeddings** | FastEmbed (local ONNX) |
 | **Email** | Gmail IMAP/SMTP, ProtonMail via ProtonBridge |
 | **Calendar/Tasks** | Nextcloud CalDAV (python-caldav) |
@@ -268,6 +270,10 @@ curl http://localhost:8765/chat/memories?user_id=default \
 curl -X DELETE "http://localhost:8765/chat/memories?user_id=default" \
   -H "X-API-Key: YOUR_API_KEY"
 
+# Search sessions (hybrid keyword + semantic)
+curl "http://localhost:8765/chat/search?q=omlet" \
+  -H "X-API-Key: YOUR_API_KEY"
+
 # Health check (no auth required)
 curl http://localhost:8765/health
 ```
@@ -275,11 +281,11 @@ curl http://localhost:8765/health
 ## Security Notes
 
 - The server is intended for **trusted home LAN use**. API key auth protects the
-  endpoints, but traffic is plain HTTP — the API key, the `/debug?k=` beacon
-  token and all credentials the assistant relays (Proton mail, Nextcloud) travel
-  in cleartext on the wire. Do **not** expose the server to the public internet
-  or an untrusted network without a TLS reverse proxy (e.g. Caddy/nginx) in
-  front.
+  endpoints, but traffic is plain HTTP — the API key and all credentials the
+  assistant relays (Proton mail, Nextcloud) travel in cleartext on the wire
+  (the `/debug` beacon now sends its key in the POST body, not the URL). Do
+  **not** expose the server to the public internet or an untrusted network
+  without a TLS reverse proxy (e.g. Caddy/nginx) in front.
 - Keep `.env` permissions locked down (`chmod 600 .env`) — it contains mail,
   Nextcloud and API secrets.
 - Rate limiting keys on the client IP. Behind a reverse proxy, set
@@ -303,6 +309,9 @@ curl http://localhost:8765/health
 - [x] **Tool-Call Indicators** — Real-time status pills during tool execution
 - [x] **Multi-Domain Routing** — Combined toolset when request spans multiple domains
 - [x] **Constrained Decoding** — LL-guidance for reliable tool-call output
+- [x] **Session Titles** — RAKE instant (<1ms) + LLM enriched (background, toggle)
+- [x] **Regenerate** — ChatGPT-style retry for last assistant reply
+- [x] **Hybrid Search** — FTS5 + semantic over all sessions, offline fallback, snippets
 - [ ] **Nextcloud Contacts** — CardDAV contact search
 - [ ] **Nextcloud News** — RSS feed integration
 
