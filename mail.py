@@ -35,11 +35,11 @@ class MailClient(ABC):
         ...
 
     @retry(attempts=2, delay=2.0)
-    def _list_emails(self, limit: int = 10) -> list[dict]:
+    def _list_emails(self, limit: int = 10, mailbox: str = "INBOX") -> list[dict]:
         emails = []
         mail = self._connect_imap()
         try:
-            mail.select("INBOX")
+            mail.select(mailbox)
             _, data = mail.search(None, "ALL")
             mail_ids = data[0].split()
             for m_id in reversed(mail_ids[-limit:]):
@@ -103,12 +103,12 @@ class MailClient(ABC):
             return False
 
     @retry(attempts=2, delay=2.0)
-    def _search_emails(self, query: str, limit: int = 10) -> list[dict]:
+    def _search_emails(self, query: str, limit: int = 10, mailbox: str = "INBOX") -> list[dict]:
         safe_query = sanitize_imap_query(query)
         emails = []
         mail = self._connect_imap()
         try:
-            mail.select("INBOX")
+            mail.select(mailbox)
             _, data = mail.search(None, f'OR TEXT "{safe_query}" OR SUBJECT "{safe_query}" FROM "{safe_query}"')
             mail_ids = data[0].split()
             for m_id in reversed(mail_ids[-limit:]):
@@ -135,7 +135,7 @@ class MailClient(ABC):
     # -- Async wrappers for FastAPI compatibility --
 
     async def get_messages(self, account_id: int, mailbox_id: Any, limit: int = 10) -> list[dict]:
-        return await asyncio.to_thread(self._list_emails, limit)
+        return await asyncio.to_thread(self._list_emails, limit, mailbox_id or "INBOX")
 
     async def get_message(self, account_id: int, mailbox_id: Any, message_id) -> dict | None:
         return await asyncio.to_thread(self._read_email, str(message_id))

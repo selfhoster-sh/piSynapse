@@ -46,7 +46,7 @@ class TestCalendarTools:
             )
         assert result == "Created."
         assert ce.call_args.args == ("Meet", "2026-08-17T10:00:00", 30)
-        assert ce.call_args.kwargs == {"all_day": False}
+        assert ce.call_args.kwargs == {"all_day": False, "rrule": None}
 
     async def test_create_all_day_passes_through(self):
         # Date-only (no clock hour) -> all-day event per industry convention.
@@ -57,7 +57,7 @@ class TestCalendarTools:
             )
         assert result == "Created."
         assert ce.call_args.args == ("Water plants", "2026-08-31", 60)
-        assert ce.call_args.kwargs == {"all_day": True}
+        assert ce.call_args.kwargs == {"all_day": True, "rrule": None}
 
     async def test_create_invalid_duration_returns_error(self):
         result = await run_tool(
@@ -307,7 +307,7 @@ class TestMailTools:
         mc = _mail_client(results=msgs)
         with patch("mail.get_active_mail_client", return_value=mc), patch("prompt.cache_email_context") as cache:
             result = await run_tool("search_emails", {"query": "Match"}, context={"session_id": "s2"})
-        mc.search_messages.assert_awaited_once_with(1, "Match", 10)
+        mc.search_messages.assert_awaited_once_with(1, "Match", 10, "INBOX")
         cache.assert_called_once_with("s2", msgs)
         assert "'Match' Results (1):" in result
         assert "ID:" not in result

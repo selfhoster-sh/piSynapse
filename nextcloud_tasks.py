@@ -298,7 +298,7 @@ def _delete_task_sync(uid_prefix: str) -> str:
 
 
 @retry(attempts=2, delay=1.0)
-def _search_tasks_sync(query: str) -> tuple[str, list[dict]]:
+def _search_tasks_sync(query: str, limit: int = 10) -> tuple[str, list[dict]]:
     """Search tasks by summary/description — same contract as ``_list_tasks_sync``."""
     global _todos_cache, _todos_cache_ts
     cal = _get_task_calendar()
@@ -318,7 +318,7 @@ def _search_tasks_sync(query: str) -> tuple[str, list[dict]]:
         return f"'{query}' not found in tasks.", []
 
     lines = [f" Search Results for '{query}':\n"]
-    for i, t in enumerate(matches[:10], 1):
+    for i, t in enumerate(matches[:limit], 1):
         status_icon = "x" if t["completed"] else "o"
         lines.append(f"   {i}. [{status_icon}] {t['summary']}")
         meta = []
@@ -328,7 +328,7 @@ def _search_tasks_sync(query: str) -> tuple[str, list[dict]]:
             lines.append(f"      {' | '.join(meta)}")
         lines.append("")
 
-    return "\n".join(lines), matches[:10]
+    return "\n".join(lines), matches[:limit]
 
 
 # -- Async wrappers (for FastAPI / tool dispatcher) --
@@ -365,9 +365,9 @@ async def delete_task(uid_prefix: str) -> str:
         return "ERROR: Failed to delete task."
 
 
-async def search_tasks(query: str) -> tuple[str, list[dict]]:
+async def search_tasks(query: str, limit: int = 10) -> tuple[str, list[dict]]:
     try:
-        return await asyncio.to_thread(_search_tasks_sync, query)
+        return await asyncio.to_thread(_search_tasks_sync, query, limit)
     except Exception as e:
         logger.error(f"Tasks Error: {e}")
         return "ERROR: Failed to search tasks.", []

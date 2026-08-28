@@ -193,35 +193,43 @@ def create_event(
     start_time_str: str,
     duration_minutes: int = 60,
     all_day: bool = False,
+    rrule: str | None = None,
 ) -> str:
+    """Create a calendar event.
+
+    Args:
+        summary: Event title.
+        start_time_str: ISO 8601 datetime (timed) or YYYY-MM-DD (all-day).
+        duration_minutes: Duration in minutes (ignored for all-day).
+        all_day: True for date-only event.
+        rrule: Optional RFC 5545 RRULE string (e.g. "FREQ=WEEKLY;BYDAY=MO,WE,FR").
+    """
     try:
         calendar = _get_calendar()
         if all_day:
-            # Date-only event (industry convention for "date, no hour"):
-            # DTSTART;VALUE=DATE with DTEND = next day (RFC 5545 all-day).
             start_date = _parse_start(start_time_str).date()
             end_date = start_date + timedelta(days=1)
-            ical = "\r\n".join([
-                "BEGIN:VCALENDAR", "VERSION:2.0",
-                "PRODID:-//piSynapse//EN",
-                "BEGIN:VEVENT",
-                f"SUMMARY:{_ical_escape_text(summary)}",
-                f"DTSTART;VALUE=DATE:{start_date:%Y%m%d}",
-                f"DTEND;VALUE=DATE:{end_date:%Y%m%d}",
-                "END:VEVENT", "END:VCALENDAR",
-            ]) + "\r\n"
+            dtstart = f"DTSTART;VALUE=DATE:{start_date:%Y%m%d}"
+            dtend = f"DTEND;VALUE=DATE:{end_date:%Y%m%d}"
         else:
             start_dt = datetime.fromisoformat(start_time_str)
             end_dt = start_dt + timedelta(minutes=duration_minutes)
-            ical = "\r\n".join([
-                "BEGIN:VCALENDAR", "VERSION:2.0",
-                "PRODID:-//piSynapse//EN",
-                "BEGIN:VEVENT",
-                f"SUMMARY:{_ical_escape_text(summary)}",
-                f"DTSTART;VALUE=DATE-TIME:{start_dt.strftime('%Y%m%dT%H%M%S')}",
-                f"DTEND;VALUE=DATE-TIME:{end_dt.strftime('%Y%m%dT%H%M%S')}",
-                "END:VEVENT", "END:VCALENDAR",
-            ]) + "\r\n"
+            dtstart = f"DTSTART;VALUE=DATE-TIME:{start_dt.strftime('%Y%m%dT%H%M%S')}"
+            dtend = f"DTEND;VALUE=DATE-TIME:{end_dt.strftime('%Y%m%dT%H%M%S')}"
+
+        lines = [
+            "BEGIN:VCALENDAR", "VERSION:2.0",
+            "PRODID:-//piSynapse//EN",
+            "BEGIN:VEVENT",
+            f"SUMMARY:{_ical_escape_text(summary)}",
+            dtstart,
+            dtend,
+        ]
+        if rrule:
+            lines.append(f"RRULE:{rrule}")
+        lines.extend(["END:VEVENT", "END:VCALENDAR"])
+        ical = "\r\n".join(lines) + "\r\n"
+
         calendar.add_event(ical)
         _invalidate_today_cache()
         return f"OK '{summary}' added to calendar."
@@ -327,6 +335,83 @@ def find_events_by_summary(summary: str, days_back: int = 30, days_ahead: int = 
 
 
 @retry(attempts=2, delay=1.0)
+def find_free_slots(date_str: str, duration_minutes: int = 60, day_start: str = "09:00", day_end: str = "18:00") -> tuple[str, list[dict]]:
+    """Find free time slots on a given day.
+
+    Args:
+        date_str: Date in YYYY-MM-DD format.
+        duration_minutes: Minimum slot length in minutes (default 60).
+        day_start: Day start time HH:MM (default 09:00).
+        day_end: Day end time HH:MM (default 18:00).
+
+    Returns:
+        (display_text, slots) where slots are {"start": "HH:MM", "end": "HH:MM"} dicts.
+    """
+    try:
+        calendar = _get_calendar()
+        day_date = datetime.fromisoformat(date_str).date()
+        day_start_dt = datetime.combine(day_date, datetime.strptime(day_start, "%H:%M").time())
+        day_end_dt = datetime.combine(day_date, datetime.strptime(day_end, "%H:%M").time())
+
+        # Fetch events for that day
+        events = calendar.date_search(day_start_dt, day_end_dt)
+
+        # Build busy intervals (start, end) in minutes from day_start
+        busy = []
+        for ev in events:
+            d = ev.vobject_instance.vevent
+            st = d.dtstart.value
+            et = d.dtend.value if hasattr(d, "dtend") else st
+            if hasattr(st, "strftime"):
+                ev_start = st
+                ev_end = et if hasattr(et, "strftime") else ev_start + timedelta(hours=1)
+                # Only consider events within day bounds
+                if ev_end <= day_start_dt or ev_start >= day_end_dt:
+                    continue
+                ev_start = max(ev_start, day_start_dt)
+                ev_end = min(ev_end, day_end_dt)
+                start_min = int((ev_start - day_start_dt).total_seconds() / 60)
+                end_min = int((ev_end - day_start_dt).total_seconds() / 60)
+                busy.append((start_min, end_min))
+
+        # Merge overlapping busy intervals
+        busy.sort()
+        merged = []
+        for s, e in busy:
+            if not merged or s > merged[-1][1]:
+                merged.append([s, e])
+            else:
+                merged[-1][1] = max(merged[-1][1], e)
+
+        # Find free slots >= duration_minutes
+        total_min = int((day_end_dt - day_start_dt).total_seconds() / 60)
+        slots = []
+        cursor = 0
+        for s, e in merged:
+            if s - cursor >= duration_minutes:
+                slot_start = day_start_dt + timedelta(minutes=cursor)
+                slot_end = day_start_dt + timedelta(minutes=s)
+                slots.append({"start": slot_start.strftime("%H:%M"), "end": slot_end.strftime("%H:%M")})
+            cursor = max(cursor, e)
+        if total_min - cursor >= duration_minutes:
+            slot_start = day_start_dt + timedelta(minutes=cursor)
+            slot_end = day_start_dt + timedelta(minutes=total_min)
+            slots.append({"start": slot_start.strftime("%H:%M"), "end": slot_end.strftime("%H:%M")})
+
+        if not slots:
+            return f"No free slots of {duration_minutes}min on {date_str} between {day_start}-{day_end}.", []
+
+        lines = [f"Free slots on {date_str} ({duration_minutes}min min, {day_start}-{day_end}):"]
+        for i, sl in enumerate(slots, 1):
+            lines.append(f"  {i}. {sl['start']} - {sl['end']}")
+        return "\n".join(lines), slots
+
+    except Exception as e:
+        logger.error("Failed to find free slots for %s: %s", date_str, e)
+        return f"ERROR: Could not find free slots for {date_str}.", []
+
+
+@retry(attempts=2, delay=1.0)
 def delete_event(summary: str, event_uid: str = "") -> str:
     try:
         _get_nextcloud_client()  # fail fast if no credentials
@@ -376,29 +461,29 @@ def update_event(summary: str, new_summary: str = "", new_start_time: str = "", 
             all_day = _is_date(old_dt)
             if all_day:
                 d.dtstart.value = new_dt.date()
+                # All-day event: DTEND is always next day (RFC 5545), ignore duration_minutes
+                d.dtend.value = new_dt.date() + timedelta(days=1)
             else:
                 d.dtstart.value = new_dt
-
-            if new_duration_minutes and new_duration_minutes > 0:
-                new_end = new_dt + timedelta(minutes=new_duration_minutes)
-            else:
-                old_end = d.dtend.value if hasattr(d, "dtend") else old_dt
-                try:
-                    duration = old_end - old_dt
-                except TypeError:
-                    duration = timedelta(hours=1)
-                new_end = new_dt + duration
-            if all_day:
-                d.dtend.value = new_end.date()
-            else:
+                if new_duration_minutes and new_duration_minutes > 0:
+                    new_end = new_dt + timedelta(minutes=new_duration_minutes)
+                else:
+                    old_end = d.dtend.value if hasattr(d, "dtend") else old_dt
+                    try:
+                        duration = old_end - old_dt
+                    except TypeError:
+                        duration = timedelta(hours=1)
+                    new_end = new_dt + duration
                 d.dtend.value = new_end
         elif new_duration_minutes > 0:
             old_dt = d.dtstart.value
-            old_end = d.dtend.value if hasattr(d, "dtend") else old_dt + timedelta(hours=1)
-            new_end = old_dt + timedelta(minutes=new_duration_minutes)
-            if _is_date(old_dt) and _is_date(old_end):
-                d.dtend.value = new_end.date()
+            all_day = _is_date(old_dt)
+            if all_day:
+                # All-day: duration_minutes ignored, keep DTEND as next day
+                pass
             else:
+                old_end = d.dtend.value if hasattr(d, "dtend") else old_dt + timedelta(hours=1)
+                new_end = old_dt + timedelta(minutes=new_duration_minutes)
                 d.dtend.value = new_end
 
         ev.data = ev.vobject_instance.serialize()
