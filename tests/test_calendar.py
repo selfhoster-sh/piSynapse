@@ -84,6 +84,28 @@ class TestMatchEvent:
         assert _ical_escape_text("back\\slash") == "back\\\\slash"
 
 
+class TestCreateEventSerialization:
+    def test_create_all_day_uses_date_dtstart_next_day_end(self):
+        from calendar_ops import create_event
+        fake_cal = MagicMock()
+        with patch("calendar_ops._get_calendar", return_value=fake_cal):
+            result = create_event("Water plants", "2026-08-31", all_day=True)
+        assert "OK 'Water plants' added to calendar." == result
+        ical = fake_cal.add_event.call_args.args[0]
+        assert "DTSTART;VALUE=DATE:20260831" in ical
+        assert "DTEND;VALUE=DATE:20260901" in ical
+
+    def test_create_timed_uses_datetime_dtstart(self):
+        from calendar_ops import create_event
+        fake_cal = MagicMock()
+        with patch("calendar_ops._get_calendar", return_value=fake_cal):
+            result = create_event("Meet", "2026-08-17T14:00:00", 30)
+        assert result == "OK 'Meet' added to calendar."
+        ical = fake_cal.add_event.call_args.args[0]
+        assert "DTSTART;VALUE=DATE-TIME:20260817T140000" in ical
+        assert "DTEND;VALUE=DATE-TIME:20260817T143000" in ical
+
+
 class TestRunTool:
     async def test_unknown_tool_returns_not_found(self):
         from tools.dispatcher import run_tool

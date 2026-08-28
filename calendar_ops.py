@@ -5,7 +5,7 @@ Nextcloud CalDAV integration for calendar operations.
 import logging
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from utils import retry
 
@@ -175,21 +175,53 @@ def _match_event(events, summary: str, event_uid: str = "") -> tuple:
         return None, None, "error"
 
 
+def _parse_start(raw: str) -> datetime:
+    """Accept an ISO datetime or a plain YYYY-MM-DD date string.
+
+    ``create_event``'s ``start_time`` is ISO 8601 for timed events and a bare
+    date for all-day events; this normalizes both to a datetime.
+    """
+    raw = (raw or "").strip()
+    if "T" in raw:
+        return datetime.fromisoformat(raw)
+    return datetime.combine(date.fromisoformat(raw), datetime.min.time())
+
+
 @retry(attempts=2, delay=1.0)
-def create_event(summary: str, start_time_str: str, duration_minutes: int = 60) -> str:
+def create_event(
+    summary: str,
+    start_time_str: str,
+    duration_minutes: int = 60,
+    all_day: bool = False,
+) -> str:
     try:
         calendar = _get_calendar()
-        start_dt = datetime.fromisoformat(start_time_str)
-        end_dt = start_dt + timedelta(minutes=duration_minutes)
-        ical = "\r\n".join([
-            "BEGIN:VCALENDAR", "VERSION:2.0",
-            "PRODID:-//piSynapse//EN",
-            "BEGIN:VEVENT",
-            f"SUMMARY:{_ical_escape_text(summary)}",
-            f"DTSTART;VALUE=DATE-TIME:{start_dt.strftime('%Y%m%dT%H%M%S')}",
-            f"DTEND;VALUE=DATE-TIME:{end_dt.strftime('%Y%m%dT%H%M%S')}",
-            "END:VEVENT", "END:VCALENDAR",
-        ]) + "\r\n"
+        if all_day:
+            # Date-only event (industry convention for "date, no hour"):
+            # DTSTART;VALUE=DATE with DTEND = next day (RFC 5545 all-day).
+            start_date = _parse_start(start_time_str).date()
+            end_date = start_date + timedelta(days=1)
+            ical = "\r\n".join([
+                "BEGIN:VCALENDAR", "VERSION:2.0",
+                "PRODID:-//piSynapse//EN",
+                "BEGIN:VEVENT",
+                f"SUMMARY:{_ical_escape_text(summary)}",
+                f"DTSTART;VALUE=DATE:{start_date:%Y%m%d}",
+                f"DTEND;VALUE=DATE:{end_date:%Y%m%d}",
+                "END:VEVENT", "END:VCALENDAR",
+            ]) + "\r\n"
+        else:
+            start_dt = datetime.fromisoformat(start_time_str)
+            end_dt = start_dt + timedelta(minutes=duration_minutes)
+            ical = "\r\n".join([
+                "BEGIN:VCALENDAR", "VERSION:2.0",
+                "PRODID:-//piSynapse//EN",
+                "BEGIN:VEVENT",
+                f"SUMMARY:{_ical_escape_text(summary)}",
+                f"DTSTART;VALUE=DATE-TIME:{start_dt.strftime('%Y%m%dT%H%M%S')}",
+                f"DTEND;VALUE=DATE-TIME:{end_dt.strftime('%Y%m%dT%H%M%S')}",
+                "END:VEVENT", "END:VCALENDAR",
+            ]) + "\r\n"
         calendar.add_event(ical)
         _invalidate_today_cache()
         return f"OK '{summary}' added to calendar."

@@ -69,15 +69,16 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "create_calendar_event",
-            "description": "Add a new event to the user's calendar. Call this when the user asks to schedule something OR asks to be reminded at a specific time/date (e.g. 'remind me at 9am on Thursday', 'yarın saat 9'da hatırlat').",
+            "description": "Add a new event to the user's calendar. Call this when the user asks to schedule something OR asks to be reminded at a specific time/date (e.g. 'remind me at 9am on Thursday', 'yarın hatırlat'). When only a day/date is given with NO specific time, create an ALL-DAY event: all_day=true with start_time as just the date (Y-m-d) — never invent an hour. If the user asks to place it in a free slot, list that day's events first and pick an hour where nothing overlaps, then create with that time.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "summary": {"type": "string", "description": "Event title."},
-                    "start_time": {"type": "string", "description": "Start time in ISO 8601 format, e.g. 2026-06-20T14:00:00."},
-                    "duration_minutes": {"type": "integer", "description": "Event length in minutes. Defaults to 60."},
+                    "start_time": {"type": "string", "description": "Start time in ISO 8601 format. Timed event: '2026-06-20T14:00:00'. All-day event: just the date '2026-06-20'."},
+                    "duration_minutes": {"type": "integer", "description": "Event length in minutes. Defaults to 60. Ignored for all-day events."},
+                    "all_day": {"type": "boolean", "description": "True for a date-only (all-day) event with no specific time. Default false."},
                 },
-                "required": ["summary", "start_time"],
+                "required": ["summary"],
             },
         },
     },

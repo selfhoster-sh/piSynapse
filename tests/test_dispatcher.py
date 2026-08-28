@@ -46,6 +46,18 @@ class TestCalendarTools:
             )
         assert result == "Created."
         assert ce.call_args.args == ("Meet", "2026-08-17T10:00:00", 30)
+        assert ce.call_args.kwargs == {"all_day": False}
+
+    async def test_create_all_day_passes_through(self):
+        # Date-only (no clock hour) -> all-day event per industry convention.
+        with patch("calendar_ops.create_event", return_value="Created.") as ce:
+            result = await run_tool(
+                "create_calendar_event",
+                {"summary": "Water plants", "start_time": "2026-08-31", "all_day": True},
+            )
+        assert result == "Created."
+        assert ce.call_args.args == ("Water plants", "2026-08-31", 60)
+        assert ce.call_args.kwargs == {"all_day": True}
 
     async def test_create_invalid_duration_returns_error(self):
         result = await run_tool(

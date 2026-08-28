@@ -38,13 +38,30 @@ def test_reminder_with_clock_is_calendar():
     assert li_mod.reminder_group("do not forget the meds at 9 o'clock") == "calendar"
 
 
-def test_reminder_without_clock_is_memory():
+def test_reminder_with_date_only_is_calendar():
+    # day/relative/month date anchors with no clock hour -> calendar
+    # (all-day event per industry convention: Google Calendar, Apple Reminders)
+    assert li_mod.reminder_group("gelecek hafta pazartesi toplantıyı hatırlat") == "calendar"
+    assert li_mod.reminder_group("yarın su içmeyi hatırlat") == "calendar"
+    assert li_mod.reminder_group("recuérdame llamar a mamá el domingo") == "calendar"
+    assert li_mod.reminder_group("remind me next Monday to send the proposal") == "calendar"
+    assert li_mod.reminder_group("15 mart için dişçi randevusu hatırlat") == "calendar"
+    assert li_mod.reminder_group("remind me in 3 days to check the invoice") == "calendar"
+    assert li_mod.reminder_group("3 gün sonra faturaları ödemeyi hatırlat") == "calendar"
+
+
+def test_reminder_without_temporal_anchor_is_memory():
+    # reminders WITHOUT any temporal anchor stay in memory
     assert li_mod.reminder_group("bunu hatırlat: eve döndüğümde çamaşırları as") == "memory"
     assert li_mod.reminder_group("remind me to buy milk") == "memory"
-    # day/relative words carry no clock -> memory, not a guessed calendar time
-    assert li_mod.reminder_group("recuérdame llamar a mamá el domingo") == "memory"
-    assert li_mod.reminder_group("yarın su içmeyi hatırlat") == "memory"
     assert li_mod.reminder_group("çamaşır asmayı unutma eve dönünce") == "memory"
+
+
+def test_pazar_as_market_is_not_a_date():
+    # "pazar" dative form = the bazaar/market, not Sunday
+    assert li_mod.reminder_group("pazara gitmeyi unutma") == "memory"
+    assert li_mod.reminder_group("pazardan soğan almayı unutma") == "memory"
+    assert li_mod.reminder_group("pazar günü su içmeyi hatırlat") == "calendar"
 
 
 def test_bare_remember_is_not_a_reminder_rule():
@@ -62,8 +79,9 @@ def test_keyword_hati̇rla_does_not_swallow_reminder_family():
 def test_keyword_group_routes_reminder_time_to_calendar():
     assert li_mod._keyword_group("bana perşembe için bir hatırlatıcı kur, saat 9'da") == "calendar"
     assert li_mod._keyword_group("yarın saat 8'de su içmeyi hatırlat") == "calendar"
+    assert li_mod._keyword_group("gelecek hafta pazartesi toplantıyı hatırlat") == "calendar"
     assert li_mod._keyword_group("bunu hatırlat: eve döndüğümde çamaşırları as") == "memory"
-    assert li_mod._keyword_group("yarın su içmeyi hatırlat") == "memory"
+    assert li_mod._keyword_group("remind me to buy milk") == "memory"
 
 
 def test_hit_groups_no_memory_collision_on_reminder():
@@ -89,8 +107,9 @@ def test_classify_reminder_never_consults_embedding(audit_db, monkeypatch):
     assert asyncio.run(li_mod._classify_intent("bana perşembe için bir hatırlatıcı kur, saat 9'da")) == ("action", "calendar")
     assert asyncio.run(li_mod._classify_intent("şunu hatırla: en sevdiğim renk mavi")) == ("action", "memory")
     assert asyncio.run(li_mod._classify_intent("bunu hatırlat: eve döndüğümde çamaşırları as")) == ("action", "memory")
-    # day-only reminder has no clock -> memory, not a guessed calendar slot
-    assert asyncio.run(li_mod._classify_intent("yarın su içmeyi hatırlat")) == ("action", "memory")
+    # day/date-only reminder (no clock) -> calendar all-day deterministically
+    assert asyncio.run(li_mod._classify_intent("gelecek hafta pazartesi toplantıyı hatırlat")) == ("action", "calendar")
+    assert asyncio.run(li_mod._classify_intent("yarın su içmeyi hatırlat")) == ("action", "calendar")
     # spelled-out clock still routes to calendar deterministically
     assert asyncio.run(li_mod._classify_intent("sekizde su içmeyi hatırlat")) == ("action", "calendar")
     # Reminder + a second domain -> combined toolset, not calendar alone.

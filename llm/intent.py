@@ -41,16 +41,18 @@ _REMINDER_VERBS = (
     "nudge me", "ping me",
     "nicht vergessen", "vergess",                # DE
     "n'oublie", "oublie pas", "réveille", "reveille",   # FR
-    "no olvides", "avísame", "avisame", "despiértame", "despiertame",  # ES
+    "no olvides", "avísame", "avisame", "despiértame", "despiertame",
+    "recuérdate", "recuerdate", "recuerda", "recordar",  # ES
 )
 
-# A reminder becomes a CALENDAR event only when a place-able CLOCK is present
-# (numeric "9'da"/"09:00"/"9am", clock nouns "8 Uhr", spelled-out TR
-# cardinals "sekizde"/"buçukta", or single-instant words like noon/öğle/midi).
-# A bare day name or relative term ("yarın", "el domingo") carries NO clock —
-# routing it to calendar would make create_calendar_event guess a start time,
-# so such reminders are MEMORY notes instead.
-_TIME_SIGNAL_PATTERN = re.compile(
+# A reminder becomes a CALENDAR event whenever it carries a temporal anchor.
+# Any anchor (clock hour, date, relative day, month/date, duration-in-days)
+# keeps it in the calendar; only reminders with NO temporal anchor at all stay
+# in memory. Industry convention: clock -> timed event, bare day/date -> the
+# model creates an all-day event rather than inventing an hour.
+
+# CLOCK anchors -> timed calendar event.
+_CLOCK_SIGNAL_PATTERN = re.compile(
     r"("
     # numeric clocks: 9'da / 09:00'da / 9da / 19:30 / 8 Uhr / 9am
     r"\b\d{1,2}(?::\d{2})?\s*'?[tdTD]?[ae]\b"
@@ -80,14 +82,55 @@ _TIME_SIGNAL_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# DATE anchors -> all-day calendar event: day names, relative day terms,
+# month+day, numeric dates, and "in N days/weeks" across TR/EN/DE/FR/ES.
+_DATE_SIGNAL_PATTERN = re.compile(
+    r"("
+    # day names — 5 languages ("pazar" = Sunday, not the market: exclude the
+    # dative 'pazara/pazardan' form used for the bazaar)
+    r"\b(?:pazartesi|sal[ıi]|çarşamba|carsamba|perşembe|persembe|cuma\b"
+    r"|pazarları|cumartesi|pazar(?!a\b)"
+    r"|monday|tuesday|wednesday|thursday|friday|saturday|sunday"
+    r"|montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag"
+    r"|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche"
+    r"|lunes|martes|mi[ée]rcoles|jueves|viernes|s[áa]bado|domingo)\b"
+    # relative date-level terms
+    r"|\b(?:yarın|yarin|bugün|bugun|öbür gün|obur gun|haftaya|gelecek hafta"
+    r"|sonraki hafta|önümüzdeki hafta|onumuzdeki hafta|bu hafta|hafta sonu|haftasonu"
+    r"|tomorrow|today|tonight|next week|this week|next month|this month"
+    r"|the day after tomorrow|day after tomorrow"
+    r"|morgen|heute|übermorgen|ubermorgen|nächste woche|naechste woche"
+    r"|demain|ce soir|cette semaine|la semaine prochaine"
+    r"|mañana|manana|hoy|la semana que viene|pasado mañana|pasado manana)\b"
+    # time-of-day soft anchors (no clock hour): evening / morning / afternoon
+    r"|\b(?:akşam|aksam|sabah|gece|evening|morning|afternoon"
+    r"|abend|soir|apr[èe]s-midi|tarde|noche)\b"
+    # "in N days/weeks" (5 languages) and TR "N gün sonra"
+    r"|\bin\s+\d+\s*(?:days?|weeks?)\b"
+    r"|\bin\s+\d+\s*(?:tagen?|wochen?)\b"
+    r"|\bdans\s+\d+\s*(?:jours?|semaines?)\b"
+    r"|\ben\s+\d+\s*(?:d[ií]as?|semanas?)\b"
+    r"|\b\d+\s*(?:gün|gun|hafta)\s*(?:sonra|önce|once)\b"
+    # month + day (TR/EN): 15 mart / march 5 / 05.03(2026)
+    r"|\b\d{1,2}\s*(?:ocak|şubat|mart|nisan|mayıs|mayis|haziran|temmuz"
+    r"|ağustos|agustos|eyl[üu]l|ekim|kasım|kasim|aralık|aralik)\b"
+    r"|\b(?:janu|febru|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}\b"
+    r"|\b\d{1,2}[./-]\d{1,2}(?:[./-]\d{2,4})?\b"
+    # Turkish "ayın 15'inde" / "ayın 3'ün" / "her ayın 15'i"
+    r"|\bay[ıi]n\s+\d{1,2}\b"
+    r")",
+    re.IGNORECASE,
+)
+
 
 def reminder_group(message: str) -> str | None:
     """Deterministically route reminder phrasings.
 
-    Returns 'calendar' when a reminder wording appears together with a
-    place-able clock (numeric hour, spoken clock, noon family), 'memory'
-    for a bare 'remember this' recollection or a day/relative-only note, and
-    None when no reminder wording is present at all.
+    Returns 'calendar' when a reminder wording appears with a temporal anchor
+    — a clock hour (timed event) or a day/date (all-day event). 'memory'
+    remains only for a bare recollection ('şunu hatırla') or a reminder with
+    NO temporal anchor at all ('remind me to buy milk', 'eve dönünce...'),
+    and None when no reminder wording is present.
     """
     ml = message.lower()
     if not (
@@ -95,7 +138,9 @@ def reminder_group(message: str) -> str | None:
         or any(w in ml for w in _REMINDER_VERBS)
     ):
         return None
-    return "calendar" if _TIME_SIGNAL_PATTERN.search(ml) else "memory"
+    if _CLOCK_SIGNAL_PATTERN.search(ml) or _DATE_SIGNAL_PATTERN.search(ml):
+        return "calendar"
+    return "memory"
 
 
 def _has_recent_email_context(history: list[dict]) -> bool:
