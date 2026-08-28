@@ -117,6 +117,7 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> str:
                     summary,
                     st,
                     dur,
+                    all_day=bool(params.get("all_day")),
                 )
             elif name == "list_calendar_events":
                 from calendar_ops import list_events
