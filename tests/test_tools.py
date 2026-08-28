@@ -65,7 +65,7 @@ class TestToolDefinitions:
     def test_tool_names_match(self):
         defined = {t["function"]["name"] for t in TOOLS}
         assert defined == TOOL_NAMES
-        assert len(TOOLS) == 22
+        assert len(TOOLS) == 23
 
     def test_tool_groups(self):
         for group, names in TOOL_GROUPS.items():

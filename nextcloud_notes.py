@@ -148,6 +148,36 @@ class NextcloudNotesClient:
             return False
         return True
 
+    @retry(attempts=2, delay=1.0)
+    def search_notes_server(self, query: str, limit: int = 10) -> list[dict]:
+        """Search notes using Nextcloud server-side search API (if supported).
+
+        Falls back to client-side filtering if the API doesn't support search param.
+        Returns up to `limit` matches.
+        """
+        # Try server-side search first (Nextcloud Notes API v1.0.2+ supports ?search=)
+        try:
+            encoded_query = query.replace(" ", "+")
+            result = self._request("GET", f"notes?search={encoded_query}&page=1&itemsPerPage={limit}")
+            if isinstance(result, dict):
+                data = result.get("data", [])
+                notes = data if isinstance(data, list) else (data.get("notes", []) if isinstance(data, dict) else [])
+            else:
+                notes = result or []
+            if notes:
+                return notes[:limit]
+        except Exception:
+            pass  # Fall back to client-side
+
+        # Fallback: client-side filtering
+        all_notes = self.list_notes()
+        q = query.lower()
+        matches = [
+            n for n in all_notes
+            if q in (n.get("title", "") + " " + n.get("content", "")).lower()
+        ]
+        return matches[:limit]
+
 
 def _get_client() -> NextcloudNotesClient | None:
     """Return singleton client, create if needed."""
@@ -299,32 +329,28 @@ async def delete_note(note_id: int) -> str:
         return "ERROR: Failed to delete note."
 
 
-async def search_notes(query: str) -> tuple[str, list[dict]]:
+async def search_notes(query: str, limit: int = 10) -> tuple[str, list[dict]]:
     """Search notes by title or content.
 
     Returns ``(display_text, items)`` — same contract as ``list_notes``.
+    Uses server-side search API when available (Nextcloud Notes v1.0.2+).
     """
     client = _get_client()
     if not client:
         return "ERROR: Nextcloud credentials missing.", []
     try:
-        notes = await asyncio.to_thread(client.list_notes)
-        q = query.lower()
-        matches = [
-            n for n in notes
-            if q in (n.get("title", "") + " " + n.get("content", "")).lower()
-        ]
+        matches = await asyncio.to_thread(client.search_notes_server, query, limit)
         if not matches:
             return f"'{query}' not found in notes.", []
         lines = [f" Search Results for '{query}':\n"]
-        for i, n in enumerate(matches[:10], 1):
+        for i, n in enumerate(matches, 1):
             title = n.get("title", "Untitled")
             preview = n.get("content", "")[:100].replace("\n", " ")
             lines.append(f"   {i}. {title}")
             if preview:
                 lines.append(f"      Preview: {preview}...")
             lines.append("")
-        return "\n".join(lines), matches[:10]
+        return "\n".join(lines), matches
     except Exception as e:
         logger.error(f"Nextcloud Notes Error: {e}")
         return "ERROR: Failed to search notes.", []

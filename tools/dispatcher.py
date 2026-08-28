@@ -118,6 +118,7 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> str:
                     st,
                     dur,
                     all_day=bool(params.get("all_day")),
+                    rrule=params.get("rrule") or None,
                 )
             elif name == "list_calendar_events":
                 from calendar_ops import list_events
@@ -153,6 +154,15 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> str:
                     if uid is None:
                         return f"ERROR: Event '{uid_ref}' not found. Run list_calendar_events first to see available events."
                 return await asyncio.to_thread(delete_event, s, event_uid=uid)
+            elif name == "find_free_slots":
+                from calendar_ops import find_free_slots
+                date_str = params.get("date", "")
+                if not date_str:
+                    return "ERROR: date required (YYYY-MM-DD)."
+                dur = _safe_int(params.get("duration_minutes", 60), 60, "duration_minutes", min_value=1)
+                day_start = params.get("day_start", "09:00")
+                day_end = params.get("day_end", "18:00")
+                return await asyncio.to_thread(find_free_slots, date_str, dur, day_start, day_end)
         except ValueError as e:
             return f"ERROR: {e}"
         except Exception as e:
@@ -374,7 +384,7 @@ async def _run_mail_tool(name: str, params: dict, session_id: str = "", user_tex
         return "ERROR: Mail connection failed. Check .env configuration."
 
     account_id = 1
-    mailbox_id = "INBOX"
+    mailbox_id = params.get("mailbox", "INBOX")
 
     try:
         if name == "list_emails":
@@ -432,7 +442,7 @@ async def _run_mail_tool(name: str, params: dict, session_id: str = "", user_tex
             if not q:
                 return "ERROR: 'query' required."
             limit = _safe_int(params.get("limit", 10), 10, "limit", min_value=1)
-            results = await mc.search_messages(account_id, q, limit)
+            results = await mc.search_messages(account_id, q, limit, mailbox_id)
             if not results:
                 return f"'{q}' no results found."
             if session_id:

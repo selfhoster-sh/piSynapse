@@ -77,6 +77,7 @@ TOOLS = [
                     "start_time": {"type": "string", "description": "Start time in ISO 8601 format. Timed event: '2026-06-20T14:00:00'. All-day event: just the date '2026-06-20'."},
                     "duration_minutes": {"type": "integer", "description": "Event length in minutes. Defaults to 60. Ignored for all-day events."},
                     "all_day": {"type": "boolean", "description": "True for a date-only (all-day) event with no specific time. Default false."},
+                    "rrule": {"type": "string", "description": "Optional RFC 5545 RRULE for recurring events (e.g. 'FREQ=WEEKLY;BYDAY=MO,WE,FR;UNTIL=20261231')."},
                 },
                 "required": ["summary"],
             },
@@ -132,12 +133,30 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "find_free_slots",
+            "description": "Find free time slots on a given day for scheduling. Call this when the user asks 'when am I free', 'find a slot', 'boş saat', 'uygun saat' or wants to place an event in a free slot. Returns numbered list of available slots.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "date": {"type": "string", "description": "Date in YYYY-MM-DD format."},
+                    "duration_minutes": {"type": "integer", "description": "Minimum slot length in minutes. Defaults to 60."},
+                    "day_start": {"type": "string", "description": "Day start time HH:MM. Defaults to 09:00."},
+                    "day_end": {"type": "string", "description": "Day end time HH:MM. Defaults to 18:00."},
+                },
+                "required": ["date"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "list_emails",
-            "description": "Give a general overview of the inbox: recent emails (sender, subject, date, preview), numbered 1., 2., ... Use for 'what's in my inbox', 'any messages from X', 'new/unread email'. When the user asks about a SPECIFIC mail by subject, sender, or topic, use search_emails instead. Refer to emails only by list number.",
+            "description": "Give a general overview of a mail folder: recent emails (sender, subject, date, preview), numbered 1., 2., ... Use for 'what's in my inbox', 'any messages from X', 'new/unread email'. When the user asks about a SPECIFIC mail by subject, sender, or topic, use search_emails instead. Refer to emails only by list number.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "limit": {"type": "integer", "description": "Max number of emails to return. Defaults to 10."},
+                    "mailbox": {"type": "string", "description": "Mail folder name (e.g. INBOX, Sent, Archive). Defaults to INBOX."},
                 },
                 "required": [],
             },
@@ -185,6 +204,7 @@ TOOLS = [
                 "properties": {
                     "query": {"type": "string", "description": "Search term (matches subject, sender, and body)."},
                     "limit": {"type": "integer", "description": "Max number of results. Defaults to 10."},
+                    "mailbox": {"type": "string", "description": "Mail folder name (e.g. INBOX, Sent, Archive). Defaults to INBOX."},
                 },
                 "required": ["query"],
             },
@@ -293,11 +313,12 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "search_notes",
-            "description": "Search the user's notes by title or content. Use this when the user asks about something they might have noted down.",
+            "description": "Search the user's notes by title or content. Use this when the user asks about something they might have noted down. Uses server-side search when available (Nextcloud Notes v1.0.2+).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "Search term."},
+                    "limit": {"type": "integer", "description": "Max number of results. Defaults to 10."},
                 },
                 "required": ["query"],
             },
@@ -372,6 +393,7 @@ TOOLS = [
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "Search term."},
+                    "limit": {"type": "integer", "description": "Max number of results. Defaults to 10."},
                 },
                 "required": ["query"],
             },
@@ -389,10 +411,11 @@ TOOL_NAMES = {t["function"]["name"] for t in TOOLS}
 TOOL_GROUPS: dict[str, list[str]] = {
     "weather":  ["get_weather", "get_datetime"],
     "email":    ["list_emails", "read_email", "send_email", "search_emails", "get_datetime"],
-    "calendar": ["create_calendar_event", "list_calendar_events", "update_calendar_event", "delete_calendar_event", "get_datetime"],
+    "calendar": ["create_calendar_event", "list_calendar_events", "update_calendar_event", "delete_calendar_event", "find_free_slots", "get_datetime"],
     "tasks":    ["create_task", "list_tasks", "complete_task", "delete_task", "search_tasks", "get_datetime"],
     "notes":    ["create_note", "list_notes", "read_note", "update_note", "delete_note", "search_notes", "get_datetime"],
     "memory":   ["save_memory", "get_datetime"],
+    "utility":  ["get_datetime", "get_weather"],
 }
 
 

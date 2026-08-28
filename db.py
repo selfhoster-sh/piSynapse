@@ -22,6 +22,11 @@ os.umask(0o077)
 _db: aiosqlite.Connection | None = None
 _db_lock = asyncio.Lock()
 
+# Backfill task control (prevents unbounded embedding tasks on legacy memories)
+_BACKFILL_SEMAPHORE = asyncio.Semaphore(2)
+_BACKFILL_BATCH_SIZE = 10
+_backfill_task: asyncio.Task | None = None
+
 _LOCKED_RETRIES = 3
 
 
@@ -1242,18 +1247,27 @@ async def search_memories(query: str, user_id: str | None = None, limit: int = 5
 
     if backfill_ids:
         async def _backfill():
-            for mid in backfill_ids:
-                try:
-                    row = await db.execute("SELECT content FROM memories WHERE id = ?", (mid,))
-                    r = await row.fetchone()
-                    if r:
-                        emb = await embed_async(r[0])
-                        await db.execute("UPDATE memories SET embedding = ? WHERE id = ?", (emb, mid))
-                except Exception as e:
-                    logger.error("Embedding backfill failed for memory %s: %s", mid, e)
-            await db.commit()
-        import asyncio
-        asyncio.create_task(_backfill())
+            async with _BACKFILL_SEMAPHORE:
+                for i in range(0, len(backfill_ids), _BACKFILL_BATCH_SIZE):
+                    batch = backfill_ids[i : i + _BACKFILL_BATCH_SIZE]
+                    for mid in batch:
+                        try:
+                            row = await db.execute("SELECT content FROM memories WHERE id = ?", (mid,))
+                            r = await row.fetchone()
+                            if r:
+                                emb = await embed_async(r[0])
+                                await db.execute("UPDATE memories SET embedding = ? WHERE id = ?", (emb, mid))
+                        except Exception as e:
+                            logger.error("Embedding backfill failed for memory %s: %s", mid, e)
+                    await db.commit()
+                    # Small yield between batches to avoid starving the event loop
+                    await asyncio.sleep(0.05)
+
+        global _backfill_task
+        # Cancel any previous backfill to avoid duplicate work
+        if _backfill_task and not _backfill_task.done():
+            _backfill_task.cancel()
+        _backfill_task = asyncio.create_task(_backfill())
 
     # Update access stats for retrieved results
     if result:

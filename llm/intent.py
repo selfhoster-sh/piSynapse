@@ -28,13 +28,14 @@ _EMAIL_CTX_MARKERS = (
 _REMINDER_WORDS = (
     "hatırlat", "hatirlat", "hatırlatıcı", "hatirlatici", "hatırlatma",
     "remind", "reminder", "erinner", "rappelle", "rappel", "recuerd", "recuérd",
+    "recordatorio",  # ES
 )
 
 # Additional reminder verbs outside the classic family ("alarm kur",
 # "beni uyar", "haber ver", "asmayı unutma") so clock-anchored requests are
 # not skipped just because the wording isn't literally "hatırlat".
 _REMINDER_VERBS = (
-    "alarm",                                     # set an alarm (tr/en/de/fr/es)
+    "alarm", "wecker",                                     # set an alarm (tr/en/de/fr/es)
     "uyar", "bildir", "haber ver",               # TR
     "unutm",                                     # unutma / unutmayı / unutmasın
     "don't forget", "dont forget", "do not forget",  # EN
@@ -43,6 +44,20 @@ _REMINDER_VERBS = (
     "n'oublie", "oublie pas", "réveille", "reveille",   # FR
     "no olvides", "avísame", "avisame", "despiértame", "despiertame",
     "recuérdate", "recuerdate", "recuerda", "recordar",  # ES
+)
+
+# Negation patterns: explicit "don't remind" / "hatırlatma" should route to memory, not calendar
+_NEGATION_PATTERN = re.compile(
+    r"\b(?:hatırlatma|hatirlatma)\b"  # TR: "hatırlatma, sadece kaydet"
+    r"|don['\']?t\s+remind\b"          # EN: "don't remind me"
+    r"|do\s+not\s+remind\b"            # EN: "do not remind"
+    r"|nicht\s+erinnern\b"             # DE: "nicht erinnern"
+    r"|kein\s+wecker\b"                # DE: "kein wecker"
+    r"|ne\s+rappelle\s+pas\b"          # FR: "ne rappelle pas"
+    r"|pas\s+de\s+rappel\b"            # FR: "pas de rappel"
+    r"|no\s+recuerdes\b"               # ES: "no recuerdes"
+    r"|sin\s+recordatorio\b",          # ES: "sin recordatorio"
+    re.IGNORECASE,
 )
 
 # A reminder becomes a CALENDAR event whenever it carries a temporal anchor.
@@ -71,10 +86,25 @@ _CLOCK_SIGNAL_PATTERN = re.compile(
     r"|\bin\s+\d+\s*(?:stunden?|minuten?)\b"
     r"|\bdans\s+\d+\s*(?:heures?|minutes?)\b"
     r"|\ben\s+\d+\s*(?:horas?|minutos?)\b"
-    # hour connectors: a las 9 / à 9 / um 8
-    r"|\b(?:a\s+las|à\s+les?|um)\s*\d{1,2}\b"
-    # half past three
-    r"|\bhalf\s*past\s*\d{1,2}\b"
+    # spelled-out durations (cardinal words): in one hour, in zwei Stunden, en una hora
+    r"|\bin\s+(?:an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+hours?\b"
+    r"|\bin\s+(?:an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+minutes?\b"
+    r"|\bin\s+(?:ein|einer|eines|einen|zwei|drei|vier|f[üu]nf|sechs|sieben|acht|neun|zehn|elf|zwölf)\s+stunden?\b"
+    r"|\bin\s+(?:ein|einer|eines|einen|zwei|drei|vier|f[üu]nf|sechs|sieben|acht|neun|zehn|elf|zwölf)\s+minuten?\b"
+    r"|\bdans\s+(?:une|deux|trois|quatre|cinq|six|sept|huit|neuf|dix|onze|douze)\s+heures?\b"
+    r"|\bdans\s+(?:une|deux|trois|quatre|cinq|six|sept|huit|neuf|dix|onze|douze)\s+minutes?\b"
+    r"|\ben\s+(?:una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce)\s+horas?\b"
+    r"|\ben\s+(?:un|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce)\s+minutos?\b"
+    # hour connectors: a las 9 / à 9 / um 8 / at 9
+    r"|\b(?:a\s+las|à\s+(?:le?s?\s+)?|um|at)\s*\d{1,2}\b"
+    # hour connectors with spelled-out numbers: um ein Uhr, a la una, à une heure
+    r"|\bum\s+(?:ein|zwei|drei|vier|f[üu]nf|sechs|sieben|acht|neun|zehn|elf|zwölf)\s+uhr\b"
+    r"|\ba\s+la\s+una\b"
+    r"|\ba\s+las\s+(?:dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce)\b"
+    r"|\bà\s+(?:une|deux|trois|quatre|cinq|six|sept|huit|neuf|dix|onze|douze)\s+heures?\b"
+    # half past three + DE "halb zehn" (9:30)
+    r"|\bhalf\s*past\s*(?:\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b"
+    r"|\bhalb\s+(?:ein|zwei|drei|vier|f[üu]nf|sechs|sieben|acht|neun|zehn|elf|zwölf)\b"
     # single-instant clock words (noon family): öğle / gece yarısı (midnight)
     r"|\b(?:öğle|öğlen|ogle|oglen|gece yarısı|geceyarısı|noon|midday|midnight"
     r"|mittag|mitternacht|midi|minuit|mediodia|mediodía|medianoche)\b"
@@ -138,6 +168,9 @@ def reminder_group(message: str) -> str | None:
         or any(w in ml for w in _REMINDER_VERBS)
     ):
         return None
+    # Explicit negation ("hatırlatma", "don't remind") -> memory, not calendar
+    if _NEGATION_PATTERN.search(ml):
+        return "memory"
     if _CLOCK_SIGNAL_PATTERN.search(ml) or _DATE_SIGNAL_PATTERN.search(ml):
         return "calendar"
     return "memory"
@@ -203,6 +236,14 @@ _TOOL_EMBED_CORPUS: list[tuple[str | None, str]] = [
     ("calendar", "remind me, set a reminder, reminder at 9am, remind me tomorrow, scheduled reminder, "
                   "hatırlat, hatırlatıcı kur, saat dokuzda hatırlat, "
                   "erinnere mich, rappel-moi, recuérdame, pon un recordatorio"),
+    # Free-slot / available time
+    ("calendar", "find free slot, when am i free, available time, free time slot, boş saat, uygun saat, wann passt es, freier slot, horaire libre, créneau libre, hueco libre, horario libre"),
+    # Move / reschedule
+    ("calendar", "move event, reschedule, shift meeting, change time, etkinliği taşı, ertele, yeniden planla, verschieben, verlegen, déplacer, reporter, mover, reprogramar"),
+    # Cancel / delete
+    ("calendar", "cancel event, delete event, iptal et, takvimden sil, absagen, stornieren, annuler, supprimer, cancelar, eliminar"),
+    # Recurring
+    ("calendar", "recurring event, weekly meeting, monthly reminder, tekrarlayan, her hafta, her ay, wiederkehrend, wöchentlich, récurrent, hebdomadaire, recurrente, semanal"),
     ("tasks", "create task, to-do list, complete task, delete task, search tasks, what do I need to do"),
     ("tasks", "görev oluştur, yapılacaklar listesi, görevi tamamla, görev ara, görev sil"),
     ("tasks", "aufgabe erstellen, to-do-liste, aufgabe erledigen, aufgabe suchen"),
@@ -234,6 +275,8 @@ _TOOL_EMBED_CORPUS: list[tuple[str | None, str]] = [
     (None, "wie spät ist es, welches datum haben wir, wieviel uhr ist es"),
     (None, "quelle heure est-il, quelle est la date, donner l'heure"),
     (None, "qué hora es, qué fecha es hoy, dime la hora"),
+    ("utility", "what time is it, current time, what date, today's date, saat kaç, bugün günlerden ne, wie spät, quelle heure, qué hora"),
+    ("utility", "weather forecast, should i bring umbrella, hava nasıl, regnet es, va pleuvoir, va llover, şemsiye lazım mı"),
     (None, "hello hi hey good morning good evening how are you what's up nice to meet you thank you thanks please sorry excuse me goodbye see you later have a great day"),
     (None, "merhaba selam günaydın iyi akşamlar nasılsın naber tanıştığımıza memnun oldum teşekkürler lütfet özür dilerim hoşça kal görüşürüz iyi günler"),
     (None, "hallo guten morgen guten abend wie geht's dir freut mich danke bitte entschuldigung tschüss auf wiedersehen"),
@@ -295,7 +338,7 @@ async def _audit_intent(message: str, chosen_group: str | None,
 
 
 _KEYWORD_CHECKS = (
-    (["hava", "derece", "sıcaklık", "sicaklik", "tahmini", "yağmur", "yagmur", "rüzgar", "ruzgar", "kar", "bulut"], "weather"),
+    (["hava", "derece", "sıcaklık", "sicaklik", "tahmini", "yağmur", "yagmur", "rüzgar", "ruzgar", "kar", "bulut", "forecast", "prognoz", "vorhersage", "prévisions", "pronóstico"], "weather"),
     (["etkinlik", "takvim", "randevu", "toplantı", "olay"], "calendar"),
     # 'gönder' generic ama tek araç-evreninde gönderim=email; multi-domain
     # tespiti için de kritik ('hava durumunu maille gönder' sınıfı).
@@ -308,6 +351,14 @@ _KEYWORD_CHECKS = (
     (["notlar", "notu", "nota", "not defteri", "not oluştur", "not al", "note",
       "not düş", "not yaz"], "notes"),
     (["hatırla", "hatirla", "unutma", "sakla", "kaydet", "remember", "don't forget", "save"], "memory"),
+    # Utility: pure info questions needing real-time data (no personal data action)
+    (["saat kaç", "saat kac", "bugün günlerden ne", "tarih nedir", "saati söyle", "bugünün tarihi",
+      "what time", "what date", "today's date", "current time",
+      "wie spät", "welches datum", "wieviel uhr",
+      "quelle heure", "quelle date", "donne l'heure",
+      "qué hora", "qué fecha", "dime la hora",
+      "hava nasıl", "hava nasil", "should i bring", "şemsiye", "semsiye", "umbrella",
+      "regnet es", "va pleuvoir", "va llover"], "utility"),
 )
 
 

@@ -175,7 +175,7 @@ def test_read_email_missing_returns_none():
 
 def test_async_wrappers_offload(monkeypatch):
     client = _FakeMail(imap=_FakeIMAP(ids=("1",)))
-    client._list_emails = lambda limit=10: [{"id": "1"}]
+    client._list_emails = lambda limit=10, mailbox="INBOX": [{"id": "1"}]
     import asyncio
     result = asyncio.run(client.get_messages(1, None, limit=5))
     assert result == [{"id": "1"}]
