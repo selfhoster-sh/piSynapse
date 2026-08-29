@@ -2823,12 +2823,7 @@ function openGroupPicker(row, btn, auditId){
   };
   const doOpen=()=>{ sel=''; render(); row.appendChild(panel); };
   if(_toolGroupsCache){ doOpen(); return; }
-  const headers={'Content-Type':'application/json'};
-  const _k=getApiKey(); if(_k) headers['X-API-Key']=_k;
-  fetch(API+'/tools/groups',{headers}).then(r=>{
-    if(!r.ok) throw new Error('HTTP '+r.status);
-    return r.json();
-  }).then(j=>{
+  api('GET','/tools/groups').then(j=>{
     _toolGroupsCache=Array.isArray(j.groups)?j.groups:[];
     doOpen();
   }).catch(()=>{ toast(t('markLoadErr'),true); });
@@ -2836,23 +2831,15 @@ function openGroupPicker(row, btn, auditId){
 
 async function submitCorrection(row, btn, auditId, group, panel, saveEl){
   saveEl.disabled=true; saveEl.textContent='…';
-  const headers={'Content-Type':'application/json'};
-  const _k=getApiKey(); if(_k) headers['X-API-Key']=_k;
   try{
-    const resp=await fetch(API+'/chat/tool-correction',{method:'POST',headers,
-      body:JSON.stringify({audit_id:auditId, expected_group:group})});
-    if(resp.ok){
-      panel.remove();
-      btn.classList.add('marked');
-      btn.querySelector('.mk-ico').textContent='✓';
-      const lab=btn.querySelector('.mk-lab'); lab.textContent=t('markDone'); btn.title=t('markDone');
-      return;
-    }
-    let detail=String(resp.status);
-    try{ const j=await resp.json(); if(j && j.detail!=null) detail=j.detail; }catch{}
-    toast(t('markErr')+': '+detail, true);
+    await api('POST','/chat/tool-correction',{audit_id:auditId, expected_group:group});
+    panel.remove();
+    btn.classList.add('marked');
+    btn.querySelector('.mk-ico').textContent='✓';
+    const lab=btn.querySelector('.mk-lab'); lab.textContent=t('markDone'); btn.title=t('markDone');
   } catch(e){
-    toast(t('markErr'), true);
+    if(e && e.message && e.message.startsWith('HTTP ')) toast(t('markErr')+': '+e.message.slice(5), true);
+    else toast(t('markErr'), true);
   }
   // Non-success leaves the picker open so the user can retry in place.
   saveEl.disabled=false; saveEl.textContent=t('markSave');
