@@ -196,6 +196,17 @@ Add seed phrases for:
 **File**: `tools/definitions.py` `TOOL_GROUPS`
 Currently `question` has no tools. Some queries need `get_datetime` + answer: "what time is it in Tokyo?" → needs timezone conversion (not available). Consider `utility` group: `get_datetime`, `get_weather` (for "should I bring an umbrella?").
 
+**RESOLVED** (`f99676a`): the `utility` group was retired, not adopted. Audit evidence
+showed `get_datetime` is never queried standalone (26 tool-call records, all
+co-occurring with a domain tool; 0 intent-audit rows choosing a utility/datetime
+group). Timezone-aware "what time in Tokyo?" stays out of scope. Instead
+`get_datetime` is now present in every domain toolset (weather, email, calendar,
+tasks, notes, memory), so bare datetime queries fall back to the question/combined
+toolset and are answered without a dedicated group. Umbrella-style informational
+weather ("should I bring an umbrella?", "şemsiye lazım mı") no longer has a
+dedicated keyword anchor and is served by the embedding/combined fallback, where
+`get_weather` remains available.
+
 #### 5.11 Task/Note search: server-side vs client-side
 **File**: `nextcloud_tasks.py` `_search_tasks_sync` line 308-315; `nextcloud_notes.py` `search_notes` line 311-316
 Both fetch ALL then filter in Python. For large collections (>500), this is slow.
