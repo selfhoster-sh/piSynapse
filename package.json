@@ -1,0 +1,14 @@
+{
+  "name": "pisynapse-frontend-tests",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Playwright e2e tests for the piSynapse frontend (tool-marking flow)",
+  "scripts": {
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.40.0",
+    "playwright": "1.40.0"
+  }
+}
