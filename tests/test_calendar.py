@@ -90,7 +90,7 @@ class TestCreateEventSerialization:
         fake_cal = MagicMock()
         with patch("calendar_ops._get_calendar", return_value=fake_cal):
             result = create_event("Water plants", "2026-08-31", all_day=True)
-        assert "OK 'Water plants' added to calendar." == result
+        assert result[0] == "OK 'Water plants' added to calendar."
         ical = fake_cal.add_event.call_args.args[0]
         assert "DTSTART;VALUE=DATE:20260831" in ical
         assert "DTEND;VALUE=DATE:20260901" in ical
@@ -100,7 +100,7 @@ class TestCreateEventSerialization:
         fake_cal = MagicMock()
         with patch("calendar_ops._get_calendar", return_value=fake_cal):
             result = create_event("Meet", "2026-08-17T14:00:00", 30)
-        assert result == "OK 'Meet' added to calendar."
+        assert result[0] == "OK 'Meet' added to calendar."
         ical = fake_cal.add_event.call_args.args[0]
         assert "DTSTART;VALUE=DATE-TIME:20260817T140000" in ical
         assert "DTEND;VALUE=DATE-TIME:20260817T143000" in ical
@@ -110,7 +110,7 @@ class TestRunTool:
     async def test_unknown_tool_returns_not_found(self):
         from tools.dispatcher import run_tool
         result = await run_tool("nonexistent_tool", {})
-        assert result == "ERROR: Tool not found."
+        assert result[0] == "ERROR: Tool not found."
 
 
 class TestIntentFallback:

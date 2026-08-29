@@ -302,7 +302,7 @@ def test_task_create_invalidates_todos_cache(monkeypatch):
     monkeypatch.setattr(nt, "_todos_cache_ts", 123.0)
 
     result = nt._create_task_sync("Buy milk", "", 0, "")
-    assert result.startswith("OK")
+    assert result[0].startswith("OK")
     assert nt._todos_cache is None
     assert nt._todos_cache_ts == 0
 

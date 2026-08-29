@@ -194,7 +194,7 @@ def create_event(
     duration_minutes: int = 60,
     all_day: bool = False,
     rrule: str | None = None,
-) -> str:
+) -> tuple[str, str]:
     """Create a calendar event.
 
     Args:
@@ -203,6 +203,9 @@ def create_event(
         duration_minutes: Duration in minutes (ignored for all-day).
         all_day: True for date-only event.
         rrule: Optional RFC 5545 RRULE string (e.g. "FREQ=WEEKLY;BYDAY=MO,WE,FR").
+
+    Returns:
+        Tuple of (result_message, uid). uid is empty string on error.
     """
     try:
         calendar = _get_calendar()
@@ -230,12 +233,13 @@ def create_event(
         lines.extend(["END:VEVENT", "END:VCALENDAR"])
         ical = "\r\n".join(lines) + "\r\n"
 
-        calendar.add_event(ical)
+        event = calendar.add_event(ical)
+        uid = event.id or ""
         _invalidate_today_cache()
-        return f"OK '{summary}' added to calendar."
+        return f"OK '{summary}' added to calendar.", uid
     except Exception as e:
         logger.error("Failed to create calendar event '%s': %s", summary, e)
-        return f"ERROR: Could not create event '{summary}'."
+        return f"ERROR: Could not create event '{summary}'.", ""
 
 
 @retry(attempts=2, delay=1.0)

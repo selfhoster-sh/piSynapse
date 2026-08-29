@@ -21,13 +21,16 @@ def _get_context_fn(name: str):
     }[name]
 
 
-def is_tool_success(result: str) -> bool:
-    """Classify a tool result string for audit logging.
+def is_tool_success(result: str | tuple) -> bool:
+    """Classify a tool result for audit logging.
 
     Tool handlers contractually prefix genuine failures with "ERROR"; an
     empty result is never a success (a blank answer must not be counted as
-    a successful tool call in the audit log).
+    a successful tool call in the audit log). Accepts either the raw result
+    string or the ``(result_string, entity_id)`` tuple from ``run_tool``.
     """
+    if isinstance(result, tuple):
+        result = result[0]
     return bool(result) and not result.startswith("ERROR")
 
 
@@ -76,19 +79,21 @@ async def _resolve_position(session_id: str, ref, context_fn, id_field: str):
     return None
 
 
-async def run_tool(name: str, params: dict, context: dict | None = None) -> str:
-    """Route a tool call to the appropriate handler and return the result string."""
+async def run_tool(name: str, params: dict, context: dict | None = None) -> tuple[str, str | int | None]:
+    """Route a tool call to the appropriate handler and return (result_string, entity_id)."""
     context = context or {}
     user_text = (context.get("_user_text") or "").strip()
     chip_origin = (context.get("_origin") == "chip")
     logger.info("Tool call: %s params=%s", name, str(params)[:200])
 
+    entity_id: str | int | None = None
+
     if name == "get_datetime":
-        return f"Current: {datetime.now().strftime('%d %B %Y, %A, %H:%M')}"
+        return f"Current: {datetime.now().strftime('%d %B %Y, %A, %H:%M')}", None
 
     if name == "get_weather":
         from weather import get_weather
-        return await get_weather(params.get("city", ""))
+        return await get_weather(params.get("city", "")), None
 
     if name in {"create_calendar_event", "list_calendar_events", "update_calendar_event", "delete_calendar_event"}:
         session_id = context.get("session_id", "")
@@ -99,7 +104,7 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> str:
                     return ("CLARIFY_REQUIRED: Quick-action request without details. Ask the user "
                             "ONE short question (in their language): what is the event about, and "
                             "when does it start (date and time)? "
-                            "Do not call create_calendar_event again until they answer.")
+                            "Do not call create_calendar_event again until they answer."), None
                 from calendar_ops import create_event
                 st = params.get("start_time")
                 summary = (params.get("summary") or "").strip()
@@ -110,9 +115,9 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> str:
                             + " and ".join(missing) + ". Ask the user ONE short question "
                             "(in their language) for exactly those details. "
                             "Do not call create_calendar_event again until they answer. "
-                            f'The user\'s original message: "{user_text}"')
+                            f'The user\'s original message: "{user_text}"'), None
                 dur = _safe_int(params.get("duration_minutes", 60), 60, "duration_minutes", min_value=1)
-                return await asyncio.to_thread(
+                result, uid = await asyncio.to_thread(
                     create_event,
                     summary,
                     st,
@@ -120,18 +125,20 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> str:
                     all_day=bool(params.get("all_day")),
                     rrule=params.get("rrule") or None,
                 )
+                # Attach UID to result for verification
+                return result, uid
             elif name == "list_calendar_events":
                 from calendar_ops import list_events
                 days = _safe_int(params.get("days_ahead", 7), 7, "days_ahead", min_value=1)
                 raw, events = await asyncio.to_thread(list_events, days)
                 if not raw.startswith("ERROR") and session_id:
                     await cache_calendar_context(session_id, events)
-                return raw
+                return raw, None
             elif name == "update_calendar_event":
                 from calendar_ops import update_event
                 s = params.get("summary", "")
                 if not s:
-                    return "ERROR: Event name required."
+                    return "ERROR: Event name required.", None
                 new_s = params.get("new_summary", "")
                 new_t = params.get("new_start_time", "")
                 new_d = _safe_int(params.get("new_duration_minutes", 0), 0, "new_duration_minutes")
@@ -140,42 +147,43 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> str:
                 if uid_ref:
                     uid = await _resolve_position(session_id, uid_ref, _get_context_fn("calendar"), id_field="uid")
                     if uid is None:
-                        return f"ERROR: Event '{uid_ref}' not found. Run list_calendar_events first to see available events."
-                return await asyncio.to_thread(update_event, s, new_summary=new_s, new_start_time=new_t, new_duration_minutes=new_d, event_uid=uid)
+                        return f"ERROR: Event '{uid_ref}' not found. Run list_calendar_events first to see available events.", None
+                return await asyncio.to_thread(update_event, s, new_summary=new_s, new_start_time=new_t, new_duration_minutes=new_d, event_uid=uid), uid
             elif name == "delete_calendar_event":
                 from calendar_ops import delete_event
                 s = params.get("summary")
                 if not s:
-                    return "ERROR: Event name required."
+                    return "ERROR: Event name required.", None
                 uid_ref = params.get("event_uid", "")
                 uid = ""
                 if uid_ref:
                     uid = await _resolve_position(session_id, uid_ref, _get_context_fn("calendar"), id_field="uid")
                     if uid is None:
-                        return f"ERROR: Event '{uid_ref}' not found. Run list_calendar_events first to see available events."
-                return await asyncio.to_thread(delete_event, s, event_uid=uid)
+                        return f"ERROR: Event '{uid_ref}' not found. Run list_calendar_events first to see available events.", None
+                return await asyncio.to_thread(delete_event, s, event_uid=uid), uid
             elif name == "find_free_slots":
                 from calendar_ops import find_free_slots
                 date_str = params.get("date", "")
                 if not date_str:
-                    return "ERROR: date required (YYYY-MM-DD)."
+                    return "ERROR: date required (YYYY-MM-DD).", None
                 dur = _safe_int(params.get("duration_minutes", 60), 60, "duration_minutes", min_value=1)
                 day_start = params.get("day_start", "09:00")
                 day_end = params.get("day_end", "18:00")
-                return await asyncio.to_thread(find_free_slots, date_str, dur, day_start, day_end)
+                return await asyncio.to_thread(find_free_slots, date_str, dur, day_start, day_end), None
         except ValueError as e:
-            return f"ERROR: {e}"
+            return f"ERROR: {e}", None
         except Exception as e:
             logger.error(f"Nextcloud Error: {e}")
-            return "ERROR: Calendar operation failed. Check server logs."
+            return "ERROR: Calendar operation failed. Check server logs.", None
 
     if name in {"list_emails", "read_email", "send_email", "search_emails"}:
+        # _run_mail_tool already returns (result_string, entity_id)
         return await _run_mail_tool(name, params, context.get("session_id", ""), context.get("_user_text", ""), chip_origin)
 
     if name == "save_memory":
         content = (params.get("content") or "").strip()
         if not content:
-            return "ERROR: content required."
+            return "ERROR: content required.", None
         # Guard against meta-requests being stored as memories: a description
         # of what the user just asked ("user wants to see notes") is not a
         # durable fact about the user. Seen in the wild once; never again.
@@ -184,28 +192,30 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> str:
             logger.warning(f"save_memory rejected meta-content: {content!r}")
             return ("ERROR: That describes a request, not a durable fact about the user. "
                     "Memories must outlive the conversation (preferences, habits, personal info). "
-                    "Do not retry saving this; simply fulfill the user's actual request.")
+                    "Do not retry saving this; simply fulfill the user's actual request."), None
         from db import save_memory
         importance = params.get("importance", 5)
         try:
             importance = max(1, min(10, int(importance)))
         except (ValueError, TypeError):
             importance = 5
-        await save_memory(
+        result, rowid = await save_memory(
             content=content,
             category=params.get("category", "general"),
             importance=importance,
             user_id=context.get("user_id"),
         )
-        return "Memory saved."
+        return result, rowid
 
     if name in {"create_note", "list_notes", "read_note", "update_note", "delete_note", "search_notes"}:
-        return await _run_notes_tool(name, params, context.get("session_id", ""), context.get("_user_text", ""), chip_origin)
+        result = await _run_notes_tool(name, params, context.get("session_id", ""), context.get("_user_text", ""), chip_origin)
+        return result, None
 
     if name in {"create_task", "list_tasks", "complete_task", "delete_task", "search_tasks"}:
+        # _run_tasks_tool already returns (result_string, entity_id)
         return await _run_tasks_tool(name, params, context.get("session_id", ""), context.get("_user_text", ""), chip_origin)
 
-    return "ERROR: Tool not found."
+    return "ERROR: Tool not found.", None
 
 
 async def _run_notes_tool(name: str, params: dict, session_id: str = "", user_text: str = "", chip_origin: bool = False) -> str:
@@ -297,7 +307,7 @@ async def _run_notes_tool(name: str, params: dict, session_id: str = "", user_te
     return "ERROR: Tool not found."
 
 
-async def _run_tasks_tool(name: str, params: dict, session_id: str = "", user_text: str = "", chip_origin: bool = False) -> str:
+async def _run_tasks_tool(name: str, params: dict, session_id: str = "", user_text: str = "", chip_origin: bool = False) -> tuple[str, str | int | None]:
     """Dispatch task tool calls with session-aware UID resolution."""
     from nextcloud_tasks import (
         complete_task,
@@ -316,72 +326,75 @@ async def _run_tasks_tool(name: str, params: dict, session_id: str = "", user_te
             if chip_origin:
                 return ("CLARIFY_REQUIRED: Quick-action request without details. Ask the user "
                         "ONE short question (in their language): what is the task, and when is it due? "
-                        "Do not call create_task again until they answer.")
+                        "Do not call create_task again until they answer."), None
             summary = params.get("summary", "").strip()
             if not summary:
                 # Chip flow guard: no empty/placeholder tasks.
                 return ("CLARIFY_REQUIRED: The task has no text. Ask the user ONE short "
                         "question (in their language) about what the task should be. "
                         "Do not call create_task again until they answer. "
-                        f'The user\'s original message: "{user_text}"')
+                        f'The user\'s original message: "{user_text}"'), None
             priority = _safe_int(params.get("priority", 0), 0, "priority")
-            return await create_task(
+            result, uid = await create_task(
                 summary=summary,
                 due=params.get("due", ""),
                 priority=priority,
                 notes=params.get("notes", ""),
             )
+            return result, uid
         elif name == "list_tasks":
             show_completed = _as_bool(params.get("show_completed", False))
             raw, items = await _list_tasks_raw(show_completed=show_completed)
             if not raw.startswith("ERROR") and session_id:
                 from prompt import cache_tasks_context
                 await cache_tasks_context(session_id, items)
-            return raw
+            return raw, None
         elif name == "complete_task":
             uid = params.get("uid")
             uid = str(uid).strip() if uid is not None else ""
             if not uid:
-                return "ERROR: uid required."
+                return "ERROR: uid required.", None
             resolved = await _resolve_position(session_id, uid, _get_context_fn("tasks"), id_field="uid")
             if resolved is None:
-                return f"ERROR: Task '{uid}' not found. Run list_tasks first to see available tasks."
-            return await complete_task(resolved)
+                return f"ERROR: Task '{uid}' not found. Run list_tasks first to see available tasks.", None
+            result = await complete_task(resolved)
+            return result, None
         elif name == "delete_task":
             uid = params.get("uid")
             uid = str(uid).strip() if uid is not None else ""
             if not uid:
-                return "ERROR: uid required."
+                return "ERROR: uid required.", None
             resolved = await _resolve_position(session_id, uid, _get_context_fn("tasks"), id_field="uid")
             if resolved is None:
-                return f"ERROR: Task '{uid}' not found. Run list_tasks first to see available tasks."
-            return await delete_task(resolved)
+                return f"ERROR: Task '{uid}' not found. Run list_tasks first to see available tasks.", None
+            result = await delete_task(resolved)
+            return result, None
         elif name == "search_tasks":
             q = params.get("query", "").strip()
             if not q:
-                return "ERROR: query required."
+                return "ERROR: query required.", None
             raw, items = await _search_tasks_raw(q)
             if not raw.startswith("ERROR") and session_id:
                 from prompt import cache_tasks_context
                 await cache_tasks_context(session_id, items)
-            return raw
+            return raw, None
     except ValueError as e:
-        return f"ERROR: {e}"
+        return f"ERROR: {e}", None
     except Exception as e:
         logger.error(f"Task tool {name} failed: {e}")
-        return f"ERROR: {name} failed"
+        return f"ERROR: {name} failed", None
 
-    return "ERROR: Tool not found."
+    return "ERROR: Tool not found.", None
 
 
-async def _run_mail_tool(name: str, params: dict, session_id: str = "", user_text: str = "", chip_origin: bool = False) -> str:
+async def _run_mail_tool(name: str, params: dict, session_id: str = "", user_text: str = "", chip_origin: bool = False) -> tuple[str, str | int | None]:
     """Dispatch email tool calls to the active mail client."""
     from mail import get_active_mail_client
     from prompt import cache_email_context
 
     mc = get_active_mail_client()
     if not mc:
-        return "ERROR: Mail connection failed. Check .env configuration."
+        return "ERROR: Mail connection failed. Check .env configuration.", None
 
     account_id = 1
     mailbox_id = params.get("mailbox", "INBOX")
@@ -391,7 +404,7 @@ async def _run_mail_tool(name: str, params: dict, session_id: str = "", user_tex
             limit = _safe_int(params.get("limit", 10), 10, "limit", min_value=1)
             msgs = await mc.get_messages(account_id, mailbox_id, limit)
             if not msgs:
-                return "Inbox is empty."
+                return "Inbox is empty.", None
             if session_id:
                 await cache_email_context(session_id, msgs)
             lines = [f" Recent Emails (showing {len(msgs)}):"]
@@ -401,27 +414,27 @@ async def _run_mail_tool(name: str, params: dict, session_id: str = "", user_tex
                     f"From: {m.get('from', '?')} | Subject: {m.get('subject', '(no subject)')} "
                     f"| Date: {m.get('date', '?')} | Preview: {bp}"
                 )
-            return "\n".join(lines)
+            return "\n".join(lines), None
 
         elif name == "read_email":
             mid = params.get("message_id") or params.get("id")
             if not mid:
-                return "ERROR: message_id required."
+                return "ERROR: message_id required.", None
             resolved = await _resolve_position(session_id, mid, _get_context_fn("email"), id_field="id")
             if resolved is None:
-                return "ERROR: Email not found. Run list_emails first to get the current listing."
+                return "ERROR: Email not found. Run list_emails first to get the current listing.", None
             m = await mc.get_message(account_id, mailbox_id, resolved)
             if not m:
-                return "ERROR: Email not found."
+                return "ERROR: Email not found.", None
             return (f"Email Details\n\nFrom: {m.get('from', '?')}\n"
                     f"Subject: {m.get('subject', '?')}\nDate: {m.get('date', '?')}\n\n"
-                    f"Content:\n{m.get('body', '')[:1500]}")
+                    f"Content:\n{m.get('body', '')[:1500]}"), None
 
         elif name == "send_email":
             if chip_origin:
                 return ("CLARIFY_REQUIRED: Quick-action request without details. Ask the user ONE "
                         "short question (in their language) covering: recipient address, subject, "
-                        "and message. Do not call send_email again until they answer all three.")
+                        "and message. Do not call send_email again until they answer all three."), None
             to, subj, body = params.get("to"), params.get("subject"), params.get("body")
             missing = [w for w, v in (("the recipient", to), ("a subject", subj), ("the message body", body)) if not v]
             if missing:
@@ -430,21 +443,21 @@ async def _run_mail_tool(name: str, params: dict, session_id: str = "", user_tex
                         + " and ".join(missing) + ". Ask the user ONE short question "
                         "(in their language) for exactly those parts. "
                         "Do not call send_email again until they answer. "
-                        f'The user\'s original message: "{user_text}"')
+                        f'The user\'s original message: "{user_text}"'), None
             ok = await mc.send_message(account_id, to, subj, body, params.get("cc", ""), params.get("bcc", ""))
             detail = f"To: {to}"
             if params.get("cc"):
                 detail += f"\nCc: {params['cc']}"
-            return f"Email sent!\n{detail}\nSubject: {subj}" if ok else "ERROR: Failed to send."
+            return (f"Email sent!\n{detail}\nSubject: {subj}" if ok else "ERROR: Failed to send."), None
 
         elif name == "search_emails":
             q = params.get("query")
             if not q:
-                return "ERROR: 'query' required."
+                return "ERROR: 'query' required.", None
             limit = _safe_int(params.get("limit", 10), 10, "limit", min_value=1)
             results = await mc.search_messages(account_id, q, limit, mailbox_id)
             if not results:
-                return f"'{q}' no results found."
+                return f"'{q}' no results found.", None
             if session_id:
                 await cache_email_context(session_id, results)
             lines = [f"'{q}' Results ({len(results)}):"]
@@ -454,11 +467,13 @@ async def _run_mail_tool(name: str, params: dict, session_id: str = "", user_tex
                     f"From: {m.get('from', '?')} | Subject: {m.get('subject', '(no subject)')} "
                     f"| Preview: {bp}"
                 )
-            return "\n".join(lines)
+            return "\n".join(lines), None
+
+        # Unknown mail tool
+        return "ERROR: Tool not found.", None
 
     except ValueError as e:
-        return f"ERROR: {e}"
+        return f"ERROR: {e}", None
     except Exception as e:
         logger.error(f"Mail Error: {e}")
-        return "ERROR: Mail operation failed. Check server logs."
-    return "ERROR: Tool not found."
+        return "ERROR: Mail operation failed. Check server logs.", None

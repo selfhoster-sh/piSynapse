@@ -34,7 +34,7 @@ def _drain(monkeypatch, rounds):
     executed: list[str] = []
     async def fake_run_tool(name, params, context=None):
         executed.append(name)
-        return "OK"
+        return "OK", None
 
     client = _CaptureClient(rounds)
     monkeypatch.setattr(llm_stream, "_get_client", lambda: client)
@@ -63,7 +63,7 @@ def test_marker_escalates_to_full_toolset(monkeypatch):
     executed: list[str] = []
     async def fake_run_tool(name, params, context=None):
         executed.append(name)
-        return "OK"
+        return "OK", None
 
     rounds = [
         [_tok("TOOL_NEEDED"), _fin("stop"), _DONE_LINE],
@@ -99,7 +99,7 @@ def test_leak_syntax_escalates_too(monkeypatch):
     executed: list[str] = []
     async def fake_run_tool(name, params, context=None):
         executed.append(name)
-        return "OK"
+        return "OK", None
 
     rounds = [
         [_tok("<|tool_call|>call:list_notes{}<|tool_call|>"), _fin("stop"), _DONE_LINE],
@@ -172,7 +172,7 @@ def test_marker_escalation_synced_on_both_backends(monkeypatch):
 
         async def fake_run_tool(name, params, context=None):
             executed.append(name)
-            return "OK"
+            return "OK", None
 
         rounds = [marker_round, tool_round, text_round]
         holder = {"rounds": list(rounds), "payloads": []}
@@ -274,7 +274,7 @@ def test_marker_aborts_round_before_it_finishes(monkeypatch):
     executed: list[str] = []
     async def fake_run_tool(name, params, context=None):
         executed.append(name)
-        return "OK"
+        return "OK", None
 
     monkeypatch.setattr(llm_stream, "_get_client", lambda: client)
     monkeypatch.setattr(llm_stream, "run_verification", fake_verify)
@@ -327,7 +327,7 @@ def test_hallucinated_tool_rejected_when_not_offered(monkeypatch):
 
     async def fake_run_tool(name, params, context=None):
         executed.append(name)
-        return "OK"
+        return "OK", None
 
     rounds = [
         [_tc("create_task", '{"summary": "toplantı-test"}'), _fin("tool_calls"), _DONE_LINE],
@@ -388,7 +388,7 @@ def test_litert_server_parse_failure_recovered_via_leak(monkeypatch):
 
     async def fake_run_tool(name, params, context=None):
         executed.append((name, params))
-        return "OK"
+        return "OK", None
 
     rounds = [
         [_tok("tamam, oluşturdum."), _fin("stop"), _DONE_LINE],
@@ -470,7 +470,7 @@ def test_create_tools_single_shot(monkeypatch):
     executed: list[str] = []
     async def fake_run_tool(name, params, context=None):
         executed.append(name)
-        return "OK"
+        return "OK", None
 
     dup1 = _tc("create_task", '{"summary": "süt al"}', cid="d1", idx=0)
     dup2 = _tc("create_task", '{"summary": "süt al"}', cid="d2", idx=1)

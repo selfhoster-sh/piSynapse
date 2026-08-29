@@ -678,15 +678,16 @@ async def chat_with_ollama_stream(
                     yield {"tool": {"name": tn, "phase": "start",
                                     "attempt": sig_exec_counts.get(probe_sig, 0) + 1,
                                     "max": _MAX_IDENTICAL_EXECUTIONS}}
-                    result = await run_tool(tn, args, context)
+                    result, entity_id = await run_tool(tn, args, context)
                     success = is_tool_success(result)
                 except Exception as e:
                     logger.error(f"Tool {tn} failed: {e}")
                     result = f"ERROR: tool {tn} failed"
+                    entity_id = None
                     success = False
                 duration_ms = (time.perf_counter() - t0) * 1000
                 yield {"tool": {"name": tn, "phase": "end", "ok": success}}
-                await run_verification(tn, args, result, success, duration_ms=duration_ms, error=None if success else result)
+                await run_verification(tn, args, result, success, entity_id=entity_id, duration_ms=duration_ms, error=None if success else result)
                 if tn == "save_memory" and is_tool_success(result):
                     memories_saved += 1
                 # Per-call accounting MUST happen here: deferring it to a

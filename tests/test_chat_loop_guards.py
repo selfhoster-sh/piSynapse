@@ -49,7 +49,7 @@ def _run(monkeypatch, responses):
 
     async def fake_run_tool(name, params, context=None):
         executed.append(name)
-        return f"OK {name} sonucu"
+        return f"OK {name} sonucu", None
 
     async def fake_verify(*a, **k):
         pass

@@ -199,7 +199,7 @@ def test_chat_executes_tool_then_returns_final(monkeypatch):
 
     async def fake_run_tool(name, args, context):
         tool_results.append((name, args))
-        return "OK sunny"
+        return "OK sunny", None
 
     monkeypatch.setattr(lc, "_llm_request", fake_llm)
     monkeypatch.setattr(lc, "run_tool", fake_run_tool)

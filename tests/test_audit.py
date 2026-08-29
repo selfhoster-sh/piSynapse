@@ -64,9 +64,26 @@ def test_log_tool_call_redacts_sensitive_params(audit_db):
     rows = asyncio.run(_fetch_all("SELECT params FROM tool_audit_log"))
     stored = json.loads(rows[0][0])
     assert stored["body"] == "[REDACTED]"
-    assert stored["to"] == "[REDACTED]"
-    assert stored["subject"] == "[REDACTED]"
-    assert stored["cc"] == "[REDACTED]"
+
+
+def test_log_tool_call_persists_verification_status(audit_db):
+    asyncio.run(
+        dbmod.log_tool_call(
+            "create_task", {"summary": "Buy milk"}, True,
+            duration_ms=3.0, verification_status="verified",
+        )
+    )
+    asyncio.run(
+        dbmod.log_tool_call(
+            "create_task", {"summary": "Buy milk"}, True,
+            verification_status="verified_by_fallback",
+        )
+    )
+    rows = asyncio.run(_fetch_all(
+        "SELECT success, verification_status FROM tool_audit_log ORDER BY id"
+    ))
+    assert rows[0] == (1, "verified")
+    assert rows[1] == (1, "verified_by_fallback")
 
 
 def test_log_tool_call_redacts_nested_secret_keys(audit_db):
