@@ -95,7 +95,7 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> tupl
         from weather import get_weather
         return await get_weather(params.get("city", "")), None
 
-    if name in {"create_calendar_event", "list_calendar_events", "update_calendar_event", "delete_calendar_event"}:
+    if name in {"create_calendar_event", "list_calendar_events", "update_calendar_event", "delete_calendar_event", "find_free_slots"}:
         session_id = context.get("session_id", "")
         from prompt import cache_calendar_context
         try:
@@ -169,7 +169,8 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> tupl
                 dur = _safe_int(params.get("duration_minutes", 60), 60, "duration_minutes", min_value=1)
                 day_start = params.get("day_start", "09:00")
                 day_end = params.get("day_end", "18:00")
-                return await asyncio.to_thread(find_free_slots, date_str, dur, day_start, day_end), None
+                raw, _ = await asyncio.to_thread(find_free_slots, date_str, dur, day_start, day_end)
+                return raw, None
         except ValueError as e:
             return f"ERROR: {e}", None
         except Exception as e:

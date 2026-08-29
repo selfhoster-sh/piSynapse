@@ -121,6 +121,40 @@ class TestCalendarTools:
             result = await run_tool("list_calendar_events", {})
         assert result[0] == "ERROR: Calendar operation failed. Check server logs."
 
+    async def test_find_free_slots_requires_date(self):
+        result = await run_tool("find_free_slots", {})
+        assert result[0] == "ERROR: date required (YYYY-MM-DD)."
+
+    async def test_find_free_slots_calls_handler(self):
+        # Regression: find_free_slots was missing from the calendar dispatch
+        # membership set since 0c9c49a, so it answered "Tool not found." and
+        # its handlers could never run. Must now reach calendar_ops.
+        with patch("calendar_ops.find_free_slots", return_value=("09:00 - 12:00", [{"start": "09:00", "end": "12:00"}])) as fs:
+            result = await run_tool(
+                "find_free_slots",
+                {"date": "2026-09-05", "duration_minutes": 45},
+                context={"session_id": "s1"},
+            )
+        fs.assert_called_once_with("2026-09-05", 45, "09:00", "18:00")
+        assert result[0] == "09:00 - 12:00"
+        assert result[1] is None
+
+    async def test_find_free_slots_custom_window(self):
+        with patch("calendar_ops.find_free_slots", return_value=("10:00 - 11:00", [])) as fs:
+            result = await run_tool(
+                "find_free_slots",
+                {"date": "2026-09-05", "duration_minutes": 60, "day_start": "08:00", "day_end": "17:00"},
+            )
+        fs.assert_called_once_with("2026-09-05", 60, "08:00", "17:00")
+        assert result[0] == "10:00 - 11:00"
+
+    async def test_find_free_slots_invalid_duration(self):
+        result = await run_tool(
+            "find_free_slots",
+            {"date": "2026-09-05", "duration_minutes": "abc"},
+        )
+        assert result[0] == "ERROR: 'duration_minutes' must be a valid number, got: 'abc'"
+
 
 class TestMemory:
     async def test_save_memory_requires_content(self):
