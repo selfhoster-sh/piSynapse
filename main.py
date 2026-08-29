@@ -467,10 +467,12 @@ async def security_middleware(request: Request, call_next):
 from routers.chat import router as chat_router
 from routers.config import router as config_router
 from routers.media import router as media_router
+from routers.tools import router as tools_router
 from routers.widgets import router as widgets_router
 
 app.include_router(chat_router)
 app.include_router(config_router)
+app.include_router(tools_router)
 app.include_router(widgets_router)
 app.include_router(media_router)
 

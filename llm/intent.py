@@ -388,6 +388,16 @@ def _hit_groups(message: str) -> set[str]:
     return groups
 
 
+def tool_group_keys() -> tuple[str, ...]:
+    """Canonical machine-readable group keys of the tool taxonomy.
+
+    Derived from _KEYWORD_CHECKS — the same table _hit_groups enumerates —
+    so the API contract can never drift from the intent classifier's own
+    group set. Sorted for a stable, order-independent response.
+    """
+    return tuple(sorted({group for _, group in _KEYWORD_CHECKS}))
+
+
 async def _classify_intent(message: str, query_embedding: bytes | None = None) -> tuple[str, str | None]:
     # Reminder routing is deterministic and trumps embedding/keywords so it
     # can never flip on margin noise ("perşembe saat 9'da hatırlat" -> memory).
