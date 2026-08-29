@@ -5,6 +5,8 @@ show what the model is doing WITHOUT parsing streamed text:
 
 - {"tool": {"name", "phase": "start"|"end"|"refused", "attempt", "max"}}
   around every run_tool() execution, attempt = prior identical executions + 1.
+  End events additionally carry "audit_id" (the tool_audit_log rowid) unless
+  the call was refused/unverifiable.
 - {"gen_retry": {"reason": "overflow"|"empty"|"tool_leak"}} whenever a
   generation round has to be retried inside the tool loop.
 """
@@ -39,7 +41,13 @@ def test_tool_start_end_events_emitted(monkeypatch):
     assert executed == ["list_notes"]
     tev = _tool_events(events)
     assert tev[0] == {"name": "list_notes", "phase": "start", "attempt": 1, "max": 2}
-    assert tev[1] == {"name": "list_notes", "phase": "end", "ok": True}
+    # End event always carries an audit_id key (this suite fakes verification,
+    # so it is None here; the real int path is covered in test_audit.py).
+    assert tev[1]["name"] == "list_notes"
+    assert tev[1]["phase"] == "end"
+    assert tev[1]["ok"] is True
+    assert "audit_id" in tev[1]
+    assert tev[1]["audit_id"] is None
     kinds = [e["phase"] for e in tev]
     assert kinds.index("start") < kinds.index("end")
     assert any(ev.get("done") for ev in events)
