@@ -408,31 +408,52 @@ async def execute_action(req: ExecuteRequest):
 
 class CorrectionRequest(BaseModel):
     audit_id: int
-    expected_tool: str
+    expected_tool: str | None = None
+    expected_group: str | None = None
 
 
 @router.post("/tool-correction")
 async def set_tool_correction(req: CorrectionRequest):
     """Set a correction on a tool audit log entry for fine-tuning data collection.
 
-    Called when the user identifies a tool call was incorrect and provides
-    the correct tool name. Updates expected_tool and sets corrected_at timestamp.
+    Called when the user identifies a tool call was incorrect. The user may
+    send EITHER a precise expected_tool (exact tool name, power-user / curl)
+    OR an expected_group (domain key from GET /tools/groups, the UI path) —
+    at least one is required. Updates the fields and sets corrected_at.
     """
     from tools.definitions import TOOL_NAMES
+    from llm.intent import tool_group_keys
     from db import set_tool_correction
 
-    # Validate expected_tool against known tool names (single source of truth)
-    if req.expected_tool not in TOOL_NAMES:
+    if not req.expected_tool and not req.expected_group:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide at least one of expected_tool or expected_group",
+        )
+
+    if req.expected_tool is not None and req.expected_tool not in TOOL_NAMES:
         valid_tools = ", ".join(sorted(TOOL_NAMES))
         raise HTTPException(
             status_code=400,
             detail=f"Invalid expected_tool: '{req.expected_tool}'. Valid tools: {valid_tools}",
         )
 
-    ok = await set_tool_correction(req.audit_id, req.expected_tool)
+    if req.expected_group is not None and req.expected_group not in tool_group_keys():
+        valid_groups = ", ".join(tool_group_keys())
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid expected_group: '{req.expected_group}'. Valid groups: {valid_groups}",
+        )
+
+    ok = await set_tool_correction(req.audit_id, req.expected_tool, req.expected_group)
     if not ok:
         raise HTTPException(status_code=404, detail="Audit log entry not found")
-    return {"ok": True, "audit_id": req.audit_id, "expected_tool": req.expected_tool}
+    return {
+        "ok": True,
+        "audit_id": req.audit_id,
+        "expected_tool": req.expected_tool,
+        "expected_group": req.expected_group,
+    }
 
 
 # -- Sessions --

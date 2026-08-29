@@ -399,6 +399,139 @@ def test_tool_correction_empty_tool(audit_db):
     assert "Invalid expected_tool" in exc_info.value.detail
 
 
+def test_tool_correction_group_only(audit_db):
+    """Group-only correction stores expected_group, expected_tool stays NULL."""
+    from db import set_tool_correction
+    audit_id = asyncio.run(_create_audit_entry())
+    result = asyncio.run(set_tool_correction(audit_id, None, "calendar"))
+    assert result is True
+    rows = asyncio.run(_fetch_all(
+        "SELECT expected_tool, expected_group, corrected_at FROM tool_audit_log WHERE id = ?",
+        (audit_id,),
+    ))
+    assert rows[0][0] is None
+    assert rows[0][1] == "calendar"
+    assert rows[0][2] is not None
+
+
+def test_tool_correction_both_fields(audit_db):
+    """Both a precise tool and a coarse group can be recorded at once."""
+    from db import set_tool_correction
+    audit_id = asyncio.run(_create_audit_entry())
+    result = asyncio.run(set_tool_correction(audit_id, "create_calendar_event", "calendar"))
+    assert result is True
+    rows = asyncio.run(_fetch_all(
+        "SELECT expected_tool, expected_group FROM tool_audit_log WHERE id = ?",
+        (audit_id,),
+    ))
+    assert rows[0][0] == "create_calendar_event"
+    assert rows[0][1] == "calendar"
+
+
+def test_tool_correction_nonexistent_audit_id(audit_db):
+    """Unknown audit_id returns False (endpoint surfaces it as 404)."""
+    from db import set_tool_correction
+    assert asyncio.run(set_tool_correction(999_999, "get_datetime")) is False
+    assert asyncio.run(set_tool_correction(999_999, None, "tasks")) is False
+
+
+def test_tool_to_group_mapping_consistent():
+    """TOOL_TO_GROUP must only reference real tools and valid group keys."""
+    from llm.intent import tool_group_keys
+    from tools.definitions import TOOL_NAMES, TOOL_TO_GROUP
+
+    assert TOOL_TO_GROUP
+    groups = set(tool_group_keys())
+    for tool, group in TOOL_TO_GROUP.items():
+        assert tool in TOOL_NAMES
+        assert group in groups
+    assert TOOL_TO_GROUP["create_calendar_event"] == "calendar"
+    assert TOOL_TO_GROUP["create_task"] == "tasks"
+    assert TOOL_TO_GROUP["save_memory"] == "memory"
+    assert TOOL_TO_GROUP["send_email"] == "email"
+    assert TOOL_TO_GROUP["create_note"] == "notes"
+    assert TOOL_TO_GROUP["get_weather"] == "weather"
+
+
+@pytest.fixture
+def correction_client(audit_db):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from routers.chat import router as chat_router
+    app = FastAPI()
+    app.include_router(chat_router)
+    return TestClient(app)
+
+
+def test_correction_endpoint_group_only(correction_client):
+    audit_id = asyncio.run(_create_audit_entry())
+    resp = correction_client.post(
+        "/chat/tool-correction",
+        json={"audit_id": audit_id, "expected_group": "calendar"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["expected_tool"] is None
+    assert body["expected_group"] == "calendar"
+    rows = asyncio.run(_fetch_all(
+        "SELECT expected_tool, expected_group FROM tool_audit_log WHERE id = ?",
+        (audit_id,),
+    ))
+    assert rows[0][0] is None
+    assert rows[0][1] == "calendar"
+
+
+def test_correction_endpoint_tool_only_still_works(correction_client):
+    audit_id = asyncio.run(_create_audit_entry())
+    resp = correction_client.post(
+        "/chat/tool-correction",
+        json={"audit_id": audit_id, "expected_tool": "create_task"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["expected_tool"] == "create_task"
+    assert body["expected_group"] is None
+
+
+def test_correction_endpoint_requires_one_field(correction_client):
+    audit_id = asyncio.run(_create_audit_entry())
+    resp = correction_client.post(
+        "/chat/tool-correction",
+        json={"audit_id": audit_id},
+    )
+    assert resp.status_code == 400
+    assert "at least one" in resp.json()["detail"]
+
+
+def test_correction_endpoint_invalid_group(correction_client):
+    audit_id = asyncio.run(_create_audit_entry())
+    resp = correction_client.post(
+        "/chat/tool-correction",
+        json={"audit_id": audit_id, "expected_group": "not-a-group"},
+    )
+    assert resp.status_code == 400
+    assert "Invalid expected_group" in resp.json()["detail"]
+
+
+def test_correction_endpoint_invalid_tool_still_400(correction_client):
+    audit_id = asyncio.run(_create_audit_entry())
+    resp = correction_client.post(
+        "/chat/tool-correction",
+        json={"audit_id": audit_id, "expected_tool": "not_a_real_tool"},
+    )
+    assert resp.status_code == 400
+    assert "Invalid expected_tool" in resp.json()["detail"]
+
+
+def test_correction_endpoint_missing_audit_id_404(correction_client):
+    resp = correction_client.post(
+        "/chat/tool-correction",
+        json={"audit_id": 999_999, "expected_group": "memory"},
+    )
+    assert resp.status_code == 404
+    assert "not found" in resp.json()["detail"]
+
+
 def test_tool_names_single_source_of_truth():
     """TOOL_NAMES should match the tool definitions and be non-empty."""
     assert len(TOOL_NAMES) > 0

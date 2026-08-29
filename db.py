@@ -117,6 +117,7 @@ MIGRATIONS: list[tuple[str, str, str]] = [
     ("tool_audit_log", "expected_tool", "TEXT"),
     ("tool_audit_log", "corrected_at", "DATETIME"),
     ("tool_audit_log", "verification_status", "TEXT"),
+    ("tool_audit_log", "expected_group", "TEXT"),
 ]
 
 
@@ -198,6 +199,7 @@ async def init_db():
             created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
             expected_tool  TEXT,
             corrected_at   DATETIME,
+            expected_group TEXT,
             verification_status TEXT
         )
     """)
@@ -497,17 +499,22 @@ async def log_intent_audit(message: str, chosen_group: str | None,
         logger.warning(f"Intent audit write failed (source={source}): {e}")
 
 
-async def set_tool_correction(audit_id: int, expected_tool: str) -> bool:
+async def set_tool_correction(audit_id: int, expected_tool: str | None,
+                              expected_group: str | None = None) -> bool:
     """Set a correction on a tool audit log entry.
 
-    Updates expected_tool and sets corrected_at to current timestamp.
-    Returns True if row was updated, False if not found.
+    Updates expected_tool and/or expected_group and sets corrected_at to
+    current timestamp. expected_tool is a precise positive signal (exact
+    tool name); expected_group is a coarse signal (domain) used when the
+    user only picks a group. Either may be NULL. Returns True if a row was
+    updated, False if not found.
     """
     try:
         db = await get_db()
         cur = await db.execute(
-            "UPDATE tool_audit_log SET expected_tool = ?, corrected_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (expected_tool, audit_id),
+            "UPDATE tool_audit_log SET expected_tool = ?, expected_group = ?, "
+            "corrected_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (expected_tool, expected_group, audit_id),
         )
         await db.commit()
         return cur.rowcount > 0
