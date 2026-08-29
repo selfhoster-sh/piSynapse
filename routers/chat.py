@@ -417,7 +417,17 @@ async def set_tool_correction(req: CorrectionRequest):
     Called when the user identifies a tool call was incorrect and provides
     the correct tool name. Updates expected_tool and sets corrected_at timestamp.
     """
+    from tools.definitions import TOOL_NAMES
     from db import set_tool_correction
+
+    # Validate expected_tool against known tool names (single source of truth)
+    if req.expected_tool not in TOOL_NAMES:
+        valid_tools = ", ".join(sorted(TOOL_NAMES))
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid expected_tool: '{req.expected_tool}'. Valid tools: {valid_tools}",
+        )
+
     ok = await set_tool_correction(req.audit_id, req.expected_tool)
     if not ok:
         raise HTTPException(status_code=404, detail="Audit log entry not found")
