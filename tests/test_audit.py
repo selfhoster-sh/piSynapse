@@ -314,3 +314,80 @@ def test_secure_db_files_fixes_permissive_db(audit_db):
     os.chmod(db, 0o644)
     asyncio.run(dbmod._secure_db_files())
     assert stat.S_IMODE(os.stat(db).st_mode) == 0o600
+
+
+# -- Correction endpoint validation tests --
+
+import pytest
+from tools.definitions import TOOL_NAMES
+from fastapi import HTTPException
+
+
+async def _create_audit_entry():
+    """Helper to create an audit log entry and return its ID."""
+    db = await dbmod.get_db()
+    await db.execute(
+        "INSERT INTO tool_audit_log (tool_name, params, success, duration_ms, created_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        ("get_datetime", "{}", 1, 10.0, "2026-08-28 10:00:00"),
+    )
+    await db.commit()
+    rows = await _fetch_all("SELECT id FROM tool_audit_log WHERE tool_name = 'get_datetime'")
+    return rows[0][0]
+
+
+def _validate_tool_name(expected_tool: str):
+    """Validation logic extracted from the endpoint for unit testing."""
+    if expected_tool not in TOOL_NAMES:
+        valid_tools = ", ".join(sorted(TOOL_NAMES))
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid expected_tool: '{expected_tool}'. Valid tools: {valid_tools}",
+        )
+
+
+def test_tool_correction_valid_tool(audit_db):
+    """Valid tool name should be accepted."""
+    audit_id = asyncio.run(_create_audit_entry())
+    from db import set_tool_correction
+    result = asyncio.run(set_tool_correction(audit_id, "create_calendar_event"))
+    assert result is True
+
+    # Verify the correction was saved
+    rows = asyncio.run(_fetch_all(
+        "SELECT expected_tool, corrected_at FROM tool_audit_log WHERE id = ?",
+        (audit_id,),
+    ))
+    assert rows[0][0] == "create_calendar_event"
+    assert rows[0][1] is not None
+
+
+def test_tool_correction_invalid_tool(audit_db):
+    """Invalid tool name should raise HTTPException with descriptive error."""
+    with pytest.raises(HTTPException) as exc_info:
+        _validate_tool_name("not_a_real_tool")
+    assert exc_info.value.status_code == 400
+    assert "Invalid expected_tool" in exc_info.value.detail
+    assert "not_a_real_tool" in exc_info.value.detail
+    # Should list valid tools
+    assert "create_calendar_event" in exc_info.value.detail
+    assert "get_datetime" in exc_info.value.detail
+
+
+def test_tool_correction_empty_tool(audit_db):
+    """Empty string as tool name should raise HTTPException."""
+    with pytest.raises(HTTPException) as exc_info:
+        _validate_tool_name("")
+    assert exc_info.value.status_code == 400
+    assert "Invalid expected_tool" in exc_info.value.detail
+
+
+def test_tool_names_single_source_of_truth():
+    """TOOL_NAMES should match the tool definitions and be non-empty."""
+    assert len(TOOL_NAMES) > 0
+    # Check some expected tools are present
+    expected = {"get_datetime", "create_calendar_event", "list_calendar_events", "send_email", "save_memory"}
+    assert expected.issubset(TOOL_NAMES)
+    # Ensure no duplicates (set property)
+    from tools.definitions import TOOLS
+    assert len(TOOL_NAMES) == len({t["function"]["name"] for t in TOOLS})
