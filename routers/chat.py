@@ -405,6 +405,25 @@ async def execute_action(req: ExecuteRequest):
         raise HTTPException(status_code=500, detail="Something went wrong. Please try again.")
 
 
+class CorrectionRequest(BaseModel):
+    audit_id: int
+    expected_tool: str
+
+
+@router.post("/tool-correction")
+async def set_tool_correction(req: CorrectionRequest):
+    """Set a correction on a tool audit log entry for fine-tuning data collection.
+
+    Called when the user identifies a tool call was incorrect and provides
+    the correct tool name. Updates expected_tool and sets corrected_at timestamp.
+    """
+    from db import set_tool_correction
+    ok = await set_tool_correction(req.audit_id, req.expected_tool)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Audit log entry not found")
+    return {"ok": True, "audit_id": req.audit_id, "expected_tool": req.expected_tool}
+
+
 # -- Sessions --
 
 @router.get("/sessions")

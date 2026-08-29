@@ -114,6 +114,8 @@ MIGRATIONS: list[tuple[str, str, str]] = [
     ("memories", "embedding", "BLOB"),
     ("conversations", "reasoning", "TEXT"),
     ("conversations", "embedding", "BLOB"),
+    ("tool_audit_log", "expected_tool", "TEXT"),
+    ("tool_audit_log", "corrected_at", "DATETIME"),
 ]
 
 
@@ -192,7 +194,9 @@ async def init_db():
             success_count  INTEGER,
             error_count    INTEGER,
             tool_breakdown TEXT,
-            created_at     DATETIME DEFAULT CURRENT_TIMESTAMP
+            created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+            expected_tool  TEXT,
+            corrected_at   DATETIME
         )
     """)
 
@@ -485,6 +489,25 @@ async def log_intent_audit(message: str, chosen_group: str | None,
         logger.warning(f"Intent audit write failed (source={source}): {e}")
 
 
+async def set_tool_correction(audit_id: int, expected_tool: str) -> bool:
+    """Set a correction on a tool audit log entry.
+
+    Updates expected_tool and sets corrected_at to current timestamp.
+    Returns True if row was updated, False if not found.
+    """
+    try:
+        db = await get_db()
+        cur = await db.execute(
+            "UPDATE tool_audit_log SET expected_tool = ?, corrected_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (expected_tool, audit_id),
+        )
+        await db.commit()
+        return cur.rowcount > 0
+    except Exception as e:
+        logger.warning(f"Tool correction update failed for audit_id={audit_id}: {e}")
+        return False
+
+
 async def purge_intent_audit(days: int = 30) -> int:
     """Delete intent audit rows older than `days`. Never raises; returns deleted count."""
     try:
@@ -548,8 +571,8 @@ async def rollup_tool_audit(days: int = 14) -> int:
 
                     await db.execute(
                         """INSERT INTO tool_audit_log
-                           (is_summary, day, total_calls, success_count, error_count, tool_breakdown, tool_name, success, created_at)
-                           SELECT 1, ?, COUNT(*), SUM(success), SUM(1 - success), ?, 'rollup', 1, ?
+                           (is_summary, day, total_calls, success_count, error_count, tool_breakdown, tool_name, success, created_at, expected_tool, corrected_at)
+                           SELECT 1, ?, COUNT(*), SUM(success), SUM(1 - success), ?, 'rollup', 1, ?, NULL, NULL
                            FROM tool_audit_log
                            WHERE is_summary = 0 AND created_at < datetime('now', ?)
                              AND substr(created_at, 1, 10) = ?""",

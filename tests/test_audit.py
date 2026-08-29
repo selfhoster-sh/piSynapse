@@ -115,7 +115,7 @@ def test_rollup_compresses_old_rows_into_daily_summary(audit_db):
     asyncio.run(seed())
 
     n = asyncio.run(dbmod.rollup_tool_audit())
-    assert n == 1
+    assert n == 2
 
     rows = asyncio.run(_fetch_all(
         "SELECT is_summary, day, total_calls, success_count, error_count, tool_breakdown "
@@ -123,23 +123,35 @@ def test_rollup_compresses_old_rows_into_daily_summary(audit_db):
     ))
 
     assert len(rows) == 2
-    summary = next(r for r in rows if r[0] == 1)
-    assert summary[1] == "2026-07-05"
-    assert summary[2] == 4
-    assert summary[3] == 3
-    assert summary[4] == 1
-    breakdown = json.loads(summary[5])
+    # Check both summary days
+    summaries = [r for r in rows if r[0] == 1]
+    assert len(summaries) == 2
+    days = {s[1] for s in summaries}
+    assert days == {"2026-07-05", "2026-08-15"}
+    # Check 2026-07-05 summary
+    s1 = next(s for s in summaries if s[1] == "2026-07-05")
+    assert s1[2] == 4  # total_calls
+    assert s1[3] == 3  # success_count
+    assert s1[4] == 1  # error_count
+    breakdown = json.loads(s1[5])
     assert breakdown["get_datetime"] == 3
     assert breakdown["send_email"] == 1
 
-    detail = next(r for r in rows if r[0] == 0)
-    assert detail[1] is None  # day is only set on summary rows
-    assert detail[2] is None  # aggregate columns are only set on summary rows
+    # Check 2026-08-15 summary
+    s2 = next(s for s in summaries if s[1] == "2026-08-15")
+    assert s2[2] == 1  # total_calls
+    assert s2[3] == 1  # success_count
+    assert s2[4] == 0  # error_count
+    breakdown2 = json.loads(s2[5])
+    assert breakdown2["get_datetime"] == 1
 
-    remaining_detail = asyncio.run(_fetch_all(
-        "SELECT COUNT(*) FROM tool_audit_log WHERE is_summary = 0 AND day = '2026-07-05'"
-    ))
-    assert remaining_detail[0][0] == 0
+    # No detail rows should remain for rolled-up days
+    for day in ["2026-07-05", "2026-08-15"]:
+        remaining_detail = asyncio.run(_fetch_all(
+            "SELECT COUNT(*) FROM tool_audit_log WHERE is_summary = 0 AND day = ?",
+            (day,),
+        ))
+        assert remaining_detail[0][0] == 0
 
 
 def test_rollup_idempotent(audit_db):
