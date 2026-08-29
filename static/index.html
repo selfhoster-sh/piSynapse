@@ -297,6 +297,21 @@ body.theme-black .msg-group.user .msg-meta .who{color:var(--text3)}
 .tool-status.ok .tlab{color:var(--text)}
 .tool-status.ok .tspin{animation:none;border-color:var(--accent);background:var(--accent)}
 .tool-status .tspin.dead{animation:none;border-color:var(--border);opacity:.7}
+.tool-status{position:relative}
+.tool-status .mark-btn{flex:none;margin-left:6px;padding:2px 9px;font-size:11px;line-height:1.5;border-radius:999px;background:transparent;border:1px solid var(--border);color:var(--text3);cursor:pointer}
+.tool-status .mark-btn:hover{color:var(--accent);border-color:var(--accent)}
+.tool-status .mark-btn .mk-lab{margin-left:3px}
+.tool-status .mark-btn.marked{color:var(--accent);border-color:var(--accent);background:rgba(88,166,255,.14)}
+.group-picker{position:absolute;z-index:50;right:0;top:calc(100% + 6px);min-width:185px;padding:6px;display:flex;flex-direction:column;gap:3px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;box-shadow:0 10px 28px rgba(0,0,0,.3)}
+.group-picker .gp-opt{display:block;width:100%;text-align:left;padding:6px 10px;border:0;border-radius:8px;background:transparent;color:var(--text);font-size:13px;cursor:pointer}
+.group-picker .gp-opt:hover{background:var(--surface3)}
+.group-picker .gp-opt.sel{background:rgba(88,166,255,.14);color:var(--accent)}
+.group-picker .gp-row{display:flex;gap:6px;margin-top:5px}
+.group-picker .gp-save{flex:1;padding:6px 10px;border:0;border-radius:8px;font-size:13px;cursor:pointer;background:var(--accent);color:#fff}
+.group-picker .gp-save:disabled{opacity:.5;cursor:default}
+.group-picker .gp-cancel{padding:6px 10px;border:0;border-radius:8px;font-size:13px;cursor:pointer;background:transparent;color:var(--text2)}
+.group-picker .gp-cancel:hover{background:var(--surface3)}
+body.glass-mode .group-picker{background:rgba(24,24,32,.97);backdrop-filter:blur(12px)}
 body.glass-mode .tool-status{background:rgba(15,15,21,.94);backdrop-filter:blur(12px)}
 @keyframes tspin{to{transform:rotate(360deg)}}
 @keyframes bounce{0%{transform:translateY(0);opacity:.4}100%{transform:translateY(-6px);opacity:1}}
@@ -1202,6 +1217,8 @@ const STRINGS = {
     regenerating:'Yeniden üretiliyor…',
     thinkEffortTitle:'Think seviyesi',
     toolAttempt:'deneme', toolCap:'tekrar sınırı',
+    markWrong:'Yanlıştı', markDone:'İşaretlendi', markSave:'Kaydet',
+    markErr:'İşaretleme kaydedilemedi', markLoadErr:'Araç grupları yüklenemedi',
     genRetryLabel:'Araç yanıtları sıkıştırılıp yeniden deneniyor…',
     genRetryLeak:'Araç çağrısı düzeltiliyor…',
     genRetryEscalate:'Gerekli araçlar etkinleştiriliyor…'
@@ -1255,6 +1272,8 @@ const STRINGS = {
     regenerating:'Regenerating…',
     thinkEffortTitle:'Think effort',
     toolAttempt:'attempt', toolCap:'retry cap',
+    markWrong:'Wrong', markDone:'Marked', markSave:'Save',
+    markErr:'Could not save the marking', markLoadErr:'Could not load tool groups',
     genRetryLabel:'Compressing tool responses and retrying…',
     genRetryLeak:'Fixing a tool call…',
     genRetryEscalate:'Enabling the required tools…'
@@ -2447,6 +2466,7 @@ async function sendMsg(){
     document.getElementById('sess-title').textContent=rakeTitle;
   }
   _pendingStream = { sid };
+  clearToolPills(); // fresh round: previous turn's tool pills have been marked or discarded
   el.value=''; el.style.height='auto'; pendingImages=[]; renderImagePreview();
   addMsg('user',text,true,null,images); showTyping(); setLoading(true);
   let bubble=null, fullText='', thinkBox=null, fullReasoning='';
@@ -2471,10 +2491,9 @@ async function sendMsg(){
         let data; try{ data=JSON.parse(line.slice(6)); } catch{ continue; }
         if('token' in data){
           if(currentSid !== sid) continue; // user navigated away, skip rendering
-          // Stream started — every pill's job is done. Sweep by class, not
-          // just the tracked node, so no orphan can ever linger.
-          document.querySelectorAll('#messages .tool-status').forEach(r=>r.remove());
-          toolRow=null;
+          // Pills are kept on purpose: each finished tool pill carries its own
+          // "yanlıştı" (mark) affordance once the stream settle happens. They
+          // are cleared on the NEXT send, not here.
           if(!bubble){ bubble=createStreamBubble(); }
           gotReply=true;
           fullText+=data.token; bubble.innerHTML=withStreamCaret(renderMd(fullText)); scrollEnd(false);
@@ -2509,8 +2528,8 @@ async function sendMsg(){
           // If the user navigated away during streaming, loadSessions() updates the sidebar.
         } else if('reasoning' in data){
           if(currentSid !== sid) continue;
-          document.querySelectorAll('#messages .tool-status').forEach(r=>r.remove());
-          toolRow=null; // thinking IS streaming — pill's job done
+          // Thinking streams after tool calls — the tool pills stay visible
+          // (they are marking targets). Cleared on the next send.
           if(!bubble) bubble=createStreamBubble();
           if(!thinkBox){ thinkBox=ensureThinkBox(bubble); }
           fullReasoning+=data.reasoning;
@@ -2518,7 +2537,7 @@ async function sendMsg(){
           scrollEnd(false);
         } else if(data.tool){
           if(currentSid !== sid) continue;
-          if(data.tool.phase==='end'){ toolRow=endToolStatus(toolRow, data.tool.ok); }
+          if(data.tool.phase==='end'){ toolRow=endToolStatus(toolRow, data.tool.ok, data.tool.audit_id); }
           else { toolRow=showToolStatus(data.tool, toolRow); }
         } else if(data.gen_retry){
           if(currentSid !== sid) continue;
@@ -2544,7 +2563,12 @@ async function sendMsg(){
     }
   } finally{
     if(_pendingStream?.sid === sid) _pendingStream=null;
-    if(toolRow){ toolRow.remove(); toolRow=null; }
+    if(toolRow && toolRow.isConnected && !toolRow.classList.contains('done')){
+      // Aborted/errored before an end event: finalize as dead, keep the pill
+      // (a refused or interrupted call gets no audit_id, so no mark button).
+      endToolStatus(toolRow, false, null);
+    }
+    toolRow=null;
     typingEl?.classList.remove('tool-pending');
     if(!gotReply && !terminated){
       if(currentSid === sid){
@@ -2701,14 +2725,21 @@ function placePill(row){
 }
 function resetPill(row){
   // Reuse path: an ended pill (✓ ok / ⚠ dead, no live spinner) must look
-  // active again before its label is swapped for the next event.
-  row.classList.remove('ok');
+  // active again before its label is swapped for the next event. A done pill
+  // being reused (gen_retry revival) also surrenders its mark affordance —
+  // it is no longer this round's marking target.
+  row.classList.remove('ok','done');
+  row.querySelector('.mark-btn')?.remove();
+  delete row.dataset.audit;
   let sp=row.querySelector('.tspin');
   if(!sp){ sp=document.createElement('span'); sp.className='tspin'; row.prepend(sp); }
   else sp.classList.remove('dead');
 }
 function showToolStatus(info, row){
-  if(!row || !row.isConnected){
+  // A finished pill is a permanent marking target (it holds a live audit_id
+  // and its own mark button). Never recycle it for another tool call — a new
+  // tool gets a fresh pill below, so every audited call keeps its affordance.
+  if(!row || !row.isConnected || row.classList.contains('done')){
     row=document.createElement('div'); row.className='tool-status';
     row.innerHTML='<span class="tspin"></span><span class="tlab"></span>';
     placePill(row);
@@ -2730,13 +2761,14 @@ function showToolStatus(info, row){
   return row;
 }
 
-function endToolStatus(row, ok){
+function endToolStatus(row, ok, auditId){
   // No auto-hide: the pill stays visible (✓/⚠) until the reply stream
   // actually starts or the stream ends. Returns the row so the caller
   // KEEPS tracking it — returning null orphaned the DOM node and the
   // next event drew a second pill below instead of updating this one.
   if(!row || !row.isConnected) return row;
   row.classList.toggle('ok', !!ok);
+  row.classList.add('done');
   const lab=row.querySelector('.tlab');
   lab.textContent=lab.textContent.replace(/…$/,'');
   if(!ok){
@@ -2745,7 +2777,85 @@ function endToolStatus(row, ok){
   } else {
     row.querySelector('.tspin')?.remove();
   }
+  // An audited call gets the "yanlıştı" affordance. No audit_id (e.g. a
+  // refused/unverifiable call) means nothing to correct — no button.
+  if(auditId!=null && auditId!==''){
+    row.dataset.audit=String(auditId);
+    row.appendChild(makeMarkBtn(row, auditId));
+  }
   return row;
+}
+
+let _toolGroupsCache=null;
+function clearToolPills(){ document.querySelectorAll('#messages .tool-status').forEach(r=>r.remove()); }
+
+function makeMarkBtn(row, auditId){
+  const b=document.createElement('button');
+  b.className='mark-btn'; b.dataset.audit=String(auditId);
+  b.innerHTML='<span class="mk-ico">⚠</span><span class="mk-lab"></span>';
+  b.title=t('markWrong');
+  b.onclick=()=>openGroupPicker(row, b, auditId);
+  return b;
+}
+
+function openGroupPicker(row, btn, auditId){
+  // A pill owns at most one open picker — close any sibling first.
+  document.querySelector('#messages .group-picker')?.remove();
+  const panel=document.createElement('div'); panel.className='group-picker';
+  let sel='';
+  const render=()=>{
+    panel.innerHTML='';
+    for(const g of (_toolGroupsCache||[])){
+      const o=document.createElement('button'); o.className='gp-opt'+(g===sel?' sel':'');
+      o.textContent=groupLabel(g);
+      o.onclick=()=>{ sel=g; render(); };
+      panel.appendChild(o);
+    }
+    const rowEl=document.createElement('div'); rowEl.className='gp-row';
+    const saveEl=document.createElement('button'); saveEl.className='gp-save';
+    saveEl.textContent=t('markSave'); saveEl.disabled=!sel;
+    saveEl.onclick=()=>submitCorrection(row, btn, auditId, sel, panel, saveEl);
+    const cancelEl=document.createElement('button'); cancelEl.className='gp-cancel';
+    cancelEl.textContent=t('cancel');
+    cancelEl.onclick=()=>panel.remove();
+    rowEl.appendChild(saveEl); rowEl.appendChild(cancelEl);
+    panel.appendChild(rowEl);
+  };
+  const doOpen=()=>{ sel=''; render(); row.appendChild(panel); };
+  if(_toolGroupsCache){ doOpen(); return; }
+  const headers={'Content-Type':'application/json'};
+  const _k=getApiKey(); if(_k) headers['X-API-Key']=_k;
+  fetch(API+'/tools/groups',{headers}).then(r=>{
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    return r.json();
+  }).then(j=>{
+    _toolGroupsCache=Array.isArray(j.groups)?j.groups:[];
+    doOpen();
+  }).catch(()=>{ toast(t('markLoadErr'),true); });
+}
+
+async function submitCorrection(row, btn, auditId, group, panel, saveEl){
+  saveEl.disabled=true; saveEl.textContent='…';
+  const headers={'Content-Type':'application/json'};
+  const _k=getApiKey(); if(_k) headers['X-API-Key']=_k;
+  try{
+    const resp=await fetch(API+'/chat/tool-correction',{method:'POST',headers,
+      body:JSON.stringify({audit_id:auditId, expected_group:group})});
+    if(resp.ok){
+      panel.remove();
+      btn.classList.add('marked');
+      btn.querySelector('.mk-ico').textContent='✓';
+      const lab=btn.querySelector('.mk-lab'); lab.textContent=t('markDone'); btn.title=t('markDone');
+      return;
+    }
+    let detail=String(resp.status);
+    try{ const j=await resp.json(); if(j && j.detail!=null) detail=j.detail; }catch{}
+    toast(t('markErr')+': '+detail, true);
+  } catch(e){
+    toast(t('markErr'), true);
+  }
+  // Non-success leaves the picker open so the user can retry in place.
+  saveEl.disabled=false; saveEl.textContent=t('markSave');
 }
 
 function genRetryText(reason){

@@ -460,12 +460,15 @@ async def log_tool_call(
     duration_ms: float | None = None,
     error: str | None = None,
     verification_status: str | None = None,
-) -> None:
+) -> int | None:
     """Append a row to the tool audit log.
 
     ``verification_status`` records the outcome of ID-based backend
     verification (one of "verified", "verified_by_fallback", "unverified",
     "verification_failed", or None when verification is not applicable).
+
+    Returns the new row's id (the audit_id the frontend uses to attach a
+    correction to this exact tool call), or None on failure.
 
     Deliberately swallows every failure (DB down, locked, schema issue) and
     only logs a warning — this runs inside the tool-call loop's verification
@@ -473,14 +476,16 @@ async def log_tool_call(
     """
     try:
         db = await get_db()
-        await _write_with_retry(
+        cur = await _write_with_retry(
             db,
             "INSERT INTO tool_audit_log (tool_name, params, success, duration_ms, error, verification_status) "
             "VALUES (?, ?, ?, ?, ?, ?)",
             (tool_name, _audit_params_json(params), 1 if success else 0, duration_ms, error, verification_status),
         )
+        return cur.lastrowid
     except Exception as e:
         logger.warning(f"Tool audit log write failed for '{tool_name}': {e}")
+        return None
 
 
 async def log_intent_audit(message: str, chosen_group: str | None,

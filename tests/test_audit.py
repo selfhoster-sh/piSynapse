@@ -481,6 +481,67 @@ def test_correction_endpoint_group_only(correction_client):
     assert rows[0][1] == "calendar"
 
 
+def test_log_tool_call_returns_rowid(audit_db):
+    """log_tool_call returns the new row's id: the SSE audit_id."""
+    a = asyncio.run(dbmod.log_tool_call("send_email", {"to": "a@b.c"}, True))
+    b = asyncio.run(dbmod.log_tool_call("delete_note", {"id": 3}, False, error="ERROR: not found"))
+    assert isinstance(a, int) and a > 0
+    assert isinstance(b, int) and b > a
+    rows = asyncio.run(_fetch_all("SELECT id FROM tool_audit_log ORDER BY id"))
+    assert [r[0] for r in rows] == [a, b]
+
+
+def test_log_tool_call_returns_none_when_db_down(audit_db, monkeypatch):
+    async def boom():
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(dbmod, "get_db", boom)
+    assert asyncio.run(dbmod.log_tool_call("get_datetime", {}, True)) is None
+
+
+def test_run_verification_returns_audit_id(audit_db):
+    """The SSE end event's audit_id is the correction endpoint's target."""
+    import tool_verification as tv
+
+    aid = asyncio.run(
+        tv.run_verification("save_memory", {"content": "hi"}, "OK Memory saved.", True)
+    )
+    assert isinstance(aid, int) and aid > 0
+    rows = asyncio.run(_fetch_all(
+        "SELECT tool_name, verification_status FROM tool_audit_log WHERE id = ?",
+        (aid,),
+    ))
+    assert rows[0][0] == "save_memory"
+    assert rows[0][1] == "unverified"
+
+    # The full UI roundtrip: audit_id -> correction -> marked row.
+    from db import set_tool_correction
+
+    assert asyncio.run(set_tool_correction(aid, None, "memory")) is True
+    rows = asyncio.run(_fetch_all(
+        "SELECT expected_tool, expected_group FROM tool_audit_log WHERE id = ?",
+        (aid,),
+    ))
+    assert rows[0][0] is None
+    assert rows[0][1] == "memory"
+
+
+def test_correction_endpoint_accepts_run_verification_id(correction_client):
+    """POST /tool-correction consumes the exact id run_verification returns."""
+    import tool_verification as tv
+
+    aid = asyncio.run(
+        tv.run_verification("save_memory", {"content": "hi"}, "OK Memory saved.", True)
+    )
+    assert isinstance(aid, int)
+    resp = correction_client.post(
+        "/chat/tool-correction",
+        json={"audit_id": aid, "expected_group": "memory"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["expected_group"] == "memory"
+
+
 def test_correction_endpoint_tool_only_still_works(correction_client):
     audit_id = asyncio.run(_create_audit_entry())
     resp = correction_client.post(

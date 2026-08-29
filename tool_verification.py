@@ -40,7 +40,7 @@ async def run_verification(
     entity_id: str | int | None = None,
     duration_ms: float | None = None,
     error: str | None = None,
-) -> None:
+) -> int | None:
     """Verify a completed tool call and record it in the audit log.
 
     Deliberately async: the loops are async, and verification may need
@@ -50,6 +50,10 @@ async def run_verification(
 
     Never raises: any failure inside verification (including DB errors) is
     logged and swallowed so it can never break or stall the tool-call loop.
+
+    Returns the audit_log id of the recorded call (the audit_id the UI
+    attaches to its correction), or None when the audit write failed or was
+    not applicable.
 
     Args:
         tool_name: Name of the tool that ran (e.g. "create_task").
@@ -62,7 +66,7 @@ async def run_verification(
     """
     try:
         verification_status = await _verify(tool_name, params, result, success, entity_id)
-        await log_tool_call(
+        return await log_tool_call(
             tool_name,
             params,
             success,
@@ -72,6 +76,7 @@ async def run_verification(
         )
     except Exception as e:
         logger.warning(f"Verification hook failed for tool '{tool_name}': {e}")
+        return None
 
 
 async def _verify(
