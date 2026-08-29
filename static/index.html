@@ -302,7 +302,8 @@ body.theme-black .msg-group.user .msg-meta .who{color:var(--text3)}
 .tool-status .mark-btn:hover{color:var(--accent);border-color:var(--accent)}
 .tool-status .mark-btn .mk-lab{margin-left:3px}
 .tool-status .mark-btn.marked{color:var(--accent);border-color:var(--accent);background:rgba(88,166,255,.14)}
-.group-picker{position:absolute;z-index:50;right:0;top:calc(100% + 6px);min-width:185px;padding:6px;display:flex;flex-direction:column;gap:3px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;box-shadow:0 10px 28px rgba(0,0,0,.3)}
+.group-picker{position:absolute;z-index:50;right:0;top:calc(100% + 6px);min-width:185px;max-width:calc(100vw - 20px);padding:6px;display:flex;flex-direction:column;gap:3px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;box-shadow:0 10px 28px rgba(0,0,0,.3)}
+.group-picker.up{top:auto;bottom:calc(100% + 6px)}
 .group-picker .gp-opt{display:block;width:100%;text-align:left;padding:6px 10px;border:0;border-radius:8px;background:transparent;color:var(--text);font-size:13px;cursor:pointer}
 .group-picker .gp-opt:hover{background:var(--surface3)}
 .group-picker .gp-opt.sel{background:rgba(88,166,255,.14);color:var(--accent)}
@@ -2828,7 +2829,27 @@ function openGroupPicker(row, btn, auditId){
     rowEl.appendChild(saveEl); rowEl.appendChild(cancelEl);
     panel.appendChild(rowEl);
   };
-  const doOpen=()=>{ sel=''; render(); row.appendChild(panel); };
+  const doOpen=()=>{
+    sel=''; render(); row.appendChild(panel);
+    // Auto-flip: picker opens downward by default; if it would fall outside
+    // the visible #messages viewport, flip it upward instead of letting it
+    // scroll out of view invisibly.
+    const msgs=document.getElementById('messages');
+    if(msgs){
+      const pr=panel.getBoundingClientRect(), mr=msgs.getBoundingClientRect();
+      const below=mr.bottom-pr.bottom, above=pr.top-mr.top;
+      if(below<pr.height && above>=below) panel.classList.add('up');
+      // No room either way: nudge the container so the panel stays visible.
+      if(pr.bottom>mr.bottom || pr.top<mr.top){
+        panel.scrollIntoView({block:'nearest'});
+        // Re-measure after the nudge: pre-existing "up" choice may change.
+        const pr2=panel.getBoundingClientRect(), mr2=msgs.getBoundingClientRect();
+        if(pr2.bottom>mr2.bottom || pr2.top<mr2.top){
+          panel.classList.toggle('up', mr2.bottom-pr2.bottom < pr2.top-mr2.top);
+        }
+      }
+    }
+  };
   if(_toolGroupsCache){ doOpen(); return; }
   api('GET','/tools/groups').then(j=>{
     _toolGroupsCache=Array.isArray(j.groups)?j.groups:[];
