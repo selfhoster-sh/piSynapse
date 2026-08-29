@@ -311,6 +311,13 @@ body.theme-black .msg-group.user .msg-meta .who{color:var(--text3)}
 .group-picker .gp-save:disabled{opacity:.5;cursor:default}
 .group-picker .gp-cancel{padding:6px 10px;border:0;border-radius:8px;font-size:13px;cursor:pointer;background:transparent;color:var(--text2)}
 .group-picker .gp-cancel:hover{background:var(--surface3)}
+/* Touch-first: enlarge hit areas to >=44px ONLY on coarse pointers (mobile/
+   tablets). Desktop (fine pointer) keeps the compact look. */
+@media (pointer:coarse){
+  .tool-status .mark-btn{padding:13px 14px;min-height:44px}
+  .group-picker .gp-opt{padding:13px 10px;min-height:44px}
+  .group-picker .gp-save,.group-picker .gp-cancel{padding:13px 14px;min-height:44px}
+}
 body.glass-mode .group-picker{background:rgba(24,24,32,.97);backdrop-filter:blur(12px)}
 body.glass-mode .tool-status{background:rgba(15,15,21,.94);backdrop-filter:blur(12px)}
 @keyframes tspin{to{transform:rotate(360deg)}}
