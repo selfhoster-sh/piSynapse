@@ -122,11 +122,6 @@ _GROUP_TOOLS: dict[str, tuple[str, str]] = {
         "Call save_memory to store durable facts about the user (preferences, habits, personal info). "
         "Never save greetings, small talk, requests, questions, or descriptions of the user's current request.",
     ),
-    "utility": (
-        "get_datetime, get_weather",
-        "Call get_datetime for time/date questions. Call get_weather for weather questions. "
-        "Use these tools when the user asks a question that needs real-time data (time, weather) but isn't a personal data action.",
-    ),
 }
 
 

@@ -415,7 +415,6 @@ TOOL_GROUPS: dict[str, list[str]] = {
     "tasks":    ["create_task", "list_tasks", "complete_task", "delete_task", "search_tasks", "get_datetime"],
     "notes":    ["create_note", "list_notes", "read_note", "update_note", "delete_note", "search_notes", "get_datetime"],
     "memory":   ["save_memory", "get_datetime"],
-    "utility":  ["get_datetime", "get_weather"],
 }
 
 

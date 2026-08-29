@@ -275,8 +275,6 @@ _TOOL_EMBED_CORPUS: list[tuple[str | None, str]] = [
     (None, "wie spät ist es, welches datum haben wir, wieviel uhr ist es"),
     (None, "quelle heure est-il, quelle est la date, donner l'heure"),
     (None, "qué hora es, qué fecha es hoy, dime la hora"),
-    ("utility", "what time is it, current time, what date, today's date, saat kaç, bugün günlerden ne, wie spät, quelle heure, qué hora"),
-    ("utility", "weather forecast, should i bring umbrella, hava nasıl, regnet es, va pleuvoir, va llover, şemsiye lazım mı"),
     (None, "hello hi hey good morning good evening how are you what's up nice to meet you thank you thanks please sorry excuse me goodbye see you later have a great day"),
     (None, "merhaba selam günaydın iyi akşamlar nasılsın naber tanıştığımıza memnun oldum teşekkürler lütfet özür dilerim hoşça kal görüşürüz iyi günler"),
     (None, "hallo guten morgen guten abend wie geht's dir freut mich danke bitte entschuldigung tschüss auf wiedersehen"),
@@ -351,14 +349,6 @@ _KEYWORD_CHECKS = (
     (["notlar", "notu", "nota", "not defteri", "not oluştur", "not al", "note",
       "not düş", "not yaz"], "notes"),
     (["hatırla", "hatirla", "unutma", "sakla", "kaydet", "remember", "don't forget", "save"], "memory"),
-    # Utility: pure info questions needing real-time data (no personal data action)
-    (["saat kaç", "saat kac", "bugün günlerden ne", "tarih nedir", "saati söyle", "bugünün tarihi",
-      "what time", "what date", "today's date", "current time",
-      "wie spät", "welches datum", "wieviel uhr",
-      "quelle heure", "quelle date", "donne l'heure",
-      "qué hora", "qué fecha", "dime la hora",
-      "hava nasıl", "hava nasil", "should i bring", "şemsiye", "semsiye", "umbrella",
-      "regnet es", "va pleuvoir", "va llover"], "utility"),
 )
 
 
