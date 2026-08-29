@@ -417,6 +417,14 @@ TOOL_GROUPS: dict[str, list[str]] = {
     "memory":   ["save_memory", "get_datetime"],
 }
 
+# Tool name -> first group that carries it. Derived from TOOL_GROUPS so it
+# never drifts. Useful when a precise expected_tool is recorded and a coarse
+# group-level mining signal is also wanted.
+TOOL_TO_GROUP: dict[str, str] = {}
+for _group, _names in TOOL_GROUPS.items():
+    for _name in _names:
+        TOOL_TO_GROUP.setdefault(_name, _group)
+
 
 def get_tools_for_group(group: str | None) -> list[dict]:
     """Return the full tool definitions for a group, or all tools if group is None."""
