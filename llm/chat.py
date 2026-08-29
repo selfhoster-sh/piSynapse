@@ -335,14 +335,15 @@ async def chat_with_ollama(
                     continue
                 try:
                     args = parse_tool_args(fn.get("arguments"))
-                    result = await run_tool(tn, args, context)
+                    result, entity_id = await run_tool(tn, args, context)
                     success = is_tool_success(result)
                 except Exception as e:
                     logger.error(f"Tool {tn} failed: {e}")
                     result = f"ERROR: tool {tn} failed"
+                    entity_id = None
                     success = False
                 duration_ms = (time.perf_counter() - t0) * 1000
-                await run_verification(tn, args, result, success, duration_ms=duration_ms, error=None if success else result)
+                await run_verification(tn, args, result, success, entity_id=entity_id, duration_ms=duration_ms, error=None if success else result)
                 if tn == "save_memory" and is_tool_success(result):
                     memories_saved += 1
                 tool_msg = {"role": "tool", "tool_name": tn, "content": result}

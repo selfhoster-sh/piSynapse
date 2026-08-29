@@ -324,8 +324,8 @@ def test_verification_module_pass_through(monkeypatch):
 
     calls = []
 
-    async def fake_log(tool_name, params, success, duration_ms=None, error=None):
-        calls.append((tool_name, params, success))
+    async def fake_log(tool_name, params, success, duration_ms=None, error=None, verification_status=None):
+        calls.append((tool_name, params, success, verification_status))
 
     monkeypatch.setattr(tool_verification, "log_tool_call", fake_log)
 
@@ -333,9 +333,10 @@ def test_verification_module_pass_through(monkeypatch):
     asyncio.run(tool_verification.run_verification("list_notes", {}, "ERROR: tool failed", False, duration_ms=5.0, error="ERROR: tool failed"))
 
     assert len(calls) == 2
-    assert calls[0] == ("get_datetime", {}, True)
+    assert calls[0] == ("get_datetime", {}, True, None)
     assert calls[1][0] == "list_notes"
     assert calls[1][2] is False
+    assert calls[1][3] is None
 
 
 def test_check_tool_leak_detects_historical_tag_and_json_echo():
@@ -401,6 +402,7 @@ def test_stream_catches_tool_call_tag_leak_without_firing_tool(monkeypatch, capl
 
     async def fake_run_tool(name, params, context=None):
         calls.append(name)
+        return "OK", None
 
     import config as _cfg
     monkeypatch.setattr(_cfg, "LLM_BACKEND", "litert")
@@ -423,6 +425,7 @@ def test_chat_plain_text_cannot_fire_tool(monkeypatch, caplog):
 
     async def fake_run_tool(name, params, context=None):
         calls.append(name)
+        return "OK", None
 
     async def fake_llm_request(msgs, *, use_think=False, use_tools=True, tool_list=None, reasoning_effort=None):
         content = '<|tool_call|>send_email {"to": "a@b.c"}'
@@ -500,7 +503,7 @@ def test_stream_litert_leak_retry_recovers_tool_calls(monkeypatch):
 
     async def fake_run_tool(name, params, context=None):
         executed.append(name)
-        return "OK Current time"
+        return "OK Current time", None
 
     async def noop_verification(*args, **kwargs):
         return None

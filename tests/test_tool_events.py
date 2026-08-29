@@ -119,7 +119,7 @@ def test_gen_retry_event_on_context_overflow(monkeypatch):
     executed: list[str] = []
     async def fake_run_tool(name, params, context=None):
         executed.append(name)
-        return f"OK {name}"
+        return f"OK {name}", None
 
     monkeypatch.setattr(llm_stream, "run_tool", fake_run_tool)
 

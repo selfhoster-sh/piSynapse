@@ -116,6 +116,7 @@ MIGRATIONS: list[tuple[str, str, str]] = [
     ("conversations", "embedding", "BLOB"),
     ("tool_audit_log", "expected_tool", "TEXT"),
     ("tool_audit_log", "corrected_at", "DATETIME"),
+    ("tool_audit_log", "verification_status", "TEXT"),
 ]
 
 
@@ -196,7 +197,8 @@ async def init_db():
             tool_breakdown TEXT,
             created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
             expected_tool  TEXT,
-            corrected_at   DATETIME
+            corrected_at   DATETIME,
+            verification_status TEXT
         )
     """)
 
@@ -455,8 +457,13 @@ async def log_tool_call(
     success: bool,
     duration_ms: float | None = None,
     error: str | None = None,
+    verification_status: str | None = None,
 ) -> None:
     """Append a row to the tool audit log.
+
+    ``verification_status`` records the outcome of ID-based backend
+    verification (one of "verified", "verified_by_fallback", "unverified",
+    "verification_failed", or None when verification is not applicable).
 
     Deliberately swallows every failure (DB down, locked, schema issue) and
     only logs a warning — this runs inside the tool-call loop's verification
@@ -466,8 +473,9 @@ async def log_tool_call(
         db = await get_db()
         await _write_with_retry(
             db,
-            "INSERT INTO tool_audit_log (tool_name, params, success, duration_ms, error) VALUES (?, ?, ?, ?, ?)",
-            (tool_name, _audit_params_json(params), 1 if success else 0, duration_ms, error),
+            "INSERT INTO tool_audit_log (tool_name, params, success, duration_ms, error, verification_status) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (tool_name, _audit_params_json(params), 1 if success else 0, duration_ms, error, verification_status),
         )
     except Exception as e:
         logger.warning(f"Tool audit log write failed for '{tool_name}': {e}")
@@ -1180,7 +1188,7 @@ async def update_session_summary(session_id: str, summary: str, summarized_until
 # -- Long-term Memories --
 
 async def save_memory(content: str, category: str = "general",
-                      importance: int = 5, user_id: str | None = None):
+                      importance: int = 5, user_id: str | None = None) -> tuple[str, int]:
     from config import DEFAULT_USER, MEMORY_SIMILARITY_THRESHOLD
     from embedding import cosine_similarity, embed_async
 
@@ -1209,13 +1217,15 @@ async def save_memory(content: str, category: str = "general",
                     (mem_id,),
                 )
                 await db.commit()
-                return
+                return "Memory updated (similar content exists).", mem_id
 
-    await db.execute(
+    cur = await db.execute(
         "INSERT INTO memories (user_id, content, category, importance, embedding) VALUES (?, ?, ?, ?, ?)",
         (user_id, content, category, importance, new_embedding),
     )
     await db.commit()
+    rowid = cur.lastrowid
+    return "Memory saved.", rowid
 
 
 async def search_memories(query: str, user_id: str | None = None, limit: int = 5, query_embedding: bytes | None = None) -> list[dict]:

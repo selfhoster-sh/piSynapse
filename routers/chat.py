@@ -385,17 +385,18 @@ async def execute_action(req: ExecuteRequest):
                 raise HTTPException(status_code=400, detail=err)
         t0 = time.perf_counter()
         try:
-            result = await run_tool(req.tool, req.params, context={"user_id": req.user_id, "session_id": req.session_id})
+            result, entity_id = await run_tool(req.tool, req.params, context={"user_id": req.user_id, "session_id": req.session_id})
             success = is_tool_success(result)
         except Exception as e:
             logger.error("Execute action error: %s\n%s", e, traceback.format_exc())
             result = f"ERROR: {e}"
+            entity_id = None
             success = False
         duration_ms = (time.perf_counter() - t0) * 1000
         # Manual executions (confirmed destructive actions) are exactly the
         # ones that must be audit-logged — the model loop already logs its
         # own tool calls, but /execute runs outside that loop.
-        await run_verification(req.tool, req.params, result, success, duration_ms=duration_ms, error=None if success else result)
+        await run_verification(req.tool, req.params, result, success, entity_id=entity_id, duration_ms=duration_ms, error=None if success else result)
         await save_message(req.session_id, "assistant", result)
         return ChatResponse(reply=result, session_id=req.session_id, history_length=0, memories_saved=0)
     except HTTPException:
@@ -618,13 +619,13 @@ async def sync_commands(req: SyncRequest, background_tasks: BackgroundTasks):
         import time
         t0 = time.perf_counter()
         try:
-            result = await run_tool(
+            result, entity_id = await run_tool(
                 cmd.tool, cmd.params,
                 context={"user_id": "default", "session_id": cmd.session_id},
             )
             success = is_tool_success(result)
             duration_ms = (time.perf_counter() - t0) * 1000
-            await run_verification(cmd.tool, cmd.params, result, success, duration_ms=duration_ms)
+            await run_verification(cmd.tool, cmd.params, result, success, entity_id=entity_id, duration_ms=duration_ms)
             results.append({
                 "index": i,
                 "status": "ok" if success else "error",

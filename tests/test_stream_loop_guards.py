@@ -97,7 +97,7 @@ def _run(monkeypatch, rounds):
 
     async def fake_run_tool(name, params, context=None):
         executed.append(name)
-        return f"OK {name} sonucu"
+        return f"OK {name} sonucu", None
 
     async def fake_verify(*a, **k):
         pass
@@ -128,7 +128,7 @@ def _run_with_text(monkeypatch, rounds, user_text, group="notes"):
 
     async def fake_run_tool(name, params, context=None):
         executed.append(name)
-        return f"OK {name} sonucu"
+        return f"OK {name} sonucu", None
 
     async def fake_verify(*a, **k):
         pass

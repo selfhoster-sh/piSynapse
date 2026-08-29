@@ -144,11 +144,11 @@ def _calendar_or_config_error() -> str:
 
 
 @retry(attempts=2, delay=1.0)
-def _create_task_sync(summary: str, due: str, priority: int, notes: str) -> str:
+def _create_task_sync(summary: str, due: str, priority: int, notes: str) -> tuple[str, str]:
     global _todos_cache, _todos_cache_ts
     cal = _get_task_calendar()
     if not cal:
-        return _calendar_or_config_error()
+        return _calendar_or_config_error(), ""
 
     todo = Todo()
     uid = f"{uuid.uuid4()}@pisynapse"
@@ -186,7 +186,7 @@ def _create_task_sync(summary: str, due: str, priority: int, notes: str) -> str:
     # Drop the listing cache so the new task shows up immediately.
     _todos_cache = None
     _todos_cache_ts = 0
-    return f"OK Task '{summary}' created.{due_warning}"
+    return f"OK Task '{summary}' created.{due_warning}", uid
 
 
 def _fetch_todos_cached(include_completed: bool) -> list:
@@ -333,12 +333,12 @@ def _search_tasks_sync(query: str, limit: int = 10) -> tuple[str, list[dict]]:
 
 # -- Async wrappers (for FastAPI / tool dispatcher) --
 
-async def create_task(summary: str, due: str = "", priority: int = 0, notes: str = "") -> str:
+async def create_task(summary: str, due: str = "", priority: int = 0, notes: str = "") -> tuple[str, str]:
     try:
         return await asyncio.to_thread(_create_task_sync, summary, due, priority, notes)
     except Exception as e:
         logger.error(f"Tasks Error: {e}")
-        return "ERROR: Failed to create task."
+        return "ERROR: Failed to create task.", ""
 
 
 async def list_tasks(show_completed: bool = False) -> tuple[str, list[dict]]:
