@@ -79,14 +79,30 @@ async def _resolve_position(session_id: str, ref, context_fn, id_field: str):
     return None
 
 
+_SENSITIVE_PARAM_KEYS = ("password", "token", "secret", "credential", "authorization", "api_key")
+
+
+def _mask_params_for_log(params: dict) -> str:
+    """Redact credentials before writing tool params to INFO logs.
+
+    E-mail/CalDAV/IMAP passwords, API tokens and secret keys are masked and
+    long values truncated so the request log never persists secret material.
+    """
+    out = {}
+    for k, v in params.items():
+        if any(s in k.lower() for s in _SENSITIVE_PARAM_KEYS):
+            out[k] = "[REDACTED]"
+        else:
+            out[k] = v
+    return str(out)[:200]
+
+
 async def run_tool(name: str, params: dict, context: dict | None = None) -> tuple[str, str | int | None]:
     """Route a tool call to the appropriate handler and return (result_string, entity_id)."""
     context = context or {}
     user_text = (context.get("_user_text") or "").strip()
     chip_origin = (context.get("_origin") == "chip")
-    logger.info("Tool call: %s params=%s", name, str(params)[:200])
-
-    entity_id: str | int | None = None
+    logger.info("Tool call: %s params=%s", name, _mask_params_for_log(params))
 
     if name == "get_datetime":
         return f"Current: {datetime.now().strftime('%d %B %Y, %A, %H:%M')}", None
