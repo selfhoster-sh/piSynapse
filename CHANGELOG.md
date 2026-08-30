@@ -29,7 +29,7 @@ uses [Semantic Versioning](https://semver.org/).
 - Model is nudged to continue with the mutation after a lookup-only round; pure reads untouched (`97640ea`).
 - Streaming rejects hallucinated confirm-gated tools (`b826b66`, `a5f4adc`).
 - P0–P2 tool & intent comprehensive fixes (`0c9c49a`).
-- Release notes: `RELEASE_NOTES_v1.7.2.md`.
+- Detailed release notes archived under `_old/release_notes/` (dev-internal).
 
 ## [1.7.1] - 2026-08-27
 
