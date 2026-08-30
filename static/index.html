@@ -20,12 +20,12 @@ button:focus{outline:none}
 button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 :root{
-  /* WCAG AA: text 4.5:1, text2 5.1:1, text3 4.69:1 on surface2 (5.35 on bg);
+  /* WCAG AA: text 4.5:1, text2 5.1:1, text3 5.07:1 on surface2 (5.75 on bg);
      text4 3.16:1 (decorative) */
   /* Pure-black (OLED) base — saf siyah is THE default look, not a toggle */
   --bg:#000000; --surface:#0a0a0e; --surface2:#131319; --surface3:#1d1d26;
   --border:#16161f; --accent:#f0943a; --accent-d:rgba(240,148,58,.12);
-  --accent-h:#e08020; --text:#e2e2e8; --text2:#8a8a9e; --text3:#83839c;
+  --accent-h:#e08020; --text:#e2e2e8; --text1:#f2f2f8; --text2:#8a8a9e; --text3:#84849b;
   --text4:#626276; --user-bg:#111118; --danger:#e05555; --success:#4ecb71; --warning:#f59e0b;
   /* Category chip hues — one formula (hue + 15% translucent wash) for every card */
   --chip-work:#4f9df2; --chip-habit:#b788f2; --chip-general:#8f8fa0;
@@ -68,7 +68,7 @@ body.theme-black:not(.glass-mode) #send-btn{color:#141419;
   box-shadow:0 3px 14px rgba(242,242,245,.22)}
 html,body{height:100%;height:100svh;overflow:hidden;padding:0;margin:0}
 body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
-  background:var(--bg);color:var(--text);display:flex;font-size:15px;line-height:1.6;
+  background:var(--bg);color:var(--text);display:flex;font-size:16px;line-height:1.6;
   -webkit-text-size-adjust:100%;-webkit-tap-highlight-color:transparent;height:100%;
   font-feature-settings:'cv02','cv03','cv04','cv11';
   overflow-x:hidden;font-weight:500;
@@ -141,7 +141,7 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 .sess-item.long-press .sess-time{opacity:0}
 .sess-item.long-press .sess-del{opacity:1;pointer-events:auto;color:var(--danger);background:rgba(224,85,85,.12)}
 
-.sess-name{flex:1;font-size:14px;color:var(--text2);white-space:nowrap;padding-right:20px;
+.sess-name{flex:1;font-size:14.5px;color:var(--text2);white-space:nowrap;padding-right:20px;
   overflow:hidden;text-overflow:ellipsis;transition:color .2s;user-select:none;-webkit-user-select:none}
 .sess-time{font-size:11px;color:var(--text3);flex-shrink:0;transition:opacity .15s}
 .sess-snippet{flex-basis:100%;font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;line-height:1.2}
@@ -163,6 +163,10 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 
 .sb-footer{border-top:1px solid var(--border);padding:10px 10px 16px;
   display:flex;flex-direction:column;gap:6px}
+/* Normal (non-glass) mode: keep the memory button visually split from the
+   chat list with a clearly legible hairline instead of the near-invisible
+   border tone */
+body:not(.glass-mode) .sb-footer{border-top-color:rgba(255,255,255,.09)}
 .mem-btn,.settings-btn{width:100%;display:flex;align-items:center;gap:10px;padding:10px 12px;
   background:none;border:none;color:var(--text2);font-size:13.5px;cursor:pointer;
   border-radius:var(--r-sm);transition:all .2s;font-family:inherit;font-weight:500}@media (hover:hover){
@@ -233,7 +237,7 @@ body.minimal-chat .msg-group{margin-bottom:34px}
 /* Black theme taste: user's own sender label a bit fainter */
 body.theme-black .msg-group.user .msg-meta .who{color:var(--text3)}
 
-.bubble{max-width:100%;padding:14px 18px;border-radius:var(--r-chat);font-size:15px;
+.bubble{max-width:100%;padding:14px 18px;border-radius:var(--r-chat);font-size:16px;
   line-height:1.7;word-break:break-word;box-shadow:var(--shadow-sm)}
 .msg-group.user .bubble{background:var(--user-bg);border:1px solid var(--border);
   border-bottom-right-radius:4px;color:var(--text)}
@@ -506,7 +510,7 @@ body.generating .chip-track{will-change:transform}
 }
 
 #msg-input{flex:1 1 auto;min-width:0;background:none;border:none;outline:none;color:var(--text);
-  font-size:15px;line-height:1.5;padding:8px 0;resize:none;max-height:200px;
+  font-size:16px;line-height:1.5;padding:8px 0;resize:none;max-height:200px;
   min-height:40px;font-family:inherit;overflow-y:auto}
 #msg-input::placeholder{color:var(--text3)}
 #send-btn{width:40px;height:40px;border:none;border-radius:20px;
@@ -539,7 +543,7 @@ body.generating .chip-track{will-change:transform}
 .cat-work{background:color-mix(in srgb,var(--chip-work) 15%,transparent);color:var(--chip-work)}
 .cat-habit{background:color-mix(in srgb,var(--chip-habit) 15%,transparent);color:var(--chip-habit)}
 .cat-general{background:color-mix(in srgb,var(--chip-general) 15%,transparent);color:var(--chip-general)}
-.mem-content{font-size:13.5px;color:var(--text);line-height:1.5;word-break:break-word}
+.mem-content{font-size:14px;color:var(--text);line-height:1.5;word-break:break-word}
 .mem-date{font-size:11px;color:var(--text4);margin-top:6px}
 .mem-empty{text-align:center;color:var(--text3);font-size:13px;padding:24px 12px;line-height:1.6}
 .mem-del-btn{display:flex;position:absolute;top:12px;right:10px;background:none;
@@ -686,7 +690,7 @@ body.generating .chip-track{will-change:transform}
   #messages{padding:66px 14px 130px}
   #input-area{padding:0 12px;bottom:calc(10px + env(safe-area-inset-bottom,0px));position:absolute;left:0;right:0}
   #input-container{max-width:100%;width:100%;padding:8px 10px;gap:8px;border-radius:20px;flex-wrap:wrap}
-  #msg-input{order:1;flex:1 1 100%;min-height:24px;max-height:200px;font-size:15px;field-sizing:content}
+  #msg-input{order:1;flex:1 1 100%;min-height:24px;max-height:200px;font-size:16px;field-sizing:content}
   .input-left{order:2}
   .input-right{order:3;margin-left:auto}
   .think-split{height:36px}
@@ -3742,8 +3746,10 @@ if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.s
   .pwa-standalone #sidebar{height:calc(100% - env(safe-area-inset-top,0px))}
 
   /* ── Glass & Blur ──────────────────────────────────────────────── */
-  #topbar{background:rgba(10,10,15,.7);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px)}
-  #sidebar{background:rgba(17,17,22,.93);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+  /* Normal-mode bars stay on the palette: --surface at high opacity rather
+     than a hand-picked clamp, so the pure-black base harmonises everywhere */
+  #topbar{background:color-mix(in srgb, var(--surface) 84%, transparent);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px)}
+  #sidebar{background:color-mix(in srgb, var(--surface) 93%, transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
 
   /* ── Message Animations ───────────────────────────────────────── */
   @keyframes msgSlideIn{from{opacity:0;transform:translateY(14px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
