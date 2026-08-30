@@ -759,7 +759,8 @@ def test_history_endpoint_returns_linked_audits(correction_client):
 
 def test_rollup_exports_details_to_csv_before_removal(audit_db):
     """Detail rows land in a per-day CSV (with the linked conversation's
-    session_id) and are only THEN summarized + deleted."""
+    session_id) and are only THEN summarized + deleted.
+    """
     from datetime import datetime, timedelta
     old_day = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
 
@@ -808,7 +809,8 @@ def test_rollup_exports_details_to_csv_before_removal(audit_db):
 
 def test_rollup_export_failure_blocks_removal(audit_db, monkeypatch):
     """If the archive cannot be written, the detail rows are NOT deleted — the
-    day stays untouched and is retried on the next cycle."""
+    day stays untouched and is retried on the next cycle.
+    """
     from datetime import datetime, timedelta
     old_day = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
 
@@ -849,7 +851,7 @@ def test_audit_export_dir_env_override(audit_db, monkeypatch, tmp_path):
 
 def test_delete_branch_truncates_messages_and_fts(audit_db):
     """delete_branch deletes anchor message and everything after it, keeping earlier rows."""
-    from db import delete_branch, save_message, get_history
+    from db import delete_branch, get_history, save_message
     asyncio.run(save_message("b1", "user", "u1"))
     a1 = asyncio.run(save_message("b1", "assistant", "a1"))
     asyncio.run(save_message("b1", "user", "u2"))
@@ -872,7 +874,7 @@ def test_delete_branch_truncates_messages_and_fts(audit_db):
 
 def test_delete_branch_endpoint(correction_client):
     """DELETE /chat/messages/branch/{session_id} invokes delete_branch."""
-    from db import save_message, get_history
+    from db import get_history, save_message
     asyncio.run(save_message("b2", "user", "hello"))
     mid = asyncio.run(save_message("b2", "assistant", "hi"))
 
