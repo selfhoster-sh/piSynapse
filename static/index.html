@@ -2426,38 +2426,49 @@ function renderSessions(list, animate=true){
 }
 
 // In-place session-list update: reuse live rows, patch only what changed, never rebuild.
+function patchRow(n, s){
+  const sid=esc(s.session_id), raw=s._snippet||s.snippet||"";
+  const name=sessName(s), tm=relTime(s.last_active), nameHtml=esc(name);
+  let touched=false;
+  n.classList.toggle('active', !!currentSid && sid===esc(currentSid));
+  const nameEl=n.querySelector('.sess-name'), tmEl=n.querySelector('.sess-time');
+  if(nameEl&&nameEl.textContent!==name){ nameEl.textContent=name; nameEl.title=nameHtml; touched=true; }
+  if(tmEl&&tmEl.textContent!==tm){ tmEl.textContent=tm; touched=true; }
+  const sn=n.querySelector('.sess-snippet');
+  if(raw&&!sn){ const d=document.createElement('div'); d.className='sess-snippet'; d.innerHTML=esc(raw).replace(/&lt;b&gt;/g,'<b>').replace(/&lt;\/b&gt;/g,'</b>'); n.insertBefore(d, n.querySelector('.sess-del')); touched=true; }
+  else if(raw&&sn){ const html=esc(raw).replace(/&lt;b&gt;/g,'<b>').replace(/&lt;\/b&gt;/g,'</b>'); if(sn.innerHTML!==html){ sn.innerHTML=html; touched=true; } }
+  else if(!raw&&sn){ sn.remove(); touched=true; }
+  return touched;
+}
+function newSessItem(s, act){
+  const sid=esc(s.session_id), raw=s._snippet||s.snippet||"";
+  const name=sessName(s), tm=relTime(s.last_active), nameHtml=esc(name);
+  const snippetHtml=raw?`<div class="sess-snippet">${esc(raw).replace(/&lt;b&gt;/g,'<b>').replace(/&lt;\/b&gt;/g,'</b>')}</div>`:"";
+  const n=document.createElement('div');
+  n.className='sess-item'+(act?' active':'');
+  n.dataset.sid=sid;
+  n.innerHTML=`<div class="sess-name" title="${nameHtml}">${nameHtml}</div><div class="sess-time">${tm}</div>${snippetHtml}<button class="sess-del" data-sid="${sid}" title="${t('del')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>`;
+  return n;
+}
 function patchSessionList(el, list){
   const cur=[...el.children].filter(n=>n.classList.contains('sess-item'));
   if(!cur.length) return false;
+  const sameOrder=list.length===cur.length&&cur.every((n,i)=>n.dataset.sid===esc(list[i].session_id));
+  if(sameOrder){
+    // Same rows, same order: patch IN PLACE. Never detach nodes into a fragment —
+    // a skipped replaceChildren would strand them (empty-but-present list).
+    cur.forEach((n,i)=>patchRow(n, list[i]));
+    return true;
+  }
   const keyed=new Map(cur.map(n=>[n.dataset.sid,n]));
-  const isActive=sid=>!!currentSid && sid===esc(currentSid);
   const frag=document.createDocumentFragment();
-  let touched=false;
   list.forEach(s=>{
-    const sid=esc(s.session_id), raw=s._snippet||s.snippet||"";
-    const name=sessName(s), tm=relTime(s.last_active), nameHtml=esc(name);
-    const snippetHtml=raw?`<div class="sess-snippet">${esc(raw).replace(/&lt;b&gt;/g,'<b>').replace(/&lt;\/b&gt;/g,'</b>')}</div>`:"";
-    let n=keyed.get(sid);
-    if(!n){
-      n=document.createElement('div');
-      n.className='sess-item'+(isActive(sid)?' active':'');
-      n.dataset.sid=sid;
-      n.innerHTML=`<div class="sess-name" title="${nameHtml}">${nameHtml}</div><div class="sess-time">${tm}</div>${snippetHtml}<button class="sess-del" data-sid="${sid}" title="${t('del')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg></button>`;
-      touched=true;
-    } else {
-      n.classList.toggle('active', isActive(sid));
-      const nameEl=n.querySelector('.sess-name'), tmEl=n.querySelector('.sess-time');
-      if(nameEl&&nameEl.textContent!==name){ nameEl.textContent=name; nameEl.title=nameHtml; touched=true; }
-      if(tmEl&&tmEl.textContent!==tm){ tmEl.textContent=tm; touched=true; }
-      const sn=n.querySelector('.sess-snippet');
-      if(raw&&!sn){ const d=document.createElement('div'); d.className='sess-snippet'; d.innerHTML=esc(raw).replace(/&lt;b&gt;/g,'<b>').replace(/&lt;\/b&gt;/g,'</b>'); n.insertBefore(d, n.querySelector('.sess-del')); touched=true; }
-      else if(raw&&sn){ const html=esc(raw).replace(/&lt;b&gt;/g,'<b>').replace(/&lt;\/b&gt;/g,'</b>'); if(sn.innerHTML!==html){ sn.innerHTML=html; touched=true; } }
-      else if(!raw&&sn){ sn.remove(); touched=true; }
-    }
+    const sid=esc(s.session_id);
+    const existing=keyed.get(sid);
+    const n=existing||newSessItem(s, !!currentSid && sid===esc(currentSid));
+    if(existing) patchRow(n, s);
     frag.append(n);
   });
-  const sameOrder=list.length===cur.length&&cur.every((n,i)=>n.dataset.sid===esc(list[i].session_id));
-  if(!touched&&sameOrder) return true; // nothing changed — leave the DOM alone
   const sc=el.scrollTop;
   el.replaceChildren(frag);
   el.scrollTop=sc;
