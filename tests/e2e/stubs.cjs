@@ -20,6 +20,7 @@ async function installBackendStubs(page, opts = {}) {
   const auditId = opts.auditId === undefined ? 123 : opts.auditId;
   const sentCorrections = [];
   const sentConfirmations = [];
+  const sentMessageFeedback = [];
 
   const config = {
     username: 'testuser',
@@ -67,6 +68,14 @@ async function installBackendStubs(page, opts = {}) {
     return json(route, {});
   });
 
+  await page.route('**/chat/message-feedback', async route => {
+    sentMessageFeedback.push(route.request().postDataJSON());
+    if (opts.feedbackError) {
+      return json(route, { detail: 'boom' }, 500);
+    }
+    return json(route, {});
+  });
+
   await page.route('**/chat/stream', async route => {
     const events = opts.stream ? opts.stream() : defaultStream;
     if (opts.streamDelayMs) {
@@ -79,7 +88,7 @@ async function installBackendStubs(page, opts = {}) {
     });
   });
 
-  return { sentCorrections, sentConfirmations };
+  return { sentCorrections, sentConfirmations, sentMessageFeedback };
 }
 
 async function boot(page) {

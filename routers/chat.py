@@ -493,6 +493,36 @@ async def set_tool_confirmation(req: ConfirmRequest):
     return {"ok": True, "audit_id": req.audit_id}
 
 
+class MessageFeedbackRequest(BaseModel):
+    message_id: int
+    value: str
+    note: str | None = None
+
+
+@router.post("/message-feedback")
+async def post_message_feedback(req: MessageFeedbackRequest):
+    """Store a 👍/👎 verdict for an assistant message that had no tool call.
+
+    The thumbs are now universal: every round is markable, so subtle failures —
+    the model asking a clarifying question instead of acting, dropping the
+    intent, or hallucinating a no-tool reply — are captured as data instead of
+    silently lost. One row per message; marking the other thumb overwrites it.
+    A free-text note on 👎 records *why* it was wrong.
+    """
+    from db import upsert_message_feedback
+
+    if req.value not in ("up", "down"):
+        raise HTTPException(status_code=400, detail="value must be 'up' or 'down'")
+
+    ok = await upsert_message_feedback(req.message_id, req.value, req.note)
+    if not ok:
+        raise HTTPException(
+            status_code=404,
+            detail="Message not found, or it is not an assistant message",
+        )
+    return {"ok": True, "message_id": req.message_id, "value": req.value}
+
+
 # -- Sessions --
 
 @router.get("/sessions")

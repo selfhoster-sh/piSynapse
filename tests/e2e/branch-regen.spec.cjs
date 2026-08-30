@@ -29,10 +29,12 @@ test.describe('per-message branch regenerate (C-12)', () => {
     const regenBtns = page.locator('.msg-group.assistant .regen-btn');
     await expect(regenBtns).toHaveCount(2);
 
-    // The first assistant bar has .not-last, the second (last) does NOT
+    // The first assistant bar has .not-last, the second (last) does NOT.
+    // The copy/listen/regen bar merges into each message's settled feedback
+    // row (.tool-status.done), which every assistant message now has.
     const asstGroups = page.locator('.msg-group.assistant');
-    const bar1 = asstGroups.nth(0).locator('.msg-actions');
-    const bar2 = asstGroups.nth(1).locator('.msg-actions');
+    const bar1 = asstGroups.nth(0).locator('.tool-status.done');
+    const bar2 = asstGroups.nth(1).locator('.tool-status.done');
 
     await expect(bar1).toHaveClass(/\bnot-last\b/);
     await expect(bar2).not.toHaveClass(/\bnot-last\b/);

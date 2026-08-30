@@ -28,13 +28,21 @@ test.describe('tool marking flow', () => {
     await expect(pill.locator('.mark-btn')).toHaveAttribute('title', /Yanlış|Wrong/i);
   });
 
-  test('no mark button when audit_id is null', async ({ page }) => {
+  test('no audit_id: down opens the message-level note editor, not the group picker', async ({ page }) => {
     await installBackendStubs(page, { auditId: null });
     await boot(page);
     await sendTurn(page);
 
+    // Universal thumbs: the pair renders even without an audit (C-12 feedback).
     await expect(page.locator('.tool-status')).toHaveCount(1);
-    await expect(page.locator('.tool-status .mark-btn')).toHaveCount(0);
+    await expect(page.locator('.tool-status .mark-btn')).toHaveCount(1);
+    // No tool audit → no correction picker; the down thumb captures a
+    // message-level verdict with an optional note instead.
+    await page.click('.mark-btn');
+    await expect(page.locator('.group-picker')).toHaveCount(0);
+    await expect(page.locator('.msg-note-editor')).toHaveCount(1);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.msg-note-editor')).toHaveCount(0);
   });
 
   test('picker renders all tool groups', async ({ page }) => {

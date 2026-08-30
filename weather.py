@@ -41,6 +41,26 @@ def _cache_city(city: str, lat: str, lon: str) -> None:
         _geo_cache.popitem(last=False)  # evict least-recently used
 
 
+def _wmo_condition(code: int | None) -> str:
+    """Map a WMO weather code to a short Turkish condition label."""
+    base = {
+        0: "Açık", 1: "Az bulutlu", 2: "Parçalı bulutlu", 3: "Kapalı",
+        45: "Sisli", 48: "Kırağılı sis",
+        51: "Hafif çisenti", 53: "Çisenti", 55: "Yoğun çisenti",
+        56: "Hafif donan çisenti", 57: "Donan çisenti",
+        61: "Hafif yağmur", 63: "Yağmurlu", 65: "Yoğun yağmur",
+        66: "Hafif donan yağmur", 67: "Donan yağmur",
+        71: "Hafif kar", 73: "Karlı", 75: "Yoğun kar", 77: "Kar tanesi",
+        80: "Hafif sağanak", 81: "Sağanak", 82: "Şiddetli sağanak",
+        85: "Kar sağanağı", 86: "Yoğun kar sağanağı",
+    }
+    if code in base:
+        return base[code]
+    if code is not None and 95 <= code <= 99:
+        return "Gök gürültülü" + (" dolu" if code >= 96 else "")
+    return "Bilinmiyor"
+
+
 async def get_weather(city: str = "") -> str:
     city = city or config.DEFAULT_CITY or "London"
     client = _get_client()
@@ -62,13 +82,14 @@ async def get_weather(city: str = "") -> str:
             "https://api.open-meteo.com/v1/forecast",
             params={
                 "latitude": lat, "longitude": lon,
-                "current": "temperature_2m,apparent_temperature",
+                "current": "temperature_2m,apparent_temperature,weather_code",
                 "timezone": "auto",
             },
             headers={"User-Agent": "piSynapse/1.0"},
         )
         c = w.json()["current"]
-        return f"{city}: {c['temperature_2m']}°C, feels like {c['apparent_temperature']}°C"
+        cond = _wmo_condition(c.get("weather_code"))
+        return f"{city}: {c['temperature_2m']}°C, {cond}, feels like {c['apparent_temperature']}°C"
     except Exception as e:
         logger.error(f"Weather API error: {e}")
         return "ERROR: unable to fetch weather data"

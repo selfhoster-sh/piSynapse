@@ -114,3 +114,17 @@ class TestValidateConfirmParams:
 
     def test_unknown_tool(self):
         assert validate_confirm_params("get_weather", {}) is None
+
+
+class TestWmoCondition:
+    def test_condition_mapping(self):
+        from weather import _wmo_condition
+        assert _wmo_condition(0) == "Açık"
+        assert _wmo_condition(2) == "Parçalı bulutlu"
+        assert _wmo_condition(3) == "Kapalı"
+        assert _wmo_condition(63) == "Yağmurlu"
+        assert _wmo_condition(73) == "Karlı"
+        assert _wmo_condition(95) == "Gök gürültülü"
+        assert _wmo_condition(96) == "Gök gürültülü dolu"
+        assert _wmo_condition(9999) == "Bilinmiyor"
+        assert _wmo_condition(None) == "Bilinmiyor"
