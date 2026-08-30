@@ -369,6 +369,25 @@ body.theme-black .msg-group.user .msg-meta .who{color:var(--text3)}
 }
 body.glass-mode .group-picker{background:rgba(24,24,32,.97);backdrop-filter:blur(12px)}
 body.glass-mode .group-picker .gp-foot{background:rgba(30,30,42,.7);border-top-color:rgba(255,255,255,.08)}
+/* Multi-tool correction: a compact chip strip listing the tools that ACTUALLY
+   ran (each with a live audit_id). Selecting a chip opens the group picker for
+   that exact tool. Same palette language as the picker — never a default look. */
+.fb-tabs{position:static;z-index:auto;display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:8px 6px 0;max-width:min(800px,calc(100% - 40px))}
+.fb-tabs .fb-tabs-cap{font-size:11px;color:var(--text3);margin-right:2px;white-space:nowrap}
+.fb-tab{appearance:none;border:1px solid var(--border);background:var(--surface2);color:var(--text);padding:5px 12px;border-radius:999px;font-size:12.5px;line-height:1.5;cursor:pointer;display:inline-flex;align-items:center;gap:5px;transition:all .15s}
+@keyframes fbTabIn{from{opacity:0;transform:translateY(-2px)}to{opacity:1;transform:none}}
+.fb-tab{animation:fbTabIn .18s ease-out}
+.fb-tab:hover:not(:focus){background:var(--surface3);border-color:color-mix(in srgb, var(--accent) 45%, var(--border))}
+.fb-tab.done{color:var(--accent);border-color:color-mix(in srgb, var(--accent) 50%, transparent);background:color-mix(in srgb, var(--accent) 14%, transparent);font-weight:500}
+body.glass-mode .fb-tab{background:rgba(30,30,42,.7);backdrop-filter:blur(12px) saturate(150%);-webkit-backdrop-filter:blur(12px) saturate(150%)}
+body.glass-mode .fb-tab:hover:not(:focus){background:rgba(40,40,56,.9);color:var(--text)}
+body.glass-mode .fb-tab.done{background:color-mix(in srgb, var(--accent) 20%, rgba(30,30,42,.8))}
+/* Coarse pointers must come AFTER the base .fb-tab rules to win the cascade. */
+@media (pointer:coarse){
+  .fb-tabs{margin:10px 6px 0;gap:8px}
+  .fb-tab{padding:11px 16px;min-height:44px;font-size:13.5px}
+  .fb-tabs .fb-tabs-cap{padding:11px 2px 11px 0;line-height:1}
+}
 @keyframes tspin{to{transform:rotate(360deg)}}
 @keyframes bounce{0%{transform:translateY(0);opacity:.4}100%{transform:translateY(-6px);opacity:1}}
 
@@ -1340,6 +1359,7 @@ const STRINGS = {
     markWrong:'Yanlıştı', markDone:'İşaretlendi', markSave:'Kaydet',
     markErr:'İşaretleme kaydedilemedi', markLoadErr:'Araç grupları yüklenemedi',
     markConfirm:'Doğruydu', markConfirmDone:'Onaylandı', markConfirmErr:'Onay kaydedilemedi',
+    fbWhich:'Hangisi yanlıştı?',
     genRetryLabel:'Araç yanıtları sıkıştırılıp yeniden deneniyor…',
     genRetryLeak:'Araç çağrısı düzeltiliyor…',
     genRetryEscalate:'Gerekli araçlar etkinleştiriliyor…'
@@ -1395,6 +1415,7 @@ const STRINGS = {
     markWrong:'Wrong', markDone:'Marked', markSave:'Save',
     markErr:'Could not save the marking', markLoadErr:'Could not load tool groups',
     markConfirm:'Correct', markConfirmDone:'Confirmed', markConfirmErr:'Could not save the confirmation',
+    fbWhich:'Which one was wrong?',
     genRetryLabel:'Compressing tool responses and retrying…',
     genRetryLeak:'Fixing a tool call…',
     genRetryEscalate:'Enabling the required tools…'
@@ -1473,6 +1494,27 @@ const TOOL_LABELS={
     complete_task:'Completing a task', delete_task:'Deleting a task', search_tasks:'Searching tasks'}
 };
 function toolLabel(n){ return (TOOL_LABELS[lang] && TOOL_LABELS[lang][n]) || n; }
+// Compact per-tool names for the multi-tool correction chips — the full
+// TOOL_LABELS verbs (e.g. "Etkinlik oluşturuyorum") are too long for pills.
+const TOOL_SHORT={
+  tr:{get_weather:'Hava', get_datetime:'Saat',
+    create_calendar_event:'Takvim', list_calendar_events:'Takvim',
+    delete_calendar_event:'Takvim', update_calendar_event:'Takvim', find_free_slots:'Saat',
+    list_emails:'E-posta', read_email:'E-posta', send_email:'E-posta', search_emails:'E-posta',
+    save_memory:'Hafıza', create_note:'Notlar', list_notes:'Notlar', read_note:'Notlar',
+    update_note:'Notlar', delete_note:'Notlar', search_notes:'Notlar',
+    create_task:'Görevler', list_tasks:'Görevler', complete_task:'Görevler',
+    delete_task:'Görevler', search_tasks:'Görevler'},
+  en:{get_weather:'Weather', get_datetime:'Time',
+    create_calendar_event:'Calendar', list_calendar_events:'Calendar',
+    delete_calendar_event:'Calendar', update_calendar_event:'Calendar', find_free_slots:'Time',
+    list_emails:'Email', read_email:'Email', send_email:'Email', search_emails:'Email',
+    save_memory:'Memory', create_note:'Notes', list_notes:'Notes', read_note:'Notes',
+    update_note:'Notes', delete_note:'Notes', search_notes:'Notes',
+    create_task:'Tasks', list_tasks:'Tasks', complete_task:'Tasks',
+    delete_task:'Tasks', search_tasks:'Tasks'}
+};
+function toolShort(n){ return (TOOL_SHORT[lang] && TOOL_SHORT[lang][n]) || n; }
 
 const GROUP_LABELS={
   tr:{calendar:'Takvim', tasks:'Görevler', memory:'Hafıza', email:'E-posta', notes:'Notlar', weather:'Hava Durumu'},
@@ -2669,7 +2711,7 @@ async function sendMsg(){
   el.value=''; el.style.height='auto'; pendingImages=[]; renderImagePreview();
   addMsg('user',text,true,null,images); showTyping(); setLoading(true);
   let bubble=null, fullText='', thinkBox=null, fullReasoning='';
-  let gotReply=false, terminated=false, toolRow=null;
+  let gotReply=false, terminated=false, toolRow=null, roundAudits=[];
   // ⚠️ YENİ DAL EKLEME: done/confirm/error/catch — hepsi terminal durumdur.
   // Yeni bir son durum dalı eklersen, return'den ÖNCE `terminated=true` ekle.
   // Aksi halde finally bloğu gereksiz "boş yanıt" mesajı ekler.
@@ -2737,8 +2779,11 @@ async function sendMsg(){
         } else if(data.tool){
           if(currentSid !== sid) continue;
           if(!bubble) bubble=createStreamBubble();
-          if(data.tool.phase==='end'){ toolRow=endToolStatus(toolRow, data.tool.ok, data.tool.audit_id); }
-          else { toolRow=showToolStatus(data.tool, toolRow); }
+          if(data.tool.phase==='end'){
+            toolRow=showToolScan(toolRow, data.tool);
+            if(data.tool.ok && data.tool.audit_id!=null && data.tool.audit_id!=='') roundAudits.push({audit:data.tool.audit_id, name:data.tool.name});
+          }
+          else { toolRow=showToolScan(toolRow, data.tool); }
         } else if(data.gen_retry){
           if(currentSid !== sid) continue;
           if(!bubble) bubble=createStreamBubble();
@@ -2765,10 +2810,10 @@ async function sendMsg(){
   } finally{
     if(_pendingStream?.sid === sid) _pendingStream=null;
     if(toolRow && toolRow.isConnected && !toolRow.classList.contains('done')){
-      // Aborted/errored before an end event: settle the row. A refused or
-      // interrupted call has no audit_id, so no mark button; failed retries
-      // still show ⚠ when nothing was produced.
-      endToolStatus(toolRow, !!gotReply, null);
+      // Round over: settle the single feedback row with the thumbs collected
+      // from every tool that actually ran and got an audit. A refused or
+      // interrupted round has no audits — fall back to the plain ✓/⚠ state.
+      settleFeedbackRow(toolRow, !!gotReply, roundAudits);
     }
     toolRow=null; _roundGroup=null;
     typingEl?.classList.remove('tool-pending');
@@ -2951,6 +2996,7 @@ function resetPill(row){
   row.querySelector('.fb-up')?.remove();
   row.querySelector('.bar-divider')?.remove();
   delete row.dataset.audit;
+  delete row.dataset.audits;
   delete row.dataset.fb;
   row.querySelectorAll('.fb-state').forEach(s=>s.remove());
   let sp=row.querySelector('.tspin');
@@ -2959,18 +3005,20 @@ function resetPill(row){
   let lab=row.querySelector('.tlab');
   if(!lab){ lab=document.createElement('span'); lab.className='tlab'; row.appendChild(lab); }
 }
-function showToolStatus(info, row){
-  // A settled row is a permanent marking target (it holds a live audit_id and
-  // its own mark button). Never recycle it for another tool call — a new tool
-  // gets a fresh row below, so every audited call keeps its affordance.
-  if(!row || !row.isConnected || row.classList.contains('done')){
-    row=document.createElement('div'); row.className='tool-status';
-    row.innerHTML='<span class="tspin"></span><span class="tlab"></span>';
-    placeRow(row);
-    if(typingEl){ typingEl.classList.add('tool-pending'); }
-  } else {
-    resetPill(row);
-  }
+function ensureToolRow(toolRow){
+  // One row per message: reuse the same pill through the whole round — the
+  // label swaps for each tool while the spinner stays. It only settles once,
+  // at round end, so the message owns a SINGLE 👍/👎 pair (C-7).
+  if(toolRow && toolRow.isConnected && !toolRow.classList.contains('done')) return toolRow;
+  const row=document.createElement('div'); row.className='tool-status';
+  row.innerHTML='<span class="tspin"></span><span class="tlab"></span>';
+  placeRow(row);
+  if(typingEl){ typingEl.classList.add('tool-pending'); }
+  return row;
+}
+function showToolScan(toolRow, info){
+  const row=ensureToolRow(toolRow);
+  row.querySelector('.tspin')?.classList.remove('dead');
   const lab=row.querySelector('.tlab');
   let txt=toolLabel(info.name);
   if(info.phase==='refused'){
@@ -2980,40 +3028,38 @@ function showToolStatus(info, row){
   } else {
     txt+='…';
   }
+  if(info.phase==='end') txt=txt.replace(/…$/,'');
   lab.textContent=txt;
+  if(info.phase==='end') row.querySelector('.tspin')?.classList.add('dead');
   scrollEnd(false);
   return row;
 }
 
-function endToolStatus(row, ok, auditId){
-  // No auto-hide: the row keeps its feedback state under the message until the
-  // next send drops it. Returns the row so the caller KEEPS tracking it —
-  // returning null would orphan the DOM node and the next event would draw a
-  // second row instead of settling this one.
+function settleFeedbackRow(row, ok, audits){
+  // Round-finalize: toggle state, drop the spinner, then render the feedback.
+  // With audits the pair is the C-7 one → many (single 👎/👍 per message);
+  // without (refused/interrupted round) keep the quiet ✓ (⚠ stays with label).
   if(!row || !row.isConnected) return row;
   row.classList.toggle('ok', !!ok);
   row.classList.add('done');
   row.querySelector('.tspin')?.remove();
   row.querySelectorAll('.fb-state').forEach(s=>s.remove());
-  const audited = auditId!=null && auditId!=='';
   if(ok){
     row.querySelector('.tlab')?.remove();
   } else {
     const lab=row.querySelector('.tlab');
     if(lab) lab.textContent=lab.textContent.replace(/…$/,'');
   }
-  // Audited calls get the real thumbs (correct / not-correct). An un-audited
-  // call (refused/unverifiable) has nothing to confirm or correct — keep only
-  // the quiet ✓ on success (⚠ stays with the failed label above).
-  if(audited){
-    row.dataset.audit=String(auditId);
+  if(audits && audits.length){
+    row.dataset.audit=String(audits[0].audit);
+    row.dataset.audits=audits.map(a=>a.audit).join(',');
     // Retry-revived rows keep their merged copy/listen/regen bar — reintroduce
     // the divider so the re-added thumbs stay visually grouped.
     if(row.querySelector('.copy-btn')){
       const d=document.createElement('span'); d.className='bar-divider'; row.appendChild(d);
     }
-    row.appendChild(makeThumbUpBtn(row, auditId));
-    row.appendChild(makeMarkBtn(row, auditId));
+    row.appendChild(makeThumbUpBtn(row, audits.slice()));
+    row.appendChild(makeMarkBtn(row, audits.slice()));
   } else {
     const st=document.createElement('span'); st.className='fb-state'+(ok?'':' bad');
     st.textContent=ok ? '\u2713' : '\u26A0';
@@ -3023,35 +3069,43 @@ function endToolStatus(row, ok, auditId){
 }
 
 let _toolGroupsCache=null; let _roundGroup=null;
-function clearToolPills(){ document.querySelectorAll('#messages .tool-status').forEach(r=>r.remove()); }
+function clearToolPills(){ document.querySelectorAll('#messages .tool-status, #messages .fb-tabs').forEach(r=>r.remove()); }
 
-function makeMarkBtn(row, auditId){
+function makeMarkBtn(row, audits){
   const b=document.createElement('button');
-  b.className='mark-btn fb-thumb tts-btn'; b.dataset.audit=String(auditId);
+  b.className='mark-btn fb-thumb tts-btn'; b.dataset.audit=String(audits[0].audit);
   b.innerHTML=_THUMB_DOWN_SVG;
   b.title=t('markWrong');
-  b.onclick=()=>openGroupPicker(row, b, auditId);
+  b.onclick=()=>{
+    // Single ran tool → straight to the familiar picker (keeps the keyboard
+    // flow: Enter opens it, Tab reaches the first option). Multiple → first
+    // pick WHICH tool was wrong, then the same picker bound to that audit.
+    audits.length<=1 ? openGroupPicker(row, b, audits[0].audit)
+                     : openFeedbackTabs(row, b, audits);
+  };
   return b;
 }
-function makeThumbUpBtn(row, auditId){
+function makeThumbUpBtn(row, audits){
   const b=document.createElement('button');
   b.className='fb-up fb-thumb tts-btn';
   b.innerHTML=_THUMB_UP_SVG;
   b.title=t('markConfirm');
-  b.onclick=()=>submitConfirmation(row, b, auditId);
+  b.onclick=()=>submitConfirmation(row, b, audits);
   return b;
 }
-async function submitConfirmation(row, btn, auditId){
-  // "Doğruydu": record a positive (confirmation) signal. It is the opposite of
-  // a correction, so a previous mark on this row (if any) is visually cleared;
-  // the backend clears the stored correction fields the same way.
+async function submitConfirmation(row, btn, audits){
+  // "Doğruydu": EVERY hardware-affecting tool that ran gets a positive
+  // (confirmation) signal — one decision, N sequential calls. A partial
+  // failure leaves the thumb unlit so the user can retry the whole batch;
+  // success also clears any stored mark and drops the correction chooser.
   btn.disabled=true;
   try{
-    await api('POST','/chat/tool-confirm',{audit_id:auditId});
+    for(const a of (audits||[])) await api('POST','/chat/tool-confirm',{audit_id:a.audit});
     btn.classList.add('active');
     btn.title=t('markConfirmDone');
     const down=row.querySelector('.mark-btn');
     if(down){ down.classList.remove('marked'); down.title=t('markWrong'); }
+    row.parentNode?.querySelectorAll('.fb-tabs').forEach(el=>el.remove());
   } catch(e){
     if(e && e.message && e.message.startsWith('HTTP ')) toast(t('markConfirmErr')+': '+e.message.slice(5), true);
     else toast(t('markConfirmErr'), true);
@@ -3059,7 +3113,45 @@ async function submitConfirmation(row, btn, auditId){
   btn.disabled=false;
 }
 
-function openGroupPicker(row, btn, auditId){
+function openFeedbackTabs(row, btn, audits){
+  // 👎 with several tools: show which tools actually ran (each owns a live
+  // audit_id). Clicking a chip opens the group picker bound to THAT tool only —
+  // fixes correct only what was wrong and leaves the rest unreviewed (user
+  // decision: no implicit confirmation).
+  document.querySelectorAll('#messages .group-picker, #messages .fb-tabs').forEach(el=>el.remove());
+  const tabs=document.createElement('div'); tabs.className='fb-tabs';
+  const cap=document.createElement('span'); cap.className='fb-tabs-cap';
+  cap.textContent=t('fbWhich'); tabs.appendChild(cap);
+  for(const a of audits){
+    const tb=document.createElement('button'); tb.type='button';
+    tb.className='fb-tab'; tb.dataset.audit=String(a.audit); tb.dataset.tool=a.name;
+    tb.textContent=toolShort(a.name);
+    tb.onclick=()=>openGroupPicker(row, btn, a.audit, {after:tabs, onOk:(inf)=>finishTabCorrection(tb, a)});
+    tabs.appendChild(tb);
+  }
+  const host=row.parentNode || document.getElementById('messages');
+  if(row.after) row.after(tabs); else host.appendChild(tabs);
+  tabs.scrollIntoView({block:'nearest', behavior:'smooth'});
+  const dismiss=ev=>{
+    // Never steal interaction from the open picker: gp-opt/save clicks live
+    // OUTSIDE the chip strip and must not tear it down mid-interaction (a
+    // removal would reflow the layout and swallow the click). Outside taps
+    // close the strip; the picker's own dismiss handles itself.
+    if(tabs.contains(ev.target)) return;
+    if(ev.target.closest && ev.target.closest('.group-picker')) return;
+    tabs.remove();
+    document.removeEventListener('pointerdown',dismiss,true);
+  };
+  document.addEventListener('pointerdown',dismiss,true);
+}
+function finishTabCorrection(tb, a){
+  // Mark the corrected tool's chip so the user sees which one is fixed while
+  // the other chips stay available for additional corrections.
+  tb.classList.add('done'); tb.title=t('markDone');
+  tb.textContent=toolShort(a.name)+' \u2713';
+}
+
+function openGroupPicker(row, btn, auditId, opts={}){
   // A message owns at most one open picker — close any sibling first.
   document.querySelector('#messages .group-picker')?.remove();
   const panel=document.createElement('div'); panel.className='group-picker';
@@ -3080,7 +3172,7 @@ function openGroupPicker(row, btn, auditId){
     const foot=document.createElement('div'); foot.className='gp-foot';
     const saveEl=document.createElement('button'); saveEl.className='gp-save';
     saveEl.textContent=t('markSave'); saveEl.disabled=!sel;
-    saveEl.onclick=()=>submitCorrection(row, btn, auditId, sel, panel, saveEl);
+    saveEl.onclick=()=>submitCorrection(row, btn, auditId, sel, panel, saveEl, opts);
     const cancelEl=document.createElement('button'); cancelEl.className='gp-cancel';
     cancelEl.textContent=t('cancel');
     cancelEl.onclick=()=>panel.remove();
@@ -3089,12 +3181,14 @@ function openGroupPicker(row, btn, auditId){
   };
   const doOpen=()=>{
     sel=''; render();
-    // In-flow: the picker inserts right after the feedback row, inside the
-    // same message group (static positioning), so it pushes the chat down and
-    // can never overlap the bubble. The old "clamp+flip" survives as the CSS
-    // max-height cap; on coarse pointers the sheet spans the message column.
+    // In-flow: the picker inserts right after the feedback row (or, in the
+    // multi-tool flow, after the tool-chip strip), inside the same message
+    // group — static positioning so it pushes the chat down and never overlaps
+    // the bubble. The old "clamp+flip" survives as the CSS max-height cap; on
+    // coarse pointers the sheet spans the message column.
     const host=row.parentNode || document.getElementById('messages');
-    if(row.after) row.after(panel); else host.appendChild(panel);
+    const anchor=opts.after || row;
+    if(anchor.after) anchor.after(panel); else host.appendChild(panel);
     panel.scrollIntoView({block:'nearest', behavior:'smooth'});
     // Tap anywhere outside dismisses; reopening re-opens (siblings are
     // removed at the top of openGroupPicker).
@@ -3110,7 +3204,7 @@ function openGroupPicker(row, btn, auditId){
   }).catch(()=>{ toast(t('markLoadErr'),true); });
 }
 
-async function submitCorrection(row, btn, auditId, group, panel, saveEl){
+async function submitCorrection(row, btn, auditId, group, panel, saveEl, opts){
   saveEl.disabled=true; saveEl.textContent='…';
   try{
     await api('POST','/chat/tool-correction',{audit_id:auditId, expected_group:group});
@@ -3120,6 +3214,7 @@ async function submitCorrection(row, btn, auditId, group, panel, saveEl){
     // active look too (backend clears confirmed_at the same way).
     const up=row.querySelector('.fb-up');
     if(up){ up.classList.remove('active'); up.title=t('markConfirm'); }
+    if(typeof opts?.onOk==='function') opts.onOk();
   } catch(e){
     if(e && e.message && e.message.startsWith('HTTP ')) toast(t('markErr')+': '+e.message.slice(5), true);
     else toast(t('markErr'), true);
