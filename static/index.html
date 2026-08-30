@@ -1495,6 +1495,41 @@ document.addEventListener('keydown',e=>{
 
 function t(k){ return STRINGS[lang][k] || k; }
 
+// WMO weather-code labels, localized client-side so the widget reads the UI
+// language regardless of what the backend summarizes.
+const WMO_LABELS = {
+  tr:{0:'Açık',1:'Az bulutlu',2:'Parçalı bulutlu',3:'Kapalı',45:'Sisli',48:'Kırağılı sis',
+      51:'Hafif çisenti',53:'Çisenti',55:'Yoğun çisenti',56:'Hafif donan çisenti',57:'Donan çisenti',
+      61:'Hafif yağmur',63:'Yağmurlu',65:'Yoğun yağmur',66:'Hafif donan yağmur',67:'Donan yağmur',
+      71:'Hafif kar',73:'Karlı',75:'Yoğun kar',77:'Kar tanesi',
+      80:'Hafif sağanak',81:'Sağanak',82:'Şiddetli sağanak',85:'Kar sağanağı',86:'Yoğun kar sağanağı'},
+  en:{0:'Clear',1:'Mostly clear',2:'Partly cloudy',3:'Overcast',45:'Foggy',48:'Rime fog',
+      51:'Light drizzle',53:'Drizzle',55:'Dense drizzle',56:'Light freezing drizzle',57:'Freezing drizzle',
+      61:'Light rain',63:'Rain',65:'Heavy rain',66:'Light freezing rain',67:'Freezing rain',
+      71:'Light snow',73:'Snow',75:'Heavy snow',77:'Snow grains',
+      80:'Light showers',81:'Showers',82:'Heavy showers',85:'Snow showers',86:'Heavy snow showers'},
+};
+function wmoLabel(code){
+  const l = WMO_LABELS[lang] || WMO_LABELS.en;
+  if(code != null){
+    if(l[code]) return l[code];
+    if(code >= 95 && code <= 99) return lang==='tr' ? ('Gök gürültülü' + (code >= 96 ? ' dolu' : '')) : ('Thunderstorm' + (code >= 96 ? ' with hail' : ''));
+  }
+  return lang === 'tr' ? 'Bilinmiyor' : 'Unknown';
+}
+function wmoIconKind(code){
+  if(code == null) return 'unknown';
+  if(code === 0) return 'clear';
+  if(code === 1 || code === 2) return 'partly';
+  if(code === 3) return 'cloud';
+  if(code === 45 || code === 48) return 'fog';
+  if(code >= 51 && code <= 57) return 'drizzle';
+  if((code >= 61 && code <= 67) || (code >= 80 && code <= 82)) return 'rain';
+  if((code >= 71 && code <= 77) || code === 85 || code === 86) return 'snow';
+  if(code >= 95 && code <= 99) return 'storm';
+  return 'unknown';
+}
+
 const TOOL_LABELS={
   tr:{get_weather:'Havaya bakıyorum', get_datetime:'Saate bakıyorum',
     create_calendar_event:'Etkinlik oluşturuyorum', list_calendar_events:'Takvimine bakıyorum',
@@ -1573,7 +1608,7 @@ if(thinkEffort !== 'none' && !THINK_EFFORTS.includes(thinkEffort)) thinkEffort =
 let thinkMode = thinkEffort !== 'none';
 let lastThinkEffort = thinkMode ? thinkEffort : 'medium';
 let _cachedWeatherSummary = null; let _cachedWeatherRaw = null; let _cachedEvents = null;
-let _cachedWeatherKind = null; let _cachedWeatherTemp = null; let _cachedWeatherCond = null;
+let _cachedWeatherKind = null; let _cachedWeatherTemp = null; let _cachedWeatherCond = null; let _cachedWeatherWmo = null;
 
 // ── Markdown, LaTeX & Copy (local parser) ─────────────────────────────────────
 function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
@@ -1834,6 +1869,9 @@ function applyLang(l){
 
   document.querySelectorAll('.copy-label').forEach(el => { el.textContent = t('copy'); });
   if(!currentSid) document.getElementById('sess-title').textContent = 'piSynapse';
+
+  // Re-render cached widget items (weather condition label + icon) in the new language
+  if(_cachedWeatherRaw !== null) rebuildTickerFromCache();
 
   // If settings are open, redraw them in the new language immediately
   const sm = document.getElementById('settings-modal');
@@ -4045,7 +4083,7 @@ async function refreshTicker(){
     snow:    `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M20 16.58A5 5 0 0 0 18 7h-1.26A8 8 0 1 0 4 15.25"/><line x1="8" y1="16" x2="8" y2="19"/><line x1="8" y1="21" x2="8" y2="22"/><line x1="12" y1="16" x2="12" y2="22"/><line x1="16" y1="16" x2="16" y2="19"/><line x1="16" y1="21" x2="16" y2="22"/></svg>`,
     storm:   `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"></path></svg>`,
   };
-  try{ const w=await api('GET','/widget/weather'); _cachedWeatherRaw=w.summary||null; _cachedWeatherSummary=_cachedWeatherRaw; _cachedWeatherKind=w.kind||null; _cachedWeatherTemp=w.temp_c; _cachedWeatherCond=w.condition||null; } catch{_cachedWeatherRaw=null; _cachedWeatherSummary=null; _cachedWeatherKind=null; _cachedWeatherTemp=null; _cachedWeatherCond=null; }
+  try{ const w=await api('GET','/widget/weather'); _cachedWeatherRaw=w.summary||null; _cachedWeatherSummary=_cachedWeatherRaw; _cachedWeatherKind=w.kind||null; _cachedWeatherTemp=w.temp_c; _cachedWeatherCond=w.condition||null; _cachedWeatherWmo=w.wmo_code; } catch{_cachedWeatherRaw=null; _cachedWeatherSummary=null; _cachedWeatherKind=null; _cachedWeatherTemp=null; _cachedWeatherCond=null; _cachedWeatherWmo=null; }
   try{ const c=await api('GET','/widget/calendar'); _cachedEvents=c.events||[]; } catch{ _cachedEvents=null; }
   rebuildTickerFromCache();
 }
@@ -4056,13 +4094,15 @@ function rebuildTickerFromCache(){
   tickerItems = [];
   if(_cachedWeatherRaw){
     let text;
-    if(_cachedWeatherCond){
+    if(_cachedWeatherWmo != null){
+      text = _cachedWeatherTemp != null ? `${_cachedWeatherTemp}°C · ${wmoLabel(_cachedWeatherWmo)}` : wmoLabel(_cachedWeatherWmo);
+    } else if(_cachedWeatherCond){
       text = _cachedWeatherTemp != null ? `${_cachedWeatherTemp}°C · ${_cachedWeatherCond}` : _cachedWeatherCond;
     } else {
       text = _cachedWeatherRaw.replace(/feels like/gi, t('feelsLike'));
     }
     const wicons = window._weatherIcons || {};
-    tickerItems.push({ icon: wicons[_cachedWeatherKind] || icons.sun || infoSvg, text });
+    tickerItems.push({ icon: wicons[wmoIconKind(_cachedWeatherWmo)] || wicons[_cachedWeatherKind] || icons.sun || infoSvg, text });
   }
   if(_cachedEvents !== null){
     const evs = freshEvents(_cachedEvents);
