@@ -16,6 +16,15 @@
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 - **Sanitization rule:** this file may be published. Never write personal data, identity clues, deployment addresses (hostnames, IPs, ports), or accounts into it. Keep every narrative in English; Turkish inline tokens are allowed only as product corpus / i18n test data.
 
+## 2026-08-31 — Faz C-13c: Weather ticker follows UI language + kind-driven icon
+- Bug report: after switching the UI language in settings the ticker stayed unchanged (condition still Turkish) and the icon didn't move. Two root causes:
+  1. `applyLang` never re-rendered the cached ticker → stale text/icon after a switch.
+  2. The condition label came straight from the backend (Turkish) with no client-side localization, and the "icon" was the static sun-cloud unless the widget happened to report a non-partly kind.
+- Fix (frontend only):
+  - `applyLang` calls `rebuildTickerFromCache()` when weather cache is populated → language switches re-render the ticker immediately.
+  - New `WMO_LABELS` (tr/en) + `wmoLabel(code)`/`wmoIconKind(code)` mirror the backend WMO mapping client-side; the item text is now `22°C · Açık`/`22°C · Clear` and the icon is derived from `wmo_code` at render time (sun / sun-cloud / cloud / fog / drizzle / rain / snow / lightning). Old-server fallback path (no `wmo_code`) preserved.
+- Verification: pytest **465**; e2e **33/33** (+`weather-ticker.spec.cjs` ×2: label localizes on `applyLang` switch, storm payload swaps label+icon).
+
 ## 2026-08-31 — Faz C-13b: Weather ticker widget → condition icon + structured payload
 - Follow-up to C-13: the sidebar/topbar weather ticker showed only the raw summary text with a static sun-cloud icon, so the new condition label wasn't visualized.
 - `weather.py`: introduced `_wmo_kind(code)` — coarse icon category (`clear/partly/cloud/fog/drizzle/rain/snow/storm/unknown`) — and factored the fetch into `_weather_data(city)` returning `{city, temp_c, feels_c, condition, wmo_code, kind}`; `get_weather()` (LLM tool) now builds its string from the same fetch. Structuring the payload once keeps the tool and widget consistent.
