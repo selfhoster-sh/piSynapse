@@ -565,6 +565,16 @@ body:not(.glass-mode) #input-area::before{content:'';position:absolute;left:50%;
 @keyframes spin-once{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
 .msg-actions{display:flex;gap:4px;margin-top:6px}
 .copy-btn.copied{color:var(--accent)}
+
+/* Older assistant messages: dim the merged action/feedback bar; reveal on
+   hover/focus so regenerate + copy/listen stay reachable on every turn
+   (industry pattern: assistant-ui not-last, MUI hover, Cloudscape). */
+#messages .tool-status.done.not-last,
+#messages .msg-actions.not-last{opacity:.45;transition:opacity .15s}
+#messages .msg-group:hover .tool-status.done.not-last,
+#messages .msg-group:hover .msg-actions.not-last,
+#messages .tool-status.done.not-last:focus-within,
+#messages .msg-actions.not-last:focus-within{opacity:1}
 /* Respect the OS "reduce motion" setting: users with vestibular sensitivity
    get a fully still UI (no slide-ins, pulses or marquees). */
 @media (prefers-reduced-motion: reduce){
@@ -2630,7 +2640,7 @@ async function loadSession(sid){
   try{
     const d=await api('GET','/chat/history?session_id='+encodeURIComponent(sid));
     const msgs=d.messages||[];
-    if(msgs.length){ msgs.forEach(m=>addMsg(m.role,m.content,false,m.timestamp,m.images||null,m.reasoning||null,m.audits||null)); scrollEnd(true); } else showWelcomeMsg();
+    if(msgs.length){ msgs.forEach(m=>addMsg(m.role,m.content,false,m.timestamp,m.images||null,m.reasoning||null,m.audits||null,m.id||null)); scrollEnd(true); refreshLastState(); } else showWelcomeMsg();
   } catch { showWelcomeMsg(); }
 }
 
@@ -2689,30 +2699,39 @@ async function abortStream(){
 async function regenerate(group){
   if(loading) return;
   const sid=currentSid; if(!sid) return;
-  // 1) Collect the last user message text from DOM
-  const userGroups=document.querySelectorAll('.msg-group.user');
-  const lastUserGroup=userGroups[userGroups.length-1];
-  if(!lastUserGroup) return;
-  const userText=(lastUserGroup.querySelector('.bubble')?.textContent||'').trim();
-  if(!userText) return;
-  // 2) Remove the old user + assistant bubbles from DOM
-  group.remove();
-  lastUserGroup.remove();
-  // 3) DELETE last assistant from DB
-  try{
-    const h={'Content-Type':'application/json'}; const k=getApiKey(); if(k) h['X-API-Key']=k;
-    await fetch(API+'/chat/messages/last/'+encodeURIComponent(sid),{method:'DELETE',headers:h});
-  }catch{}
-  // 4) Re-send the user message — reuse sendMsg's stream logic
-  const el=document.getElementById('msg-input');
-  el.value=userText; el.style.height='auto';
-  await sendMsg();
+  // The assistant reply being regenerated belongs to its DIRECTLY preceding
+  // user message — that pair is the branch point, not "the last user message".
+  const ui=group.previousElementSibling;
+  const uiIsUser=!!(ui && ui.classList && ui.classList.contains('msg-group') && ui.classList.contains('user'));
+  const userText=uiIsUser ? (ui.querySelector('.bubble')?.textContent||'').trim() : '';
+  if(!uiIsUser || !userText) return;
+  const mid=parseInt(group.dataset.mid||'',10)||null;
+  if(!mid){
+    // No DB anchor (aborted/legacy message) — only the last exchange can be
+    // re-rolled safely with the old "delete last assistant" endpoint.
+    if(group!==document.querySelector('#messages .msg-group.assistant:last-of-type')) return;
+    try{ await fetch(API+'/chat/messages/last/'+encodeURIComponent(sid),{method:'DELETE',headers:apiHeaders()}); }catch{}
+    group.remove(); ui.remove();
+  } else {
+    // Branch semantics: truncate DB + DOM from this message onward. The
+    // original prompt stays in the DB (its id < anchor) and the re-run appends
+    // a fresh reply at the same position — old tail never reappears in context.
+    try{ await api('DELETE','/chat/messages/branch/'+encodeURIComponent(sid),{message_id:mid}); }catch{}
+    for(let node=group; node;){ const next=node.nextElementSibling; node.remove(); node=next; }
+    refreshLastState();
+  }
+  await sendMsg({ regenText: userText });
 }
 
-async function sendMsg(){
+function apiHeaders(){ const h={'Content-Type':'application/json'}; const k=getApiKey(); if(k) h['X-API-Key']=k; return h; }
+
+async function sendMsg(opts){
   if(loading){ if(_pendingStream) abortStream(); return; }
   userAborted=false;
-  const el=document.getElementById('msg-input'); const text=el.value.trim();
+  const el=document.getElementById('msg-input');
+  // Per-message regenerate passes the prompt directly and keeps the original
+  // user bubble (no second bubble, the server already holds that prompt).
+  const text=(opts && opts.regenText) ? opts.regenText.trim() : el.value.trim();
   const images=pendingImages.map(i=>i.base64);
   if(!text && !images.length) return; if(!currentSid) currentSid=newSid();
   const sid = currentSid;
@@ -2725,10 +2744,11 @@ async function sendMsg(){
     document.getElementById('sess-title').textContent=rakeTitle;
   }
   _pendingStream = { sid };
-  clearToolPills(); // fresh round: previous turn's feedback rows are dropped
+  clearToolPills(); // fresh round: the CURRENT round's transient rows are dropped (settled rows persist)
   _roundGroup=null;
   el.value=''; el.style.height='auto'; pendingImages=[]; renderImagePreview();
-  addMsg('user',text,true,null,images); showTyping(); setLoading(true);
+  if(!(opts && opts.regenText)) addMsg('user',text,true,null,images);
+  showTyping(); setLoading(true); refreshLastState();
   let bubble=null, fullText='', thinkBox=null, fullReasoning='';
   let gotReply=false, terminated=false, toolRow=null, roundAudits=[];
   // ⚠️ YENİ DAL EKLEME: done/confirm/error/catch — hepsi terminal durumdur.
@@ -2778,6 +2798,9 @@ async function sendMsg(){
             if(bubble) bubble.textContent='\u26A0\uFE0F '+t('emptyReply'); else addMsg('assistant','\u26A0\uFE0F '+t('emptyReply'));
           }
           terminated=true;
+          // Branch anchor for per-message regenerate: remember the saved
+          // DB id on this bubble so regen can truncate context from it.
+          if(bubble && data.message_id) bubble.closest('.msg-group').dataset.mid=String(data.message_id);
           // Title is set by backend (first 4 words instant + LLM enriched background if enabled).
           // Frontend must NOT call PATCH to override it.
           await loadSessions(false);
@@ -2873,6 +2896,7 @@ async function sendMsg(){
       if(bubble && fullText) bubble.innerHTML = renderMd(fullText);
       // Add copy/TTS actions to the streamed message (createStreamBubble adds none)
       if(bubble && fullText) attachMsgActions(bubble.closest('.msg-group'), fullText);
+      refreshLastState();
       setLoading(false); el.focus();
       // Auto-speak response if voice input + auto-TTS enabled
       if(lastInputWasVoice && config.auto_tts_on_voice === 'on' && fullText){
@@ -2951,28 +2975,42 @@ function attachMsgActions(group, text){
   regenBtn.className='tts-btn regen-btn'; regenBtn.title=t('regenTitle');
   regenBtn.innerHTML=_REGEN_SVG;
   regenBtn.onclick=()=>regenerate(group);
+  // Per-message branching (C-12): every assistant message may be re-rolled —
+  // regen anchors on the message's DB id. Only messages without an anchor
+  // (aborted/legacy rounds) fall back to the last-exchange rule.
+  const canRegen=regenerateEligible(group);
   const settled=group.querySelector('.tool-status.done');
   if(settled && !settled.querySelector('.copy-btn')){
     const div=document.createElement('span'); div.className='bar-divider';
     settled.prepend(div);
     const btns=[copyBtn,ttsBtn];
-    // Regenerate button — only on the last assistant bubble
-    const lastAssistant=document.querySelector('.msg-group.assistant:last-of-type');
-    if(lastAssistant===group) btns.push(regenBtn);
+    if(canRegen) btns.push(regenBtn);
     for(let i=btns.length-1;i>=0;i--) settled.prepend(btns[i]);
     return;
   }
   const row=document.createElement('div'); row.className='msg-actions';
   row.appendChild(copyBtn); row.appendChild(ttsBtn);
-  // Regenerate button — only on the last assistant bubble
-  const lastAssistant=document.querySelector('.msg-group.assistant:last-of-type');
-  if(lastAssistant===group) row.appendChild(regenBtn);
+  if(canRegen) row.appendChild(regenBtn);
   group.appendChild(row);
 }
 
-function addMsg(role, content, forceScroll=true, ts=null, images=null, reasoning=null, audits=null){
+function regenerateEligible(group){
+  if(parseInt(group.dataset.mid||'',10)) return true;
+  return group===document.querySelector('#messages .msg-group.assistant:last-of-type');
+}
+
+function refreshLastState(){
+  const assistants=[...document.querySelectorAll('#messages .msg-group.assistant')];
+  assistants.forEach(g=>{
+    const bar=g.querySelector('.msg-actions')||g.querySelector('.tool-status.done');
+    if(bar) bar.classList.toggle('not-last', g!==assistants[assistants.length-1]);
+  });
+}
+
+function addMsg(role, content, forceScroll=true, ts=null, images=null, reasoning=null, audits=null, mid=null){
   document.querySelector('.welcome')?.remove();
   const g=document.createElement('div'); g.className='msg-group '+role;
+  if(mid) g.dataset.mid=String(mid);
   const who=role==='user' ? (config.username||t('you')) : 'piSynapse';
   const timeLabel = ts ? relTime(ts) : timeNow();
   g.innerHTML=`<div class="msg-meta"><span class="who">${esc(who)}</span><span class="ts">${timeLabel}</span></div><div class="bubble"></div>`;
@@ -3128,7 +3166,7 @@ function settleFeedbackRow(row, ok, audits){
 }
 
 let _toolGroupsCache=null; let _roundGroup=null;
-function clearToolPills(){ document.querySelectorAll('#messages .tool-status, #messages .fb-tabs').forEach(r=>r.remove()); }
+function clearToolPills(){ document.querySelectorAll('#messages .tool-status:not(.done), #messages .fb-tabs').forEach(r=>r.remove()); }
 
 function makeMarkBtn(row, audits){
   const b=document.createElement('button');
@@ -3505,7 +3543,7 @@ async function confirmAction(){
   showTyping(); setLoading(true);
   try{
     const d=await api('POST','/chat/execute',{ session_id:currentSid, user_id:config.username||'default', tool:tool, params:params });
-    hideTyping(); addMsg('assistant',d.reply); await loadSessions(false);
+    hideTyping(); addMsg('assistant',d.reply); await loadSessions(false); refreshLastState();
   } catch{ hideTyping(); addMsg('assistant','\u26A0\uFE0F '+t('connErr')); toast(t('connErr'),true); } finally{ setLoading(false); }
 }
 

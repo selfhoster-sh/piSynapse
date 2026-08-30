@@ -845,3 +845,46 @@ def test_audit_export_dir_env_override(audit_db, monkeypatch, tmp_path):
     assert dbmod.audit_export_dir() == str(tmp_path / "db" / "audit_exports")
     monkeypatch.setenv("AUDIT_EXPORT_DIR", str(tmp_path / "custom"))
     assert dbmod.audit_export_dir() == str(tmp_path / "custom")
+
+
+def test_delete_branch_truncates_messages_and_fts(audit_db):
+    """delete_branch deletes anchor message and everything after it, keeping earlier rows."""
+    from db import delete_branch, save_message, get_history
+    asyncio.run(save_message("b1", "user", "u1"))
+    a1 = asyncio.run(save_message("b1", "assistant", "a1"))
+    asyncio.run(save_message("b1", "user", "u2"))
+    a2 = asyncio.run(save_message("b1", "assistant", "a2"))
+
+    # History before branch: 4 messages (u1, a1, u2, a2)
+    history = asyncio.run(get_history("b1", limit=10))
+    assert len(history) == 4
+    assert history[1]["id"] == a1
+    assert history[3]["id"] == a2
+
+    # Truncate from a2 (the second assistant message)
+    removed = asyncio.run(delete_branch("b1", a2))
+    assert removed == [a2]
+
+    history_after = asyncio.run(get_history("b1", limit=10))
+    assert len(history_after) == 3
+    assert [m["content"] for m in history_after] == ["u1", "a1", "u2"]
+
+
+def test_delete_branch_endpoint(correction_client):
+    """DELETE /chat/messages/branch/{session_id} invokes delete_branch."""
+    from db import save_message, get_history
+    asyncio.run(save_message("b2", "user", "hello"))
+    mid = asyncio.run(save_message("b2", "assistant", "hi"))
+
+    resp = correction_client.request(
+        "DELETE",
+        "/chat/messages/branch/b2",
+        json={"message_id": mid}
+    )
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+    assert resp.json()["removed"] == [mid]
+
+    history = asyncio.run(get_history("b2", limit=10))
+    assert len(history) == 1
+    assert history[0]["role"] == "user"

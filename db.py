@@ -917,13 +917,48 @@ async def delete_last_assistant(session_id: str) -> bool:
     return True
 
 
+async def delete_branch(session_id: str, anchor_id: int) -> list[int]:
+    """Truncate a conversation from an anchor message onward (regenerate branch).
+
+    Deletes the anchored message and everything saved after it (messages are
+    appended strictly in id order), so a regenerated reply never sits on a
+    stale tail — both in the model's context window and in the UI's history.
+    Returns the list of deleted message ids (FTS rows are removed in lockstep).
+
+    Unlike delete_last_assistant this is position-agnostic: the frontend picks
+    ANY assistant message to regenerate and the whole downstream tail goes away,
+    exactly like ChatGPT/Claude's branch semantics for old responses.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT id FROM conversations WHERE session_id = ? AND id >= ? ORDER BY id",
+        (session_id, anchor_id),
+    ) as cur:
+        ids = [r[0] for r in await cur.fetchall()]
+    if ids:
+        ph = ",".join("?" * len(ids))
+        await db.execute(
+            f"DELETE FROM conversations WHERE session_id = ? AND id IN ({ph})",
+            (session_id, *ids),
+        )
+        await db.execute(f"DELETE FROM conversations_fts WHERE rowid IN ({ph})", ids)
+    # Keep the session alive + surfaced even though no rows were inserted.
+    await db.execute(
+        "INSERT INTO sessions (id) VALUES (?) "
+        "ON CONFLICT(id) DO UPDATE SET last_active = CURRENT_TIMESTAMP",
+        (session_id,),
+    )
+    await _commit_with_retry(db)
+    return ids
+
+
 async def get_history(session_id: str, limit: int = 20, include_reasoning: bool = False,
                       include_audits: bool = False) -> list[dict]:
     import json
     db = await get_db()
     async with db.execute(
         """SELECT id, role, content, images, timestamp, reasoning FROM conversations
-           WHERE session_id = ? ORDER BY timestamp DESC LIMIT ?""",
+           WHERE session_id = ? ORDER BY id DESC LIMIT ?""",
         (session_id, limit),
     ) as cur:
         rows = await cur.fetchall()
@@ -947,7 +982,7 @@ async def get_history(session_id: str, limit: int = 20, include_reasoning: bool 
                 )
     result = []
     for r in reversed(rows):
-        item = {"role": r[1], "content": r[2], "timestamp": r[4]}
+        item = {"id": r[0], "role": r[1], "content": r[2], "timestamp": r[4]}
         if r[3]:
             try:
                 item["images"] = json.loads(r[3])
