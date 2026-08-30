@@ -4,6 +4,7 @@ Single persistent connection with WAL mode for Pi-friendly I/O.
 """
 
 import asyncio
+import csv
 import json
 import logging
 import os
@@ -622,17 +623,91 @@ async def purge_intent_audit(days: int = 30) -> int:
         return 0
 
 
+# -- Audit export before retention rollup --
+
+# The full detail-row shape: every audit column plus the conversation the row
+# was linked to (thumbs/fine-tuning context survives the 14-day purge).
+AUDIT_EXPORT_COLUMNS = [
+    "id", "tool_name", "params", "success", "duration_ms", "error", "is_summary",
+    "day", "total_calls", "success_count", "error_count", "tool_breakdown",
+    "created_at", "expected_tool", "corrected_at", "verification_status",
+    "expected_group", "confirmed_at", "conversation_id", "session_id",
+]
+
+
+def audit_export_dir() -> str:
+    """Directory for pre-rollup audit exports.
+
+    `AUDIT_EXPORT_DIR` env wins; otherwise ``<dirname of DB_PATH>/audit_exports``
+    — in production that is ``audit_exports/`` next to ``assistant.db``, and in
+    tests it lands inside the tmp fixture DB's own directory (no repo litter).
+    """
+    env = os.getenv("AUDIT_EXPORT_DIR")
+    if env:
+        return env
+    return os.path.join(os.path.dirname(DB_PATH), "audit_exports")
+
+
+def _write_audit_csv(day: str, rows: list[tuple]) -> int:
+    """Write `rows` to ``tool-audit-<day>.csv`` atomically (tmp + os.replace).
+
+    Runs in a worker thread; overwrites the day's file (idempotent — a crash
+    after the write but before the rollup commit just re-writes the same file).
+    Raises on failure so the caller's rollback keeps the rows for the next try.
+    """
+    outdir = audit_export_dir()
+    os.makedirs(outdir, exist_ok=True)
+    final = os.path.join(outdir, f"tool-audit-{day}.csv")
+    tmp = final + ".tmp"
+    with open(tmp, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(AUDIT_EXPORT_COLUMNS)
+        for r in rows:
+            w.writerow(["" if v is None else v for v in r])
+    os.replace(tmp, final)
+    return len(rows)
+
+
+async def export_tool_audit_day(day: str, cutoff_sql: str) -> int:
+    """Fetch and export every detail row of `day` to CSV; returns row count.
+
+    Called INSIDE the rollup transaction: on success the caller proceeds to
+    summarize + delete; on exception it rolls back, so nothing is discarded
+    until its archive exists.
+    """
+    cols = ", ".join(
+        "c.session_id" if c == "session_id" else "t." + c
+        for c in AUDIT_EXPORT_COLUMNS
+    )
+    db = await get_db()
+    cur = await db.execute(
+        f"""SELECT {cols}
+            FROM tool_audit_log t
+            LEFT JOIN conversations c ON c.id = t.conversation_id
+            WHERE t.is_summary = 0 AND t.created_at < datetime('now', ?)
+              AND substr(t.created_at, 1, 10) = ?""",
+        (cutoff_sql, day),
+    )
+    rows = await cur.fetchall()
+    if not rows:
+        return 0
+    return await asyncio.to_thread(_write_audit_csv, day, rows)
+
+
 async def rollup_tool_audit(days: int = 14) -> int:
     """Compress detail rows older than `days` into one daily summary row per day.
 
     Retention policy: detail rows survive for `days` (default 14), then are
-    aggregated into a per-day summary (total/success/error counts + per-tool
-    breakdown) and the detail rows are removed. Each day is processed inside
-    its own ``BEGIN IMMEDIATE`` transaction so the summary INSERT and the
-    detail DELETE commit atomically — a crash can never leave an orphan
-    summary row or a partially-removed day. Days that already have a summary
-    row are skipped, so a crash between runs cannot produce duplicate
-    summaries. Idempotent and never raises.
+    exported to ``audit_exports/`` as per-day CSV files (``tool-audit-YYYY-MM-DD.csv``,
+    one row per audited call, incl. the linked conversation), aggregated into a
+    per-day summary (total/success/error counts + per-tool breakdown) and the
+    detail rows are removed. Each day is processed inside its own ``BEGIN
+    IMMEDIATE`` transaction so the export completion, the summary INSERT and the
+    detail DELETE are all-or-nothing: a failed export rolls the day back and
+    nothing is discarded until a copy exists on disk. Days that already have a
+    summary row are skipped, so a crash between runs cannot produce duplicate
+    summaries (or duplicate exports — the day's CSV is overwritten in place).
+    Idempotent and never raises.
 
     Returns the number of days rolled up.
     """
@@ -667,6 +742,11 @@ async def rollup_tool_audit(days: int = 14) -> int:
                     )
                     for name, cnt in await cur2.fetchall():
                         breakdown[name] = cnt
+
+                    # Archive first, delete second: a failed export raises and
+                    # rolls the day back, so detail rows are never discarded
+                    # without a CSV copy existing on disk.
+                    await export_tool_audit_day(day, cutoff)
 
                     await db.execute(
                         """INSERT INTO tool_audit_log
