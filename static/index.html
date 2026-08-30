@@ -319,9 +319,11 @@ body.theme-black .msg-group.user .msg-meta .who{color:var(--text3)}
    the call (a child of its .msg-group, aligned under the bubble). No floating
    pill, no overlay — it is part of the message column and can never cover the
    chat text. Active phase: micro-spinner + short label; once settled the row
-   collapses to a passive ✓ or a muted ⚠, with (on audited calls) a small
-   correction button. */
-.tool-status{display:flex;align-items:center;gap:7px;width:fit-content;max-width:min(800px,calc(100% - 40px));margin:4px 6px 0;padding:1px 4px;border-radius:99px;font-size:12px;color:var(--text2)}
+   collapses to a flat icon bar: the real thumbs-up/down feedback, styled
+   exactly like the message actions (copy/listen/regen) so the whole row reads
+   as one action group. Audited calls render both thumbs; un-audited ones keep
+   the quiet ✓ (success) or muted ⚠ (failure) only. */
+.tool-status{display:flex;align-items:center;gap:4px;width:fit-content;max-width:min(800px,calc(100% - 40px));margin:6px 6px 0;padding:0;font-size:12px;color:var(--text2)}
 .tool-status .tspin{flex:none;width:10px;height:10px;border-radius:50%;border:2px solid var(--border);border-top-color:var(--accent);animation:tspin .9s linear infinite}
 .tool-status .tlab{font-size:12px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tool-status .tspin.dead{animation:none;border-color:var(--border);opacity:.7}
@@ -330,37 +332,43 @@ body.theme-black .msg-group.user .msg-meta .who{color:var(--text3)}
 .tool-status .fb-state{flex:none;font-size:12px;line-height:1}
 .tool-status.ok .fb-state{color:var(--accent)}
 .tool-status .fb-state.bad{color:var(--text3)}
-/* The correction affordance is a small quiet icon-button (neutral pencil), not
-   a warning glyph — a successful call may still have been grouped wrong, so
-   the affordance exists but never shouts. */
-.tool-status .mark-btn{flex:none;display:inline-flex;align-items:center;gap:2px;margin:0;padding:2px 7px;border-radius:99px;font-size:11px;line-height:1.5;color:var(--text3);background:transparent;border:1px solid transparent;cursor:pointer}
-.tool-status .mark-btn:hover{color:var(--accent);border-color:var(--border)}
-.tool-status .mark-btn .mk-lab{margin-left:3px}
-.tool-status .mark-btn.marked{color:var(--accent);border-color:var(--accent);background:rgba(88,166,255,.14)}
+/* Feedback thumbs live in the same bar as copy/listen/regen (same .tts-btn
+   style/size/color). An active thumb gets the accent fill so the chosen
+   signal is obvious at a glance. */
+.tool-status .fb-thumb{flex:none}
+.tool-status .bar-divider{flex:none;width:1px;height:16px;margin:2px 4px;border-radius:1px;background:var(--border)}
+.tool-status .fb-up.active,
+.tool-status .mark-btn.marked{color:var(--accent);background:color-mix(in srgb, var(--accent) 18%, transparent)}
 /* The correction picker opens BELOW the feedback row, in-flow (static child of
    the same message group): it expands the message column and can never overlap
-   the bubble. Height stays clamped so a long list cannot blow the viewport. */
-.group-picker{position:static;z-index:auto;margin:8px 0 2px;min-width:200px;max-width:min(360px,100%);max-height:min(320px,calc(100dvh - 24px));overflow-y:auto;padding:6px;display:flex;flex-direction:column;gap:3px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;box-shadow:0 10px 28px rgba(0,0,0,.3)}
+   the bubble. Height stays clamped so a long list cannot blow the viewport.
+   Card layout: the option list scrolls (flex 1, min-height 0) while the
+   footer — primary filled Save + ghost Cancel — stays pinned. */
+.group-picker{position:static;z-index:auto;margin:8px 0 2px;min-width:200px;max-width:min(360px,100%);max-height:min(400px,calc(100dvh - 24px));display:flex;flex-direction:column;background:var(--surface3);border:1px solid var(--border);border-radius:14px;box-shadow:0 14px 40px rgba(0,0,0,.45);overflow:hidden}
 /* Touch-first: on coarse pointers the sheet spans the whole message column —
    roomy, thumb-reachable, and collision-proof by construction. */
 @media (pointer:coarse){ .group-picker{width:100%;min-width:0;max-width:none} }
-.group-picker .gp-opt{display:block;width:100%;text-align:left;padding:6px 10px;border:0;border-radius:8px;background:transparent;color:var(--text);font-size:13px;cursor:pointer}
-.group-picker .gp-opt:hover{background:var(--surface3)}
-.group-picker .gp-opt.sel{background:rgba(88,166,255,.14);color:var(--accent)}
-.group-picker .gp-row{display:flex;gap:6px;margin-top:5px}
-.group-picker .gp-save{flex:1;padding:6px 10px;border:0;border-radius:8px;font-size:13px;cursor:pointer;background:var(--accent);color:#fff}
-.group-picker .gp-save:disabled{opacity:.5;cursor:default}
-.group-picker .gp-cancel{padding:6px 10px;border:0;border-radius:8px;font-size:13px;cursor:pointer;background:transparent;color:var(--text2)}
-.group-picker .gp-cancel:hover{background:var(--surface3)}
+.group-picker .gp-list{flex:1 1 auto;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:2px;padding:6px}
+.group-picker .gp-opt{display:block;width:100%;text-align:left;padding:9px 12px;border:0;border-radius:9px;background:transparent;color:var(--text);font-size:13.5px;line-height:1.35;cursor:pointer;transition:background .15s}
+.group-picker .gp-opt:hover{background:var(--surface2)}
+.group-picker .gp-opt.sel{background:color-mix(in srgb, var(--accent) 16%, transparent);color:var(--accent);font-weight:500}
+.group-picker .gp-foot{flex:none;display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--border);background:var(--surface2)}
+.group-picker .gp-save{flex:1;padding:9px 12px;border:0;border-radius:9px;font-size:13.5px;font-weight:600;cursor:pointer;background:var(--accent);color:#fff;transition:filter .15s,opacity .15s}
+.group-picker .gp-save:hover:not(:disabled){filter:brightness(1.08)}
+.group-picker .gp-save:disabled{opacity:.45;cursor:default}
+.group-picker .gp-cancel{padding:9px 14px;border:1px solid var(--border);border-radius:9px;font-size:13.5px;cursor:pointer;background:transparent;color:var(--text2);transition:background .15s,color .15s}
+.group-picker .gp-cancel:hover{background:var(--surface3);color:var(--text)}
 /* Touch-first: enlarge hit areas on coarse pointers (mobile/tablets) while
    desktop (fine pointer) keeps the compact look. */
 @media (pointer:coarse){
   .tool-status{margin:6px 4px 0}
-  .tool-status .mark-btn{padding:11px 13px;min-height:40px}
+  .tool-status .fb-thumb,
+  .tool-status .tts-btn{padding:11px;min-width:44px;min-height:44px}
   .group-picker .gp-opt{padding:13px 10px;min-height:44px}
   .group-picker .gp-save,.group-picker .gp-cancel{padding:13px 14px;min-height:44px}
 }
 body.glass-mode .group-picker{background:rgba(24,24,32,.97);backdrop-filter:blur(12px)}
+body.glass-mode .group-picker .gp-foot{background:rgba(30,30,42,.7);border-top-color:rgba(255,255,255,.08)}
 @keyframes tspin{to{transform:rotate(360deg)}}
 @keyframes bounce{0%{transform:translateY(0);opacity:.4}100%{transform:translateY(-6px);opacity:1}}
 
@@ -1331,6 +1339,7 @@ const STRINGS = {
     toolAttempt:'deneme', toolCap:'tekrar sınırı',
     markWrong:'Yanlıştı', markDone:'İşaretlendi', markSave:'Kaydet',
     markErr:'İşaretleme kaydedilemedi', markLoadErr:'Araç grupları yüklenemedi',
+    markConfirm:'Doğruydu', markConfirmDone:'Onaylandı', markConfirmErr:'Onay kaydedilemedi',
     genRetryLabel:'Araç yanıtları sıkıştırılıp yeniden deneniyor…',
     genRetryLeak:'Araç çağrısı düzeltiliyor…',
     genRetryEscalate:'Gerekli araçlar etkinleştiriliyor…'
@@ -1385,6 +1394,7 @@ const STRINGS = {
     toolAttempt:'attempt', toolCap:'retry cap',
     markWrong:'Wrong', markDone:'Marked', markSave:'Save',
     markErr:'Could not save the marking', markLoadErr:'Could not load tool groups',
+    markConfirm:'Correct', markConfirmDone:'Confirmed', markConfirmErr:'Could not save the confirmation',
     genRetryLabel:'Compressing tool responses and retrying…',
     genRetryLeak:'Fixing a tool call…',
     genRetryEscalate:'Enabling the required tools…'
@@ -2823,6 +2833,8 @@ function setLoading(v){
 const _CLIPBOARD_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
 const _REGEN_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
 const _CHECK_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+const _THUMB_UP_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12"></path><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2h0a3.13 3.13 0 0 1 3 3.88Z"></path></svg>';
+const _THUMB_DOWN_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"></path><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22h0a3.13 3.13 0 0 1-3-3.88Z"></path></svg>';
 
 async function copyMessage(text, btn){
   let ok = true;
@@ -2846,9 +2858,11 @@ async function copyMessage(text, btn){
 }
 
 function attachMsgActions(group, text){
-  // Copy + listen + regenerate buttons under assistant messages.
+  // Copy + listen + regenerate buttons under assistant messages. When the
+  // message made an audited tool call, its settled feedback row IS the action
+  // bar: these buttons merge into the same row as the thumbs (one flat bar,
+  // same size/style/color, separated only by a hairline divider).
   if(!group || group.querySelector('.msg-actions')) return;
-  const row=document.createElement('div'); row.className='msg-actions';
   const copyBtn=document.createElement('button');
   copyBtn.className='tts-btn copy-btn'; copyBtn.title=t('copyTitle');
   copyBtn.innerHTML=_CLIPBOARD_SVG;
@@ -2857,16 +2871,26 @@ function attachMsgActions(group, text){
   ttsBtn.className='tts-btn'; ttsBtn.title=t('listenTitle');
   ttsBtn.innerHTML=_SPEAKER_SVG;
   ttsBtn.onclick=()=>toggleTTS(text,ttsBtn);
+  const regenBtn=document.createElement('button');
+  regenBtn.className='tts-btn regen-btn'; regenBtn.title=t('regenTitle');
+  regenBtn.innerHTML=_REGEN_SVG;
+  regenBtn.onclick=()=>regenerate(group);
+  const settled=group.querySelector('.tool-status.done');
+  if(settled && !settled.querySelector('.copy-btn')){
+    const div=document.createElement('span'); div.className='bar-divider';
+    settled.prepend(div);
+    const btns=[copyBtn,ttsBtn];
+    // Regenerate button — only on the last assistant bubble
+    const lastAssistant=document.querySelector('.msg-group.assistant:last-of-type');
+    if(lastAssistant===group) btns.push(regenBtn);
+    for(let i=btns.length-1;i>=0;i--) settled.prepend(btns[i]);
+    return;
+  }
+  const row=document.createElement('div'); row.className='msg-actions';
   row.appendChild(copyBtn); row.appendChild(ttsBtn);
   // Regenerate button — only on the last assistant bubble
   const lastAssistant=document.querySelector('.msg-group.assistant:last-of-type');
-  if(lastAssistant===group){
-    const regenBtn=document.createElement('button');
-    regenBtn.className='tts-btn regen-btn'; regenBtn.title=t('regenTitle');
-    regenBtn.innerHTML=_REGEN_SVG;
-    regenBtn.onclick=()=>regenerate(group);
-    row.appendChild(regenBtn);
-  }
+  if(lastAssistant===group) row.appendChild(regenBtn);
   group.appendChild(row);
 }
 
@@ -2917,13 +2941,17 @@ function placeRow(row){
   return row;
 }
 function resetPill(row){
-  // Reuse path: a settled row (✓/⚠, no live spinner) must look active again
-  // before its label is swapped for the next event. A done row being reused
-  // (gen_retry revival) also surrenders its mark affordance — it is no longer
-  // this round's marking target.
+  // Reuse path: a settled row (thumbs/✓/⚠, no live spinner) must look active
+  // again before its label is swapped for the next event. A done row being
+  // reused (gen_retry revival) also surrenders its feedback thumbs — it is no
+  // longer this round's marking target. The merged copy/listen/regen bar is
+  // message-level, so it stays.
   row.classList.remove('ok','done');
   row.querySelector('.mark-btn')?.remove();
+  row.querySelector('.fb-up')?.remove();
+  row.querySelector('.bar-divider')?.remove();
   delete row.dataset.audit;
+  delete row.dataset.fb;
   row.querySelectorAll('.fb-state').forEach(s=>s.remove());
   let sp=row.querySelector('.tspin');
   if(!sp){ sp=document.createElement('span'); sp.className='tspin'; row.prepend(sp); }
@@ -2958,7 +2986,7 @@ function showToolStatus(info, row){
 }
 
 function endToolStatus(row, ok, auditId){
-  // No auto-hide: the row keeps its ✓/⚠ state under the message until the
+  // No auto-hide: the row keeps its feedback state under the message until the
   // next send drops it. Returns the row so the caller KEEPS tracking it —
   // returning null would orphan the DOM node and the next event would draw a
   // second row instead of settling this one.
@@ -2966,20 +2994,30 @@ function endToolStatus(row, ok, auditId){
   row.classList.toggle('ok', !!ok);
   row.classList.add('done');
   row.querySelector('.tspin')?.remove();
-  const st=document.createElement('span'); st.className='fb-state'+(ok?'':' bad');
-  st.textContent=ok ? '\u2713' : '\u26A0';
-  row.appendChild(st);
+  row.querySelectorAll('.fb-state').forEach(s=>s.remove());
+  const audited = auditId!=null && auditId!=='';
   if(ok){
     row.querySelector('.tlab')?.remove();
   } else {
     const lab=row.querySelector('.tlab');
     if(lab) lab.textContent=lab.textContent.replace(/…$/,'');
   }
-  // An audited call gets the "yanlıştı" affordance. No audit_id (e.g. a
-  // refused/unverifiable call) means nothing to correct — no button.
-  if(auditId!=null && auditId!==''){
+  // Audited calls get the real thumbs (correct / not-correct). An un-audited
+  // call (refused/unverifiable) has nothing to confirm or correct — keep only
+  // the quiet ✓ on success (⚠ stays with the failed label above).
+  if(audited){
     row.dataset.audit=String(auditId);
+    // Retry-revived rows keep their merged copy/listen/regen bar — reintroduce
+    // the divider so the re-added thumbs stay visually grouped.
+    if(row.querySelector('.copy-btn')){
+      const d=document.createElement('span'); d.className='bar-divider'; row.appendChild(d);
+    }
+    row.appendChild(makeThumbUpBtn(row, auditId));
     row.appendChild(makeMarkBtn(row, auditId));
+  } else {
+    const st=document.createElement('span'); st.className='fb-state'+(ok?'':' bad');
+    st.textContent=ok ? '\u2713' : '\u26A0';
+    row.appendChild(st);
   }
   return row;
 }
@@ -2989,11 +3027,36 @@ function clearToolPills(){ document.querySelectorAll('#messages .tool-status').f
 
 function makeMarkBtn(row, auditId){
   const b=document.createElement('button');
-  b.className='mark-btn'; b.dataset.audit=String(auditId);
-  b.innerHTML='<span class="mk-ico">\u270E</span><span class="mk-lab"></span>';
+  b.className='mark-btn fb-thumb tts-btn'; b.dataset.audit=String(auditId);
+  b.innerHTML=_THUMB_DOWN_SVG;
   b.title=t('markWrong');
   b.onclick=()=>openGroupPicker(row, b, auditId);
   return b;
+}
+function makeThumbUpBtn(row, auditId){
+  const b=document.createElement('button');
+  b.className='fb-up fb-thumb tts-btn';
+  b.innerHTML=_THUMB_UP_SVG;
+  b.title=t('markConfirm');
+  b.onclick=()=>submitConfirmation(row, b, auditId);
+  return b;
+}
+async function submitConfirmation(row, btn, auditId){
+  // "Doğruydu": record a positive (confirmation) signal. It is the opposite of
+  // a correction, so a previous mark on this row (if any) is visually cleared;
+  // the backend clears the stored correction fields the same way.
+  btn.disabled=true;
+  try{
+    await api('POST','/chat/tool-confirm',{audit_id:auditId});
+    btn.classList.add('active');
+    btn.title=t('markConfirmDone');
+    const down=row.querySelector('.mark-btn');
+    if(down){ down.classList.remove('marked'); down.title=t('markWrong'); }
+  } catch(e){
+    if(e && e.message && e.message.startsWith('HTTP ')) toast(t('markConfirmErr')+': '+e.message.slice(5), true);
+    else toast(t('markConfirmErr'), true);
+  }
+  btn.disabled=false;
 }
 
 function openGroupPicker(row, btn, auditId){
@@ -3003,21 +3066,26 @@ function openGroupPicker(row, btn, auditId){
   let sel='';
   const render=()=>{
     panel.innerHTML='';
+    const list=document.createElement('div'); list.className='gp-list';
     for(const g of (_toolGroupsCache||[])){
       const o=document.createElement('button'); o.className='gp-opt'+(g===sel?' sel':'');
       o.textContent=groupLabel(g);
       o.onclick=()=>{ sel=g; render(); };
-      panel.appendChild(o);
+      list.appendChild(o);
     }
-    const rowEl=document.createElement('div'); rowEl.className='gp-row';
+    panel.appendChild(list);
+    // Footer pinned below the scrollable option list: primary filled Save,
+    // ghost Cancel. Never clipped — the card caps its height and scrolls
+    // through the list instead.
+    const foot=document.createElement('div'); foot.className='gp-foot';
     const saveEl=document.createElement('button'); saveEl.className='gp-save';
     saveEl.textContent=t('markSave'); saveEl.disabled=!sel;
     saveEl.onclick=()=>submitCorrection(row, btn, auditId, sel, panel, saveEl);
     const cancelEl=document.createElement('button'); cancelEl.className='gp-cancel';
     cancelEl.textContent=t('cancel');
     cancelEl.onclick=()=>panel.remove();
-    rowEl.appendChild(saveEl); rowEl.appendChild(cancelEl);
-    panel.appendChild(rowEl);
+    foot.appendChild(saveEl); foot.appendChild(cancelEl);
+    panel.appendChild(foot);
   };
   const doOpen=()=>{
     sel=''; render();
@@ -3047,9 +3115,11 @@ async function submitCorrection(row, btn, auditId, group, panel, saveEl){
   try{
     await api('POST','/chat/tool-correction',{audit_id:auditId, expected_group:group});
     panel.remove();
-    btn.classList.add('marked');
-    btn.querySelector('.mk-ico').textContent='✓';
-    const lab=btn.querySelector('.mk-lab'); lab.textContent=t('markDone'); btn.title=t('markDone');
+    btn.classList.add('marked'); btn.title=t('markDone');
+    // A correction is the opposite of a confirmation — drop the up thumb's
+    // active look too (backend clears confirmed_at the same way).
+    const up=row.querySelector('.fb-up');
+    if(up){ up.classList.remove('active'); up.title=t('markConfirm'); }
   } catch(e){
     if(e && e.message && e.message.startsWith('HTTP ')) toast(t('markErr')+': '+e.message.slice(5), true);
     else toast(t('markErr'), true);
