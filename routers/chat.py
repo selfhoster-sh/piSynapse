@@ -25,6 +25,7 @@ from db import (
     get_memories,
     get_messages_to_summarize,
     get_session_meta,
+    link_audits_to_message,
     save_message,
     search_memories,
     update_session_name,
@@ -296,6 +297,7 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
 
     async def generate():
         nonlocal reply_saved
+        stream_audit_ids: list[int] = []
         try:
             async for event in chat_with_ollama_stream(
                 history, memories=memories, think=req.think_mode,
@@ -313,7 +315,8 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
                     full = _clean_assistant_reply("".join(reply_parts))
                     reply_saved = True  # also when skipped — never let finally re-save raw parts
                     if full:
-                        await save_message(req.session_id, "assistant", full, reasoning=event.get("reasoning") or None)
+                        msg_id = await save_message(req.session_id, "assistant", full, reasoning=event.get("reasoning") or None)
+                        await link_audits_to_message(msg_id, stream_audit_ids)
                     else:
                         logger.info("Streamed assistant reply empty after sanitization — not saved (session %s)", req.session_id)
                     yield f"data: {json.dumps({'done': True, 'session_id': req.session_id, 'memories_saved': event.get('memories_saved', 0), 'retrieved_count': len(retrieved_msgs), 'retrieval_ms': round(ret_stats['latency_ms'])})}\n\n"
@@ -322,6 +325,9 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
                 elif "confirm" in event:
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                 elif "tool" in event:
+                    tinfo = event.get("tool") or {}
+                    if tinfo.get("phase") == "end" and tinfo.get("audit_id") is not None:
+                        stream_audit_ids.append(tinfo["audit_id"])
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                 elif "gen_retry" in event:
                     # NOT terminal — the inner loop keeps generating after an
@@ -340,7 +346,8 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
                 try:
                     partial = _clean_assistant_reply("".join(reply_parts))
                     if partial:
-                        await save_message(req.session_id, "assistant", partial)
+                        msg_id = await save_message(req.session_id, "assistant", partial)
+                        await link_audits_to_message(msg_id, stream_audit_ids)
                         logger.info("Saved partial assistant reply after stream interruption")
                     else:
                         logger.info("Partial assistant reply empty after sanitization — not saved")
@@ -396,8 +403,10 @@ async def execute_action(req: ExecuteRequest):
         # Manual executions (confirmed destructive actions) are exactly the
         # ones that must be audit-logged — the model loop already logs its
         # own tool calls, but /execute runs outside that loop.
-        await run_verification(req.tool, req.params, result, success, entity_id=entity_id, duration_ms=duration_ms, error=None if success else result)
-        await save_message(req.session_id, "assistant", result)
+        audit_id = await run_verification(req.tool, req.params, result, success, entity_id=entity_id, duration_ms=duration_ms, error=None if success else result)
+        msg_id = await save_message(req.session_id, "assistant", result)
+        if audit_id is not None:
+            await link_audits_to_message(msg_id, [audit_id])
         return ChatResponse(reply=result, session_id=req.session_id, history_length=0, memories_saved=0)
     except HTTPException:
         raise
@@ -540,7 +549,7 @@ async def create_session(req: RenameRequest | None = None):
 @router.get("/history")
 async def get_chat_history(session_id: str = Query(...)):
     _validate_session_id(session_id)
-    msgs = await get_history(session_id, limit=50, include_reasoning=True)
+    msgs = await get_history(session_id, limit=50, include_reasoning=True, include_audits=True)
     return {"session_id": session_id, "messages": msgs}
 
 

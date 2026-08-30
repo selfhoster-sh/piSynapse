@@ -2611,7 +2611,7 @@ async function loadSession(sid){
   try{
     const d=await api('GET','/chat/history?session_id='+encodeURIComponent(sid));
     const msgs=d.messages||[];
-    if(msgs.length){ msgs.forEach(m=>addMsg(m.role,m.content,false,m.timestamp,m.images||null,m.reasoning||null)); scrollEnd(true); } else showWelcomeMsg();
+    if(msgs.length){ msgs.forEach(m=>addMsg(m.role,m.content,false,m.timestamp,m.images||null,m.reasoning||null,m.audits||null)); scrollEnd(true); } else showWelcomeMsg();
   } catch { showWelcomeMsg(); }
 }
 
@@ -2939,7 +2939,7 @@ function attachMsgActions(group, text){
   group.appendChild(row);
 }
 
-function addMsg(role, content, forceScroll=true, ts=null, images=null, reasoning=null){
+function addMsg(role, content, forceScroll=true, ts=null, images=null, reasoning=null, audits=null){
   document.querySelector('.welcome')?.remove();
   const g=document.createElement('div'); g.className='msg-group '+role;
   const who=role==='user' ? (config.username||t('you')) : 'piSynapse';
@@ -2964,8 +2964,32 @@ function addMsg(role, content, forceScroll=true, ts=null, images=null, reasoning
     b.innerHTML+=renderMd(content);
   } else if(content) b.appendChild(document.createTextNode(content));
   document.getElementById('messages').appendChild(g);
-  if(role==='assistant') attachMsgActions(g, content);
+  if(role==='assistant'){
+    // Historical messages restore their C-7 feedback pair when the message
+    // made audited tool calls — same placement as the live row (below the
+    // bubble), then the copy/listen/regen bar merges into it like live.
+    if(audits && audits.length){
+      const sfb=document.createElement('div'); sfb.className='tool-status';
+      g.appendChild(sfb);
+      settleFeedbackRow(sfb, true, audits.map(a=>({audit:a.audit_id, name:a.tool_name})));
+      applyFeedbackState(sfb, audits);
+    }
+    attachMsgActions(g, content);
+  }
   scrollEnd(forceScroll);
+}
+
+function applyFeedbackState(row, audits){
+  // Persisted signals: every audit confirmed → up thumb stays lit; any audit
+  // corrected → down thumb stays marked. Mirrors the live click outcome.
+  const up=row.querySelector('.fb-up');
+  if(up && audits.length && audits.every(a=>a.confirmed_at)){
+    up.classList.add('active'); up.title=t('markConfirmDone');
+  }
+  const down=row.querySelector('.mark-btn');
+  if(down && audits.some(a=>a.corrected_at)){
+    down.classList.add('marked'); down.title=t('markDone');
+  }
 }
 
 function showTyping(){

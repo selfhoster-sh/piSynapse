@@ -145,6 +145,7 @@ MIGRATIONS: list[tuple[str, str, str]] = [
     ("tool_audit_log", "verification_status", "TEXT"),
     ("tool_audit_log", "expected_group", "TEXT"),
     ("tool_audit_log", "confirmed_at", "DATETIME"),
+    ("tool_audit_log", "conversation_id", "INTEGER"),
 ]
 
 
@@ -228,7 +229,8 @@ async def init_db():
             corrected_at   DATETIME,
             expected_group TEXT,
             verification_status TEXT,
-            confirmed_at   DATETIME
+            confirmed_at   DATETIME,
+            conversation_id INTEGER
         )
     """)
 
@@ -581,6 +583,30 @@ async def set_tool_confirmation(audit_id: int) -> bool:
         return False
 
 
+async def link_audits_to_message(conversation_id: int, audit_ids: list[int]):
+    """Bind audit rows to the assistant message that produced them.
+
+    Called after the assistant message is written, using the audit_ids the
+    stream collected from its SSE tool events. `IS NULL` guard keeps a row
+    owned by an earlier message (e.g. a previous regeneration) untouched.
+    Never raises; returns the number of rows linked.
+    """
+    if not audit_ids or conversation_id is None:
+        return 0
+    try:
+        db = await get_db()
+        ph = ",".join("?" * len(audit_ids))
+        cur = await db.execute(
+            f"UPDATE tool_audit_log SET conversation_id = ? WHERE id IN ({ph}) AND conversation_id IS NULL",
+            (conversation_id, *audit_ids),
+        )
+        await _commit_with_retry(db)
+        return cur.rowcount
+    except Exception as e:
+        logger.warning(f"Audit->message link failed for conversation_id={conversation_id}: {e}")
+        return 0
+
+
 async def purge_intent_audit(days: int = 30) -> int:
     """Delete intent audit rows older than `days`. Never raises; returns deleted count."""
     try:
@@ -786,6 +812,7 @@ async def save_message(session_id: str, role: str, content: str, images: list[st
                 (name, session_id),
             )
     await _commit_with_retry(db)
+    return rowid
 
 
 async def delete_last_assistant(session_id: str) -> bool:
@@ -810,25 +837,46 @@ async def delete_last_assistant(session_id: str) -> bool:
     return True
 
 
-async def get_history(session_id: str, limit: int = 20, include_reasoning: bool = False) -> list[dict]:
+async def get_history(session_id: str, limit: int = 20, include_reasoning: bool = False,
+                      include_audits: bool = False) -> list[dict]:
     import json
     db = await get_db()
     async with db.execute(
-        """SELECT role, content, images, timestamp, reasoning FROM conversations
+        """SELECT id, role, content, images, timestamp, reasoning FROM conversations
            WHERE session_id = ? ORDER BY timestamp DESC LIMIT ?""",
         (session_id, limit),
     ) as cur:
         rows = await cur.fetchall()
+    # Per-assistant-message audit list for the C-7 feedback UI. Only used by
+    # /chat/history; the LLM context path keeps include_audits=False so audit
+    # data never pollutes model input.
+    audits_by_msg: dict[int, list[dict]] = {}
+    if include_audits and rows:
+        ids = [r[0] for r in rows]
+        ph = ",".join("?" * len(ids))
+        async with db.execute(
+            f"""SELECT m.id, a.id, a.tool_name, a.confirmed_at, a.corrected_at, a.expected_group
+                FROM conversations m JOIN tool_audit_log a ON a.conversation_id = m.id
+                WHERE m.id IN ({ph}) ORDER BY m.id, a.id""",
+            tuple(ids),
+        ) as cur:
+            for mid, aid, tool, c_at, cor_at, grp in await cur.fetchall():
+                audits_by_msg.setdefault(mid, []).append(
+                    {"audit_id": aid, "tool_name": tool,
+                     "confirmed_at": c_at, "corrected_at": cor_at, "expected_group": grp}
+                )
     result = []
     for r in reversed(rows):
-        item = {"role": r[0], "content": r[1], "timestamp": r[3]}
-        if r[2]:
+        item = {"role": r[1], "content": r[2], "timestamp": r[4]}
+        if r[3]:
             try:
-                item["images"] = json.loads(r[2])
+                item["images"] = json.loads(r[3])
             except Exception:
                 pass
-        if include_reasoning and r[4]:
-            item["reasoning"] = r[4]
+        if include_reasoning and r[5]:
+            item["reasoning"] = r[5]
+        if include_audits and r[0] in audits_by_msg:
+            item["audits"] = audits_by_msg[r[0]]
         result.append(item)
     return result
 
