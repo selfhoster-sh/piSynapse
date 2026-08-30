@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pisynapse-v49';
+const CACHE_NAME = 'pisynapse-v50';
 const STATIC_ASSETS = [
   '/',
   '/static/manifest.json',
@@ -37,9 +37,24 @@ self.addEventListener('fetch', event => {
     return;
   }
 
+  // Documents: NETWORK-FIRST — the app must never render a stale HTML shell.
+  // Cache only as an offline fallback.
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      fetch(request).then(response => {
+        if (response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
+        }
+        return response;
+      }).catch(() => caches.match(request))
+    );
+    return;
+  }
+
+  // Other GET assets: stale-while-revalidate
   event.respondWith(
     caches.match(request).then(cached => {
-      // Return cached version, but also fetch fresh copy in background
       const fetchPromise = fetch(request).then(response => {
         if (response.ok) {
           const clone = response.clone();
