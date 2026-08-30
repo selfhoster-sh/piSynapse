@@ -1,4 +1,5 @@
 """Settings CRUD: GET/PATCH settings, type validation, .env persistence."""
+import asyncio
 import logging
 import os
 
@@ -16,6 +17,47 @@ from config import ENV_PATH, PROTECTED_SETTINGS, RESTART_REQUIRED_KEYS, SETTINGS
 logger = logging.getLogger("piSynapse")
 
 router = APIRouter(prefix="/config", tags=["config"])
+
+
+def _write_env_file(validated: dict[str, str]) -> None:
+    """Rewrite .env key=value lines under an exclusive lock (sync, thread-only)."""
+    if _HAS_FCNTL:
+        with open(ENV_PATH, "r+", encoding="utf-8") as f:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            try:
+                # Read inside lock to prevent TOCTOU (lost-update)
+                lines = f.read().splitlines()
+                for key, value in validated.items():
+                    found = False
+                    for i, line in enumerate(lines):
+                        stripped = line.strip()
+                        if stripped.startswith(f"{key}=") or stripped.startswith(f"{key} ="):
+                            lines[i] = f"{key}={value}"
+                            found = True
+                            break
+                    if not found:
+                        lines.append(f"{key}={value}")
+                new_content = "\n".join(lines) + "\n"
+                f.seek(0)
+                f.truncate()
+                f.write(new_content)
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
+    else:
+        logger.warning("fcntl not available (Windows?) — .env writes are not file-locked")
+        lines = ENV_PATH.read_text(encoding="utf-8").splitlines()
+        for key, value in validated.items():
+            found = False
+            for i, line in enumerate(lines):
+                stripped = line.strip()
+                if stripped.startswith(f"{key}=") or stripped.startswith(f"{key} ="):
+                    lines[i] = f"{key}={value}"
+                    found = True
+                    break
+            if not found:
+                lines.append(f"{key}={value}")
+        new_content = "\n".join(lines) + "\n"
+        ENV_PATH.write_text(new_content, encoding="utf-8")
 
 
 @router.get("")
@@ -145,43 +187,9 @@ async def update_settings(body: SettingsUpdate):
     for key, value in validated.items():
         os.environ[key] = value
 
-    if _HAS_FCNTL:
-        with open(ENV_PATH, "r+", encoding="utf-8") as f:
-            fcntl.flock(f, fcntl.LOCK_EX)
-            try:
-                # Read inside lock to prevent TOCTOU (lost-update)
-                lines = f.read().splitlines()
-                for key, value in validated.items():
-                    found = False
-                    for i, line in enumerate(lines):
-                        stripped = line.strip()
-                        if stripped.startswith(f"{key}=") or stripped.startswith(f"{key} ="):
-                            lines[i] = f"{key}={value}"
-                            found = True
-                            break
-                    if not found:
-                        lines.append(f"{key}={value}")
-                new_content = "\n".join(lines) + "\n"
-                f.seek(0)
-                f.truncate()
-                f.write(new_content)
-            finally:
-                fcntl.flock(f, fcntl.LOCK_UN)
-    else:
-        logger.warning("fcntl not available (Windows?) — .env writes are not file-locked")
-        lines = ENV_PATH.read_text(encoding="utf-8").splitlines()
-        for key, value in validated.items():
-            found = False
-            for i, line in enumerate(lines):
-                stripped = line.strip()
-                if stripped.startswith(f"{key}=") or stripped.startswith(f"{key} ="):
-                    lines[i] = f"{key}={value}"
-                    found = True
-                    break
-            if not found:
-                lines.append(f"{key}={value}")
-        new_content = "\n".join(lines) + "\n"
-        ENV_PATH.write_text(new_content, encoding="utf-8")
+    # Persist to .env on a worker thread: flock(LOCK_EX) + file I/O are
+    # blocking and would stall the event loop while waiting on a lock.
+    await asyncio.to_thread(_write_env_file, validated)
 
     # Sync numeric config values into running process (avoids restart)
     from config import sync_config

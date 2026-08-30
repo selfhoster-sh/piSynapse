@@ -47,6 +47,28 @@ async def _write_with_retry(db: aiosqlite.Connection, sql: str, params: tuple = 
             await asyncio.sleep(0.25 * (attempt + 1))
 
 
+async def _commit_with_retry(db: aiosqlite.Connection) -> None:
+    """Commit a multi-statement write, retrying briefly on locked/busy.
+
+    Complementary to _write_with_retry for hand-rolled transaction bodies
+    (save_message, clear_history, ...) whose statements must stay grouped in
+    a single transaction. busy_timeout already buffers most contention; this
+    is a secondary safety net on the critical chat completion path.
+    """
+    import sqlite3
+    for attempt in range(_LOCKED_RETRIES + 1):
+        try:
+            await db.commit()
+            return
+        except sqlite3.OperationalError as e:
+            if "locked" not in str(e).lower() and "busy" not in str(e).lower():
+                raise
+            if attempt >= _LOCKED_RETRIES:
+                raise
+            logger.warning(f"SQLite busy on commit, retrying ({attempt + 1}/{_LOCKED_RETRIES})...")
+            await asyncio.sleep(0.25 * (attempt + 1))
+
+
 async def _secure_db_files() -> None:
     """Force owner-only permissions on the DB and its SQLite sidecars.
 
@@ -89,6 +111,10 @@ async def get_db() -> aiosqlite.Connection:
 
 async def close_db():
     global _db
+    # Stop any in-flight embedding backfill (fire-and-forget: it runs on its
+    # own connection, so this is housekeeping, not a correctness requirement).
+    if _backfill_task is not None and not _backfill_task.done():
+        _backfill_task.cancel()
     if _db is not None:
         await _db.close()
         _db = None
@@ -732,7 +758,7 @@ async def save_message(session_id: str, role: str, content: str, images: list[st
                 "UPDATE sessions SET name = ? WHERE id = ?",
                 (name, session_id),
             )
-    await db.commit()
+    await _commit_with_retry(db)
 
 
 async def delete_last_assistant(session_id: str) -> bool:
@@ -753,7 +779,7 @@ async def delete_last_assistant(session_id: str) -> bool:
         return False
     await db.execute("DELETE FROM conversations WHERE id = ?", (row[0],))
     await db.execute("DELETE FROM conversations_fts WHERE rowid = ?", (row[0],))
-    await db.commit()
+    await _commit_with_retry(db)
     return True
 
 
@@ -789,7 +815,7 @@ async def clear_history(session_id: str):
     await db.execute("DELETE FROM notes_session_map WHERE session_id = ?", (session_id,))
     await db.execute("DELETE FROM tasks_session_map WHERE session_id = ?", (session_id,))
     await db.execute("DELETE FROM calendar_session_map WHERE session_id = ?", (session_id,))
-    await db.commit()
+    await _commit_with_retry(db)
 
 
 async def search_sessions(query: str, limit: int = 20) -> list[dict]:
@@ -1292,21 +1318,32 @@ async def search_memories(query: str, user_id: str | None = None, limit: int = 5
 
     if backfill_ids:
         async def _backfill():
+            # Own connection: the shared `db` is mid-writing the caller's
+            # search results, and a backfill commit on it would commit the
+            # caller's partially-assembled transaction too. WAL allows
+            # concurrent writers from a separate connection safely.
             async with _BACKFILL_SEMAPHORE:
-                for i in range(0, len(backfill_ids), _BACKFILL_BATCH_SIZE):
-                    batch = backfill_ids[i : i + _BACKFILL_BATCH_SIZE]
-                    for mid in batch:
-                        try:
-                            row = await db.execute("SELECT content FROM memories WHERE id = ?", (mid,))
-                            r = await row.fetchone()
-                            if r:
-                                emb = await embed_async(r[0])
-                                await db.execute("UPDATE memories SET embedding = ? WHERE id = ?", (emb, mid))
-                        except Exception as e:
-                            logger.error("Embedding backfill failed for memory %s: %s", mid, e)
-                    await db.commit()
-                    # Small yield between batches to avoid starving the event loop
-                    await asyncio.sleep(0.05)
+                conn = await aiosqlite.connect(DB_PATH)
+                try:
+                    await conn.execute("PRAGMA busy_timeout=10000")
+                    for i in range(0, len(backfill_ids), _BACKFILL_BATCH_SIZE):
+                        batch = backfill_ids[i : i + _BACKFILL_BATCH_SIZE]
+                        for mid in batch:
+                            try:
+                                row = await conn.execute("SELECT content FROM memories WHERE id = ?", (mid,))
+                                r = await row.fetchone()
+                                if r:
+                                    emb = await embed_async(r[0])
+                                    await conn.execute("UPDATE memories SET embedding = ? WHERE id = ?", (emb, mid))
+                            except Exception as e:
+                                logger.error("Embedding backfill failed for memory %s: %s", mid, e)
+                        await conn.commit()
+                        # Small yield between batches to avoid starving the event loop
+                        await asyncio.sleep(0.05)
+                except asyncio.CancelledError:
+                    pass
+                finally:
+                    await conn.close()
 
         global _backfill_task
         # Cancel any previous backfill to avoid duplicate work
@@ -1324,7 +1361,7 @@ async def search_memories(query: str, user_id: str | None = None, limit: int = 5
             ids,
         )
 
-    await db.commit()
+    await _commit_with_retry(db)
 
     return result
 
@@ -1351,7 +1388,7 @@ async def get_memories(user_id: str | None = None, limit: int = 10) -> list[dict
 async def delete_memory(user_id: str, memory_id: int):
     db = await get_db()
     await db.execute("DELETE FROM memories WHERE id = ? AND user_id = ?", (memory_id, user_id))
-    await db.commit()
+    await _commit_with_retry(db)
 
 
 async def get_all_memories(user_id: str | None = None) -> list[dict]:
