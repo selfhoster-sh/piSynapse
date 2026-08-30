@@ -555,6 +555,11 @@ body:not(.glass-mode) #input-area::before{content:'';position:absolute;left:50%;
   transition:all .2s;flex-shrink:0}@media (hover:hover){
 .tts-btn:hover:not(:focus){color:var(--text);background:var(--surface2)}}
 .tts-btn.tts-playing{color:var(--accent);animation:mic-pulse 1s ease-in-out infinite}
+/* Piper warms up before the audio arrives: from click to first sound the
+   pressed button glows accent and breathes a soft ring — no text. Kept
+   visually distinct from .tts-playing (icon pulse vs tinted fill). */
+.tts-btn.tts-loading{color:var(--accent);background:color-mix(in srgb, var(--accent) 12%, transparent);animation:tts-load 1.1s ease-in-out infinite}
+@keyframes tts-load{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb, var(--accent) 30%, transparent)}50%{box-shadow:0 0 0 4px color-mix(in srgb, var(--accent) 12%, transparent)}}
 .regen-btn{transition:all .3s}
 .regen-btn.spinning svg{animation:spin-once .6s linear}
 @keyframes spin-once{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
@@ -2288,6 +2293,7 @@ function haptic(ms){
 
 let ttsAudio = null;
 let ttsBtn = null;
+let ttsAbort = null;
 
 async function toggleTTS(text, btn){
   // Stop if already playing
@@ -2297,6 +2303,9 @@ async function toggleTTS(text, btn){
   }
   stopTTS();
   ttsBtn = btn;
+  // The engine (Piper) takes a beat to produce the audio — light the button
+  // immediately so the wait is visible, then hand over to the playing state.
+  btn.classList.add('tts-loading');
   const engine = (_settingsData.TTS_ENGINE && _settingsData.TTS_ENGINE.value) || 'piper';
 
   if(engine === 'browser'){
@@ -2314,35 +2323,44 @@ function playBrowserTTS(text, btn){
   const voices = speechSynthesis.getVoices();
   const match = voices.find(v => v.lang.startsWith(lang)) || voices.find(v => v.lang.startsWith('en'));
   if(match) utt.voice = match;
-  utt.onstart = () => { if(ttsBtn) ttsBtn.classList.add('tts-playing'); };
+  utt.onstart = () => { if(ttsBtn){ ttsBtn.classList.remove('tts-loading'); ttsBtn.classList.add('tts-playing'); } };
   utt.onend = () => { if(ttsBtn) ttsBtn.classList.remove('tts-playing'); ttsBtn = null; };
   utt.onerror = () => { toast(t('ttsErr'), true); resetTTS(); };
   speechSynthesis.speak(utt);
 }
 
 async function playPiperTTS(text, btn){
+  const ac = new AbortController();
+  ttsAbort = ac;
   try {
     const voice = (_settingsData.TTS_VOICE && _settingsData.TTS_VOICE.value) || '';
     const headers = {'Content-Type':'application/json'};
     const key = getApiKey();
     if(key) headers['X-API-Key'] = key;
     const r = await fetch(API + '/chat/tts', {method:'POST', headers,
-      body: JSON.stringify({text: text.slice(0, 2000), voice})});
+      body: JSON.stringify({text: text.slice(0, 2000), voice}), signal: ac.signal});
 if(r.status === 503) throw new Error('HTTP 503');
   if(!r.ok) throw new Error('HTTP '+r.status);
     const blob = await r.blob();
+    if(ac.signal.aborted) return;
     ttsAudio = new Audio(URL.createObjectURL(blob));
-    ttsAudio.onplay = () => { if(ttsBtn) ttsBtn.classList.add('tts-playing'); };
+    ttsAudio.onplay = () => { if(ttsBtn){ ttsBtn.classList.remove('tts-loading'); ttsBtn.classList.add('tts-playing'); } };
     ttsAudio.onended = () => { if(ttsBtn) ttsBtn.classList.remove('tts-playing'); ttsBtn = null; };
     ttsAudio.onerror = () => { toast(t('ttsErr'), true); resetTTS(); };
-    ttsAudio.play().catch(() => { toast(t('ttsErr'), true); resetTTS(); });
+    ttsAudio.play().catch(() => {
+      if(ac.signal.aborted){ resetTTS(); return; } // cancelled mid-wait: silent
+      toast(t('ttsErr'), true); resetTTS();
+    });
   } catch(e) {
+    if(e && e.name === 'AbortError'){ resetTTS(); return; } // intentional second-click cancel
     toast(t('ttsErr'), true);
     resetTTS();
   }
 }
 
 function stopTTS(){
+  // Cancel an in-flight Piper request (second click = abort, no orphan audio)
+  if(ttsAbort){ ttsAbort.abort(); ttsAbort = null; }
   // Stop Piper (Audio element)
   if(ttsAudio && ttsAudio.src){
     ttsAudio.pause(); ttsAudio.currentTime = 0; ttsAudio = null;
@@ -2350,6 +2368,7 @@ function stopTTS(){
   // Stop browser TTS
   if('speechSynthesis' in window) speechSynthesis.cancel();
   if(ttsBtn) ttsBtn.classList.remove('tts-playing');
+  if(ttsBtn) ttsBtn.classList.remove('tts-loading');
   ttsBtn = null;
 }
 
