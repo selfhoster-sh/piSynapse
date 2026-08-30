@@ -315,28 +315,35 @@ body.theme-black .msg-group.user .msg-meta .who{color:var(--text3)}
 .typing span:nth-child(2){animation-delay:.2s}
 .typing span:nth-child(3){animation-delay:.4s}
 .typing.tool-pending{opacity:.25;transition:opacity .2s}
-/* Tool chips center on the message column (800px) instead of hugging the
-   #messages left padding — they used to float ~360px off-center on desktop. */
-.tool-status{display:flex;align-items:center;gap:9px;width:fit-content;max-width:min(800px,calc(100% - 40px));padding:8px 14px;margin:6px auto;border-radius:999px;background:var(--surface2);border:1px solid var(--border);font-size:13px;color:var(--text2)}
-.tool-status .tspin{flex:none;width:12px;height:12px;border-radius:50%;border:2px solid var(--border);border-top-color:var(--accent);animation:tspin .9s linear infinite}
-/* Contrast: text2 on surface2 = 5.5:1 (AA ✓). NEVER dim the whole pill via
-   opacity — .7 alpha over surface2 measured 3.3:1 (AA fail); restyle instead. */
-.tool-status.ok .tlab{color:var(--text)}
-.tool-status.ok .tspin{animation:none;border-color:var(--accent);background:var(--accent)}
+/* Tool feedback: small and quiet, IN-FLOW below the assistant message that made
+   the call (a child of its .msg-group, aligned under the bubble). No floating
+   pill, no overlay — it is part of the message column and can never cover the
+   chat text. Active phase: micro-spinner + short label; once settled the row
+   collapses to a passive ✓ or a muted ⚠, with (on audited calls) a small
+   correction button. */
+.tool-status{display:flex;align-items:center;gap:7px;width:fit-content;max-width:min(800px,calc(100% - 40px));margin:4px 6px 0;padding:1px 4px;border-radius:99px;font-size:12px;color:var(--text2)}
+.tool-status .tspin{flex:none;width:10px;height:10px;border-radius:50%;border:2px solid var(--border);border-top-color:var(--accent);animation:tspin .9s linear infinite}
+.tool-status .tlab{font-size:12px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tool-status .tspin.dead{animation:none;border-color:var(--border);opacity:.7}
-.tool-status{position:relative}
-.tool-status .mark-btn{flex:none;margin-left:6px;padding:2px 9px;font-size:11px;line-height:1.5;border-radius:999px;background:transparent;border:1px solid var(--border);color:var(--text3);cursor:pointer}
-.tool-status .mark-btn:hover{color:var(--accent);border-color:var(--accent)}
+/* Settled state: a whisper-quiet check only on true success; the ⚠ shows only
+   when a call actually failed, so a working tool never reads as a warning. */
+.tool-status .fb-state{flex:none;font-size:12px;line-height:1}
+.tool-status.ok .fb-state{color:var(--accent)}
+.tool-status .fb-state.bad{color:var(--text3)}
+/* The correction affordance is a small quiet icon-button (neutral pencil), not
+   a warning glyph — a successful call may still have been grouped wrong, so
+   the affordance exists but never shouts. */
+.tool-status .mark-btn{flex:none;display:inline-flex;align-items:center;gap:2px;margin:0;padding:2px 7px;border-radius:99px;font-size:11px;line-height:1.5;color:var(--text3);background:transparent;border:1px solid transparent;cursor:pointer}
+.tool-status .mark-btn:hover{color:var(--accent);border-color:var(--border)}
 .tool-status .mark-btn .mk-lab{margin-left:3px}
 .tool-status .mark-btn.marked{color:var(--accent);border-color:var(--accent);background:rgba(88,166,255,.14)}
-/* The mis-feedback picker: positioned purely by JS (positionGroupPicker) with
-   collision/fallback awareness — anchored to the ⚠ mark-btn, never a fixed
-   offset. CSS here is only the unmeasured paint default + structural rules.
-   Height is capped so it can never force the chat to scroll. */
-.group-picker{position:absolute;z-index:50;right:0;top:calc(100% + 6px);min-width:185px;max-width:calc(100vw - 20px);max-height:min(320px,calc(100dvh - 24px));overflow-y:auto;padding:6px;display:flex;flex-direction:column;gap:3px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;box-shadow:0 10px 28px rgba(0,0,0,.3)}
-/* Touch-first: on coarse pointers it becomes a viewport-width sheet pinned to
-   the button — roomy, thumb-reachable, and collision-proof by construction. */
-@media (pointer:coarse){ .group-picker{left:8px;right:8px;min-width:0;max-width:none} }
+/* The correction picker opens BELOW the feedback row, in-flow (static child of
+   the same message group): it expands the message column and can never overlap
+   the bubble. Height stays clamped so a long list cannot blow the viewport. */
+.group-picker{position:static;z-index:auto;margin:8px 0 2px;min-width:200px;max-width:min(360px,100%);max-height:min(320px,calc(100dvh - 24px));overflow-y:auto;padding:6px;display:flex;flex-direction:column;gap:3px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;box-shadow:0 10px 28px rgba(0,0,0,.3)}
+/* Touch-first: on coarse pointers the sheet spans the whole message column —
+   roomy, thumb-reachable, and collision-proof by construction. */
+@media (pointer:coarse){ .group-picker{width:100%;min-width:0;max-width:none} }
 .group-picker .gp-opt{display:block;width:100%;text-align:left;padding:6px 10px;border:0;border-radius:8px;background:transparent;color:var(--text);font-size:13px;cursor:pointer}
 .group-picker .gp-opt:hover{background:var(--surface3)}
 .group-picker .gp-opt.sel{background:rgba(88,166,255,.14);color:var(--accent)}
@@ -345,15 +352,15 @@ body.theme-black .msg-group.user .msg-meta .who{color:var(--text3)}
 .group-picker .gp-save:disabled{opacity:.5;cursor:default}
 .group-picker .gp-cancel{padding:6px 10px;border:0;border-radius:8px;font-size:13px;cursor:pointer;background:transparent;color:var(--text2)}
 .group-picker .gp-cancel:hover{background:var(--surface3)}
-/* Touch-first: enlarge hit areas to >=44px ONLY on coarse pointers (mobile/
-   tablets). Desktop (fine pointer) keeps the compact look. */
+/* Touch-first: enlarge hit areas on coarse pointers (mobile/tablets) while
+   desktop (fine pointer) keeps the compact look. */
 @media (pointer:coarse){
-  .tool-status .mark-btn{padding:13px 14px;min-height:44px}
+  .tool-status{margin:6px 4px 0}
+  .tool-status .mark-btn{padding:11px 13px;min-height:40px}
   .group-picker .gp-opt{padding:13px 10px;min-height:44px}
   .group-picker .gp-save,.group-picker .gp-cancel{padding:13px 14px;min-height:44px}
 }
 body.glass-mode .group-picker{background:rgba(24,24,32,.97);backdrop-filter:blur(12px)}
-body.glass-mode .tool-status{background:rgba(15,15,21,.94);backdrop-filter:blur(12px)}
 @keyframes tspin{to{transform:rotate(360deg)}}
 @keyframes bounce{0%{transform:translateY(0);opacity:.4}100%{transform:translateY(-6px);opacity:1}}
 
@@ -2587,7 +2594,7 @@ function createStreamBubble(){
   hideTyping();
   const g=document.createElement('div'); g.className='msg-group assistant';
   g.innerHTML=`<div class="msg-meta"><span class="who">piSynapse</span><span class="ts">${timeNow()}</span></div><div class="bubble"></div>`;
-  document.getElementById('messages').appendChild(g); scrollEnd(true); return g.querySelector('.bubble');
+  document.getElementById('messages').appendChild(g); scrollEnd(true); _roundGroup=g; return g.querySelector('.bubble');
 }
 
 function renderThink(body, html){
@@ -2668,7 +2675,8 @@ async function sendMsg(){
     document.getElementById('sess-title').textContent=rakeTitle;
   }
   _pendingStream = { sid };
-  clearToolPills(); // fresh round: previous turn's tool pills have been marked or discarded
+  clearToolPills(); // fresh round: previous turn's feedback rows are dropped
+  _roundGroup=null;
   el.value=''; el.style.height='auto'; pendingImages=[]; renderImagePreview();
   addMsg('user',text,true,null,images); showTyping(); setLoading(true);
   let bubble=null, fullText='', thinkBox=null, fullReasoning='';
@@ -2693,9 +2701,8 @@ async function sendMsg(){
         let data; try{ data=JSON.parse(line.slice(6)); } catch{ continue; }
         if('token' in data){
           if(currentSid !== sid) continue; // user navigated away, skip rendering
-          // Pills are kept on purpose: each finished tool pill carries its own
-          // "yanlıştı" (mark) affordance once the stream settle happens. They
-          // are cleared on the NEXT send, not here.
+          // Each settled tool row is this message's feedback (✓/⚠ + optional
+          // mark affordance). Rows are dropped on the NEXT send, not here.
           if(!bubble){ bubble=createStreamBubble(); }
           gotReply=true;
           fullText+=data.token; bubble.innerHTML=withStreamCaret(renderMd(fullText)); scrollEnd(false);
@@ -2730,8 +2737,8 @@ async function sendMsg(){
           // If the user navigated away during streaming, loadSessions() updates the sidebar.
         } else if('reasoning' in data){
           if(currentSid !== sid) continue;
-          // Thinking streams after tool calls — the tool pills stay visible
-          // (they are marking targets). Cleared on the next send.
+          // Thinking streams after tool calls — the feedback row stays under
+          // the message (it is the marking target). Cleared on the next send.
           if(!bubble) bubble=createStreamBubble();
           if(!thinkBox){ thinkBox=ensureThinkBox(bubble); }
           fullReasoning+=data.reasoning;
@@ -2740,10 +2747,12 @@ async function sendMsg(){
           scrollEnd(false);
         } else if(data.tool){
           if(currentSid !== sid) continue;
+          if(!bubble) bubble=createStreamBubble();
           if(data.tool.phase==='end'){ toolRow=endToolStatus(toolRow, data.tool.ok, data.tool.audit_id); }
           else { toolRow=showToolStatus(data.tool, toolRow); }
         } else if(data.gen_retry){
           if(currentSid !== sid) continue;
+          if(!bubble) bubble=createStreamBubble();
           toolRow=showGenRetry(toolRow, data.gen_retry.reason);
         } else if(data.confirm){
           terminated=true; hideTyping(); showConfirmModal(data.confirm); setLoading(false); _pendingStream=null; return;
@@ -2767,11 +2776,12 @@ async function sendMsg(){
   } finally{
     if(_pendingStream?.sid === sid) _pendingStream=null;
     if(toolRow && toolRow.isConnected && !toolRow.classList.contains('done')){
-      // Aborted/errored before an end event: finalize as dead, keep the pill
-      // (a refused or interrupted call gets no audit_id, so no mark button).
-      endToolStatus(toolRow, false, null);
+      // Aborted/errored before an end event: settle the row. A refused or
+      // interrupted call has no audit_id, so no mark button; failed retries
+      // still show ⚠ when nothing was produced.
+      endToolStatus(toolRow, !!gotReply, null);
     }
-    toolRow=null;
+    toolRow=null; _roundGroup=null;
     typingEl?.classList.remove('tool-pending');
     if(!gotReply && !terminated){
       if(currentSid === sid){
@@ -2919,33 +2929,37 @@ function showTyping(){
 }
 function hideTyping(){ typingEl?.remove(); typingEl=null; }
 
-function placePill(row){
-  // Pill sits directly ABOVE the typing dots (or at the bottom once dots
-  // are gone) — never below them.
-  const m=document.getElementById('messages');
-  if(typingEl && typingEl.isConnected) m.insertBefore(row,typingEl); else m.appendChild(row);
+function placeRow(row){
+  // The feedback row lives INSIDE the assistant message group, directly below
+  // its bubble — in-flow with the text, never floating over the chat.
+  const host=(_roundGroup && _roundGroup.isConnected) ? _roundGroup : document.getElementById('messages');
+  if(host) host.appendChild(row);
+  scrollEnd(false);
   return row;
 }
 function resetPill(row){
-  // Reuse path: an ended pill (✓ ok / ⚠ dead, no live spinner) must look
-  // active again before its label is swapped for the next event. A done pill
-  // being reused (gen_retry revival) also surrenders its mark affordance —
-  // it is no longer this round's marking target.
+  // Reuse path: a settled row (✓/⚠, no live spinner) must look active again
+  // before its label is swapped for the next event. A done row being reused
+  // (gen_retry revival) also surrenders its mark affordance — it is no longer
+  // this round's marking target.
   row.classList.remove('ok','done');
   row.querySelector('.mark-btn')?.remove();
   delete row.dataset.audit;
+  row.querySelectorAll('.fb-state').forEach(s=>s.remove());
   let sp=row.querySelector('.tspin');
   if(!sp){ sp=document.createElement('span'); sp.className='tspin'; row.prepend(sp); }
   else sp.classList.remove('dead');
+  let lab=row.querySelector('.tlab');
+  if(!lab){ lab=document.createElement('span'); lab.className='tlab'; row.appendChild(lab); }
 }
 function showToolStatus(info, row){
-  // A finished pill is a permanent marking target (it holds a live audit_id
-  // and its own mark button). Never recycle it for another tool call — a new
-  // tool gets a fresh pill below, so every audited call keeps its affordance.
+  // A settled row is a permanent marking target (it holds a live audit_id and
+  // its own mark button). Never recycle it for another tool call — a new tool
+  // gets a fresh row below, so every audited call keeps its affordance.
   if(!row || !row.isConnected || row.classList.contains('done')){
     row=document.createElement('div'); row.className='tool-status';
     row.innerHTML='<span class="tspin"></span><span class="tlab"></span>';
-    placePill(row);
+    placeRow(row);
     if(typingEl){ typingEl.classList.add('tool-pending'); }
   } else {
     resetPill(row);
@@ -2965,20 +2979,22 @@ function showToolStatus(info, row){
 }
 
 function endToolStatus(row, ok, auditId){
-  // No auto-hide: the pill stays visible (✓/⚠) until the reply stream
-  // actually starts or the stream ends. Returns the row so the caller
-  // KEEPS tracking it — returning null orphaned the DOM node and the
-  // next event drew a second pill below instead of updating this one.
+  // No auto-hide: the row keeps its ✓/⚠ state under the message until the
+  // next send drops it. Returns the row so the caller KEEPS tracking it —
+  // returning null would orphan the DOM node and the next event would draw a
+  // second row instead of settling this one.
   if(!row || !row.isConnected) return row;
   row.classList.toggle('ok', !!ok);
   row.classList.add('done');
-  const lab=row.querySelector('.tlab');
-  lab.textContent=lab.textContent.replace(/…$/,'');
-  if(!ok){
-    lab.textContent='⚠ '+lab.textContent;
-    row.querySelector('.tspin')?.classList.add('dead');
+  row.querySelector('.tspin')?.remove();
+  const st=document.createElement('span'); st.className='fb-state'+(ok?'':' bad');
+  st.textContent=ok ? '\u2713' : '\u26A0';
+  row.appendChild(st);
+  if(ok){
+    row.querySelector('.tlab')?.remove();
   } else {
-    row.querySelector('.tspin')?.remove();
+    const lab=row.querySelector('.tlab');
+    if(lab) lab.textContent=lab.textContent.replace(/…$/,'');
   }
   // An audited call gets the "yanlıştı" affordance. No audit_id (e.g. a
   // refused/unverifiable call) means nothing to correct — no button.
@@ -2989,58 +3005,20 @@ function endToolStatus(row, ok, auditId){
   return row;
 }
 
-let _toolGroupsCache=null;
+let _toolGroupsCache=null; let _roundGroup=null;
 function clearToolPills(){ document.querySelectorAll('#messages .tool-status').forEach(r=>r.remove()); }
 
 function makeMarkBtn(row, auditId){
   const b=document.createElement('button');
   b.className='mark-btn'; b.dataset.audit=String(auditId);
-  b.innerHTML='<span class="mk-ico">⚠</span><span class="mk-lab"></span>';
+  b.innerHTML='<span class="mk-ico">\u270E</span><span class="mk-lab"></span>';
   b.title=t('markWrong');
   b.onclick=()=>openGroupPicker(row, b, auditId);
   return b;
 }
 
-function positionGroupPicker(panel, pill, btn){
-  // Collision-aware anchoring (Floating-UI style, hand-rolled): the panel is
-  // placed relative to the mark BUTTON, prefers below when there is room and
-  // flips above otherwise, then clamps into the #messages viewport on both
-  // axes. It never scrolls the chat to fit and never uses fixed offsets.
-  const msgs=document.getElementById('messages');
-  if(!msgs) return;
-  const mr=msgs.getBoundingClientRect();
-  const br=btn.getBoundingClientRect();
-  const pr=pill.getBoundingClientRect();
-  const gap=6;
-  const coarse=matchMedia('(pointer:coarse)').matches;
-  // Touch: a viewport-width sheet hugging the messages column left/right
-  // edges. Desktop: content width.
-  let W;
-  if(coarse) W=mr.width-16;
-  else W=panel.offsetWidth;
-  if(W>mr.width-12) W=mr.width-12;
-  if(W!==panel.offsetWidth) panel.style.width=W+'px';
-  // Cap the height so a long list can never force the chat to scroll.
-  let H=panel.offsetHeight;
-  const capH=mr.height-12;
-  if(H>capH){ panel.style.maxHeight=capH+'px'; H=capH; }
-  // Flip: below by default, above when it would pass the viewport bottom.
-  const below=mr.bottom-br.bottom-gap;
-  const above=br.top-mr.top-gap;
-  const up=below<H && above>=below;
-  let topV=up? br.top-H-gap : br.bottom+gap;
-  if(topV<mr.top+gap) topV=mr.top+gap;
-  if(topV+H>mr.bottom-gap) topV=mr.bottom-gap-H;
-  let xV=coarse? mr.left+8 : br.left;
-  if(xV+W>mr.right-gap) xV=mr.right-gap-W;
-  if(xV<mr.left+gap) xV=mr.left+gap;
-  panel.style.left=(xV-pr.left)+'px';
-  panel.style.top=(topV-pr.top)+'px';
-  panel.style.bottom='auto';
-}
-
 function openGroupPicker(row, btn, auditId){
-  // A pill owns at most one open picker — close any sibling first.
+  // A message owns at most one open picker — close any sibling first.
   document.querySelector('#messages .group-picker')?.remove();
   const panel=document.createElement('div'); panel.className='group-picker';
   let sel='';
@@ -3063,8 +3041,14 @@ function openGroupPicker(row, btn, auditId){
     panel.appendChild(rowEl);
   };
   const doOpen=()=>{
-    sel=''; render(); row.appendChild(panel);
-    positionGroupPicker(panel, row, btn);
+    sel=''; render();
+    // In-flow: the picker inserts right after the feedback row, inside the
+    // same message group (static positioning), so it pushes the chat down and
+    // can never overlap the bubble. The old "clamp+flip" survives as the CSS
+    // max-height cap; on coarse pointers the sheet spans the message column.
+    const host=row.parentNode || document.getElementById('messages');
+    if(row.after) row.after(panel); else host.appendChild(panel);
+    panel.scrollIntoView({block:'nearest', behavior:'smooth'});
     // Tap anywhere outside dismisses; reopening re-opens (siblings are
     // removed at the top of openGroupPicker).
     const dismiss=ev=>{
@@ -3111,7 +3095,7 @@ function showGenRetry(row, reason){
   }
   row=document.createElement('div'); row.className='tool-status';
   row.innerHTML='<span class="tspin"></span><span class="tlab"></span>';
-  placePill(row);
+  placeRow(row);
   row.querySelector('.tlab').textContent=genRetryText(reason);
   scrollEnd(false);
   return row;
