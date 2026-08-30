@@ -13,9 +13,15 @@ test.describe('new-chat button press feedback (sticky-hover leak)', () => {
     const box = await btn.boundingBox();
     await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
 
+    // A quick tap must still flash the press visual, then clear on its own
+    // (Regression: :active alone is too brief to paint on touch).
+    await page.waitForFunction(() =>
+      document.querySelector('.top-new-btn').classList.contains('tap-flash'),
+      { timeout: 1000 });
+
     // Regression: an ungated :hover{transform:scale(1.02)} made touch :hover
     // sticky, so a tap left the CTA permanently enlarged and the press effect
-    // looked broken. The resting transform must return to none.
+    // looked broken. The resting transform must return to none once the flash ends.
     await expect(btn).toHaveCSS('transform', 'none');
   });
 
