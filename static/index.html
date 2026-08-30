@@ -1047,6 +1047,27 @@ body.glass-mode ::selection{background:color-mix(in srgb, var(--accent) 35%, tra
   body.glass-mode .welcome::before{display:none}
 }
 
+/* Scroll-time blur relief (body.scrolling-chat set by setupGlassScrollRelief):
+   while the chat or sidebar lists scroll, the pinned frosted chrome must not
+   re-blur the moving content behind it every frame (backdrop recompute = the
+   glass flicker/jank). Blur drops for the burst, backgrounds turn near-opaque
+   so the bars stay clean, and full glass returns ~140ms after scrolling stops. */
+body.glass-mode.scrolling-chat #topbar,
+body.glass-mode.scrolling-chat #input-container,
+body.glass-mode.scrolling-chat #sidebar{
+  backdrop-filter:none;-webkit-backdrop-filter:none;
+  transition:background-color .15s ease;
+}
+body.glass-mode.scrolling-chat #topbar{
+  background-color:color-mix(in srgb, var(--accent) 7%, rgba(10,10,15,.92));
+  border-bottom-color:var(--border)
+}
+body.glass-mode.scrolling-chat #input-container{
+  background:rgba(13,13,18,.96);
+  box-shadow:0 -4px 20px rgba(0,0,0,.45)
+}
+body.glass-mode.scrolling-chat #sidebar{background-color:var(--surface)}
+
 
 /* ── Toggle switch ────────────────────────────────────────────────────────── */
 .switch-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
@@ -2334,7 +2355,7 @@ let lastInputWasVoice = false;
 
 document.addEventListener('DOMContentLoaded', async ()=>{
   if(window._beacon) window._beacon({t:'init', step:'start'});
-  applyTheme(theme); applyGlass(glass); applyMinimal(minimal); applyLang(lang); enhanceAllSelects(); setupInput(); setupMobileKeyboard(); setupHoldToRecord();
+  applyTheme(theme); applyGlass(glass); applyMinimal(minimal); applyLang(lang); enhanceAllSelects(); setupInput(); setupMobileKeyboard(); setupHoldToRecord(); setupGlassScrollRelief();
   if(window._beacon) window._beacon({t:'init', step:'prep-done'});
   // Check if API key is needed
   try {
@@ -3857,6 +3878,23 @@ function closeSidebar(){
 }
 
 // ── Utility Functions ───────────────────────────────────────────────────────────
+/* Glass scroll relief: while the chat or the sidebar lists are scrolling, add
+   body.scrolling-chat so CSS can drop backdrop-filter on the pinned frosted
+   chrome (re-blurring the moving content each frame = flicker/jank). The class
+   is set once per scroll burst (no rAF loop) and cleared ~140ms after the last
+   scroll event, restoring full glass at rest. */
+function setupGlassScrollRelief(){
+  let t = 0;
+  const onScroll = () => {
+    document.body.classList.add('scrolling-chat');
+    clearTimeout(t);
+    t = setTimeout(() => document.body.classList.remove('scrolling-chat'), 140);
+  };
+  const messages = document.getElementById('messages');
+  if(messages) messages.addEventListener('scroll', onScroll, {passive:true});
+  const sidebar = document.getElementById('sidebar');
+  if(sidebar) sidebar.addEventListener('scroll', onScroll, {capture:true, passive:true});
+}
 function scrollEnd(force = false){ const e = document.getElementById('messages'); if (force || (e.scrollHeight - e.scrollTop - e.clientHeight < 150)) { e.scrollTop = e.scrollHeight; } }
 function timeNow(){ return new Date().toLocaleTimeString(lang==='tr' ? 'tr-TR' : 'en-GB', {hour:'2-digit', minute:'2-digit'}); }
 function relTime(ts){
