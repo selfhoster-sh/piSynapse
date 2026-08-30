@@ -4,12 +4,16 @@ All notable changes to piSynapse will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.8.0] - 2026-08-30
 
 ### Added — 2026-08-30 review cycle
-- **Tool auditing:** ID-based backend verification for create tools (`12644e5`), correction `expected_group` (Option A, `9695ae2`), `audit_id` in the SSE tool-`end` event + "yanlıştı" marking UI (`f65db2b`), group taxonomy endpoint `GET /tools/groups` (`a42beb2`).
-- **UI fixes (Faz A):** markdown + pinned auto-scroll in think box, new-chat button hover/animation fixes, drop `scroll-behavior:smooth` from the feed.
-- **Tests:** Playwright e2e infra for the tool-marking flow (`2765fb2`).
+- **Tool auditing:** ID-based backend verification for create tools (`f0dad30`), correction `expected_group` (Option A, `1ff833b`), `audit_id` in the SSE tool-`end` event + "yanlıştı" marking UI (`b487416`), group taxonomy endpoint `GET /tools/groups` (`32225b9`).
+- **Settings (Faz B):** Appearance row renders synchronously from localStorage (offline-safe, stays up on the fetch-error path); backend sections render after `/config/settings`; `Diğer` junk drawer removed, `UI_LANGUAGE`→`Genel`, `LLM_BACKEND`+`LLM_MODEL`→`Model & Motor`; desktop chip rail with click-to-scroll + rAF scrollspy (`#settings-chips`, fine pointers only, mobile hidden) (`26c3b73`).
+- **Markdown (Faz C):** GitHub-style tables — hairline rows, sticky filled header, visible zebra, content-driven width (`5af69cc`).
+- **Glass visuals (Faz C):** send button becomes a specular breathing glass orb — stop-state stays red, `backdrop-filter` dropped for scroll safety (`dfb9cf4`); scroll-time blur relief — pinned chrome (topbar/input/sidebar) drops backdrop-filter while `#messages`/`#session-list` scroll and restores after rest (15.4→17.7 fps desktop, 56.4→61.3 fps mobile) (`d7649a4`).
+- **UI polish:** base type size 16px + real `--text1` highlight (`17f3476`); memory chips single palette + importance warning token (`f8a9ea8`); input-bar shadow column-aligned and uniform (`397ab05`, `1d8752e`); tool-status pills aligned to the centered message column (`371a5e0`); collision-aware group-picker (anchors to mark-btn, viewport clamp+flip, capped height; coarse-pointer full-width sheet) (`5ba44bc`); stronger fade-over-input + subtler list edge dissolves (`e91c8e2`).
+- **UI fixes:** in-place session-list patching (no rebuild/scroll jump) + `no-store` delivery headers (`286ddeb`); network-first navigations so stale HTML can't be served (`2bb970f`); chat-list flicker stop on silent refresh (`b873c63`, `9b82fe5`); sess-item invisible-after-boot regression (`bb30e34`); search-toggle discarded-fragment fix (`1537e78`); sidebar row hover/press + search-icon centering (`4d824a2`).
+- **Tests:** Playwright e2e infra for the tool-marking flow (`1554f2a`).
 
 ### Security hardening (audit-driven, fail-closed)
 - `API_KEY` now defaults **fail-closed**: no key configured → protected routes return `503` instead of running open (`main.py`).
