@@ -14,7 +14,7 @@ function json(route, obj, status = 200) {
 
 /**
  * @param {import('@playwright/test').Page} page
- * @param {{auditId?: number|null, correctionError?: boolean, confirmError?: boolean}} opts
+ * @param {{auditId?: number|null, correctionError?: boolean, confirmError?: boolean, history?: object[]}} opts
  */
 async function installBackendStubs(page, opts = {}) {
   const auditId = opts.auditId === undefined ? 123 : opts.auditId;
@@ -43,6 +43,7 @@ async function installBackendStubs(page, opts = {}) {
   await page.route('**/config', route => json(route, config));
   await page.route('**/config/settings', route => json(route, {}));
   await page.route('**/chat/sessions', route => json(route, { sessions: [] }));
+  await page.route('**/chat/history**', route => json(route, { session_id: 'x', messages: opts.history || [] }));
   await page.route('**/chat/abort/**', route => json(route, {}));
   await page.route('**/widget/weather', route => json(route, { summary: 'Güneşli 22°C' }));
   await page.route('**/widget/calendar', route => json(route, { events: [] }));

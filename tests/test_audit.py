@@ -663,3 +663,93 @@ def test_confirm_endpoint_missing_audit_id_404(correction_client):
     resp = correction_client.post("/chat/tool-confirm", json={"audit_id": 999_999})
     assert resp.status_code == 404
     assert "not found" in resp.json()["detail"]
+
+
+# -- Audit ↔ message linking (C-8 feedback persistence) --
+
+def test_save_message_returns_rowid(audit_db):
+    """save_message now returns the new conversation row's id (feeds linking)."""
+    from db import save_message
+    uid = asyncio.run(save_message("s1", "user", "test"))
+    aid = asyncio.run(save_message("s1", "assistant", "answer"))
+    assert isinstance(uid, int)
+    assert isinstance(aid, int)
+    assert aid > uid
+    # Dedup path returns None (no insert) — nothing to link.
+    uid2 = asyncio.run(save_message("s2", "user", "dup"))
+    assert asyncio.run(save_message("s2", "user", "dup")) is None
+    assert isinstance(uid2, int)
+
+
+async def _insert_audit_with_conversation(conversation_id, tool="get_weather"):
+    db = await dbmod.get_db()
+    cur = await db.execute(
+        "INSERT INTO tool_audit_log (tool_name, params, success, created_at, conversation_id) "
+        "VALUES (?, '{}', 1, CURRENT_TIMESTAMP, ?)",
+        (tool, conversation_id),
+    )
+    await db.commit()
+    return cur.lastrowid
+
+
+def test_link_audits_to_message_links_and_respects_ownership(audit_db):
+    """Linking binds unowned audits; rows already owned stay untouched."""
+    from db import link_audits_to_message, save_message
+    mid = asyncio.run(save_message("s1", "assistant", "answer"))
+    a1 = asyncio.run(_insert_audit_with_conversation(None))
+    a2 = asyncio.run(_insert_audit_with_conversation(None))
+    a3 = asyncio.run(_insert_audit_with_conversation(mid))  # already owned
+
+    assert asyncio.run(link_audits_to_message(mid, [a1, a2, a3])) == 2
+
+    rows = dict(asyncio.run(_fetch_all("SELECT id, conversation_id FROM tool_audit_log ORDER BY id")))
+    assert rows[a1] == mid
+    assert rows[a2] == mid
+    assert rows[a3] == mid  # unchanged (already owned)
+
+
+def test_link_audits_handles_empty_and_unknown_audits(audit_db):
+    """Empty/unknown ids never raise and link nothing."""
+    from db import link_audits_to_message
+    assert asyncio.run(link_audits_to_message(1234, [])) == 0
+    assert asyncio.run(link_audits_to_message(1234, [999_999])) == 0
+
+
+def test_get_history_include_audits_attaches_per_message(audit_db):
+    """include_audits attaches each assistant message its audit list; default stays clean."""
+    from db import get_history, link_audits_to_message, save_message
+    asyncio.run(save_message("s1", "user", "hava nasıl?"))
+    mid = asyncio.run(save_message("s1", "assistant", "güneşli"))
+    a1 = asyncio.run(_insert_audit_with_conversation(None, "get_weather"))
+    a2 = asyncio.run(_insert_audit_with_conversation(None, "get_weather"))
+    asyncio.run(link_audits_to_message(mid, [a1, a2]))
+
+    msgs = asyncio.run(get_history("s1", limit=50, include_reasoning=True, include_audits=True))
+    asst = [m for m in msgs if m["role"] == "assistant"][0]
+    assert len(asst["audits"]) == 2
+    assert {a["audit_id"] for a in asst["audits"]} == {a1, a2}
+    assert all(a["tool_name"] == "get_weather" for a in asst["audits"])
+    assert all(a["confirmed_at"] is None and a["corrected_at"] is None for a in asst["audits"])
+    assert "expected_group" in asst["audits"][0]
+    assert all("audits" not in m for m in msgs if m["role"] == "user")
+
+    # Default path never exposes audits (protects LLM context input).
+    msgs_plain = asyncio.run(get_history("s1", limit=50))
+    assert all("audits" not in m for m in msgs_plain)
+
+
+def test_history_endpoint_returns_linked_audits(correction_client):
+    """GET /chat/history surfaces audits so the UI can rebuild thumbs per message."""
+    from db import link_audits_to_message, save_message
+    asyncio.run(save_message("persist1", "user", "test"))
+    mid = asyncio.run(save_message("persist1", "assistant", "answer"))
+    a1 = asyncio.run(_insert_audit_with_conversation(None))
+    asyncio.run(link_audits_to_message(mid, [a1]))
+
+    resp = correction_client.get("/chat/history?session_id=persist1")
+    assert resp.status_code == 200
+    msgs = resp.json()["messages"]
+    asst = [m for m in msgs if m["role"] == "assistant"][0]
+    assert asst["audits"] == [{"audit_id": a1, "tool_name": "get_weather",
+                               "confirmed_at": None, "corrected_at": None,
+                               "expected_group": None}]
