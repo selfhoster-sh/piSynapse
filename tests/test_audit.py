@@ -604,3 +604,62 @@ def test_tool_names_single_source_of_truth():
     # Ensure no duplicates (set property)
     from tools.definitions import TOOLS
     assert len(TOOL_NAMES) == len({t["function"]["name"] for t in TOOLS})
+
+
+def test_tool_confirm_sets_confirmed_at_and_clears_correction(audit_db):
+    """Confirmation stores confirmed_at and drops any prior correction."""
+    from db import set_tool_confirmation, set_tool_correction
+    audit_id = asyncio.run(_create_audit_entry())
+    assert asyncio.run(set_tool_correction(audit_id, "create_calendar_event", "calendar")) is True
+    assert asyncio.run(set_tool_confirmation(audit_id)) is True
+
+    rows = asyncio.run(_fetch_all(
+        "SELECT expected_tool, expected_group, corrected_at, confirmed_at "
+        "FROM tool_audit_log WHERE id = ?",
+        (audit_id,),
+    ))
+    assert rows[0][0] is None
+    assert rows[0][1] is None
+    assert rows[0][2] is None
+    assert rows[0][3] is not None
+
+
+def test_tool_correction_clears_confirmed_at(audit_db):
+    """A later correction replaces a previous confirmation signal."""
+    from db import set_tool_confirmation, set_tool_correction
+    audit_id = asyncio.run(_create_audit_entry())
+    assert asyncio.run(set_tool_confirmation(audit_id)) is True
+    assert asyncio.run(set_tool_correction(audit_id, None, "tasks")) is True
+
+    rows = asyncio.run(_fetch_all(
+        "SELECT expected_group, corrected_at, confirmed_at FROM tool_audit_log WHERE id = ?",
+        (audit_id,),
+    ))
+    assert rows[0][0] == "tasks"
+    assert rows[0][1] is not None
+    assert rows[0][2] is None
+
+
+def test_tool_confirmation_nonexistent_audit_id(audit_db):
+    """Unknown audit_id returns False (endpoint surfaces it as 404)."""
+    from db import set_tool_confirmation
+    assert asyncio.run(set_tool_confirmation(999_999)) is False
+
+
+def test_confirm_endpoint_sets_confirmed_at(correction_client):
+    audit_id = asyncio.run(_create_audit_entry())
+    resp = correction_client.post("/chat/tool-confirm", json={"audit_id": audit_id})
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True, "audit_id": audit_id}
+
+    rows = asyncio.run(_fetch_all(
+        "SELECT confirmed_at FROM tool_audit_log WHERE id = ?",
+        (audit_id,),
+    ))
+    assert rows[0][0] is not None
+
+
+def test_confirm_endpoint_missing_audit_id_404(correction_client):
+    resp = correction_client.post("/chat/tool-confirm", json={"audit_id": 999_999})
+    assert resp.status_code == 404
+    assert "not found" in resp.json()["detail"]

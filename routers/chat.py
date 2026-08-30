@@ -456,6 +456,26 @@ async def set_tool_correction(req: CorrectionRequest):
     }
 
 
+class ConfirmRequest(BaseModel):
+    audit_id: int
+
+
+@router.post("/tool-confirm")
+async def set_tool_confirmation(req: ConfirmRequest):
+    """Record a positive confirmation on a tool audit log entry.
+
+    Called when the user marks a tool call as correct. A confirmation is the
+    opposite of a correction, so any previously stored correction fields on
+    the row are cleared (and vice versa) — a row holds at most one signal.
+    """
+    from db import set_tool_confirmation
+
+    ok = await set_tool_confirmation(req.audit_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Audit log entry not found")
+    return {"ok": True, "audit_id": req.audit_id}
+
+
 # -- Sessions --
 
 @router.get("/sessions")

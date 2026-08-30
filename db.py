@@ -144,6 +144,7 @@ MIGRATIONS: list[tuple[str, str, str]] = [
     ("tool_audit_log", "corrected_at", "DATETIME"),
     ("tool_audit_log", "verification_status", "TEXT"),
     ("tool_audit_log", "expected_group", "TEXT"),
+    ("tool_audit_log", "confirmed_at", "DATETIME"),
 ]
 
 
@@ -226,7 +227,8 @@ async def init_db():
             expected_tool  TEXT,
             corrected_at   DATETIME,
             expected_group TEXT,
-            verification_status TEXT
+            verification_status TEXT,
+            confirmed_at   DATETIME
         )
     """)
 
@@ -537,20 +539,45 @@ async def set_tool_correction(audit_id: int, expected_tool: str | None,
     Updates expected_tool and/or expected_group and sets corrected_at to
     current timestamp. expected_tool is a precise positive signal (exact
     tool name); expected_group is a coarse signal (domain) used when the
-    user only picks a group. Either may be NULL. Returns True if a row was
-    updated, False if not found.
+    user only picks a group. Either may be NULL. Sets confirmed_at to NULL:
+    confirmation and correction are mutually exclusive feedback states, so a
+    row always holds at most one of them. Returns True if a row was updated,
+    False if not found.
     """
     try:
         db = await get_db()
         cur = await db.execute(
             "UPDATE tool_audit_log SET expected_tool = ?, expected_group = ?, "
-            "corrected_at = CURRENT_TIMESTAMP WHERE id = ?",
+            "corrected_at = CURRENT_TIMESTAMP, confirmed_at = NULL WHERE id = ?",
             (expected_tool, expected_group, audit_id),
         )
         await db.commit()
         return cur.rowcount > 0
     except Exception as e:
         logger.warning(f"Tool correction update failed for audit_id={audit_id}: {e}")
+        return False
+
+
+async def set_tool_confirmation(audit_id: int) -> bool:
+    """Record a positive (confirmation) signal on a tool audit log entry.
+
+    Sets confirmed_at to the current timestamp. Confirmation is the opposite
+    of a correction: any previously stored expected_tool/expected_group and
+    their corrected_at are cleared so a row never holds two opposing signals.
+    Returns True if a row was updated, False if not found.
+    """
+    try:
+        db = await get_db()
+        cur = await db.execute(
+            "UPDATE tool_audit_log SET confirmed_at = CURRENT_TIMESTAMP, "
+            "expected_tool = NULL, expected_group = NULL, corrected_at = NULL "
+            "WHERE id = ?",
+            (audit_id,),
+        )
+        await db.commit()
+        return cur.rowcount > 0
+    except Exception as e:
+        logger.warning(f"Tool confirmation update failed for audit_id={audit_id}: {e}")
         return False
 
 
