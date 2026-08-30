@@ -324,8 +324,14 @@ body.theme-black .msg-group.user .msg-meta .who{color:var(--text3)}
 .tool-status .mark-btn:hover{color:var(--accent);border-color:var(--accent)}
 .tool-status .mark-btn .mk-lab{margin-left:3px}
 .tool-status .mark-btn.marked{color:var(--accent);border-color:var(--accent);background:rgba(88,166,255,.14)}
-.group-picker{position:absolute;z-index:50;right:0;top:calc(100% + 6px);min-width:185px;max-width:calc(100vw - 20px);padding:6px;display:flex;flex-direction:column;gap:3px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;box-shadow:0 10px 28px rgba(0,0,0,.3)}
-.group-picker.up{top:auto;bottom:calc(100% + 6px)}
+/* The mis-feedback picker: positioned purely by JS (positionGroupPicker) with
+   collision/fallback awareness — anchored to the ⚠ mark-btn, never a fixed
+   offset. CSS here is only the unmeasured paint default + structural rules.
+   Height is capped so it can never force the chat to scroll. */
+.group-picker{position:absolute;z-index:50;right:0;top:calc(100% + 6px);min-width:185px;max-width:calc(100vw - 20px);max-height:min(320px,calc(100dvh - 24px));overflow-y:auto;padding:6px;display:flex;flex-direction:column;gap:3px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;box-shadow:0 10px 28px rgba(0,0,0,.3)}
+/* Touch-first: on coarse pointers it becomes a viewport-width sheet pinned to
+   the button — roomy, thumb-reachable, and collision-proof by construction. */
+@media (pointer:coarse){ .group-picker{left:8px;right:8px;min-width:0;max-width:none} }
 .group-picker .gp-opt{display:block;width:100%;text-align:left;padding:6px 10px;border:0;border-radius:8px;background:transparent;color:var(--text);font-size:13px;cursor:pointer}
 .group-picker .gp-opt:hover{background:var(--surface3)}
 .group-picker .gp-opt.sel{background:rgba(88,166,255,.14);color:var(--accent)}
@@ -2926,6 +2932,44 @@ function makeMarkBtn(row, auditId){
   return b;
 }
 
+function positionGroupPicker(panel, pill, btn){
+  // Collision-aware anchoring (Floating-UI style, hand-rolled): the panel is
+  // placed relative to the mark BUTTON, prefers below when there is room and
+  // flips above otherwise, then clamps into the #messages viewport on both
+  // axes. It never scrolls the chat to fit and never uses fixed offsets.
+  const msgs=document.getElementById('messages');
+  if(!msgs) return;
+  const mr=msgs.getBoundingClientRect();
+  const br=btn.getBoundingClientRect();
+  const pr=pill.getBoundingClientRect();
+  const gap=6;
+  const coarse=matchMedia('(pointer:coarse)').matches;
+  // Touch: a viewport-width sheet hugging the messages column left/right
+  // edges. Desktop: content width.
+  let W;
+  if(coarse) W=mr.width-16;
+  else W=panel.offsetWidth;
+  if(W>mr.width-12) W=mr.width-12;
+  if(W!==panel.offsetWidth) panel.style.width=W+'px';
+  // Cap the height so a long list can never force the chat to scroll.
+  let H=panel.offsetHeight;
+  const capH=mr.height-12;
+  if(H>capH){ panel.style.maxHeight=capH+'px'; H=capH; }
+  // Flip: below by default, above when it would pass the viewport bottom.
+  const below=mr.bottom-br.bottom-gap;
+  const above=br.top-mr.top-gap;
+  const up=below<H && above>=below;
+  let topV=up? br.top-H-gap : br.bottom+gap;
+  if(topV<mr.top+gap) topV=mr.top+gap;
+  if(topV+H>mr.bottom-gap) topV=mr.bottom-gap-H;
+  let xV=coarse? mr.left+8 : br.left;
+  if(xV+W>mr.right-gap) xV=mr.right-gap-W;
+  if(xV<mr.left+gap) xV=mr.left+gap;
+  panel.style.left=(xV-pr.left)+'px';
+  panel.style.top=(topV-pr.top)+'px';
+  panel.style.bottom='auto';
+}
+
 function openGroupPicker(row, btn, auditId){
   // A pill owns at most one open picker — close any sibling first.
   document.querySelector('#messages .group-picker')?.remove();
@@ -2951,24 +2995,13 @@ function openGroupPicker(row, btn, auditId){
   };
   const doOpen=()=>{
     sel=''; render(); row.appendChild(panel);
-    // Auto-flip: picker opens downward by default; if it would fall outside
-    // the visible #messages viewport, flip it upward instead of letting it
-    // scroll out of view invisibly.
-    const msgs=document.getElementById('messages');
-    if(msgs){
-      const pr=panel.getBoundingClientRect(), mr=msgs.getBoundingClientRect();
-      const below=mr.bottom-pr.bottom, above=pr.top-mr.top;
-      if(below<pr.height && above>=below) panel.classList.add('up');
-      // No room either way: nudge the container so the panel stays visible.
-      if(pr.bottom>mr.bottom || pr.top<mr.top){
-        panel.scrollIntoView({block:'nearest'});
-        // Re-measure after the nudge: pre-existing "up" choice may change.
-        const pr2=panel.getBoundingClientRect(), mr2=msgs.getBoundingClientRect();
-        if(pr2.bottom>mr2.bottom || pr2.top<mr2.top){
-          panel.classList.toggle('up', mr2.bottom-pr2.bottom < pr2.top-mr2.top);
-        }
-      }
-    }
+    positionGroupPicker(panel, row, btn);
+    // Tap anywhere outside dismisses; reopening re-opens (siblings are
+    // removed at the top of openGroupPicker).
+    const dismiss=ev=>{
+      if(!panel.contains(ev.target)){ panel.remove(); document.removeEventListener('pointerdown',dismiss,true); }
+    };
+    document.addEventListener('pointerdown',dismiss,true);
   };
   if(_toolGroupsCache){ doOpen(); return; }
   api('GET','/tools/groups').then(j=>{
