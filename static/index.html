@@ -400,15 +400,12 @@ body.generating .chip-track{will-change:transform}
   left:0;right:0;padding:0 20px;display:flex;flex-direction:column;align-items:center;
    pointer-events:none;z-index:15}
 /* Upward shadow above the input bar (normal mode): a roomy, soft wash that
-   hugs the message column (800px, centered) so no band sits hard on the bar
-   and no edge character is left unshadowed. Horizontal mask keeps the shadow
-   from clipping square at either side; glass sits on heavy layered shadows,
-   so it opts out. */
+   hugs the message column (same width as the bar), uniform across the width —
+   no center focus, no square full-bleed band. Glass sits on heavy layered
+   shadows, so it opts out. */
 body:not(.glass-mode) #input-area::before{content:'';position:absolute;left:50%;transform:translateX(-50%);
-  width:min(800px,calc(100% - 40px));height:120px;bottom:100%;
-  background:linear-gradient(to top, rgba(0,0,0,.38) 0, rgba(0,0,0,.16) 34%, transparent 100%);
-  -webkit-mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent);
-  mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent);
+  width:min(800px,calc(100% - 40px));height:110px;bottom:100%;
+  background:linear-gradient(to top, rgba(0,0,0,.36) 0, rgba(0,0,0,.15) 40%, transparent 100%);
   pointer-events:none}
 #image-preview{display:flex;gap:8px;padding:8px 0;pointer-events:auto;overflow-x:auto;
   max-width:820px;width:100%}
