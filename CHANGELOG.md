@@ -6,6 +6,33 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added — 2026-08-30 review cycle
+- **Tool auditing:** ID-based backend verification for create tools (`12644e5`), correction `expected_group` (Option A, `9695ae2`), `audit_id` in the SSE tool-`end` event + "yanlıştı" marking UI (`f65db2b`), group taxonomy endpoint `GET /tools/groups` (`a42beb2`).
+- **UI fixes (Faz A):** markdown + pinned auto-scroll in think box, new-chat button hover/animation fixes, drop `scroll-behavior:smooth` from the feed.
+- **Tests:** Playwright e2e infra for the tool-marking flow (`2765fb2`).
+
+### Security hardening (audit-driven, fail-closed)
+- `API_KEY` now defaults **fail-closed**: no key configured → protected routes return `503` instead of running open (`main.py`).
+- Tool-parameter logging masks passwords/tokens/secrets (`tools/dispatcher.py`).
+- Hardening response headers: `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`, conditional `HSTS`.
+
+### Robustness
+- Embedding backfill moved to its own SQLite connection (was committing the caller's in-flight transaction on the shared connection).
+- `save_message`/`clear_history`/`delete_*` commits now retry on locked/busy.
+- Background warmup tasks are tracked and cancelled during shutdown.
+- `.env` settings persistence runs on a worker thread (was `flock` on the event loop).
+
+## [1.7.2] - 2026-08-29
+
+### Fixed (tool-calling fine-tune, eval 380 → mixed-domain)
+- "remind + time" routes to **calendar** (deterministic `reminder_group`), memory otherwise; combined domain keeps combined toolset (`913429a`, `098a435`).
+- Model is nudged to continue with the mutation after a lookup-only round; pure reads untouched (`97640ea`).
+- Streaming rejects hallucinated confirm-gated tools (`b826b66`, `a5f4adc`).
+- P0–P2 tool & intent comprehensive fixes (`0c9c49a`).
+- Release notes: `RELEASE_NOTES_v1.7.2.md`.
+
+## [1.7.1] - 2026-08-27
+
 ### Fixed (hardening, 17 fixes — parallel audit, no false positives, each 1 commit + 365 passed)
 - **Security:** HEAD/OPTIONS auth bypass (`main.py:383`), Body-Size `Content-Length` missing bypass (`main.py:425` → 411), stored XSS `onclick` (`static/index.html:2940,2289` → data-* delegation), API key URL leak `/debug?k=` (`main.py:389` → body `_k`).
 - **Logic:** duplicate-create race `llm/chat.py:280` per-call + cap 1, hallucinated tool `allowed_names` (`llm/chat.py:280`), `title.py:147` Ollama crash + hardcoded model, `retrieval.py:17` threshold/window, prompt injection `prompt.py:184` delimiters + Rule 15.

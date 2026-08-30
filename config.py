@@ -326,8 +326,10 @@ SETTINGS_SCHEMA: dict = {
     ]},
 }
 
-# Settings that require a server restart to take effect
-RESTART_REQUIRED_KEYS = {"LLM_NUM_BATCH", "LLM_BACKEND"}
+# Settings that require a server restart to take effect. Only keys settable
+# via PATCH /config/settings belong here — LLM_NUM_BATCH is not exposed in
+# SETTINGS_SCHEMA, so it could never be marked restart-required here.
+RESTART_REQUIRED_KEYS = {"LLM_BACKEND"}
 
 # Settings that must NEVER be changed via the API (security-sensitive).
 # LLM_BACKEND is intentionally NOT here: switching engines via PATCH
