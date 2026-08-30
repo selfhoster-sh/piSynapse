@@ -339,6 +339,15 @@ body.theme-black .msg-group.user .msg-meta .who{color:var(--text3)}
 .tool-status .bar-divider{flex:none;width:1px;height:16px;margin:2px 4px;border-radius:1px;background:var(--border)}
 .tool-status .fb-up.active,
 .tool-status .mark-btn.marked{color:var(--accent);background:color-mix(in srgb, var(--accent) 18%, transparent)}
+/* Universal-thumbs down button: a note dot marks a captured "why it was wrong". */
+.tool-status .mark-btn.msg-note{color:var(--warn,#e07c4f)}
+.tool-status .mark-btn.msg-note::after{content:'\270E';margin-left:1px;font-size:10px;line-height:1}
+.msg-note-editor{display:flex;align-items:center;gap:6px;margin:6px 6px 2px;max-width:min(480px,calc(100% - 40px))}
+.msg-note-editor input{flex:1;min-width:0;padding:7px 10px;border:1px solid var(--border);border-radius:9px;background:var(--surface2);color:var(--text);font-size:13px;outline:none}
+.msg-note-editor input:focus{border-color:var(--accent)}
+.msg-note-editor button{padding:7px 12px;border:0;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer}
+.msg-note-editor .note-save{background:var(--accent);color:#fff}
+.msg-note-editor .note-cancel{background:transparent;color:var(--text2);border:1px solid var(--border)}
 /* The correction picker opens BELOW the feedback row, in-flow (static child of
    the same message group): it expands the message column and can never overlap
    the bubble. Height stays clamped so a long list cannot blow the viewport.
@@ -1375,6 +1384,7 @@ const STRINGS = {
     markErr:'İşaretleme kaydedilemedi', markLoadErr:'Araç grupları yüklenemedi',
     markConfirm:'Doğruydu', markConfirmDone:'Onaylandı', markConfirmErr:'Onay kaydedilemedi',
     fbWhich:'Hangisi yanlıştı?',
+    notePlaceholder:'Neden yanlıştı? (opsiyonel)…', noteSave:'Kaydet', noteCancel:'İptal',
     genRetryLabel:'Araç yanıtları sıkıştırılıp yeniden deneniyor…',
     genRetryLeak:'Araç çağrısı düzeltiliyor…',
     genRetryEscalate:'Gerekli araçlar etkinleştiriliyor…'
@@ -1431,6 +1441,7 @@ const STRINGS = {
     markErr:'Could not save the marking', markLoadErr:'Could not load tool groups',
     markConfirm:'Correct', markConfirmDone:'Confirmed', markConfirmErr:'Could not save the confirmation',
     fbWhich:'Which one was wrong?',
+    notePlaceholder:'Why was it wrong? (optional)…', noteSave:'Save', noteCancel:'Cancel',
     genRetryLabel:'Compressing tool responses and retrying…',
     genRetryLeak:'Fixing a tool call…',
     genRetryEscalate:'Enabling the required tools…'
@@ -2640,7 +2651,7 @@ async function loadSession(sid){
   try{
     const d=await api('GET','/chat/history?session_id='+encodeURIComponent(sid));
     const msgs=d.messages||[];
-    if(msgs.length){ msgs.forEach(m=>addMsg(m.role,m.content,false,m.timestamp,m.images||null,m.reasoning||null,m.audits||null,m.id||null)); scrollEnd(true); refreshLastState(); } else showWelcomeMsg();
+    if(msgs.length){ msgs.forEach(m=>addMsg(m.role,m.content,false,m.timestamp,m.images||null,m.reasoning||null,m.audits||null,m.id||null,m.feedback||null,m.feedback_note||null)); scrollEnd(true); refreshLastState(); } else showWelcomeMsg();
   } catch { showWelcomeMsg(); }
 }
 
@@ -2750,7 +2761,7 @@ async function sendMsg(opts){
   if(!(opts && opts.regenText)) addMsg('user',text,true,null,images);
   showTyping(); setLoading(true); refreshLastState();
   let bubble=null, fullText='', thinkBox=null, fullReasoning='';
-  let gotReply=false, terminated=false, toolRow=null, roundAudits=[];
+  let gotReply=false, terminated=false, toolRow=null, roundAudits=[], noteGroup=null;
   // ⚠️ YENİ DAL EKLEME: done/confirm/error/catch — hepsi terminal durumdur.
   // Yeni bir son durum dalı eklersen, return'den ÖNCE `terminated=true` ekle.
   // Aksi halde finally bloğu gereksiz "boş yanıt" mesajı ekler.
@@ -2851,7 +2862,7 @@ async function sendMsg(opts){
             : data.error;
           const errText = '\u26A0\uFE0F '+eMsg;
           if(bubble){ bubble.textContent=errText; }
-          else { addMsg('assistant',errText); }
+          else { noteGroup=addMsg('assistant',errText); }
           toast(t('connErr'),true); setLoading(false); _pendingStream=null; return;
         }
       }
@@ -2859,7 +2870,7 @@ async function sendMsg(opts){
   } catch{
     terminated=true;
     if(currentSid === sid){
-      hideTyping(); if(bubble) bubble.textContent='\u26A0\uFE0F '+t('connErr'); else addMsg('assistant','\u26A0\uFE0F '+t('connErr')); toast(t('connErr'),true);
+      hideTyping(); if(bubble) bubble.textContent='\u26A0\uFE0F '+t('connErr'); else noteGroup=addMsg('assistant','\u26A0\uFE0F '+t('connErr')); toast(t('connErr'),true);
     }
   } finally{
     if(_pendingStream?.sid === sid) _pendingStream=null;
@@ -2875,7 +2886,7 @@ async function sendMsg(opts){
       if(currentSid === sid){
         const note = userAborted ? '\u2139\uFE0F '+t('stoppedMsg') : '\u26A0\uFE0F '+t('emptyReply');
         if(bubble) bubble.textContent=note;
-        else addMsg('assistant',note);
+        else noteGroup=addMsg('assistant',note);
       }
     }
     if(userAborted && currentSid === sid){
@@ -2892,6 +2903,9 @@ async function sendMsg(opts){
       }
     }
     if(currentSid === sid){
+      // Universal feedback: a round that never had a tool row still gets its
+      // one 👍/👎 pair here (the copy/listen/regen bar merges in below).
+      ensureRoundFeedback(bubble ? bubble.closest('.msg-group') : noteGroup, !!gotReply);
       // Stream finished: drop the caret, keep final markdown render
       if(bubble && fullText) bubble.innerHTML = renderMd(fullText);
       // Add copy/TTS actions to the streamed message (createStreamBubble adds none)
@@ -3007,7 +3021,7 @@ function refreshLastState(){
   });
 }
 
-function addMsg(role, content, forceScroll=true, ts=null, images=null, reasoning=null, audits=null, mid=null){
+function addMsg(role, content, forceScroll=true, ts=null, images=null, reasoning=null, audits=null, mid=null, feedback=null, fbNote=null){
   document.querySelector('.welcome')?.remove();
   const g=document.createElement('div'); g.className='msg-group '+role;
   if(mid) g.dataset.mid=String(mid);
@@ -3034,18 +3048,19 @@ function addMsg(role, content, forceScroll=true, ts=null, images=null, reasoning
   } else if(content) b.appendChild(document.createTextNode(content));
   document.getElementById('messages').appendChild(g);
   if(role==='assistant'){
-    // Historical messages restore their C-7 feedback pair when the message
-    // made audited tool calls — same placement as the live row (below the
-    // bubble), then the copy/listen/regen bar merges into it like live.
-    if(audits && audits.length){
-      const sfb=document.createElement('div'); sfb.className='tool-status';
-      g.appendChild(sfb);
-      settleFeedbackRow(sfb, true, audits.map(a=>({audit:a.audit_id, name:a.tool_name})));
-      applyFeedbackState(sfb, audits);
-    }
+    // Historical messages always restore their single feedback row (universal
+    // thumbs, C-12): audited rounds get the audit-bound pair with persisted
+    // correction/confirmation state, tool-less rounds the message-level pair.
+    // The copy/listen/regen bar merges into that row below, like live messages.
+    const sfb=document.createElement('div'); sfb.className='tool-status';
+    g.appendChild(sfb);
+    settleFeedbackRow(sfb, true, audits && audits.length ? audits.map(a=>({audit:a.audit_id, name:a.tool_name})) : []);
+    if(audits && audits.length) applyFeedbackState(sfb, audits);
+    else applyMsgFeedbackState(sfb, feedback, fbNote);
     attachMsgActions(g, content);
   }
   scrollEnd(forceScroll);
+  return g;
 }
 
 function applyFeedbackState(row, audits){
@@ -3158,9 +3173,11 @@ function settleFeedbackRow(row, ok, audits){
     row.appendChild(makeThumbUpBtn(row, audits.slice()));
     row.appendChild(makeMarkBtn(row, audits.slice()));
   } else {
-    const st=document.createElement('span'); st.className='fb-state'+(ok?'':' bad');
-    st.textContent=ok ? '\u2713' : '\u26A0';
-    row.appendChild(st);
+    // Universal thumbs (C-12 feedback): no audited tool call ran, but the
+    // round is still markable — a dropped intent, a clarifying-question reply
+    // or a hallucinated no-tool answer all become recorded data.
+    row.appendChild(makeMsgThumbUpBtn(row));
+    row.appendChild(makeMsgDownBtn(row));
   }
   return row;
 }
@@ -3208,6 +3225,117 @@ async function submitConfirmation(row, btn, audits){
     else toast(t('markConfirmErr'), true);
   }
   btn.disabled=false;
+}
+
+// ── Universal thumbs (message-level feedback) ─────────────────────────────────
+// Tool-less rounds (or rounds whose audits never materialized) still show a
+// 👍/👎 pair. Marking records a verdict on the message itself via
+// /chat/message-feedback — one row per message; a 👎 accepts an optional note
+// capturing WHY it was wrong (model dropped the intent, asked instead of
+// acting, hallucinated a no-tool reply, …). Without a DB anchor (mid) the
+// thumbs still respond locally but cannot persist.
+function makeMsgThumbUpBtn(row){
+  const b=document.createElement('button');
+  b.className='fb-up fb-thumb tts-btn';
+  b.innerHTML=_THUMB_UP_SVG;
+  b.title=t('markConfirm');
+  b.onclick=()=>msgMarkUp(row, b);
+  return b;
+}
+function makeMsgDownBtn(row){
+  const b=document.createElement('button');
+  b.className='mark-btn fb-thumb tts-btn';
+  b.innerHTML=_THUMB_DOWN_SVG;
+  b.title=t('markWrong');
+  b.onclick=()=>msgMarkDown(row, b);
+  return b;
+}
+function msgMid(row){ return parseInt((row.closest('.msg-group')||row).dataset.mid||'',10)||null; }
+async function msgMarkUp(row, btn){
+  removeMsgNoteEditor(row);
+  const mid=msgMid(row);
+  if(mid){
+    try{ await api('POST','/chat/message-feedback',{message_id:mid,value:'up'}); }
+    catch(e){ toast((e && e.message && e.message.startsWith('HTTP ')) ? t('markConfirmErr')+': '+e.message.slice(5) : t('markConfirmErr'), true); return; }
+  }
+  btn.classList.add('active'); btn.title=t('markConfirmDone');
+  const down=row.querySelector('.mark-btn');
+  if(down){ down.classList.remove('marked','msg-note'); down.title=t('markWrong'); delete down.dataset.note; }
+}
+async function msgMarkDown(row, btn){
+  removeMsgNoteEditor(row);
+  const mid=msgMid(row);
+  if(mid){
+    try{ await api('POST','/chat/message-feedback',{message_id:mid,value:'down'}); }
+    catch(e){ toast((e && e.message && e.message.startsWith('HTTP ')) ? t('markErr')+': '+e.message.slice(5) : t('markErr'), true); return; }
+  }
+  setMsgDown(row, btn);
+  openMsgNoteEditor(row, btn);
+}
+function setMsgDown(row, btn){
+  btn.classList.add('marked'); btn.title=t('markDone');
+  const up=row.querySelector('.fb-up');
+  if(up){ up.classList.remove('active'); up.title=t('markConfirm'); }
+}
+function clearMsgDown(row){
+  const down=row.querySelector('.mark-btn');
+  if(down){ down.classList.remove('marked','msg-note'); down.title=t('markWrong'); delete down.dataset.note; }
+}
+function ensureRoundFeedback(group, ok){
+  // A message group with no feedback row yet gets the universal message-level
+  // pair. Tool rounds already settled their audit row, so this is a no-op.
+  if(!group || !group.isConnected) return;
+  if(group.querySelector('.tool-status, .msg-actions')) return;
+  const row=document.createElement('div'); row.className='tool-status';
+  row.innerHTML='<span class="tlab"></span>';
+  group.appendChild(row);
+  settleFeedbackRow(row, !!ok, []);
+}
+function openMsgNoteEditor(row, btn){
+  document.querySelector('#messages .msg-note-editor')?.remove();
+  const editor=document.createElement('div'); editor.className='msg-note-editor';
+  const inp=document.createElement('input'); inp.type='text'; inp.placeholder=t('notePlaceholder');
+  inp.value=btn.dataset.note||'';
+  const save=document.createElement('button'); save.className='note-save'; save.textContent=t('noteSave');
+  const cancel=document.createElement('button'); cancel.className='note-cancel'; cancel.textContent=t('noteCancel');
+  const commit=async()=>{
+    const note=inp.value.trim();
+    const mid=msgMid(row);
+    if(mid){
+      try{ await api('POST','/chat/message-feedback',{message_id:mid,value:'down',note:note||null}); }
+      catch(e){ toast((e && e.message && e.message.startsWith('HTTP ')) ? t('markErr')+': '+e.message.slice(5) : t('markErr'), true); return; }
+    }
+    if(note){ btn.classList.add('msg-note'); btn.dataset.note=note; btn.title=note; }
+    else { btn.classList.remove('msg-note'); delete btn.dataset.note; btn.title=t('markDone'); }
+    editor.remove();
+  };
+  save.onclick=commit;
+  cancel.onclick=()=>editor.remove();
+  inp.addEventListener('keydown', e=>{
+    if(e.key==='Enter'){ e.preventDefault(); commit(); }
+    else if(e.key==='Escape'){ editor.remove(); }
+  });
+  editor.append(inp, save, cancel);
+  const host=row.parentNode || document.getElementById('messages');
+  if(row.after) row.after(editor); else host.appendChild(editor);
+  inp.focus(); inp.select();
+}
+function removeMsgNoteEditor(row){
+  row?.parentNode?.querySelectorAll('.msg-note-editor').forEach(el=>el.remove());
+  document.querySelector('#messages .msg-note-editor')?.remove();
+}
+function applyMsgFeedbackState(row, value, note){
+  if(value==='up'){
+    const up=row.querySelector('.fb-up');
+    if(up){ up.classList.add('active'); up.title=t('markConfirmDone'); }
+  } else if(value==='down'){
+    const down=row.querySelector('.mark-btn');
+    if(down){
+      down.classList.add('marked');
+      if(note){ down.classList.add('msg-note'); down.dataset.note=note; down.title=note; }
+      else down.title=t('markDone');
+    }
+  }
 }
 
 function openFeedbackTabs(row, btn, audits){

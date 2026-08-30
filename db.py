@@ -187,6 +187,17 @@ async def init_db():
     """)
 
     await db.execute("""
+        CREATE TABLE IF NOT EXISTS message_feedback (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            message_id INTEGER NOT NULL UNIQUE,
+            value      TEXT NOT NULL CHECK (value IN ('up','down')),
+            note       TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    await db.execute("""
         CREATE TABLE IF NOT EXISTS sessions (
             id          TEXT PRIMARY KEY,
             created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -584,6 +595,39 @@ async def set_tool_confirmation(audit_id: int) -> bool:
         return False
 
 
+async def upsert_message_feedback(message_id: int, value: str,
+                                  note: str | None = None) -> bool:
+    """Store a user's 👍/👎 verdict for an assistant message that had no tool
+    call (or whose round failed before any audit existed). One row per message:
+    pressing the other thumb overwrites the stored verdict; a note can be
+    attached to a 👎 to capture *why* it was wrong (model dropped the intent,
+    asked instead of acting, hallucinated, …). Never raises.
+    """
+    if value not in ("up", "down"):
+        return False
+    note = (note or "").strip() or None
+    try:
+        db = await get_db()
+        async with db.execute(
+            "SELECT role FROM conversations WHERE id = ?", (message_id,)
+        ) as cur:
+            row = await cur.fetchone()
+        if not row or row[0] != "assistant":
+            return False
+        await db.execute(
+            """INSERT INTO message_feedback (message_id, value, note, created_at, updated_at)
+               VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+               ON CONFLICT(message_id) DO UPDATE SET
+                 value = excluded.value, note = excluded.note, updated_at = CURRENT_TIMESTAMP""",
+            (message_id, value, note),
+        )
+        await _commit_with_retry(db)
+        return True
+    except Exception as e:
+        logger.warning(f"Message feedback upsert failed for message_id={message_id}: {e}")
+        return False
+
+
 async def link_audits_to_message(conversation_id: int, audit_ids: list[int]):
     """Bind audit rows to the assistant message that produced them.
 
@@ -966,6 +1010,7 @@ async def get_history(session_id: str, limit: int = 20, include_reasoning: bool 
     # /chat/history; the LLM context path keeps include_audits=False so audit
     # data never pollutes model input.
     audits_by_msg: dict[int, list[dict]] = {}
+    fb_by_msg: dict[int, tuple] = {}
     if include_audits and rows:
         ids = [r[0] for r in rows]
         ph = ",".join("?" * len(ids))
@@ -980,6 +1025,14 @@ async def get_history(session_id: str, limit: int = 20, include_reasoning: bool 
                     {"audit_id": aid, "tool_name": tool,
                      "confirmed_at": c_at, "corrected_at": cor_at, "expected_group": grp}
                 )
+        # Message-level verdict (👍/👎) for messages without tool audits —
+        # same /chat/history-only gate so context never sees it.
+        async with db.execute(
+            f"SELECT message_id, value, note FROM message_feedback WHERE message_id IN ({ph})",
+            tuple(ids),
+        ) as cur:
+            for mid, val, note in await cur.fetchall():
+                fb_by_msg[mid] = (val, note)
     result = []
     for r in reversed(rows):
         item = {"id": r[0], "role": r[1], "content": r[2], "timestamp": r[4]}
@@ -992,6 +1045,11 @@ async def get_history(session_id: str, limit: int = 20, include_reasoning: bool 
             item["reasoning"] = r[5]
         if include_audits and r[0] in audits_by_msg:
             item["audits"] = audits_by_msg[r[0]]
+        if include_audits and r[0] in fb_by_msg:
+            fbval, fbnote = fb_by_msg[r[0]]
+            item["feedback"] = fbval
+            if fbnote:
+                item["feedback_note"] = fbnote
         result.append(item)
     return result
 

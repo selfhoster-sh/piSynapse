@@ -16,6 +16,22 @@
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 - **Sanitization rule:** this file may be published. Never write personal data, identity clues, deployment addresses (hostnames, IPs, ports), or accounts into it. Keep every narrative in English; Turkish inline tokens are allowed only as product corpus / i18n test data.
 
+## 2026-08-31 — Faz C-13: Universal message feedback + weather condition
+- **Problem (user report):** after an interrupted "email all notes" round (model timed out), the user expected the 👍/👎 pair on EVERY assistant reply — including tool-less messages such as "Rica ederim kanka!". Root finding: thumbs were audit-bound (C-7), so a no-tool reply showed neither thumb nor quiet state → unmarkable. The user's rationale: subtle failures (model asking a clarifying question instead of acting, dropped intent, hallucinated no-tool reply) are exactly the data to capture; every round must be markable.
+- **Backend changes:**
+  - `db.py`: new `message_feedback` table (`message_id`, `value` up/down, `note`, timestamps; UNIQUE per message, created by `CREATE TABLE IF NOT EXISTS` in `init_db`, no version bump needed). Added `upsert_message_feedback()` (rejects user/missing messages, overwrite semantics). `get_history`: includes `feedback` / `feedback_note` for assistant messages, gated by `include_audits` so LLM context stays clean.
+  - `routers/chat.py`: `POST /chat/message-feedback` (`{message_id, value, note?}`; 400 bad value, 404 missing/not-assistant).
+- **Frontend changes:**
+  - `settleFeedbackRow`: audit row keeps its audit-bound thumbs; the non-audit `else` branch now renders a universal message-level thumbs pair instead of the quiet ✓/⚠ state.
+  - New handlers `msgMarkUp`/`msgMarkDown`/`openMsgNoteEditor`/`applyMsgFeedbackState`/`ensureRoundFeedback`: 👍/👎 persist via the new endpoint; 👎 opens an inline optional-reason editor (Enter saves, Esc cancels, note dot `.msg-note` + tooltip). `msgMid` reads the anchor from the message group's `dataset.mid`.
+  - `sendMsg` finally: `ensureRoundFeedback` guarantees every round's message gets its row (error/empty/aborted rounds included via `noteGroup` capture), placed before `attachMsgActions` so the copy/listen/regen bar still merges into the row.
+  - `addMsg`/`loadSession`: every assistant message gets the row on history render; `feedback`/`feedback_note` restore the persisted verdict/note.
+  - i18n: `notePlaceholder`/`noteSave`/`noteCancel` (tr/en). CSS: `.mark-btn.msg-note` dot, `.msg-note-editor`.
+- **Weather:** `weather.py` now requests `weather_code` and maps WMO codes to Turkish conditions (`_wmo_condition`), so the reply reads e.g. "İstanbul: 24°C, Parçalı bulutlu, feels like 26°C".
+- **Verification:**
+  - pytest **462** (new: upsert insert/update, user/missing rejection, history feedback gating, endpoint 200/400/404, `_wmo_condition` mapping).
+  - e2e **31/31** (new `message-feedback.spec.cjs` ×4: tool-less row + data-mid, up persistence, down note editor + persisted note, history restore). Updated `mark-flow`/`feedback-confirm` (audit_id-null now shows the universal pair → note editor, no group picker) and `branch-regen` (bars live in `.tool-status.done` now). `node --check` ✓.
+
 ## 2026-08-30 — Faz C-12: Per-message regenerate with branch semantics
 - **Problem & Research:** The `.last-of-type` check previously restricted regenerate to the last assistant message, but in history renders every older assistant kept a stale button that falsely re-ran the *last* user prompt. Research into industry standards (AWS Cloudscape, assistant-ui / shadcn, MUI X) confirmed per-message regenerate/actions is standard, but requires branch semantics: regenerating an older message must truncate the conversation from that point forward (both in DB and DOM) and re-run that message's own prompt.
 - **Backend changes:**

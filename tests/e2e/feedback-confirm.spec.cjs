@@ -82,13 +82,16 @@ test.describe('tool confirmation flow', () => {
     expect(stubs.sentConfirmations).toHaveLength(1);
   });
 
-  test('no thumbs when audit_id is null (nothing to confirm or correct)', async ({ page }) => {
+  test('no audit_id: universal thumbs still render as a message-level pair', async ({ page }) => {
+    // C-12 feedback: a round with no audited tool call keeps a 👍/👎 pair so
+    // it stays markable (the down thumb captures a message-level verdict +
+    // optional note instead of a tool correction).
     await installBackendStubs(page, { auditId: null });
     await boot(page);
     await sendTurn(page);
 
     await expect(page.locator('.tool-status')).toHaveCount(1);
-    await expect(page.locator('.tool-status .mark-btn')).toHaveCount(0);
-    await expect(page.locator('.tool-status .fb-up')).toHaveCount(0);
+    await expect(page.locator('.tool-status .mark-btn')).toHaveCount(1);
+    await expect(page.locator('.tool-status .fb-up')).toHaveCount(1);
   });
 });

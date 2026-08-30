@@ -888,3 +888,87 @@ def test_delete_branch_endpoint(correction_client):
     history = asyncio.run(get_history("b2", limit=10))
     assert len(history) == 1
     assert history[0]["role"] == "user"
+
+
+# -- Message-level feedback (universal thumbs, C-12) --
+
+def test_upsert_message_feedback_insert_and_update(audit_db):
+    mid = asyncio.run(dbmod.save_message("fb1", "assistant", "selam"))
+    assert mid is not None
+
+    ok = asyncio.run(dbmod.upsert_message_feedback(mid, "down", "model soru sordu"))
+    assert ok is True
+    rows = asyncio.run(_fetch_all(
+        "SELECT message_id, value, note FROM message_feedback WHERE message_id = ?",
+        (mid,),
+    ))
+    assert rows == [(mid, "down", "model soru sordu")]
+
+    # Overwrite with the opposite thumb + note cleared.
+    ok = asyncio.run(dbmod.upsert_message_feedback(mid, "up"))
+    assert ok is True
+    rows = asyncio.run(_fetch_all(
+        "SELECT value, note FROM message_feedback WHERE message_id = ?", (mid,)
+    ))
+    assert rows == [("up", None)]
+
+
+def test_upsert_message_feedback_rejects_user_or_missing_message(audit_db):
+    uid = asyncio.run(dbmod.save_message("fb2", "user", "merhaba"))
+    assert asyncio.run(dbmod.upsert_message_feedback(uid, "up")) is False
+    assert asyncio.run(dbmod.upsert_message_feedback(999999, "up")) is False
+    assert asyncio.run(dbmod.upsert_message_feedback(uid, "sideways")) is False
+
+
+def test_history_includes_message_feedback(audit_db):
+    asyncio.run(dbmod.save_message("fb3", "user", "notları listele"))
+    mid = asyncio.run(dbmod.save_message("fb3", "assistant", "işte notlar"))
+    asyncio.run(dbmod.upsert_message_feedback(mid, "down", "niyet algılanmadı"))
+
+    hist = asyncio.run(dbmod.get_history("fb3", limit=10, include_audits=True))
+    asst = [m for m in hist if m["role"] == "assistant"][0]
+    assert asst["feedback"] == "down"
+    assert asst["feedback_note"] == "niyet algılanmadı"
+    # LLM context path must stay clean of feedback data.
+    ctx = asyncio.run(dbmod.get_history("fb3", limit=10, include_audits=False))
+    assert "feedback" not in ctx[0] and "feedback_note" not in ctx[0]
+
+
+def test_message_feedback_endpoint_insert_and_update(correction_client):
+    mid = asyncio.run(dbmod.save_message("fb4", "assistant", "yanıt"))
+    resp = correction_client.post(
+        "/chat/message-feedback",
+        json={"message_id": mid, "value": "down", "note": "gereksiz soru"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["value"] == "down"
+
+    resp = correction_client.post(
+        "/chat/message-feedback",
+        json={"message_id": mid, "value": "up"},
+    )
+    assert resp.status_code == 200
+    rows = asyncio.run(_fetch_all("SELECT value, note FROM message_feedback"))
+    assert rows == [("up", None)]
+
+
+def test_message_feedback_endpoint_bad_value_and_missing(correction_client):
+    mid = asyncio.run(dbmod.save_message("fb5", "assistant", "yanıt"))
+    resp = correction_client.post(
+        "/chat/message-feedback",
+        json={"message_id": mid, "value": "sideways"},
+    )
+    assert resp.status_code == 400
+
+    resp = correction_client.post(
+        "/chat/message-feedback",
+        json={"message_id": 424242, "value": "up"},
+    )
+    assert resp.status_code == 404
+
+    uid = asyncio.run(dbmod.save_message("fb5", "user", "merhaba"))
+    resp = correction_client.post(
+        "/chat/message-feedback",
+        json={"message_id": uid, "value": "up"},
+    )
+    assert resp.status_code == 404
