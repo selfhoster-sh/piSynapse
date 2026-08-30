@@ -28,6 +28,9 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   --accent-h:#e08020; --text:#e2e2e8; --text2:#8a8a9e; --text3:#83839c;
   --text4:#626276; --user-bg:#111118; --danger:#e05555; --success:#4ecb71;
   --btn-primary:#d4d5db;
+  /* Raised row/tap feedback below the surface3 step so sidebar items stay
+     clearly distinguishable in both normal and glass mode */
+  --row-hover:#242430;
   --glow:rgba(240,148,58,.30);
   --r:16px; --r-sm:10px; --r-chat:18px;
   --shadow-sm:0 1px 3px rgba(0,0,0,.2);
@@ -64,8 +67,10 @@ body.theme-black:not(.glass-mode) #send-btn{color:#141419;
 html,body{height:100%;height:100svh;overflow:hidden;padding:0;margin:0}
 body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
   background:var(--bg);color:var(--text);display:flex;font-size:15px;line-height:1.6;
-  -webkit-text-size-adjust:100%;height:100%;font-feature-settings:'cv02','cv03','cv04','cv11';
-  overflow-x:hidden;font-weight:500}
+  -webkit-text-size-adjust:100%;-webkit-tap-highlight-color:transparent;height:100%;
+  font-feature-settings:'cv02','cv03','cv04','cv11';
+  overflow-x:hidden;font-weight:500;
+  -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility}
 
 ::-webkit-scrollbar{width:5px;height:5px}
 ::-webkit-scrollbar-track{background:transparent}
@@ -120,7 +125,13 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
   border-radius:var(--r-sm);cursor:pointer;border:1px solid transparent;
   transition:background-color .15s,border-color .15s;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 @media (hover:hover){
-.sess-item:hover:not(:focus){background:var(--surface3);border-color:rgba(255,255,255,.05)}}
+.sess-item:hover:not(:focus){background:var(--row-hover);border-color:rgba(255,255,255,.08)}
+.sess-item:hover:not(:focus) .sess-del{opacity:1;pointer-events:auto}}
+/* Press/tap feedback: scale + lift so touch users never feel a "stuck" row.
+   :active shows nothing on touch until the finger lands, then brightens. */
+.sess-item:active{transform:scale(.985);background:var(--row-hover);border-color:rgba(255,255,255,.08)}
+/* The rest of the sidebar chrome gets a quick tap shrink too */
+.icon-btn:active,.mem-btn:active,.settings-btn:active,#search-toggle:active,#compact-toggle:active{transform:scale(.93)}
 .sess-item.active{background:var(--accent-d);border-color:rgba(124,108,240,.25);
   box-shadow:inset 3px 0 0 var(--accent)}
 .sess-item.active .sess-name{color:var(--accent);font-weight:600}
@@ -138,7 +149,7 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
   opacity:0;pointer-events:none;background:none;border:none;color:var(--text3);
   cursor:pointer;padding:4px;border-radius:4px;line-height:1;transition:opacity .15s,color .15s,background .15s}
 @media (hover:hover){
-.sess-item:hover:not(:focus){background:var(--surface3);border-color:rgba(255,255,255,.05)}
+.sess-item:hover:not(:focus){background:var(--row-hover);border-color:rgba(255,255,255,.08)}
 .sess-item:hover:not(:focus) .sess-time{opacity:0}
 .sess-item:hover .sess-del{opacity:1;pointer-events:auto}
 .sess-del:hover:not(:focus){color:var(--danger);background:rgba(224,85,85,.1)}}
@@ -696,6 +707,7 @@ body.glass-mode{
   --surface3:color-mix(in srgb, var(--accent) 5%, rgba(38,38,48,.42));
   --border:color-mix(in srgb, var(--accent) 22%, rgba(255,255,255,.13));
   --user-bg:color-mix(in srgb, var(--accent) 10%, rgba(28,28,40,.5));
+  --row-hover:color-mix(in srgb, var(--accent) 13%, rgba(255,255,255,.05));
 }
 @supports not (color-mix(in srgb, red, blue)){
   body.glass-mode{
@@ -3601,6 +3613,15 @@ function toggleCompact(){
 function applyStagger(){
   document.querySelectorAll('.sess-item').forEach((el, i) => {
     el.style.animationDelay = (0.02 * (i + 1)) + 's';
+    // Release the entrance fill once it finishes (animation pins transform,
+    // which would otherwise swallow the :active press scale forever).
+    const done = (e) => {
+      if(e.animationName !== 'msgSlideIn') return;
+      el.style.animation = 'none';
+      el.style.animationDelay = '';
+      el.removeEventListener('animationend', done);
+    };
+    el.addEventListener('animationend', done, { once: true });
   });
 }
 
@@ -3746,17 +3767,16 @@ if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.s
   body:not(.glass-mode) #send-btn:active:not(:disabled){transform:scale(.93);box-shadow:0 4px 24px var(--accent-d), inset 0 0 14px var(--accent)}
   #logo-btn:active{transform:scale(.94)}
   .sess-item{border:1px solid transparent;transition:all .2s,border-color .25s,box-shadow .25s}
-  .sess-item:hover:not(:focus){background:var(--surface2);border-color:rgba(255,255,255,.04)}
   .sess-item.active{background:var(--accent-d);border-color:rgba(124,108,240,.25);box-shadow:inset 3px 0 0 var(--accent),0 0 20px rgba(240,148,58,.06)}
 
   /* ── Search Box (hidden; opens below the SOHBETLER label) ─────── */
   /* Instant show/hide + short fade. Icon overlays the input (absolute,
      container height == input row so top:50% stays centered). No height
      animation, no overflow clipping. */
-  .sb-search{display:none;padding:0 12px;position:relative}
+  .sb-search{display:none;padding:0 12px;position:relative;margin:4px 0 8px}
   .sb-search.open{display:flex;animation:sbSearchIn .18s ease}
   @keyframes sbSearchIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
-  .sb-search input{width:100%;flex:1;min-width:0;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);padding:7px 10px 7px 30px;color:var(--text);font-size:13px;font-family:inherit;outline:none;transition:border-color .2s;margin:4px 0 8px}
+  .sb-search input{width:100%;flex:1;min-width:0;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);padding:7px 10px 7px 30px;color:var(--text);font-size:13px;font-family:inherit;outline:none;transition:border-color .2s}
   .sb-search input:focus{border-color:var(--accent)}
   .sb-search input::placeholder{color:var(--text3)}
   .sb-search .search-icon{position:absolute;left:22px;top:50%;transform:translateY(-50%);color:var(--text4);pointer-events:none}
