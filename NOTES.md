@@ -16,6 +16,14 @@
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 - **Sanitization rule:** this file may be published. Never write personal data, identity clues, deployment addresses (hostnames, IPs, ports), or accounts into it. Keep every narrative in English; Turkish inline tokens are allowed only as product corpus / i18n test data.
 
+## 2026-08-31 — Faz C-13b: Weather ticker widget → condition icon + structured payload
+- Follow-up to C-13: the sidebar/topbar weather ticker showed only the raw summary text with a static sun-cloud icon, so the new condition label wasn't visualized.
+- `weather.py`: introduced `_wmo_kind(code)` — coarse icon category (`clear/partly/cloud/fog/drizzle/rain/snow/storm/unknown`) — and factored the fetch into `_weather_data(city)` returning `{city, temp_c, feels_c, condition, wmo_code, kind}`; `get_weather()` (LLM tool) now builds its string from the same fetch. Structuring the payload once keeps the tool and widget consistent.
+- `routers/widgets.py`: `/widget/weather` returns the structured fields (`temp_c`, `feels_c`, `condition`, `wmo_code`, `kind`) alongside the legacy `summary`; unknown city / fetch failure now correctly returns `ok:false` instead of masquerading an "ERROR:" string as success.
+- Frontend: `refreshTicker` caches `kind/temp_c/condition`; `rebuildTickerFromCache` picks the icon by `kind` (sun, sun-cloud, cloud, fog, cloud-drizzle, cloud-rain, cloud-snow, lightning) and renders the compact `24°C · Parçalı bulutlu` item. Defensive fallback: if the endpoint answer lacks structured fields (old server), it keeps the previous summary-text + sun-cloud behavior.
+- e2e stub now returns the structured payload; no assert touched the ticker.
+- Verification: pytest **465** (+2 widget tests, +`_wmo_kind` mapping), e2e **31/31**, `node --check` ✓.
+
 ## 2026-08-31 — Faz C-13: Universal message feedback + weather condition
 - **Problem (user report):** after an interrupted "email all notes" round (model timed out), the user expected the 👍/👎 pair on EVERY assistant reply — including tool-less messages such as "Rica ederim kanka!". Root finding: thumbs were audit-bound (C-7), so a no-tool reply showed neither thumb nor quiet state → unmarkable. The user's rationale: subtle failures (model asking a clarifying question instead of acting, dropped intent, hallucinated no-tool reply) are exactly the data to capture; every round must be markable.
 - **Backend changes:**

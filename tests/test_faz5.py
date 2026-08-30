@@ -116,6 +116,42 @@ def test_widget_weather_missing_city(monkeypatch):
     assert result["summary"] == ""
 
 
+def test_widget_weather_returns_structured_data(monkeypatch):
+    import config
+    from routers import widgets
+
+    async def fake_weather(city):
+        assert city == "Ankara"
+        return {"city": "Ankara", "temp_c": 24, "feels_c": 26,
+                "condition": "Parçalı bulutlu", "wmo_code": 2, "kind": "partly"}
+
+    monkeypatch.setattr(config, "DEFAULT_CITY", "Ankara")
+    monkeypatch.setattr("weather._weather_data", fake_weather)
+    result = asyncio.run(widgets.widget_weather())
+    assert result["ok"] is True
+    assert result["temp_c"] == 24
+    assert result["feels_c"] == 26
+    assert result["condition"] == "Parçalı bulutlu"
+    assert result["kind"] == "partly"
+    assert result["wmo_code"] == 2
+    assert "24°C" in result["summary"]
+
+
+def test_widget_weather_unknown_city_returns_ok_false(monkeypatch):
+    import config
+    from routers import widgets
+
+    async def fake_weather(city):
+        return None
+
+    monkeypatch.setattr(config, "DEFAULT_CITY", "Atlantis")
+    monkeypatch.setattr("weather._weather_data", fake_weather)
+    result = asyncio.run(widgets.widget_weather())
+    assert result["ok"] is False
+    assert result["error"]
+    assert result["summary"] == ""
+
+
 def test_widget_calendar_returns_events(monkeypatch):
     import calendar_ops
     from routers import widgets

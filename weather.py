@@ -61,35 +61,77 @@ def _wmo_condition(code: int | None) -> str:
     return "Bilinmiyor"
 
 
-async def get_weather(city: str = "") -> str:
+def _wmo_kind(code: int | None) -> str:
+    """Coarse condition category — the widget's icon key (clear/partly/...)."""
+    if code is None:
+        return "unknown"
+    if code == 0:
+        return "clear"
+    if code in (1, 2, 3):
+        return "partly" if code in (1, 2) else "cloud"
+    if code in (45, 48):
+        return "fog"
+    if 51 <= code <= 57:
+        return "drizzle"
+    if (61 <= code <= 67) or (80 <= code <= 82):
+        return "rain"
+    if (71 <= code <= 77) or code in (85, 86):
+        return "snow"
+    if 95 <= code <= 99:
+        return "storm"
+    return "unknown"
+
+
+async def _weather_data(city: str = "") -> dict | None:
+    """Structured weather payload for the widget. Returns None on any failure
+    (geocoding miss, HTTP error, parsing). City is always resolved before use.
+    """
     city = city or config.DEFAULT_CITY or "London"
     client = _get_client()
-    try:
-        coords = _geo_lookup(city)
-        if coords is None:
-            geo = await client.get(
-                "https://nominatim.openstreetmap.org/search",
-                params={"q": city, "format": "json", "limit": 1},
-                headers={"User-Agent": "piSynapse/1.0"},
-            )
-            gd = geo.json()
-            if not gd:
-                return f"ERROR: City not found: {city}"
-            coords = (gd[0]["lat"], gd[0]["lon"])
-            _cache_city(city, *coords)
-        lat, lon = coords
-        w = await client.get(
-            "https://api.open-meteo.com/v1/forecast",
-            params={
-                "latitude": lat, "longitude": lon,
-                "current": "temperature_2m,apparent_temperature,weather_code",
-                "timezone": "auto",
-            },
+    coords = _geo_lookup(city)
+    if coords is None:
+        geo = await client.get(
+            "https://nominatim.openstreetmap.org/search",
+            params={"q": city, "format": "json", "limit": 1},
             headers={"User-Agent": "piSynapse/1.0"},
         )
-        c = w.json()["current"]
-        cond = _wmo_condition(c.get("weather_code"))
-        return f"{city}: {c['temperature_2m']}°C, {cond}, feels like {c['apparent_temperature']}°C"
+        gd = geo.json()
+        if not gd:
+            return None
+        coords = (gd[0]["lat"], gd[0]["lon"])
+        _cache_city(city, *coords)
+    lat, lon = coords
+    w = await client.get(
+        "https://api.open-meteo.com/v1/forecast",
+        params={
+            "latitude": lat, "longitude": lon,
+            "current": "temperature_2m,apparent_temperature,weather_code",
+            "timezone": "auto",
+        },
+        headers={"User-Agent": "piSynapse/1.0"},
+    )
+    c = w.json()["current"]
+    code = c.get("weather_code")
+    return {
+        "city": city,
+        "temp_c": c["temperature_2m"],
+        "feels_c": c.get("apparent_temperature"),
+        "condition": _wmo_condition(code),
+        "wmo_code": code,
+        "kind": _wmo_kind(code),
+    }
+
+
+async def get_weather(city: str = "") -> str:
+    city = city or config.DEFAULT_CITY or "London"
+    try:
+        data = await _weather_data(city)
+        if data is None:
+            return f"ERROR: City not found: {city}"
+        feels = data["feels_c"]
+        return (f"{data['city']}: {data['temp_c']}°C, {data['condition']}, "
+                f"feels like {feels}°C" if feels is not None
+                else f"{data['city']}: {data['temp_c']}°C, {data['condition']}")
     except Exception as e:
         logger.error(f"Weather API error: {e}")
         return "ERROR: unable to fetch weather data"
