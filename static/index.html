@@ -105,8 +105,8 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
   cursor:pointer;text-align:left;font-family:inherit;
   transition:transform .15s,opacity .15s;display:flex;align-items:center;gap:8px}@media (hover:hover){
 .new-btn:hover,.top-new-btn:hover{opacity:.9}}
-.new-btn:active{transform:scale(.98);opacity:.85}
-.top-new-btn:active{transform:scale(.98);opacity:.85}
+.new-btn:active,.new-btn.tap-flash{transform:scale(.98);opacity:.85}
+.top-new-btn:active,.top-new-btn.tap-flash{transform:scale(.98);opacity:.85}
 
 #sidebar-scroll-container{flex:1;overflow-y:auto;display:flex;flex-direction:column;padding-bottom:10px}
 .sb-label{padding:12px 12px 6px;font-size:11px;font-weight:700;
@@ -1032,6 +1032,8 @@ body.glass-mode #compact-toggle:hover{box-shadow:0 0 14px color-mix(in srgb, var
 /* Glass press: quick scale-down + accent glow burst */
 body.glass-mode .new-btn:active,
 body.glass-mode .top-new-btn:active,
+body.glass-mode .new-btn.tap-flash,
+body.glass-mode .top-new-btn.tap-flash,
 body.glass-mode .w-start:active,
 body.glass-mode #logo-btn:active,
 body.glass-mode .icon-btn:active,
@@ -1492,6 +1494,17 @@ document.addEventListener('click',()=>document.querySelectorAll('.sel-wrap.open'
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape') document.querySelectorAll('.sel-wrap.open').forEach(w=>w.classList.remove('open'));
 });
+// Press feedback that survives a quick tap: :active is too brief to paint on
+// touch (it only reads as a visible effect while the finger is held). Mirroring
+// the CTA buttons' :active styles, .tap-flash lingers ~250ms from pointerdown so
+// even an instant tap shows the pressed glow, then clears on its own.
+document.addEventListener('pointerdown', e => {
+  const b = e.target.closest('.new-btn,.top-new-btn');
+  if(!b) return;
+  b.classList.add('tap-flash');
+  clearTimeout(b._pflash);
+  b._pflash = setTimeout(()=> b.classList.remove('tap-flash'), 250);
+}, { passive: true });
 
 function t(k){ return STRINGS[lang][k] || k; }
 
@@ -4409,7 +4422,7 @@ if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.s
   @media (hover:hover){
   .new-btn:hover,.top-new-btn:hover{transform:scale(1.02)}
   }
-  .new-btn:active{transform:scale(.97);box-shadow:0 6px 18px rgba(0,0,0,.28)}
+  .new-btn:active,.new-btn.tap-flash{transform:scale(.97);box-shadow:0 6px 18px rgba(0,0,0,.28)}
   .inline-think-btn:active,.tts-btn:active{transform:scale(.94)}
   body:not(.glass-mode) #send-btn:active:not(:disabled){transform:scale(.93);box-shadow:0 4px 24px var(--accent-d), inset 0 0 14px var(--accent)}
   #logo-btn:active{transform:scale(.94)}

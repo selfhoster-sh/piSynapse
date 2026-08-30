@@ -20,6 +20,7 @@
 - Bug report: on mobile, in glass mode, the new-chat buttons' press effects seemed dead. Diagnosed via touch-emulated e2e probe: every other hover rule in the app is gated to `@media (hover:hover)`, but the bottom style block had an *ungated* `.new-btn:hover,.top-new-btn:hover{transform:scale(1.02)}`. On touch, `:hover` goes sticky — after the first tap the CTA rests at 102% scale forever, so the `:active` shrink (glass: scale(.95)+accent glow burst) read as broken.
 - Fix (frontend only): wrapped that hover rule in `@media (hover:hover)`. Press feedback itself was verified intact (desktop glass `:active` → matrix scale .95 + glow; touch `:active` fires on real taps).
 - Verification: new `cta-tap.spec.cjs` ×2 — touch+glass tap returns the top new-chat button to `transform:none`, and desktop hover still enlarges the CTA (hover preserved). Full e2e **35/35**, `node --check` ✓.
+- Follow-up: on a real phone the effect only showed while the finger was *held* — a quick tap's `:active` is too brief to paint. Added a `pointerdown` listener (passive) that pins `.tap-flash` on `.new-btn/.top-new-btn` for ~250 ms, mirroring the `:active` styles (glass: scale(.95)+accent glow). Quick taps now flash visibly, then return to rest; `cta-tap` additionally asserts the flash appears and clears.
 
 ## 2026-08-31 — Faz C-13c: Weather ticker follows UI language + kind-driven icon
 - Bug report: after switching the UI language in settings the ticker stayed unchanged (condition still Turkish) and the icon didn't move. Two root causes:
