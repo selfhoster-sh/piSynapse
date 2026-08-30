@@ -298,11 +298,16 @@ body.theme-black .msg-group.user .msg-meta .who{color:var(--text3)}
 .bubble blockquote{border-left:3px solid var(--accent);padding-left:14px;
   color:var(--text2);margin:10px 0;font-style:italic}
 .table-wrapper{overflow-x:auto;margin:12px 0;border-radius:10px;border:1px solid var(--border)}
-.bubble table{border-collapse:collapse;width:100%;margin:0;font-size:13.5px}
-.bubble th,.bubble td{border:1px solid var(--border);padding:8px 12px;text-align:left;white-space:nowrap}
-.bubble th{background:var(--surface2);font-weight:600;color:var(--text)}
+/* GitHub-style tables: no vertical cage — hairline row separators, sticky filled
+   header so column names stay visible while horizontally scrolling on mobile,
+   and a faint-but-seen zebra. Width is content-driven yet never narrower than
+   the bubble (wide tables scroll inside the wrapper). */
+.bubble table{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;margin:0;font-size:13.5px}
+.bubble th,.bubble td{border:0;border-bottom:1px solid var(--border);padding:8px 12px;text-align:left;white-space:nowrap}
+.bubble th{position:sticky;top:0;z-index:1;background:var(--surface3);font-weight:600;color:var(--text);border-bottom:2px solid var(--border)}
 .bubble td{color:var(--text2)}
-.bubble tbody tr:nth-child(even) td{background:rgba(255,255,255,.02)}
+.bubble tbody tr:nth-child(even) td{background:rgba(255,255,255,.035)}
+.bubble tbody tr:last-child td{border-bottom:0}
 
 .typing{display:flex;align-items:center;gap:6px;padding:12px 0;width:fit-content}
 .typing span{width:8px;height:8px;border-radius:50%;background:var(--accent);
