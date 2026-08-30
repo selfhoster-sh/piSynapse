@@ -106,8 +106,12 @@ _session_limiter = _SessionRateLimiter(rpm=20)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if not API_KEY:
-        logger.warning("⚠  API_KEY is not set — all endpoints are UNPROTECTED. "
-                       "Set API_KEY in .env for production use.")
+        logger.warning(
+            "⚠  API_KEY is not set — the API now runs FAIL-CLOSED: every "
+            "non-public endpoint returns 503 until you set API_KEY in .env "
+            "(generate one with the installer or `python -c 'import secrets; "
+            "print(secrets.token_urlsafe(32))'`)."
+        )
 
     if not TRUSTED_HOSTS:
         logger.warning(
@@ -182,8 +186,6 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"Warmup failed: {e}")
 
-    asyncio.create_task(_warmup())
-
     # Pre-warm the embedding model (used by retrieval, intent and memory
     # search). Without this the very first chat request pays the ONNX model
     # load inside the request path, inflating TTFT.
@@ -194,7 +196,6 @@ async def lifespan(app: FastAPI):
             logger.info("Embedding model ready (warmed up)")
         except Exception as e:
             logger.warning(f"Embedding warmup failed: {e}")
-    asyncio.create_task(_warmup_embeddings())
 
     # Check transcription dependencies
     import shutil as _shutil
@@ -214,14 +215,18 @@ async def lifespan(app: FastAPI):
                 logger.warning("Whisper model unavailable — install faster-whisper or openai-whisper")
         except Exception as e:
             logger.warning(f"Whisper preload failed: {e}")
-    asyncio.create_task(_preload_whisper())
+    background_tasks = [
+        asyncio.create_task(_warmup()),
+        asyncio.create_task(_warmup_embeddings()),
+        asyncio.create_task(_preload_whisper()),
+    ]
 
     yield
 
     # Cancel the background loops so the app can shut down cleanly.
-    for task in (rollup_task, cleanup_task):
+    for task in (rollup_task, cleanup_task, *background_tasks):
         task.cancel()
-    for task in (rollup_task, cleanup_task):
+    for task in (rollup_task, cleanup_task, *background_tasks):
         try:
             await task
         except asyncio.CancelledError:
@@ -255,7 +260,7 @@ app = FastAPI(
         "- Offline: use `POST /chat/sync` to batch queue commands when reconnected.\n"
         "- Rate limits: 30 req/min per IP, 20 req/min per session."
     ),
-    version="2.0.0",
+    version="1.7.2",
     openapi_tags=[
         {"name": "chat", "description": "Core chat, streaming, and message management"},
         {"name": "sessions", "description": "Session lifecycle (create, list, rename, delete)"},
@@ -369,6 +374,24 @@ async def trusted_host_middleware(request: Request, call_next):
     return await call_next(request)
 
 
+# ── Middleware: hardening response headers ─────────────────────────────────────
+
+@app.middleware("http")
+async def hardening_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault(
+        "Permissions-Policy",
+        "geolocation=(), microphone=(), camera=(), payment=(), usb=()",
+    )
+    # HSTS only over HTTPS — harmless if absent over plaintext HTTP.
+    if request.url.scheme == "https":
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
+
+
 # ── Middleware: API Key auth + Rate limiting + Body size ───────────────────────
 
 _MAX_BODY_BYTES = 4 * 1024 * 1024  # 4 MB
@@ -407,8 +430,13 @@ async def security_middleware(request: Request, call_next):
         if not hmac.compare_digest(key, API_KEY):
             return JSONResponse(status_code=401, content={"detail": "Invalid or missing API key"})
 
-    # --- API Key verification ---
-    if API_KEY and not is_exempt and not is_debug:
+    # --- API Key verification (fail-closed: no key configured = no access) ---
+    if not is_exempt and not is_debug:
+        if not API_KEY:
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "Server misconfigured: API_KEY is not set in .env. Refusing to serve unprotected endpoints."},
+            )
         key = request.headers.get("x-api-key", "")
         if not hmac.compare_digest(key, API_KEY):
             return JSONResponse(status_code=401, content={"detail": "Invalid or missing API key"})

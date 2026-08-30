@@ -1193,10 +1193,10 @@ const STRINGS = {
     newChat:'Yeni sohbet', chats:'Sohbetler', mem:'Hafıza', memTitle:'Hafıza',
     ph:'Bir şey sor…',
     welcomeTitle:'piSynapse', welcomeSub:'Özel. Yerel. Senin.\nTüm veriler Pi\'nde kalır.',
-    startChat:'Sohbet başlat', readyTitle:'Hazır', readySub:'Takvim, e-posta, hava durumu ya da sadece sohbet.',
     noChats:'Henüz sohbet yok', chatPrefix:'Sohbet', del:'Sil', noMem:'Henüz hafıza yok',
     authNeeded:'Bağlantı doğrulanamadı (API anahtarı geçersiz veya eksik)',
     authEnter:'Anahtarı yeniden gir',
+    serverMisconf:'Sunucu API_KEY olmadan çalışıyor — .env dosyasında API_KEY ayarlayın.',
     noMemNote:'Konuşurken paylaştığın önemli detaylar burada tutulur.', loading:'Yükleniyor…',
     connErr:'Sunucuya ulaşılamadı', errConnLost:'Sunucuyla bağlantı kurulamadı. Lütfen tekrar dene.',
     errContextTooLong:'Bağlam çok uzun olduğu için model yanıt üretemedi. Lütfen yeni bir sohbet açıp tekrar dene.',
@@ -1211,7 +1211,7 @@ const STRINGS = {
     chatDelName:'Silinecek Sohbet', memDelContent:'Silinecek Bilgi', warnEmail:'Bu işlem geri alınamaz.',
     warnDel:'Silme işlemi geri alınamaz.', warnChatDel:'Bu sohbetin geçmişi veritabanından kalıcı olarak temizlenecektir.',
     warnMemDel:'Bu kayıt modelin uzun vadeli hafızasından kalıcı olarak silinecektir.', cancel:'İptal',
-    confirm:'Gönder', confirmDel:'Sil', noEvents:'Bugün etkinlik yok', noCity:'Şehir tanımlı değil',
+    confirm:'Gönder', confirmDel:'Sil', noEvents:'Bugün etkinlik yok',
     you:'Sen', topNew:'Yeni', feelsLike:'Hissedilen',
     settings:'Ayarlar', settingsTitle:'Ayarlar', settingsSaved:'Ayarlar kaydedildi',
      settingsRestart:'Bazı ayarlar sunucu yeniden başlatıldığında tam etkili olur.',
@@ -1235,7 +1235,6 @@ const STRINGS = {
     thinkingTitle:'Düşünme', thinkingLive:'Düşünüyor…',
     send:'Gönder', stopGen:'Üretimi durdur', stoppedMsg:'Yanıt durduruldu.', listenTitle:'Sesli oku',
     copyTitle:'Mesajı kopyala', copiedTitle:'Kopyalandı', regenTitle:'Yeniden üret',
-    regenerating:'Yeniden üretiliyor…',
     thinkEffortTitle:'Think seviyesi',
     toolAttempt:'deneme', toolCap:'tekrar sınırı',
     markWrong:'Yanlıştı', markDone:'İşaretlendi', markSave:'Kaydet',
@@ -1248,10 +1247,10 @@ const STRINGS = {
     newChat:'New chat', chats:'Chats', mem:'Memory', memTitle:'Memory',
     ph:'Ask something…',
     welcomeTitle:'piSynapse', welcomeSub:'Private. Local. Yours.\nAll data stays on your Pi.',
-    startChat:'Start chatting', readyTitle:'Ready', readySub:'Calendar, email, weather, or just a chat.',
     noChats:'No chats yet', chatPrefix:'Chat', del:'Delete', noMem:'No memories yet',
     authNeeded:'Connection failed (API key invalid or missing)',
     authEnter:'Re-enter key',
+    serverMisconf:'The server is running without an API key — set API_KEY in .env.',
     noMemNote:'Important details you share will be structured here.', loading:'Loading…',
     connErr:'Could not reach server', errConnLost:'Could not connect to the server. Please try again.',
     errContextTooLong:'The model could not produce a reply because the context is too long. Please start a new chat and try again.',
@@ -1266,7 +1265,7 @@ const STRINGS = {
     chatDelName:'Chat to Delete', memDelContent:'Record to Delete', warnEmail:'This action cannot be undone.',
     warnDel:'Deletion cannot be undone.', warnChatDel:'This chat history will be permanently wiped from the database.',
     warnMemDel:'This record will be permanently erased from long-term memory.', cancel:'Cancel',
-    confirm:'Send', confirmDel:'Delete', noEvents:'No events today', noCity:'City not configured',
+    confirm:'Send', confirmDel:'Delete', noEvents:'No events today',
     you:'You', topNew:'New', feelsLike:'Feels like',
     settings:'Settings', settingsTitle:'Settings', settingsSaved:'Settings saved',
     settingsRestart:'Some settings take full effect only after server restart.',
@@ -1290,7 +1289,6 @@ const STRINGS = {
     thinkingTitle:'Thinking', thinkingLive:'Thinking…',
     send:'Send', stopGen:'Stop generating', stoppedMsg:'Response stopped.', listenTitle:'Listen',
     copyTitle:'Copy message', copiedTitle:'Copied', regenTitle:'Regenerate',
-    regenerating:'Regenerating…',
     thinkEffortTitle:'Think effort',
     toolAttempt:'attempt', toolCap:'retry cap',
     markWrong:'Wrong', markDone:'Marked', markSave:'Save',
@@ -1352,6 +1350,7 @@ const TOOL_LABELS={
   tr:{get_weather:'Havaya bakıyorum', get_datetime:'Saate bakıyorum',
     create_calendar_event:'Etkinlik oluşturuyorum', list_calendar_events:'Takvimine bakıyorum',
     delete_calendar_event:'Etkinliği siliyorum', update_calendar_event:'Etkinliği güncelliyorum',
+    find_free_slots:'Boş saatlerini arıyorum',
     list_emails:'E-postalarına bakıyorum', read_email:'E-postayı okuyorum',
     send_email:'E-posta gönderiyorum', search_emails:'E-postalarda arıyorum',
     save_memory:'Bunu hatırlıyorum', create_note:'Not oluşturuyorum',
@@ -1362,6 +1361,7 @@ const TOOL_LABELS={
   en:{get_weather:'Checking the weather', get_datetime:'Checking the time',
     create_calendar_event:'Creating an event', list_calendar_events:'Checking your calendar',
     delete_calendar_event:'Deleting an event', update_calendar_event:'Updating an event',
+    find_free_slots:'Checking your free slots',
     list_emails:'Checking your emails', read_email:'Reading the email',
     send_email:'Sending an email', search_emails:'Searching your emails',
     save_memory:'Saving to memory', create_note:'Creating a note',
@@ -2184,7 +2184,8 @@ async function playPiperTTS(text, btn){
     if(key) headers['X-API-Key'] = key;
     const r = await fetch(API + '/chat/tts', {method:'POST', headers,
       body: JSON.stringify({text: text.slice(0, 2000), voice})});
-    if(!r.ok) throw new Error('HTTP '+r.status);
+if(r.status === 503) throw new Error('HTTP 503');
+  if(!r.ok) throw new Error('HTTP '+r.status);
     const blob = await r.blob();
     ttsAudio = new Audio(URL.createObjectURL(blob));
     ttsAudio.onplay = () => { if(ttsBtn) ttsBtn.classList.add('tts-playing'); };
@@ -2254,6 +2255,14 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   try {
     config = await api('GET','/config');
   } catch(e){
+    if(e.message === 'HTTP 503'){
+      // Server is fail-closed but has no API_KEY configured (.env).
+      if(!window._misconfWarned){
+        window._misconfWarned = true;
+        toast(t('serverMisconf'), true);
+      }
+      if(window._beacon) window._beacon({t:'init', step:'config-503'});
+    }
     if(e.message === 'HTTP 401'){
       // API key needed — prompt handled inside api()
       try { config = await api('GET','/config'); } catch {}
