@@ -856,7 +856,17 @@ body.glass-mode #toast{
   backdrop-filter:blur(12px) saturate(160%);
   -webkit-backdrop-filter:blur(12px) saturate(160%);
 }
+/* Pinned chrome blur is re-sampled each frame content scrolls behind it — use a
+   cheaper radius than the static panels (blur cost scales with radius^2). */
+body.glass-mode #topbar,
+body.glass-mode #input-container{
+  backdrop-filter:blur(8px) saturate(140%);-webkit-backdrop-filter:blur(8px) saturate(140%)
+}
+/* Sidebar backdrop is the fixed ambient aurora (never scrolls) — blur is pure
+   waste there; the sheen gradient + translucent --surface keep the glass look. */
+body.glass-mode #sidebar{backdrop-filter:none;-webkit-backdrop-filter:none}
 body.glass-mode #sidebar{background-color:var(--surface)}
+body.glass-mode #input-container{background-color:rgba(13,13,18,.55)}
 body.glass-mode #topbar{background-color:color-mix(in srgb, var(--accent) 7%, rgba(12,12,18,.38));border-bottom-color:var(--border)}
 body.glass-mode .modal-box,
 body.glass-mode .settings-box,
@@ -1006,7 +1016,7 @@ body.glass-mode ::selection{background:color-mix(in srgb, var(--accent) 35%, tra
    strip everything we can */
 @media (hover:none){
   body.glass-mode #topbar{
-    backdrop-filter:blur(12px) saturate(140%);-webkit-backdrop-filter:blur(12px) saturate(140%)
+    backdrop-filter:blur(8px) saturate(140%);-webkit-backdrop-filter:blur(8px) saturate(140%)
   }
   body.glass-mode .modal-box,
   body.glass-mode .settings-box,
@@ -1015,7 +1025,7 @@ body.glass-mode ::selection{background:color-mix(in srgb, var(--accent) 35%, tra
     background-color:var(--surface)
   }
   body.glass-mode #input-container{
-    backdrop-filter:blur(16px) saturate(150%);-webkit-backdrop-filter:blur(16px) saturate(150%);
+    backdrop-filter:blur(12px) saturate(150%);-webkit-backdrop-filter:blur(12px) saturate(150%);
     background:rgba(17,17,22,.88);box-shadow:0 -4px 20px rgba(0,0,0,.5)}
   body.glass-mode .msg-group.user .bubble,
   body.glass-mode .mem-card,
@@ -1057,23 +1067,29 @@ body.glass-mode ::selection{background:color-mix(in srgb, var(--accent) 35%, tra
 /* Scroll-time blur relief (body.scrolling-chat set by setupGlassScrollRelief):
    while the chat or sidebar lists scroll, the pinned frosted chrome must not
    re-blur the moving content behind it every frame (backdrop recompute = the
-   glass flicker/jank). Blur drops for the burst, backgrounds turn near-opaque
-   so the bars stay clean, and full glass returns ~140ms after scrolling stops. */
+   glass flicker/jank). Blur drops for the burst and full glass returns ~140ms
+   after scrolling stops. The relief tints keep the at-rest FROST tone (same
+   accent tint, only the net alpha rises) and switch instantly — no transition,
+   because a slow background blend while blur is already gone flashes un-frosted
+   sharp content behind the bars (the "looks worse" artifact). */
 body.glass-mode.scrolling-chat #topbar,
-body.glass-mode.scrolling-chat #input-container,
-body.glass-mode.scrolling-chat #sidebar{
+body.glass-mode.scrolling-chat #input-container{
   backdrop-filter:none;-webkit-backdrop-filter:none;
-  transition:background-color .15s ease;
 }
 body.glass-mode.scrolling-chat #topbar{
-  background-color:color-mix(in srgb, var(--accent) 7%, rgba(10,10,15,.92));
+  background-color:color-mix(in srgb, var(--accent) 7%, rgba(14,14,20,.78));
   border-bottom-color:var(--border)
 }
 body.glass-mode.scrolling-chat #input-container{
-  background:rgba(13,13,18,.96);
+  background-color:rgba(14,15,21,.85);
   box-shadow:0 -4px 20px rgba(0,0,0,.45)
 }
-body.glass-mode.scrolling-chat #sidebar{background-color:var(--surface)}
+/* Mobile input is near-solid at rest (.88) — keep that exact tint when blur
+   drops so the relief flip is invisible there. Placed after the shared relief
+   so it wins the same-specificity cascade. */
+@media (hover:none){
+  body.glass-mode.scrolling-chat #input-container{background-color:rgba(17,17,22,.88)}
+}
 
 
 /* ── Toggle switch ────────────────────────────────────────────────────────── */
