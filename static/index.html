@@ -450,8 +450,20 @@ body.generating .chip-track{will-change:transform}
 .think-box .think-head:hover:not(:focus){color:var(--text)}}
 .think-box .chev{transition:transform .2s;font-size:11px}
 .think-box.open .think-head .chev{transform:rotate(90deg)}
-.think-box .think-body{padding-top:6px;white-space:pre-wrap;max-height:260px;overflow:auto}
+.think-box .think-body{padding-top:6px;max-height:260px;overflow:auto}
 .think-box.collapsed .think-body{display:none}
+.think-box .think-body p{margin-bottom:10px}.think-box .think-body p:last-child{margin-bottom:0}
+.think-box .think-body ul,.think-box .think-body ol{padding-left:22px;margin-bottom:10px}
+.think-box .think-body ol{list-style:none;padding-left:4px}
+.think-box .think-body li{margin-bottom:4px}
+.think-box .think-body h1{font-size:16px}.think-box .think-body h2{font-size:14.5px}.think-box .think-body h3{font-size:13.5px}
+.think-box .think-body h1,.think-box .think-body h2,.think-box .think-body h3{margin:14px 0 8px;font-weight:700;color:var(--text)}
+.think-box .think-body a{color:var(--accent);text-decoration:none;border-bottom:1px solid transparent}
+.think-box .think-body blockquote{border-left:3px solid var(--accent);padding-left:12px;color:var(--text3)}
+.think-box .think-body strong{font-weight:700;color:var(--text)}
+.think-box .think-body code{background:var(--surface2);padding:2px 6px;border-radius:6px;font-size:.92em}
+.think-box .think-body table{border-collapse:collapse;width:100%;margin:0;font-size:12.5px}
+.think-box .think-body th,.think-box .think-body td{border:1px solid var(--border);padding:6px 10px;text-align:left;white-space:nowrap}
 .sess-auth-btn{display:block;margin:6px 16px 14px;padding:6px 12px;border:1px solid var(--border);
   border-radius:8px;background:var(--surface2);color:var(--text);cursor:pointer;font-size:13px;transition:all .2s}@media (hover:hover){
 .sess-auth-btn:hover:not(:focus){border-color:var(--accent);color:var(--accent)}}
@@ -2405,12 +2417,21 @@ function createStreamBubble(){
   document.getElementById('messages').appendChild(g); scrollEnd(true); return g.querySelector('.bubble');
 }
 
+function renderThink(body, html){
+  const near = body.scrollHeight - body.scrollTop - body.clientHeight < 60;
+  body.innerHTML = html;
+  if(near) body.scrollTop = body.scrollHeight;
+}
+
 function toggleThinkBox(box){
   const e = document.getElementById('messages');
   const wasNearBottom = e.scrollHeight - e.scrollTop - e.clientHeight < 150;
   box.classList.toggle('collapsed');
   box.classList.toggle('open');
-  if(!box.classList.contains('collapsed') && wasNearBottom) scrollEnd(true);
+  if(!box.classList.contains('collapsed')){
+    const tb = box.querySelector('.think-body'); if(tb) tb.scrollTop = tb.scrollHeight;
+    if(wasNearBottom) scrollEnd(true);
+  }
 }
 
 function ensureThinkBox(bubble){
@@ -2508,7 +2529,7 @@ async function sendMsg(){
         } else if(data.done){
           if(thinkBox && fullReasoning){
             const body = thinkBox.querySelector('.think-body');
-            body.textContent = fullReasoning;
+            renderThink(body, renderMd(fullReasoning));
             thinkBox.classList.remove('live');
             thinkBox.classList.add('collapsed');
             const head = thinkBox.querySelector('.think-head');
@@ -2541,7 +2562,8 @@ async function sendMsg(){
           if(!bubble) bubble=createStreamBubble();
           if(!thinkBox){ thinkBox=ensureThinkBox(bubble); }
           fullReasoning+=data.reasoning;
-          thinkBox.querySelector('.think-body').textContent=fullReasoning;
+          renderThink(thinkBox.querySelector('.think-body'),
+            withStreamCaret(renderMd(fullReasoning)));
           scrollEnd(false);
         } else if(data.tool){
           if(currentSid !== sid) continue;
@@ -2702,7 +2724,7 @@ function addMsg(role, content, forceScroll=true, ts=null, images=null, reasoning
     const box=document.createElement('div'); box.className='think-box collapsed';
     box.innerHTML='<div class="think-head"><span class="chev">\u25B8</span><span class="lab"></span></div><div class="think-body"></div>';
     box.querySelector('.lab').textContent = t('thinkingTitle');
-    box.querySelector('.think-body').textContent = reasoning;
+    renderThink(box.querySelector('.think-body'), renderMd(reasoning));
     const head=box.querySelector('.think-head');
     head.onclick=()=>toggleThinkBox(box);
     g.insertBefore(box, b);
