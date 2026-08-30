@@ -336,8 +336,9 @@ def test_secure_db_files_fixes_permissive_db(audit_db):
 # -- Correction endpoint validation tests --
 
 import pytest
-from tools.definitions import TOOL_NAMES
 from fastapi import HTTPException
+
+from tools.definitions import TOOL_NAMES
 
 
 async def _create_audit_entry():
@@ -457,6 +458,7 @@ def test_tool_to_group_mapping_consistent():
 def correction_client(audit_db):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
+
     from routers.chat import router as chat_router
     app = FastAPI()
     app.include_router(chat_router)

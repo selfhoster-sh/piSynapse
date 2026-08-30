@@ -167,7 +167,8 @@ def test_update_settings_applies_all_keys_on_success(tmp_path, monkeypatch):
 
 def test_fail_closed_returns_503_without_configured_key(monkeypatch):
     """Fail-closed auth: no API_KEY configured → protected routes are 503,
-    never left open (regression guard for the open-by-default behavior)."""
+    never left open (regression guard for the open-by-default behavior).
+    """
     app = FastAPI()
     app.middleware("http")(mainmod.security_middleware)
 

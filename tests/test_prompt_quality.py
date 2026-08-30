@@ -1,8 +1,7 @@
 """System/group prompt hygiene: no dangling fragments, coherent instructions."""
 
-from tools.definitions import TOOLS
-
 import prompt as pm
+from tools.definitions import TOOLS
 
 
 def test_tasks_group_prompt_has_no_dangling_fragment():

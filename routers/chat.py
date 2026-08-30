@@ -421,9 +421,9 @@ async def set_tool_correction(req: CorrectionRequest):
     OR an expected_group (domain key from GET /tools/groups, the UI path) —
     at least one is required. Updates the fields and sets corrected_at.
     """
-    from tools.definitions import TOOL_NAMES
-    from llm.intent import tool_group_keys
     from db import set_tool_correction
+    from llm.intent import tool_group_keys
+    from tools.definitions import TOOL_NAMES
 
     if not req.expected_tool and not req.expected_group:
         raise HTTPException(

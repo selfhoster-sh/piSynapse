@@ -13,7 +13,6 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-import tool_verification
 from tool_verification import _verify
 
 

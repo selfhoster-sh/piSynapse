@@ -25,24 +25,24 @@ from tools import (
 
 from .payload import _build_full_messages, _build_payload, _normalize_messages_for_backend, trim_messages_for_context
 from .utils import (
+    CONTINUATION_NOTE,
+    _check_tool_leak,
+    _get_client,
+    clean_reasoning,
+    is_lookup_tool,
+    is_mutation_tool,
+    parse_leaked_tool_call,
+    strip_tool_leaks,
+    user_requested_action,
+)
+from .utils import (
     EMPTY_ANSWER_FALLBACK as _EMPTY_ANSWER_FALLBACK,  # noqa: F401 -- legacy alias, referenced by tests
 )
 from .utils import (
     FINALIZE_NUDGE as _FINALIZE_NUDGE,
 )
 from .utils import (
-    CONTINUATION_NOTE,
     MAX_IDENTICAL_EXECUTIONS as _MAX_IDENTICAL_EXECUTIONS,
-    is_lookup_tool,
-    is_mutation_tool,
-    user_requested_action,
-)
-from .utils import (
-    _check_tool_leak,
-    _get_client,
-    clean_reasoning,
-    parse_leaked_tool_call,
-    strip_tool_leaks,
 )
 from .utils import (
     empty_answer_fallback as _empty_answer_fallback,
