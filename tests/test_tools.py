@@ -128,3 +128,18 @@ class TestWmoCondition:
         assert _wmo_condition(96) == "Gök gürültülü dolu"
         assert _wmo_condition(9999) == "Bilinmiyor"
         assert _wmo_condition(None) == "Bilinmiyor"
+
+    def test_kind_mapping(self):
+        from weather import _wmo_kind
+        assert _wmo_kind(0) == "clear"
+        assert _wmo_kind(1) == "partly"
+        assert _wmo_kind(2) == "partly"
+        assert _wmo_kind(3) == "cloud"
+        assert _wmo_kind(45) == "fog"
+        assert _wmo_kind(53) == "drizzle"
+        assert _wmo_kind(63) == "rain"
+        assert _wmo_kind(81) == "rain"
+        assert _wmo_kind(73) == "snow"
+        assert _wmo_kind(96) == "storm"
+        assert _wmo_kind(9999) == "unknown"
+        assert _wmo_kind(None) == "unknown"

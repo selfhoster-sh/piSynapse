@@ -46,7 +46,7 @@ async function installBackendStubs(page, opts = {}) {
   await page.route('**/chat/sessions', route => json(route, { sessions: [] }));
   await page.route('**/chat/history**', route => json(route, { session_id: 'x', messages: opts.history || [] }));
   await page.route('**/chat/abort/**', route => json(route, {}));
-  await page.route('**/widget/weather', route => json(route, { summary: 'Güneşli 22°C' }));
+  await page.route('**/widget/weather', route => json(route, { ok: true, city: 'Güneşli', temp_c: 22, feels_c: 23, condition: 'Açık', wmo_code: 0, kind: 'clear', summary: 'Güneşli: 22°C, Açık, feels like 23°C' }));
   await page.route('**/widget/calendar', route => json(route, { events: [] }));
   await page.route('**/health', route => json(route, { dependencies: {} }));
 
