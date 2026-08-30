@@ -3679,6 +3679,9 @@ function applyStagger(){
       if(e.animationName !== 'msgSlideIn') return;
       el.style.animation = 'none';
       el.style.animationDelay = '';
+      // Base rule has no opacity, so killing the fill must not drop the item
+      // back to opacity:0 — force it visible again (invisible-but-clickable bug).
+      el.style.opacity = '1';
       el.removeEventListener('animationend', done);
     };
     el.addEventListener('animationend', done, { once: true });
@@ -3809,7 +3812,7 @@ if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.s
   .msg-group{animation:msgSlideIn .35s cubic-bezier(.21,.98,.35,1) both}
 
   /* ── Sidebar Stagger ──────────────────────────────────────────── */
-  .sess-item{opacity:0;animation:msgSlideIn .25s ease-out forwards}
+  .sess-item{animation:msgSlideIn .25s ease-out both}
   /* Silent refresh (post-stream, search restore): rebuild without replaying
      the slide-in so list updates never read as a full redraw */
   #session-list.no-anim .sess-item{animation:none;opacity:1}
