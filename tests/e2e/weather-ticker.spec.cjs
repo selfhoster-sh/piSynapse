@@ -37,7 +37,7 @@ test.describe('weather ticker widget', () => {
 
     await expect(ticker(page)).toContainText('18°C · Thunderstorm');
     // Lightning bolt path (storm icon) is rendered.
-    expect(await ticker(page).locator('svg path[d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"]').count()).toBeGreaterThan(0);
+    expect(await ticker(page).locator("svg path[d='m13 12-3 5h4l-3 5']").count()).toBeGreaterThan(0);
 
     await page.evaluate(() => applyLang('tr'));
     await expect(ticker(page)).toContainText('18°C · Gök gürültülü');

@@ -24,6 +24,7 @@
   - `applyLang` calls `rebuildTickerFromCache()` when weather cache is populated → language switches re-render the ticker immediately.
   - New `WMO_LABELS` (tr/en) + `wmoLabel(code)`/`wmoIconKind(code)` mirror the backend WMO mapping client-side; the item text is now `22°C · Açık`/`22°C · Clear` and the icon is derived from `wmo_code` at render time (sun / sun-cloud / cloud / fog / drizzle / rain / snow / lightning). Old-server fallback path (no `wmo_code`) preserved.
 - Verification: pytest **465**; e2e **33/33** (+`weather-ticker.spec.cjs` ×2: label localizes on `applyLang` switch, storm payload swaps label+icon).
+- Follow-up: the partly/cloud-sun icon still matched the app's old generic sun-cloud, so "Az bulutlu" (Akşehir, code 1) looked unchanged on hard refresh. Replaced the icon set with distinct lucide-style glyphs per kind (sun / cloud-sun / cloud / cloud-fog / cloud-drizzle / cloud-rain / cloud-snow / cloud-lightning); `unknown` keeps the legacy sun-cloud fallback.
 
 ## 2026-08-31 — Faz C-13b: Weather ticker widget → condition icon + structured payload
 - Follow-up to C-13: the sidebar/topbar weather ticker showed only the raw summary text with a static sun-cloud icon, so the new condition label wasn't visualized.
