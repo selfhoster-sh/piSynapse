@@ -152,7 +152,7 @@ test.describe('tool marking flow', () => {
     await expect(page.locator('.mark-btn.marked')).toHaveCount(1);
   });
 
-  test('next send clears pills; the new call gets a fresh pill', async ({ page }) => {
+  test('next send retains previous settled pills; new round adds its own pill', async ({ page }) => {
     await installBackendStubs(page, { streamDelayMs: 500 });
     await boot(page);
     await sendTurn(page, 'ilk');
@@ -161,12 +161,12 @@ test.describe('tool marking flow', () => {
     await expect(page.locator('.tool-status .mark-btn')).toHaveCount(1);
 
     await sendTurn(page, 'ikinci');
-    // clearToolPills() runs synchronously at the start of the second send; the
-    // delayed stub stream keeps the window open long enough to observe it.
-    await expect(page.locator('.tool-status')).toHaveCount(0);
-
-    // The new stream draws exactly one fresh pill (old pill not recycled).
+    // clearToolPills() runs synchronously at the start of the second send;
+    // because the first pill is settled (.done), it is retained (count stays 1).
     await expect(page.locator('.tool-status')).toHaveCount(1);
-    await expect(page.locator('.tool-status .mark-btn')).toHaveCount(1);
+
+    // The second round completes, bringing the total count to 2.
+    await expect(page.locator('.tool-status')).toHaveCount(2);
+    await expect(page.locator('.tool-status .mark-btn')).toHaveCount(2);
   });
 });

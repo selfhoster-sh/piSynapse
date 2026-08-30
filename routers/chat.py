@@ -16,6 +16,7 @@ from pydantic import BaseModel, field_validator
 from config import get
 from db import (
     clear_history,
+    delete_branch,
     delete_last_assistant,
     delete_memory,
     get_all_memories,
@@ -314,12 +315,19 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
                 elif event.get("done"):
                     full = _clean_assistant_reply("".join(reply_parts))
                     reply_saved = True  # also when skipped — never let finally re-save raw parts
+                    done_payload = {'done': True, 'session_id': req.session_id,
+                                    'memories_saved': event.get('memories_saved', 0),
+                                    'retrieved_count': len(retrieved_msgs),
+                                    'retrieval_ms': round(ret_stats['latency_ms'])}
                     if full:
                         msg_id = await save_message(req.session_id, "assistant", full, reasoning=event.get("reasoning") or None)
                         await link_audits_to_message(msg_id, stream_audit_ids)
+                        # Anchor for per-message regenerate branching (the frontend
+                        # stores this id on the bubble and truncates context from it).
+                        done_payload['message_id'] = msg_id
                     else:
                         logger.info("Streamed assistant reply empty after sanitization — not saved (session %s)", req.session_id)
-                    yield f"data: {json.dumps({'done': True, 'session_id': req.session_id, 'memories_saved': event.get('memories_saved', 0), 'retrieved_count': len(retrieved_msgs), 'retrieval_ms': round(ret_stats['latency_ms'])})}\n\n"
+                    yield f"data: {json.dumps(done_payload)}\n\n"
                 elif "reasoning" in event:
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                 elif "confirm" in event:
@@ -517,6 +525,23 @@ async def delete_last_msg(session_id: str):
     """
     _validate_session_id(session_id)
     removed = await delete_last_assistant(session_id)
+    return {"ok": True, "removed": removed}
+
+
+class BranchRequest(BaseModel):
+    message_id: int
+
+
+@router.delete("/messages/branch/{session_id}")
+async def delete_branch_msg(session_id: str, req: BranchRequest):
+    """Truncate a conversation from an anchored message onward.
+
+    Per-message regenerate: the clicked assistant message is the anchor; it and
+    everything saved after it are removed so the re-run draws a clean branch
+    (same prompt, fresh reply) — matching ChatGPT/Claude branch semantics.
+    """
+    _validate_session_id(session_id)
+    removed = await delete_branch(session_id, req.message_id)
     return {"ok": True, "removed": removed}
 
 

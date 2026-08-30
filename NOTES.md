@@ -16,6 +16,22 @@
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 - **Sanitization rule:** this file may be published. Never write personal data, identity clues, deployment addresses (hostnames, IPs, ports), or accounts into it. Keep every narrative in English; Turkish inline tokens are allowed only as product corpus / i18n test data.
 
+## 2026-08-30 — Faz C-12: Per-message regenerate with branch semantics
+- **Problem & Research:** The `.last-of-type` check previously restricted regenerate to the last assistant message, but in history renders every older assistant kept a stale button that falsely re-ran the *last* user prompt. Research into industry standards (AWS Cloudscape, assistant-ui / shadcn, MUI X) confirmed per-message regenerate/actions is standard, but requires branch semantics: regenerating an older message must truncate the conversation from that point forward (both in DB and DOM) and re-run that message's own prompt.
+- **Backend changes:**
+  - `db.py`: added `delete_branch(session_id, anchor_id)` to delete messages with `id >= anchor_id` and their FTS entries. Updated `get_history` to include `"id": r[0]` and order by `id DESC` for stable ordering.
+  - `routers/chat.py`: added `DELETE /chat/messages/branch/{session_id}` endpoint (accepts `{message_id: int}`) and included `message_id` in the stream `done` SSE payload.
+- **Frontend changes:**
+  - `regenerate(group)`: locates the preceding user message, sends `DELETE /chat/messages/branch/{sid}`, removes that assistant and all following siblings from DOM, and re-streams the prompt via `sendMsg({regenText})`.
+  - `attachMsgActions`: appends regenerate button on all assistant messages (fallback for missing mid on legacy rounds keeps last-exchange rule).
+  - `clearToolPills()`: now only removes active/transient `.tool-status:not(.done)` rows, keeping settled action bars intact across turns.
+  - `refreshLastState()`: adds `.not-last` class to non-latest assistant action bars, dimming them (`opacity: .45`) and revealing on hover/focus.
+- **Verification:**
+  - `tests/test_audit.py`: added unit tests for `delete_branch` and `DELETE /chat/messages/branch/{session_id}`.
+  - `tests/e2e/branch-regen.spec.cjs` (2 new tests): tests per-message regenerate button presence, `.not-last` class dimming, and branch DELETE + re-streaming.
+  - `tests/e2e/mark-flow.spec.cjs`: updated clear-pills test to reflect retention of settled tool rows.
+  - pytest **456** passed; e2e **27/27** passed; `node --check` ✓.
+
 ## 2026-08-30 — Faz C-11: Tool indicator clears the moment the model starts replying
 - **Bug (user report):** "notları listele" — the tool row kept its working label ("notlarına bakıyorum…") painted below the message for the WHOLE streaming answer; the indicator was only settled at stream end (by design since C-7), so single-tool lookup rounds left a stale active-looking pill under the reply.
 - **Applied (frontend only):** the row now settles at the FIRST model output instead of stream end — both the `token` and the `reasoning` branches call `settleFeedbackRow(toolRow, true, roundAudits)` once the row is no longer active. Label+spinner are dropped (quiet ✓ or the C-7 thumbs) exactly when text starts. Because a tool can still run AFTER a token in multi-step rounds, `ensureToolRow` now REVIVES a settled row (`resetPill`) on the next tool event instead of creating a second one; the next settle re-carries ALL audits (the divider for the merged copy/listen/regen bar is re-added by `settleFeedbackRow`). Stream-end finally keeps its `!done` guard → no double settle.
