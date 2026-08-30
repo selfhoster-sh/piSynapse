@@ -399,11 +399,17 @@ body.generating .chip-track{will-change:transform}
 #input-area{position:absolute;bottom:calc(20px + env(safe-area-inset-bottom,0px));
   left:0;right:0;padding:0 20px;display:flex;flex-direction:column;align-items:center;
    pointer-events:none;z-index:15}
-/* Upward shadow above the input bar (normal mode): a soft wash that fades
-   the last lines out long before they touch the bar, on top of the content
-   mask. Glass already sits on heavy layered shadows, so it opts out. */
-body:not(.glass-mode) #input-area::before{content:'';position:absolute;left:0;right:0;bottom:100%;
-  height:88px;background:linear-gradient(to top, rgba(0,0,0,.55), transparent);pointer-events:none}
+/* Upward shadow above the input bar (normal mode): a roomy, soft wash that
+   hugs the message column (800px, centered) so no band sits hard on the bar
+   and no edge character is left unshadowed. Horizontal mask keeps the shadow
+   from clipping square at either side; glass sits on heavy layered shadows,
+   so it opts out. */
+body:not(.glass-mode) #input-area::before{content:'';position:absolute;left:50%;transform:translateX(-50%);
+  width:min(800px,calc(100% - 40px));height:120px;bottom:100%;
+  background:linear-gradient(to top, rgba(0,0,0,.38) 0, rgba(0,0,0,.16) 34%, transparent 100%);
+  -webkit-mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent);
+  mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent);
+  pointer-events:none}
 #image-preview{display:flex;gap:8px;padding:8px 0;pointer-events:auto;overflow-x:auto;
   max-width:820px;width:100%}
 #image-preview.hidden{display:none}
