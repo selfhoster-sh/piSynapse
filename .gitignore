@@ -27,3 +27,9 @@ build/
 # Yerel hassas kopya — push EDİLMEZ (IP/domain içerir)
 NOTES.local.md
 litert_serve/config.json
+
+# Arşivlenen dev içerikleri (kökte yeri yok — kaynak CHANGELOG.md / NOTES.md)
+# _old/ zaten ignore; aşağıdaki kalıplar köke yeniden eklenmesini engeller.
+RELEASE_NOTES_v*.md
+notes-additions.md
+experiments/
