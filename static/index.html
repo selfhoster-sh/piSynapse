@@ -856,17 +856,7 @@ body.glass-mode #toast{
   backdrop-filter:blur(12px) saturate(160%);
   -webkit-backdrop-filter:blur(12px) saturate(160%);
 }
-/* Pinned chrome blur is re-sampled each frame content scrolls behind it — use a
-   cheaper radius than the static panels (blur cost scales with radius^2). */
-body.glass-mode #topbar,
-body.glass-mode #input-container{
-  backdrop-filter:blur(8px) saturate(140%);-webkit-backdrop-filter:blur(8px) saturate(140%)
-}
-/* Sidebar backdrop is the fixed ambient aurora (never scrolls) — blur is pure
-   waste there; the sheen gradient + translucent --surface keep the glass look. */
-body.glass-mode #sidebar{backdrop-filter:none;-webkit-backdrop-filter:none}
 body.glass-mode #sidebar{background-color:var(--surface)}
-body.glass-mode #input-container{background-color:rgba(13,13,18,.55)}
 body.glass-mode #topbar{background-color:color-mix(in srgb, var(--accent) 7%, rgba(12,12,18,.38));border-bottom-color:var(--border)}
 body.glass-mode .modal-box,
 body.glass-mode .settings-box,
@@ -1016,7 +1006,7 @@ body.glass-mode ::selection{background:color-mix(in srgb, var(--accent) 35%, tra
    strip everything we can */
 @media (hover:none){
   body.glass-mode #topbar{
-    backdrop-filter:blur(8px) saturate(140%);-webkit-backdrop-filter:blur(8px) saturate(140%)
+    backdrop-filter:blur(12px) saturate(140%);-webkit-backdrop-filter:blur(12px) saturate(140%)
   }
   body.glass-mode .modal-box,
   body.glass-mode .settings-box,
@@ -1025,7 +1015,7 @@ body.glass-mode ::selection{background:color-mix(in srgb, var(--accent) 35%, tra
     background-color:var(--surface)
   }
   body.glass-mode #input-container{
-    backdrop-filter:blur(12px) saturate(150%);-webkit-backdrop-filter:blur(12px) saturate(150%);
+    backdrop-filter:blur(16px) saturate(150%);-webkit-backdrop-filter:blur(16px) saturate(150%);
     background:rgba(17,17,22,.88);box-shadow:0 -4px 20px rgba(0,0,0,.5)}
   body.glass-mode .msg-group.user .bubble,
   body.glass-mode .mem-card,
@@ -1062,33 +1052,6 @@ body.glass-mode ::selection{background:color-mix(in srgb, var(--accent) 35%, tra
   }
   body.glass-mode .modal-backdrop{backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
   body.glass-mode .welcome::before{display:none}
-}
-
-/* Scroll-time blur relief (body.scrolling-chat set by setupGlassScrollRelief):
-   while the chat or sidebar lists scroll, the pinned frosted chrome must not
-   re-blur the moving content behind it every frame (backdrop recompute = the
-   glass flicker/jank). Blur drops for the burst and full glass returns ~140ms
-   after scrolling stops. The relief tints keep the at-rest FROST tone (same
-   accent tint, only the net alpha rises) and switch instantly — no transition,
-   because a slow background blend while blur is already gone flashes un-frosted
-   sharp content behind the bars (the "looks worse" artifact). */
-body.glass-mode.scrolling-chat #topbar,
-body.glass-mode.scrolling-chat #input-container{
-  backdrop-filter:none;-webkit-backdrop-filter:none;
-}
-body.glass-mode.scrolling-chat #topbar{
-  background-color:color-mix(in srgb, var(--accent) 7%, rgba(14,14,20,.78));
-  border-bottom-color:var(--border)
-}
-body.glass-mode.scrolling-chat #input-container{
-  background-color:rgba(14,15,21,.85);
-  box-shadow:0 -4px 20px rgba(0,0,0,.45)
-}
-/* Mobile input is near-solid at rest (.88) — keep that exact tint when blur
-   drops so the relief flip is invisible there. Placed after the shared relief
-   so it wins the same-specificity cascade. */
-@media (hover:none){
-  body.glass-mode.scrolling-chat #input-container{background-color:rgba(17,17,22,.88)}
 }
 
 
@@ -2378,7 +2341,7 @@ let lastInputWasVoice = false;
 
 document.addEventListener('DOMContentLoaded', async ()=>{
   if(window._beacon) window._beacon({t:'init', step:'start'});
-  applyTheme(theme); applyGlass(glass); applyMinimal(minimal); applyLang(lang); enhanceAllSelects(); setupInput(); setupMobileKeyboard(); setupHoldToRecord(); setupGlassScrollRelief();
+  applyTheme(theme); applyGlass(glass); applyMinimal(minimal); applyLang(lang); enhanceAllSelects(); setupInput(); setupMobileKeyboard(); setupHoldToRecord();
   if(window._beacon) window._beacon({t:'init', step:'prep-done'});
   // Check if API key is needed
   try {
@@ -3878,23 +3841,6 @@ function closeSidebar(){
 }
 
 // ── Utility Functions ───────────────────────────────────────────────────────────
-/* Glass scroll relief: while the chat or the sidebar lists are scrolling, add
-   body.scrolling-chat so CSS can drop backdrop-filter on the pinned frosted
-   chrome (re-blurring the moving content each frame = flicker/jank). The class
-   is set once per scroll burst (no rAF loop) and cleared ~140ms after the last
-   scroll event, restoring full glass at rest. */
-function setupGlassScrollRelief(){
-  let t = 0;
-  const onScroll = () => {
-    document.body.classList.add('scrolling-chat');
-    clearTimeout(t);
-    t = setTimeout(() => document.body.classList.remove('scrolling-chat'), 140);
-  };
-  const messages = document.getElementById('messages');
-  if(messages) messages.addEventListener('scroll', onScroll, {passive:true});
-  const sidebar = document.getElementById('sidebar');
-  if(sidebar) sidebar.addEventListener('scroll', onScroll, {capture:true, passive:true});
-}
 function scrollEnd(force = false){ const e = document.getElementById('messages'); if (force || (e.scrollHeight - e.scrollTop - e.clientHeight < 150)) { e.scrollTop = e.scrollHeight; } }
 function timeNow(){ return new Date().toLocaleTimeString(lang==='tr' ? 'tr-TR' : 'en-GB', {hour:'2-digit', minute:'2-digit'}); }
 function relTime(ts){
