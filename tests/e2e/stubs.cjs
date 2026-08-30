@@ -14,11 +14,12 @@ function json(route, obj, status = 200) {
 
 /**
  * @param {import('@playwright/test').Page} page
- * @param {{auditId?: number|null, correctionError?: boolean}} opts
+ * @param {{auditId?: number|null, correctionError?: boolean, confirmError?: boolean}} opts
  */
 async function installBackendStubs(page, opts = {}) {
   const auditId = opts.auditId === undefined ? 123 : opts.auditId;
   const sentCorrections = [];
+  const sentConfirmations = [];
 
   const config = {
     username: 'testuser',
@@ -57,6 +58,14 @@ async function installBackendStubs(page, opts = {}) {
     return json(route, {});
   });
 
+  await page.route('**/chat/tool-confirm', async route => {
+    sentConfirmations.push(route.request().postDataJSON());
+    if (opts.confirmError) {
+      return json(route, { detail: 'boom' }, 500);
+    }
+    return json(route, {});
+  });
+
   await page.route('**/chat/stream', async route => {
     const events = opts.stream ? opts.stream() : defaultStream;
     if (opts.streamDelayMs) {
@@ -69,7 +78,7 @@ async function installBackendStubs(page, opts = {}) {
     });
   });
 
-  return { sentCorrections };
+  return { sentCorrections, sentConfirmations };
 }
 
 async function boot(page) {
