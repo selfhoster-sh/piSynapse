@@ -163,3 +163,50 @@ def test_update_settings_applies_all_keys_on_success(tmp_path, monkeypatch):
     assert resp["ok"] is True
     assert os.environ.get("LLM_TEMPERATURE") == "0.9"
     assert "LLM_TEMPERATURE=0.9" in (tmp_path / "env_test").read_text(encoding="utf-8")
+
+
+def test_fail_closed_returns_503_without_configured_key(monkeypatch):
+    """Fail-closed auth: no API_KEY configured → protected routes are 503,
+    never left open (regression guard for the open-by-default behavior)."""
+    app = FastAPI()
+    app.middleware("http")(mainmod.security_middleware)
+
+    @app.post("/api/thing")
+    async def api_thing():
+        return {"ok": True}
+
+    monkeypatch.setattr(mainmod, "API_KEY", "")
+    monkeypatch.setattr(mainmod, "TRUSTED_HOSTS", set())
+    c = TestClient(app, base_url="http://localhost")
+    assert c.post("/api/thing").status_code == 503
+    assert c.post("/api/thing", headers={"x-api-key": "anything"}).status_code == 503
+
+
+def test_debug_disabled_without_configured_key(monkeypatch):
+    app = FastAPI()
+    app.middleware("http")(mainmod.security_middleware)
+
+    @app.post("/debug")
+    async def debug():
+        return {"ok": True}
+
+    monkeypatch.setattr(mainmod, "API_KEY", "")
+    monkeypatch.setattr(mainmod, "TRUSTED_HOSTS", set())
+    c = TestClient(app, base_url="http://localhost")
+    assert c.post("/debug").status_code == 403
+
+
+def test_hardening_headers_present():
+    app = FastAPI()
+    app.middleware("http")(mainmod.hardening_headers_middleware)
+
+    @app.get("/")
+    async def root():
+        return {"ok": True}
+
+    r = TestClient(app).get("/")
+    assert r.headers["x-content-type-options"] == "nosniff"
+    assert r.headers["x-frame-options"] == "DENY"
+    assert r.headers["referrer-policy"] == "no-referrer"
+    assert "geolocation=()" in r.headers["permissions-policy"]
+    assert "strict-transport-security" not in r.headers  # plaintext HTTP
