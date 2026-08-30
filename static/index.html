@@ -2338,7 +2338,9 @@ async function loadSessions(animate=true){
   }
   catch(e){
     if(e.message==='HTTP 401'){ window._authPrompted=false; renderAuthNeeded(); }
-    else renderSessions([], animate);
+    // A transient refresh failure must not blank an already-populated sidebar:
+    // wiping to "No chats yet" on a mid-stream hiccup is the classic flicker.
+    else if(!sessionList.length) renderSessions([], animate);
   }
 }
 
@@ -2527,7 +2529,7 @@ async function sendMsg(){
     const rakeTitle=generateRakeTitleJS(text);
     const newSess={session_id:sid, name:rakeTitle, last_active:new Date().toISOString(), message_count:1};
     sessionList.unshift(newSess);
-    renderSessions(sessionList);
+    renderSessions(sessionList, false); // silent: never replay the whole-list slide-in on an optimistic insert
     document.getElementById('sess-title').textContent=rakeTitle;
   }
   _pendingStream = { sid };
@@ -3554,7 +3556,7 @@ let _searchQuery = '';
 
 function filterSessions(q){
   _searchQuery = q.toLowerCase().trim();
-  if(!_searchQuery){ clearTimeout(_searchTimer); renderSessions(sessionList); return; }
+  if(!_searchQuery){ clearTimeout(_searchTimer); renderSessions(sessionList, false); return; }
   _debounceSearch(q);
 }
 
@@ -3566,7 +3568,7 @@ function _debounceSearch(q){
     // Offline fast-path: no network, local title filter instantly
     if(!navigator.onLine){
       const local=sessionList.filter(s=>sessName(s).toLowerCase().includes(qq));
-      renderSessions(local);
+      renderSessions(local, false);
       return;
     }
     const ctrl=new AbortController();
@@ -3579,18 +3581,18 @@ function _debounceSearch(q){
       const d=await r.json();
       if(!d.results||!d.results.length){
         const local=sessionList.filter(s=>sessName(s).toLowerCase().includes(qq));
-        renderSessions(local);
+        renderSessions(local, false);
         return;
       }
       const snippetMap=new Map(d.results.map(r=>[r.session_id, r.snippet||""]));
       const ids=new Set(snippetMap.keys());
       const final=sessionList.filter(s=>ids.has(s.session_id))
         .map(s=>({...s, _snippet: snippetMap.get(s.session_id)||""}));
-      renderSessions(final);
+      renderSessions(final, false);
     }catch{
       clearTimeout(to);
       const local=sessionList.filter(s=>sessName(s).toLowerCase().includes(qq));
-      renderSessions(local);
+      renderSessions(local, false);
     }
   },150);
 }
@@ -3600,7 +3602,7 @@ window.addEventListener('online', ()=>{
 window.addEventListener('offline', ()=>{
   if(_searchQuery){
     const local=sessionList.filter(s=>sessName(s).toLowerCase().includes(_searchQuery));
-    renderSessions(local);
+    renderSessions(local, false);
   }
 });
 
