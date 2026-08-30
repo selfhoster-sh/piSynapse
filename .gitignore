@@ -10,6 +10,7 @@ __pycache__/
 models/
 _old/
 backups/
+audit_exports/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/

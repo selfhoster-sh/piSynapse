@@ -753,3 +753,95 @@ def test_history_endpoint_returns_linked_audits(correction_client):
     assert asst["audits"] == [{"audit_id": a1, "tool_name": "get_weather",
                                "confirmed_at": None, "corrected_at": None,
                                "expected_group": None}]
+
+
+# -- Pre-rollup audit export (14-day archive) --
+
+def test_rollup_exports_details_to_csv_before_removal(audit_db):
+    """Detail rows land in a per-day CSV (with the linked conversation's
+    session_id) and are only THEN summarized + deleted."""
+    from datetime import datetime, timedelta
+    old_day = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+
+    async def seed():
+        db = await dbmod.get_db()
+        await db.execute(
+            "INSERT INTO conversations (session_id, role, content, timestamp) "
+            "VALUES ('expS1', 'user', 'test', ?)", (old_day + " 09:00:00",)
+        )
+        cur = await db.execute("SELECT last_insert_rowid()")
+        conv_id = (await cur.fetchone())[0]
+        await db.execute(
+            "INSERT INTO tool_audit_log (tool_name, params, success, created_at, conversation_id) "
+            "VALUES (?, '{}', 1, ?, ?)",
+            ("get_weather", old_day + " 10:00:00", conv_id),
+        )
+        await db.execute(
+            "INSERT INTO tool_audit_log (tool_name, params, success, created_at) "
+            "VALUES (?, '{}', 0, ?)",
+            ("send_email", old_day + " 11:00:00"),
+        )
+        await db.commit()
+
+    asyncio.run(seed())
+    assert asyncio.run(dbmod.rollup_tool_audit()) == 1
+
+    csv_path = os.path.join(
+        os.path.dirname(dbmod.DB_PATH), "audit_exports", f"tool-audit-{old_day}.csv"
+    )
+    assert os.path.exists(csv_path)
+    with open(csv_path, encoding="utf-8") as f:
+        lines = [ln.rstrip("\n").split(",") for ln in f]
+    assert lines[0] == dbmod.AUDIT_EXPORT_COLUMNS  # full 20-column header
+    assert len(lines) == 3  # header + 2 detail rows
+    assert lines[1][1] == "get_weather"
+    assert lines[1][19] == "expS1"  # linked conversation's session_id
+    assert lines[2][1] == "send_email"
+    assert lines[2][19] == ""  # unlinked → blank, no crash
+
+    # The day was summarized and its details removed.
+    summary = asyncio.run(_fetch_all("SELECT day, total_calls FROM tool_audit_log WHERE is_summary = 1"))
+    assert [r[0] for r in summary] == [old_day]
+    assert [r[1] for r in summary] == [2]
+    assert asyncio.run(_fetch_all("SELECT COUNT(*) FROM tool_audit_log WHERE is_summary = 0"))[0][0] == 0
+
+
+def test_rollup_export_failure_blocks_removal(audit_db, monkeypatch):
+    """If the archive cannot be written, the detail rows are NOT deleted — the
+    day stays untouched and is retried on the next cycle."""
+    from datetime import datetime, timedelta
+    old_day = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+
+    async def seed():
+        db = await dbmod.get_db()
+        await db.execute(
+            "INSERT INTO tool_audit_log (tool_name, params, success, created_at) "
+            "VALUES ('get_datetime', '{}', 1, ?)", (old_day + " 10:00:00",)
+        )
+        await db.commit()
+
+    asyncio.run(seed())
+    original = dbmod._write_audit_csv
+    monkeypatch.setattr(dbmod, "_write_audit_csv", lambda day, rows: (_ for _ in ()).throw(OSError("disk full")))
+
+    assert asyncio.run(dbmod.rollup_tool_audit()) == 0
+    # Detail preserved, no summary written, no partial archive.
+    assert asyncio.run(_fetch_all("SELECT COUNT(*) FROM tool_audit_log WHERE is_summary = 0"))[0][0] == 1
+    assert asyncio.run(_fetch_all("SELECT COUNT(*) FROM tool_audit_log WHERE is_summary = 1"))[0][0] == 0
+    assert not os.path.exists(os.path.join(
+        os.path.dirname(dbmod.DB_PATH), "audit_exports", f"tool-audit-{old_day}.csv"))
+
+    # A later cycle with a working archive succeeds and then removes the rows.
+    monkeypatch.setattr(dbmod, "_write_audit_csv", original)
+    assert asyncio.run(dbmod.rollup_tool_audit()) == 1
+    assert asyncio.run(_fetch_all("SELECT COUNT(*) FROM tool_audit_log WHERE is_summary = 0"))[0][0] == 0
+    assert os.path.exists(os.path.join(
+        os.path.dirname(dbmod.DB_PATH), "audit_exports", f"tool-audit-{old_day}.csv"))
+
+
+def test_audit_export_dir_env_override(audit_db, monkeypatch, tmp_path):
+    monkeypatch.delenv("AUDIT_EXPORT_DIR", raising=False)
+    monkeypatch.setattr(dbmod, "DB_PATH", str(tmp_path / "db" / "audit.db"))
+    assert dbmod.audit_export_dir() == str(tmp_path / "db" / "audit_exports")
+    monkeypatch.setenv("AUDIT_EXPORT_DIR", str(tmp_path / "custom"))
+    assert dbmod.audit_export_dir() == str(tmp_path / "custom")
