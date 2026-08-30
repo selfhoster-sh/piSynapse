@@ -2755,6 +2755,13 @@ async function sendMsg(){
           // mark affordance). Rows are dropped on the NEXT send, not here.
           if(!bubble){ bubble=createStreamBubble(); }
           gotReply=true;
+          // Tool finished — the model is now answering. Drop the working label
+          // ("notlarına bakıyorum…") the moment text starts: the row flips to
+          // its quiet feedback state. Multi-step revives it on the next tool
+          // event and the following token re-settles (no second row).
+          if(toolRow && toolRow.isConnected && !toolRow.classList.contains('done')){
+            settleFeedbackRow(toolRow, true, roundAudits);
+          }
           fullText+=data.token; bubble.innerHTML=withStreamCaret(renderMd(fullText)); scrollEnd(false);
         } else if(data.done){
           if(thinkBox && fullReasoning){
@@ -2790,6 +2797,11 @@ async function sendMsg(){
           // Thinking streams after tool calls — the feedback row stays under
           // the message (it is the marking target). Cleared on the next send.
           if(!bubble) bubble=createStreamBubble();
+          // Same as the token path: once the model starts producing output
+          // (here: thinking) the tool label is done — settle the row.
+          if(toolRow && toolRow.isConnected && !toolRow.classList.contains('done')){
+            settleFeedbackRow(toolRow, true, roundAudits);
+          }
           if(!thinkBox){ thinkBox=ensureThinkBox(bubble); }
           fullReasoning+=data.reasoning;
           renderThink(thinkBox.querySelector('.think-body'),
@@ -3050,9 +3062,13 @@ function resetPill(row){
 }
 function ensureToolRow(toolRow){
   // One row per message: reuse the same pill through the whole round — the
-  // label swaps for each tool while the spinner stays. It only settles once,
-  // at round end, so the message owns a SINGLE 👍/👎 pair (C-7).
-  if(toolRow && toolRow.isConnected && !toolRow.classList.contains('done')) return toolRow;
+  // label swaps for each tool while the spinner stays. It settles once when the
+  // model starts replying (token/reasoning) and is REVIVED on a later tool
+  // event (multi-step), so the message owns a SINGLE 👍/👎 pair (C-7).
+  if(toolRow && toolRow.isConnected){
+    if(toolRow.classList.contains('done')) resetPill(toolRow);
+    return toolRow;
+  }
   const row=document.createElement('div'); row.className='tool-status';
   row.innerHTML='<span class="tspin"></span><span class="tlab"></span>';
   placeRow(row);
