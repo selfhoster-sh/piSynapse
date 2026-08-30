@@ -29,10 +29,10 @@ uses [Semantic Versioning](https://semver.org/).
 ## [1.7.2] - 2026-08-29
 
 ### Fixed (tool-calling fine-tune, eval 380 → mixed-domain)
-- "remind + time" routes to **calendar** (deterministic `reminder_group`), memory otherwise; combined domain keeps combined toolset (`913429a`, `098a435`).
-- Model is nudged to continue with the mutation after a lookup-only round; pure reads untouched (`97640ea`).
-- Streaming rejects hallucinated confirm-gated tools (`b826b66`, `a5f4adc`).
-- P0–P2 tool & intent comprehensive fixes (`0c9c49a`).
+- "remind + time" routes to **calendar** (deterministic `reminder_group`), memory otherwise; combined domain keeps combined toolset (`1ae59eb`, `e5e3ec5`).
+- Model is nudged to continue with the mutation after a lookup-only round; pure reads untouched (`a16535a`).
+- Streaming rejects hallucinated confirm-gated tools (`cf8b9aa`, `3a42266`).
+- P0–P2 tool & intent comprehensive fixes (`8b790b9`).
 - Detailed release notes archived under `_old/release_notes/` (dev-internal).
 
 ## [1.7.1] - 2026-08-27
