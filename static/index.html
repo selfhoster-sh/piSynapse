@@ -4403,7 +4403,12 @@ if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.s
   body:not(.glass-mode) #send-btn:hover:not(:focus):not(:disabled){animation:none;box-shadow:0 6px 24px var(--accent-d), inset -2px -3px 6px rgba(0,0,0,.18), inset 1px 2px 5px rgba(255,255,255,.32)}
 
   /* ── Hover Effects ────────────────────────────────────────────── */
+  /* Desktop-only: touch devices get sticky :hover, so these must stay gated
+     to hover-capable pointers or every tap leaves the CTA enlarged and the
+     press feedback feels broken. */
+  @media (hover:hover){
   .new-btn:hover,.top-new-btn:hover{transform:scale(1.02)}
+  }
   .new-btn:active{transform:scale(.97);box-shadow:0 6px 18px rgba(0,0,0,.28)}
   .inline-think-btn:active,.tts-btn:active{transform:scale(.94)}
   body:not(.glass-mode) #send-btn:active:not(:disabled){transform:scale(.93);box-shadow:0 4px 24px var(--accent-d), inset 0 0 14px var(--accent)}
