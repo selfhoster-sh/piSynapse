@@ -1384,6 +1384,7 @@ const STRINGS = {
     toolAttempt:'deneme', toolCap:'tekrar sınırı',
     markWrong:'Yanlıştı', markDone:'İşaretlendi', markSave:'Kaydet',
     markErr:'İşaretleme kaydedilemedi', markLoadErr:'Araç grupları yüklenemedi',
+    corrNoop:'Araç zaten bu grupta — düzeltme değil bu',
     markConfirm:'Doğruydu', markConfirmDone:'Onaylandı', markConfirmErr:'Onay kaydedilemedi',
     fbWhich:'Hangisi yanlıştı?',
     notePlaceholder:'Neden yanlıştı? (opsiyonel)…', noteSave:'Kaydet', noteCancel:'İptal',
@@ -1441,6 +1442,7 @@ const STRINGS = {
     toolAttempt:'attempt', toolCap:'retry cap',
     markWrong:'Wrong', markDone:'Marked', markSave:'Save',
     markErr:'Could not save the marking', markLoadErr:'Could not load tool groups',
+    corrNoop:'Tool is already in this group — not a correction',
     markConfirm:'Correct', markConfirmDone:'Confirmed', markConfirmErr:'Could not save the confirmation',
     fbWhich:'Which one was wrong?',
     notePlaceholder:'Why was it wrong? (optional)…', noteSave:'Save', noteCancel:'Cancel',
@@ -3484,8 +3486,14 @@ function openGroupPicker(row, btn, auditId, opts={}){
 async function submitCorrection(row, btn, auditId, group, panel, saveEl, opts){
   saveEl.disabled=true; saveEl.textContent='…';
   try{
-    await api('POST','/chat/tool-correction',{audit_id:auditId, expected_group:group});
+    const res=await api('POST','/chat/tool-correction',{audit_id:auditId, expected_group:group});
     panel.remove();
+    if(res && res.noop){
+      // Same-group "correction" is a no-op (BUG-5): the picked group already
+      // matches the tool's own group — tell the user, don't mark as fixed.
+      toast(t('corrNoop'));
+      return;
+    }
     btn.classList.add('marked'); btn.title=t('markDone');
     // A correction is the opposite of a confirmation — drop the up thumb's
     // active look too (backend clears confirmed_at the same way).

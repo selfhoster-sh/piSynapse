@@ -671,3 +671,57 @@ class TestBug4ConflictThreshold:
         res = self._run("hava durumu", "weather", base_groups, base_matrix,
                         threshold=0.5, monkeypatch=monkeypatch)
         assert res is None  # nearest group == proposed -> no conflict
+
+
+class TestBug5NoopCorrection:
+    """C-5: same-group 'corrections' are no-ops and must not feed the corpus."""
+
+    def test_same_group_correction_skipped(self, audit_db, corpus_data_dir, monkeypatch):
+        import corpus_feeder as cf
+
+        # list_notes -> group 'notes'; user "corrects" to 'notes' (same group)
+        _seed_conversation(audit_db, 6, "notları göster")
+        _seed_rows(audit_db, [{"tool_name": "list_notes", "conversation_id": 6,
+                               "corrected_at": "2026-08-31T12:00:00",
+                               "expected_group": "notes",
+                               "expected_tool": "list_notes"}])
+
+        monkeypatch.setattr(cf, "_load_base_corpus_embeddings", _fake_base_corpus)
+        monkeypatch.setattr(cf, "_load_addition_embeddings", lambda: ([], None))
+        import tools.definitions as td
+        monkeypatch.setattr(td, "TOOL_TO_GROUP", {"list_notes": "notes"})
+        import embedding as emb
+        monkeypatch.setattr(emb, "embed", _fake_embed)
+
+        summary = asyncio.run(cf.run(db_path=audit_db))
+
+        assert summary["added"] == 0
+        assert summary["skipped"] == 1
+        assert summary["details"][0]["status"] == "skip_noop_negative"
+        assert cf._load_jsonl(cf.ADDITIONS_FILE) == []
+
+    def test_real_cross_group_correction_still_adds(self, audit_db, corpus_data_dir, monkeypatch):
+        import corpus_feeder as cf
+
+        # get_weather -> 'weather'; user corrects to 'notes' (real signal)
+        _seed_conversation(audit_db, 7, "notları göster")
+        _seed_rows(audit_db, [{"tool_name": "get_weather", "conversation_id": 7,
+                               "corrected_at": "2026-08-31T12:00:00",
+                               "expected_group": "notes",
+                               "expected_tool": "list_notes"}])
+
+        monkeypatch.setattr(cf, "_load_base_corpus_embeddings", _fake_base_corpus)
+        monkeypatch.setattr(cf, "_load_addition_embeddings", lambda: ([], None))
+        monkeypatch.setattr(cf, "_is_duplicate", lambda *a, **kw: False)
+        monkeypatch.setattr(cf, "_check_conflict", lambda *a, **kw: None)
+        import tools.definitions as td
+        monkeypatch.setattr(td, "TOOL_TO_GROUP", {"get_weather": "weather"})
+        import embedding as emb
+        monkeypatch.setattr(emb, "embed", _fake_embed)
+
+        summary = asyncio.run(cf.run(db_path=audit_db))
+
+        assert summary["added"] == 1
+        additions = cf._load_jsonl(cf.ADDITIONS_FILE)
+        assert additions[0]["group"] == "notes"
+        assert additions[0]["source"] == "negative"

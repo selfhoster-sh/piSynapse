@@ -572,6 +572,20 @@ async def set_tool_correction(audit_id: int, expected_tool: str | None,
         return False
 
 
+async def get_audit_tool_name(audit_id: int) -> str | None:
+    """Return the tool_name of an audit log row, or None if not found."""
+    try:
+        db = await get_db()
+        cur = await db.execute(
+            "SELECT tool_name FROM tool_audit_log WHERE id = ?", (audit_id,)
+        )
+        row = await cur.fetchone()
+        return row[0] if row else None
+    except Exception as e:
+        logger.warning(f"fetch audit tool_name failed for audit_id={audit_id}: {e}")
+        return None
+
+
 async def set_tool_confirmation(audit_id: int) -> bool:
     """Record a positive (confirmation) signal on a tool audit log entry.
 
