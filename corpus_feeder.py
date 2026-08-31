@@ -80,6 +80,28 @@ def _append_jsonl(path: Path, record: dict):
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
+def _write_jsonl(path: Path, records: list[dict]):
+    """Atomically replace the JSONL file with the given records (temp + rename)."""
+    _ensure_data_dir()
+    tmp = path.with_name(path.name + ".tmp")
+    with open(tmp, "w") as f:
+        for rec in records:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    os.replace(str(tmp), str(path))
+
+
+def _remove_addition_by_audit_id(audit_id):
+    """Drop the addition record for ``audit_id`` from ADDITIONS_FILE.
+
+    Used to roll back a jsonl append when its embedding could not be computed,
+    keeping additions.jsonl and additions_embeddings.npy index-aligned.
+    """
+    rows = _load_jsonl(ADDITIONS_FILE)
+    kept = [r for r in rows if r.get("audit_id") != audit_id]
+    if len(kept) != len(rows):
+        _write_jsonl(ADDITIONS_FILE, kept)
+
+
 def _load_pending_review() -> list[dict]:
     return _load_jsonl(PENDING_REVIEW_FILE)
 
@@ -220,18 +242,64 @@ async def _load_base_corpus_embeddings() -> tuple[list[str], np.ndarray | None]:
         return groups, None
 
 
+def _rebuild_matrix(records: list[dict]) -> np.ndarray | None:
+    """Re-embed every record text in jsonl order → index-aligned matrix.
+
+    additons_embeddings.npy stores vectors positionally; rebuilding the whole
+    matrix from the JSONL (the source of truth) guarantees rows and records
+    never slip out of alignment after a partial write or a crash.
+    """
+    from embedding import embed as embed_one
+
+    if not records:
+        return None
+    vecs = []
+    for rec in records:
+        try:
+            v = np.frombuffer(embed_one(rec["text"]), dtype="float32").reshape(1, -1)
+        except Exception as exc:  # noqa: BLE001
+            log.error("embed failed during rebuild for record=%r: %s", rec.get("audit_id"), exc)
+            return None
+        vecs.append(v)
+    return np.vstack(vecs)
+
+
 def _load_addition_embeddings() -> tuple[list[dict], np.ndarray | None]:
-    """Load persisted addition records and their embeddings."""
+    """Load persisted addition records and their embeddings, self-healing drift.
+
+    If the persisted vector count does not match the JSONL record count (a crash
+    or a failed embed may have slipped jsonl ahead of npy), the matrix is rebuilt
+    index-aligned from the JSONL and atomically persisted before being returned.
+    """
     additions = _load_jsonl(ADDITIONS_FILE)
-    if EMBEDDINGS_FILE.exists():
-        matrix = np.load(str(EMBEDDINGS_FILE))
-        return additions, matrix if len(matrix) > 0 else None
-    return additions, None
+    if not additions:
+        if EMBEDDINGS_FILE.exists():
+            EMBEDDINGS_FILE.unlink(missing_ok=True)
+        return additions, None
+    if not EMBEDDINGS_FILE.exists():
+        matrix = _rebuild_matrix(additions)
+        if matrix is not None:
+            _save_addition_embeddings(matrix)
+        return additions, matrix
+    matrix = np.load(str(EMBEDDINGS_FILE))
+    if matrix.ndim == 1:
+        matrix = matrix.reshape(-1, 1)
+    if len(matrix) != len(additions):
+        log.warning(
+            "jsonl/npy misalignment: %d records vs %d vectors — rebuilding index-aligned",
+            len(additions), len(matrix),
+        )
+        matrix = _rebuild_matrix(additions)
+        if matrix is not None:
+            _save_addition_embeddings(matrix)
+    return additions, matrix if (matrix is not None and len(matrix) > 0) else None
 
 
 def _save_addition_embeddings(matrix: np.ndarray):
     _ensure_data_dir()
-    np.save(str(EMBEDDINGS_FILE), matrix)
+    tmp = EMBEDDINGS_FILE.with_name(EMBEDDINGS_FILE.name + ".tmp.npy")
+    np.save(str(tmp), matrix)
+    os.replace(str(tmp), str(EMBEDDINGS_FILE))
 
 
 def _check_conflict(
@@ -525,19 +593,30 @@ async def run(db_path: str | None = None, dry_run: bool = False) -> dict:
 
         status = result["status"]
         if status in ("added", "added_llm_resolved"):
-            summary["added"] += 1
             text = result.get("text") or ""
             group = result.get("group") or ""
             if dry_run:
-                pass
+                summary["added"] += 1
             else:
-                existing_additions.append({"text": text, "group": group})
-                from embedding import embed as embed_one
-                vec = np.frombuffer(embed_one(text), dtype="float32")
-                if addition_matrix is None:
-                    addition_matrix = vec.reshape(1, -1)
+                # Guard the embed: _process_audit_row already appended the jsonl
+                # record; if its vector cannot be computed we roll the record back
+                # so jsonl and npy never diverge for this run.
+                try:
+                    from embedding import embed as embed_one
+                    vec = np.frombuffer(embed_one(text), dtype="float32")
+                except Exception as exc:  # noqa: BLE001
+                    log.error("embed failed for audit=%s [%s]: %s — rolling back jsonl",
+                              result.get("id"), status, exc)
+                    _remove_addition_by_audit_id(result.get("id"))
+                    summary["skipped"] += 1
+                    result["status"] = "skip_embed_error"
                 else:
-                    addition_matrix = np.vstack([addition_matrix, vec.reshape(1, -1)])
+                    summary["added"] += 1
+                    existing_additions.append({"text": text, "group": group})
+                    if addition_matrix is None:
+                        addition_matrix = vec.reshape(1, -1)
+                    else:
+                        addition_matrix = np.vstack([addition_matrix, vec.reshape(1, -1)])
         elif status == "genuinely_ambiguous":
             summary["ambiguous"] += 1
         elif status == "genuinely_ambiguous_not_command":

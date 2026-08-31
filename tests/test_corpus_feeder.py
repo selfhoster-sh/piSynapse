@@ -477,3 +477,69 @@ class TestBug1UserMessageResolution:
         assert cf._is_user_command_like("") is False
         assert cf._is_user_command_like("1. Birinci\n2. İkinci\n3. Üçüncü") is False
         assert cf._is_user_command_like("x" * 300) is False
+
+
+class TestBug2Alignment:
+    """C-2: jsonl ↔ npy must stay index-aligned; write atomically; guard embed."""
+
+    def test_rebuild_on_count_mismatch(self, corpus_data_dir, monkeypatch):
+        import corpus_feeder as cf
+
+        # 2 records in jsonl but only 1 vector in npy (simulated partial write)
+        cf._append_jsonl(cf.ADDITIONS_FILE, {"text": "notları listele", "group": "notes", "audit_id": 1})
+        cf._append_jsonl(cf.ADDITIONS_FILE, {"text": "hava durumu", "group": "weather", "audit_id": 2})
+        ev = _fake_embed("notları listele")
+        cf._ensure_data_dir()
+        np.save(str(cf.EMBEDDINGS_FILE),
+                np.frombuffer(ev, dtype="float32").reshape(1, -1))
+
+        monkeypatch.setattr("embedding.embed", _fake_embed)
+
+        additions, matrix = cf._load_addition_embeddings()
+
+        assert len(additions) == 2
+        assert matrix is not None and len(matrix) == 2
+        # index-aligned: row order must match jsonl order
+        expected_row0 = np.frombuffer(_fake_embed("notları listele"), dtype="float32")
+        np.testing.assert_allclose(matrix[0], expected_row0)
+
+    def test_missing_npy_rebuilds_and_persists(self, corpus_data_dir, monkeypatch):
+        import corpus_feeder as cf
+
+        cf._append_jsonl(cf.ADDITIONS_FILE, {"text": "notları listele", "group": "notes", "audit_id": 1})
+        monkeypatch.setattr("embedding.embed", _fake_embed)
+
+        additions, matrix = cf._load_addition_embeddings()
+
+        assert len(additions) == 1
+        assert matrix is not None and len(matrix) == 1
+        # rebuild must have persisted a fresh npy atomically
+        assert cf.EMBEDDINGS_FILE.exists()
+
+    def test_embed_error_rolls_back_jsonl(self, audit_db, corpus_data_dir, monkeypatch):
+        import corpus_feeder as cf
+
+        _seed_conversation(audit_db, 5, "notları listele")
+        _seed_rows(audit_db, [{"tool_name": "list_notes", "conversation_id": 5,
+                               "confirmed_at": "2026-08-31T12:00:00"}])
+
+        monkeypatch.setattr(cf, "_load_base_corpus_embeddings", _fake_base_corpus)
+        monkeypatch.setattr(cf, "_load_addition_embeddings", lambda: ([], None))
+        monkeypatch.setattr(cf, "_is_duplicate", lambda *a, **kw: False)
+        monkeypatch.setattr(cf, "_check_conflict", lambda *a, **kw: None)
+        import tools.definitions as td
+        monkeypatch.setattr(td, "TOOL_TO_GROUP", {"list_notes": "notes"})
+
+        def _boom(text):
+            raise RuntimeError("embed unavailable")
+        monkeypatch.setattr("embedding.embed", _boom)
+
+        summary = asyncio.run(cf.run(db_path=audit_db))
+
+        assert summary["added"] == 0
+        assert summary["skipped"] == 1
+        # jsonl must not contain the rolled-back record; npy stays aligned
+        assert cf._load_jsonl(cf.ADDITIONS_FILE) == []
+        additions, matrix = cf._load_addition_embeddings()
+        assert additions == []
+        assert matrix is None
