@@ -2,6 +2,7 @@
 import asyncio
 import logging
 import re
+from pathlib import Path
 
 from config import LITERT_BASE_URL, OLLAMA_BASE_URL, get
 
@@ -284,22 +285,35 @@ _TOOL_EMBED_CORPUS: list[tuple[str | None, str]] = [
 
 _tool_embed_cache: list[tuple[str | None, str, bytes]] | None = None
 _tool_embed_lock = asyncio.Lock()
+# mtime of additions.jsonl when the cache was last built; a change triggers an
+# automatic in-process rebuild, so corpus_feeder additions go LIVE without any
+# service restart.
+_tool_embed_mtime: float | None = None
+
+_ADDITIONS_PATH = Path(__file__).resolve().parent.parent / "corpus_data" / "additions.jsonl"
+
+
+def _additions_mtime() -> float | None:
+    """Get the feeder additions file mtime, or None when absent/deleted."""
+    try:
+        return _ADDITIONS_PATH.stat().st_mtime if _ADDITIONS_PATH.exists() else None
+    except OSError:
+        return None
 
 
 def _additional_corpus() -> list[tuple[str | None, str]]:
     """Load corpus examples appended by corpus_feeder.py (additions.jsonl).
 
-    Always returns a fresh list read on first classification, so a feeder run
-    takes effect on the next process restart (the embedding cache is rebuilt
-    from the base corpus + these additions). Returns [] if absent.
+    Returned fresh on each call; the embedding cache is rebuilt automatically
+    (see _get_tool_embeddings) whenever this file changes, so a feeder run
+    takes effect live without restarting the service.
     """
     try:
-        path = __import__("pathlib").Path(__file__).resolve().parent.parent / "corpus_data" / "additions.jsonl"
-        if not path.exists():
+        if not _ADDITIONS_PATH.exists():
             return []
         out: list[tuple[str | None, str]] = []
         import json as _json
-        for line in path.read_text(encoding="utf-8").splitlines():
+        for line in _ADDITIONS_PATH.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if not line:
                 continue
@@ -311,12 +325,27 @@ def _additional_corpus() -> list[tuple[str | None, str]]:
         return []
 
 
+def reset_tool_embed_cache() -> None:
+    """Force the tool-embedding corpus to rebuild on the next classification.
+
+    Used by the admin reload path and tests; safe under concurrent requests
+    because the rebuild itself happens under _tool_embed_lock.
+    """
+    global _tool_embed_cache, _tool_embed_mtime
+    _tool_embed_cache = None
+    _tool_embed_mtime = None
+
+
 async def _get_tool_embeddings() -> list[tuple[str | None, str, bytes]]:
-    global _tool_embed_cache
-    if _tool_embed_cache is not None:
+    global _tool_embed_cache, _tool_embed_mtime
+    # Fast path: cache hit AND the feeder's additions file is unchanged.
+    mtime = _additions_mtime()
+    if _tool_embed_cache is not None and mtime == _tool_embed_mtime:
         return _tool_embed_cache
     async with _tool_embed_lock:
-        if _tool_embed_cache is not None:
+        # Double-check under the lock: another task may have rebuilt meanwhile.
+        mtime = _additions_mtime()
+        if _tool_embed_cache is not None and mtime == _tool_embed_mtime:
             return _tool_embed_cache
         try:
             from embedding import embed_batch_async
@@ -324,10 +353,12 @@ async def _get_tool_embeddings() -> list[tuple[str | None, str, bytes]]:
             descriptions = [desc for _, desc in entries]
             vecs = await embed_batch_async(descriptions)
             _tool_embed_cache = [(group, desc, vec) for (group, desc), vec in zip(entries, vecs)]
-            logger.info(f"Tool embedding corpus loaded (intent routing, {len(entries)} entries)")
+            _tool_embed_mtime = mtime
+            logger.info(f"Tool embedding corpus loaded (intent routing, {len(entries)} entries, mtime={mtime})")
         except Exception as e:
             logger.warning(f"Tool embedding corpus failed: {e}, intent routing disabled")
             _tool_embed_cache = []
+            _tool_embed_mtime = mtime
         return _tool_embed_cache
 
 
