@@ -586,6 +586,49 @@ def test_correction_endpoint_invalid_tool_still_400(correction_client):
     assert "Invalid expected_tool" in resp.json()["detail"]
 
 
+def test_correction_endpoint_same_group_is_noop(correction_client):
+    """BUG-5: picking a group equal to the tool's own group is a no-op, flagged."""
+    # _create_audit_entry makes a 'get_datetime' tool -> group 'weather'
+    audit_id = asyncio.run(_create_audit_entry())
+    resp = correction_client.post(
+        "/chat/tool-correction",
+        json={"audit_id": audit_id, "expected_group": "weather"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["noop"] is True
+    assert resp.json()["expected_group"] == "weather"
+
+
+def test_correction_endpoint_different_group_not_noop(correction_client):
+    # get_datetime (weather) corrected to a genuinely different group
+    audit_id = asyncio.run(_create_audit_entry())
+    resp = correction_client.post(
+        "/chat/tool-correction",
+        json={"audit_id": audit_id, "expected_group": "notes"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["noop"] is False
+    assert resp.json()["expected_group"] == "notes"
+
+
+def test_correction_endpoint_tool_only_is_not_noop(correction_client):
+    # A precise expected_tool is a real signal regardless of group mapping.
+    audit_id = asyncio.run(_create_audit_entry())
+    resp = correction_client.post(
+        "/chat/tool-correction",
+        json={"audit_id": audit_id, "expected_tool": "create_calendar_event"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["noop"] is False
+
+
+def test_get_audit_tool_name_returns_name_and_none(audit_db):
+    from db import get_audit_tool_name
+    audit_id = asyncio.run(_create_audit_entry())
+    assert asyncio.run(get_audit_tool_name(audit_id)) == "get_datetime"
+    assert asyncio.run(get_audit_tool_name(999_999)) is None
+
+
 def test_correction_endpoint_missing_audit_id_404(correction_client):
     resp = correction_client.post(
         "/chat/tool-correction",

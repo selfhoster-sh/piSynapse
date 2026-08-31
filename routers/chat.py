@@ -438,9 +438,9 @@ async def set_tool_correction(req: CorrectionRequest):
     OR an expected_group (domain key from GET /tools/groups, the UI path) —
     at least one is required. Updates the fields and sets corrected_at.
     """
-    from db import set_tool_correction
+    from db import get_audit_tool_name, set_tool_correction
     from llm.intent import tool_group_keys
-    from tools.definitions import TOOL_NAMES
+    from tools.definitions import TOOL_NAMES, TOOL_TO_GROUP
 
     if not req.expected_tool and not req.expected_group:
         raise HTTPException(
@@ -465,8 +465,19 @@ async def set_tool_correction(req: CorrectionRequest):
     ok = await set_tool_correction(req.audit_id, req.expected_tool, req.expected_group)
     if not ok:
         raise HTTPException(status_code=404, detail="Audit log entry not found")
+
+    # Same-group "correction" (BUG-5): the picked group already matches the
+    # tool's own group — a no-op, not a real correction. Surface it so the UI
+    # can warn and so corpus_feeder skips these as noise.
+    noop = False
+    if req.expected_group is not None and req.expected_tool is None:
+        tool_name = await get_audit_tool_name(req.audit_id)
+        if tool_name and TOOL_TO_GROUP.get(tool_name) == req.expected_group:
+            noop = True
+
     return {
         "ok": True,
+        "noop": noop,
         "audit_id": req.audit_id,
         "expected_tool": req.expected_tool,
         "expected_group": req.expected_group,

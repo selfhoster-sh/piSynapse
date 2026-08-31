@@ -474,6 +474,13 @@ async def _process_audit_row(
     if corrected and expected_group:
         proposed_group = expected_group
         signal = "negative"
+        # Same-group "correction" is a no-op: the tool already belongs to the
+        # group the user "corrected" to (case: BUG-5 UI noise). Not a real
+        # signal — skip, don't feed it into the corpus.
+        current_group = tool_to_group.get(tool_name)
+        if current_group and current_group == expected_group:
+            return {"id": audit_id, "status": "skip_noop_negative",
+                    "group": expected_group, "tool": tool_name}
     elif confirmed:
         proposed_group = tool_to_group.get(tool_name)
         if not proposed_group:
