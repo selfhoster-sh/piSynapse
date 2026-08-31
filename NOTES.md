@@ -24,6 +24,15 @@
 - Tests: reworked `_seed_conversation` to mirror the real schema (user at cid-1, assistant at cid) + new `TestBug1UserMessageResolution` class (feeds user command, rejects assistant-like text, single-word, missing-user skip, heuristics). Suite **479** passing; ruff clean; py_compile ✓.
 - Image size / dry-run unchanged for the 5 positives (they now carry correct text). Commit `C-1`.
 
+## 2026-09-01 — Faz C-2 (BUG-2): atomic additions.jsonl ↔ npy writes + embed guard
+- **Fix target (from audit):** `additions.jsonl` is appended row-by-row inside `_process_audit_row`, but `additions_embeddings.npy` is written once at the end of `run()`. `_check_conflict`/`_is_duplicate` map group↔vector purely by positional index, so a crash (or an unguarded `embed_one`) between the two leaves jsonl and npy permanently out of alignment.
+- **Change (corpus_feeder.py):**
+  - `_save_addition_embeddings` now writes to a temp file and `os.replace()`s into place (atomic; never a half-written npy).
+  - `_load_addition_embeddings` **self-heals**: it compares `len(jsonl)` vs `len(npy)`; on mismatch (or missing npy) it rebuilds an index-aligned matrix by re-embedding every record in jsonl order (jsonl = source of truth) and atomically persists it. Added `_rebuild_matrix()`.
+  - The `run()` embed path is guarded: if `embed_one` fails for a just-added record, `_remove_addition_by_audit_id()` rolls the jsonl row back (added `_write_jsonl` atomic rewrite) and the row counts as `skip_embed_error` — jsonl and npy never diverge on an in-process failure.
+- **Tests:** new `TestBug2Alignment` — rebuild on count mismatch (2 records/1 vector → matrix rebuilt aligned), missing-npy rebuild + persist, and embed-error rollback (jsonl emptied, matrix None, counted skipped). Suite **482** passing; ruff clean; py_compile ✓.
+- Live check: `corpus_data/` held only `state.json` (no live feed has ever run non-dry), so no real data was drifted — the fix is defensive. Dry-run feed unchanged (5 added). Commit `C-2`.
+
 ## 2026-08-31 — E-1 AUDIT: correction/confirmation → corpus pipeline (read-only)
 > Full written report: `/home/salih/corpus_feeder_audit_report.md`. Nothing was fixed during the audit. Verdicts below are each justified by live evidence, never "probably correct".
 - **GREEN, verified:** (a) `confirmed_at` is a genuine user thumbs-up — schema has NO default, only `set_tool_confirmation()` (POST /chat/tool-confirm) sets it; frontend `submitConfirmation` fires it on a real 👍 click. (b) asyncio await chain is complete everywhere (base corpus + additions + LLM resolution); the only `asyncio.run` left is the CLI entry. (c) LLM auto-resolution prompt is neutral (groups presented symmetrically, no "user picked A" framing) — no confirmation bias. (d) `_get_tool_embeddings` really loads additions in a fresh process (CORPUS_ENTRIES 63, ADDITION_LOADED True). (e) an added example really changes cosine routing — real command "son 10" went question/None before → action/email after.
