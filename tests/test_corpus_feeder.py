@@ -622,3 +622,52 @@ class TestBug3LiveReload:
         # additions yet) — the reload path is exercised and stable.
         assert c1 is not c3
         assert c1 == c3
+
+
+class TestBug4ConflictThreshold:
+    """C-4: conflict check uses a calibrated, configurable cosine threshold."""
+
+    def _run(self, text, proposed, base_groups, base_matrix,
+             addrecs=(), addmat=None, threshold=None, monkeypatch=None):
+        import corpus_feeder as cf
+        monkeypatch.setattr("embedding.embed", _fake_embed)
+        return cf._check_conflict(
+            text, proposed, base_groups, base_matrix, list(addrecs), addmat,
+            conflict_threshold=threshold,
+        )
+
+    def test_default_threshold_from_config(self):
+        import config
+        import corpus_feeder as cf
+        assert getattr(config, "CONFLICT_COSINE", None) == 0.50
+        # signature default is None -> resolves to config.CONFLICT_COSINE
+        assert cf._check_conflict.__defaults__[0] is None
+
+    def test_conflict_when_different_group_above_threshold(self, monkeypatch):
+        import numpy as np
+        # base corpus: one 'weather' row that is highly similar to the query
+        base_groups = ["weather"]
+        # _fake_embed("hava durumu") is deterministic; use it as the base row too
+        base_matrix = np.frombuffer(_fake_embed("hava durumu"), dtype="float32").reshape(1, -1)
+        res = self._run("hava durumu", "notes", base_groups, base_matrix,
+                        threshold=0.5, monkeypatch=monkeypatch)
+        assert res is not None
+        assert res["source"] == "base_corpus"
+        assert res["conflicts_with_group"] == "weather"
+
+    def test_no_conflict_below_threshold(self, monkeypatch):
+        import numpy as np
+        # unrelated target -> very low cosine
+        base_groups = ["calendar"]
+        base_matrix = np.frombuffer(_fake_embed("etkinlik oluştur her öğlen"), dtype="float32").reshape(1, -1)
+        res = self._run("hava durumu raporu çıkart", "weather", base_groups, base_matrix,
+                        threshold=0.5, monkeypatch=monkeypatch)
+        assert res is None
+
+    def test_same_group_never_conflicts(self, monkeypatch):
+        import numpy as np
+        base_groups = ["weather"]
+        base_matrix = np.frombuffer(_fake_embed("hava durumu"), dtype="float32").reshape(1, -1)
+        res = self._run("hava durumu", "weather", base_groups, base_matrix,
+                        threshold=0.5, monkeypatch=monkeypatch)
+        assert res is None  # nearest group == proposed -> no conflict
