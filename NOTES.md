@@ -56,6 +56,14 @@
 - **Change (static/index.html):** `submitCorrection` checks the `noop` flag and shows a `corrNoop` toast instead of marking the row fixed (en/tr strings added).
 - **Tests:** `TestBug5NoopCorrection` (same-group skipped `skip_noop_negative` + empty jsonl; real cross-group still adds negative) + endpoint/db tests (`noop` true/false/tool-only, `get_audit_tool_name`). Suite **494** passing; ruff clean; py_compile ✓; JS syntax ✓. Commit `C-5`.
 
+## 2026-09-01 — Faz C-6: regression sweep (all bugs fixed)
+- **Every commit (C-1→C-5)** carried py_compile + full pytest + ruff clean; per-commit verification done.
+- **Final regression:** full suite **494** passing (was 474 at audit start; +20 new tests across C-1..C-5), ruff clean, py_compile ✓, JS syntax ✓.
+- **Live dry-run on real DB** re-confirms the 5 confirmed rows now feed the **USER commands** (audit 227/228 → "Notları listele", 232 → "devam edelim…", 233 → "son 10", 234 → "Bugün hava nasıl?") — assistant-reply text no longer poisons the corpus (BUG-1). 6 no-text correction rows still skipped; 5 positives add cleanly.
+- **Live calibration (C-4)** of the conflict threshold on the real model + real commands: own-group 0.19–0.71 vs cross-group 0.16–0.65 → default `CONFLICT_COSINE=0.50` (env-overridable), the conflict/LLM-resolution path is now reachable.
+- **Pre-first-real-run action (from plan):** `corpus_data/` holds only `state.json` (no live non-dry feed yet, so no wrong examples to purge); reset/clean before the first live `corpus_feeder.py --commit` run is still advisable.
+- Local `main` is **ahead of origin/main by 6** commits (the baseline feature + C-1..C-5). Push pending user confirmation; a service restart/reload is still required to activate backend changes in the live `pisynapse.service`.
+
 ## 2026-08-31 — E-1 AUDIT: correction/confirmation → corpus pipeline (read-only)
 > Full written report: `/home/salih/corpus_feeder_audit_report.md`. Nothing was fixed during the audit. Verdicts below are each justified by live evidence, never "probably correct".
 - **GREEN, verified:** (a) `confirmed_at` is a genuine user thumbs-up — schema has NO default, only `set_tool_confirmation()` (POST /chat/tool-confirm) sets it; frontend `submitConfirmation` fires it on a real 👍 click. (b) asyncio await chain is complete everywhere (base corpus + additions + LLM resolution); the only `asyncio.run` left is the CLI entry. (c) LLM auto-resolution prompt is neutral (groups presented symmetrically, no "user picked A" framing) — no confirmation bias. (d) `_get_tool_embeddings` really loads additions in a fresh process (CORPUS_ENTRIES 63, ADDITION_LOADED True). (e) an added example really changes cosine routing — real command "son 10" went question/None before → action/email after.
