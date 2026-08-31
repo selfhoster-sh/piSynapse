@@ -99,10 +99,20 @@ def _seed_rows(conn_str: str, rows: list[dict]):
 
 
 def _seed_conversation(conn_str: str, cid: int, text: str):
+    """Insert a user message (id cid-1) followed by an assistant message (id cid).
+
+    Mirrors the real schema where tool_audit_log.conversation_id points to the
+    ASSISTANT message; the feeder walks back to the preceding user message, so
+    cid must be ≥ 2 and the user text sits at cid-1.
+    """
     conn = sqlite3.connect(conn_str)
     conn.execute(
         "INSERT INTO conversations (id, session_id, role, content) VALUES (?, 'test', 'user', ?)",
-        (cid, text),
+        (cid - 1, text),
+    )
+    conn.execute(
+        "INSERT INTO conversations (id, session_id, role, content) VALUES (?, 'test', 'assistant', ?)",
+        (cid, "Merhaba! İşte sonuçlar: 1. deneme 2. deneme 3. deneme"),
     )
     conn.commit()
     conn.close()
@@ -375,3 +385,95 @@ class TestIntelAdditionsLoading:
 
         monkeypatch.setattr(Path, "exists", lambda self: False)
         assert li._additional_corpus() == []
+
+
+class TestBug1UserMessageResolution:
+    """C-1: corpus must be fed the USER command, not the assistant reply."""
+
+    def _run_single(self, audit_db, corpus_data_dir, monkeypatch,
+                    user_text, tool="get_weather", group="weather",
+                    conversation_id=5, assistant_reply=None):
+        # assistant message at `conversation_id`, user text at conversation_id-1
+        conn = sqlite3.connect(audit_db)
+        conn.execute(
+            "INSERT INTO conversations (id, session_id, role, content) VALUES (?, 'test', 'user', ?)",
+            (conversation_id - 1, user_text),
+        )
+        conn.execute(
+            "INSERT INTO conversations (id, session_id, role, content) VALUES (?, 'test', 'assistant', ?)",
+            (conversation_id, assistant_reply or "Merhaba! Elbette, işte sonuçlar: 1 2 3"),
+        )
+        conn.commit()
+        conn.close()
+        _seed_rows(audit_db, [{"tool_name": tool, "conversation_id": conversation_id,
+                               "confirmed_at": "2026-08-31T12:00:00"}])
+
+        monkeypatch.setattr(cf, "_load_base_corpus_embeddings", _fake_base_corpus)
+        monkeypatch.setattr(cf, "_load_addition_embeddings", lambda: ([], None))
+        monkeypatch.setattr(cf, "_is_duplicate", lambda *a, **kw: False)
+        monkeypatch.setattr(cf, "_check_conflict", lambda *a, **kw: None)
+        import tools.definitions as td
+        monkeypatch.setattr(td, "TOOL_TO_GROUP", {tool: group})
+        import embedding as emb
+        monkeypatch.setattr(emb, "embed", _fake_embed)
+        return asyncio.run(cf.run(db_path=audit_db))
+
+    def test_feeds_user_command_not_assistant_reply(self, audit_db, corpus_data_dir, monkeypatch):
+        # The assistant reply is the kind of output that previously poisoned the
+        # corpus. The feeder must resolve and feed the preceding USER command.
+        summary = self._run_single(audit_db, corpus_data_dir, monkeypatch,
+                                   user_text="Notları listele",
+                                   assistant_reply="Merhaba! Elbette, notların listesi: 1. Mobil 2. deneme")
+        assert summary["added"] == 1
+        additions = cf._load_jsonl(cf.ADDITIONS_FILE)
+        assert additions[0]["text"] == "Notları listele"  # user command, NOT the reply
+
+    def test_assistant_output_like_text_rejected(self, audit_db, corpus_data_dir, monkeypatch):
+        # Even if the resolved text looks like an assistant reply, reject it.
+        summary = self._run_single(audit_db, corpus_data_dir, monkeypatch,
+                                   user_text="Merhaba! Elbette, notların listesini aşağıda bulabilirsin")
+        assert summary["added"] == 0
+        assert summary["ambiguous"] == 1
+        ga = cf._load_genuinely_ambiguous()
+        assert len(ga) == 1
+        assert ga[0]["reason"] == "not_user_command"
+
+    def test_single_word_rejected(self, audit_db, corpus_data_dir, monkeypatch):
+        summary = self._run_single(audit_db, corpus_data_dir, monkeypatch, user_text="evet")
+        assert summary["added"] == 0
+        assert summary["ambiguous"] == 1
+
+    def test_no_user_message_skips(self, audit_db, corpus_data_dir, monkeypatch):
+        # Only an assistant row with no preceding user message → skip_no_text
+        conn = sqlite3.connect(audit_db)
+        conn.execute(
+            "INSERT INTO conversations (id, session_id, role, content) VALUES (?, 'test', 'assistant', ?)",
+            (10, "response"),
+        )
+        conn.commit()
+        conn.close()
+        _seed_rows(audit_db, [{"tool_name": "get_weather", "conversation_id": 10,
+                               "confirmed_at": "2026-08-31T12:00:00"}])
+        monkeypatch.setattr(cf, "_load_base_corpus_embeddings", _fake_base_corpus)
+        monkeypatch.setattr(cf, "_load_addition_embeddings", lambda: ([], None))
+        monkeypatch.setattr(cf, "_is_duplicate", lambda *a, **kw: False)
+        monkeypatch.setattr(cf, "_check_conflict", lambda *a, **kw: None)
+        import tools.definitions as td
+        monkeypatch.setattr(td, "TOOL_TO_GROUP", {"get_weather": "weather"})
+        import embedding as emb
+        monkeypatch.setattr(emb, "embed", _fake_embed)
+        summary = asyncio.run(cf.run(db_path=audit_db))
+        assert summary["added"] == 0
+        assert summary["skipped"] == 1
+        assert summary["details"][0]["status"] == "skip_no_text"
+
+    def test_is_user_command_like_heuristics(self):
+        assert cf._is_user_command_like("notları listele") is True
+        assert cf._is_user_command_like("bugün hava nasıl") is True
+        assert cf._is_user_command_like("son 10 e-postayı göster") is True
+        # rejected
+        assert cf._is_user_command_like("Merhaba! Elbette, notların listesini aşağıda bulabilirsin") is False
+        assert cf._is_user_command_like("evet") is False
+        assert cf._is_user_command_like("") is False
+        assert cf._is_user_command_like("1. Birinci\n2. İkinci\n3. Üçüncü") is False
+        assert cf._is_user_command_like("x" * 300) is False

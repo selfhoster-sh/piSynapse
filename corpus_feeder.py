@@ -123,15 +123,63 @@ def _fetch_new_audits(conn: sqlite3.Connection, last_id: int) -> list[dict]:
 
 
 def _resolve_message_text(conn: sqlite3.Connection, conversation_id: int | None) -> str | None:
-    """Get the user message that triggered a given tool call."""
+    """Resolve the USER message that triggered a given audit row.
+
+    `tool_audit_log.conversation_id` is the *assistant* message id (see
+    `link_audits_to_message`); the corpus must NOT be fed the assistant reply
+    (that is tool output, not a user intent). We therefore walk back to the
+    preceding `user` message in the same session. Returns None when unresolved.
+    """
     if conversation_id is None:
         return None
     row = conn.execute(
-        "SELECT content FROM conversations WHERE id = ?", (conversation_id,)
+        "SELECT session_id FROM conversations WHERE id = ?", (conversation_id,)
     ).fetchone()
-    if row is None:
+    if row is None or not row["session_id"]:
         return None
-    return row["content"]
+    session_id = row["session_id"]
+    user_row = conn.execute(
+        """SELECT content FROM conversations
+           WHERE session_id = ? AND id < ? AND role = 'user'
+           ORDER BY id DESC LIMIT 1""",
+        (session_id, conversation_id),
+    ).fetchone()
+    if user_row is None:
+        return None
+    return user_row["content"]
+
+
+# Assistant outputs (list dumps, greetings, tool-summary prose) are NOT valid
+# intent examples even after user-message resolution; they indicate the resolved
+# text was the reply itself or a degenerate short message. Multi-line list
+# markers, assistant-style greetings, and a heavy prose ratio mark such rows.
+_ASST_GREETINGS = ("merhaba", "elbette", "işte", "aşağıda", "tamam,", "tabii,",
+                   "hazırlıyorum", "listeliyorum", "bulabilirsin", "gönderdim",
+                   "oldu", "kaydedildi", "eklendi", "silindi", "hatırlatıcı kuruldu")
+
+
+def _is_user_command_like(text: str) -> bool:
+    """Heuristics to reject assistant-output / degenerate text as an intent example.
+
+    Returns True when the text plausibly is a user command suitable as a corpus
+    example. Conservative: when in doubt, returns False (the row is skipped to
+    genuinely_ambiguous instead of poisoning the corpus).
+    """
+    t = text.strip().lower()
+    if not t:
+        return False
+    if "\n" in t and len(t.splitlines()) > 1:
+        return False  # multi-line output/response
+    if len(t) > 200:
+        return False  # long prose — almost certainly a reply
+    # A single word that is not a clear verb-like command is too ambiguous.
+    if len(t.split()) <= 1:
+        return False
+    # Assistant-style openers strongly suggest a reply, not a command.
+    for g in _ASST_GREETINGS:
+        if t.startswith(g):
+            return False
+    return True
 
 
 # ── TOOL_TO_GROUP (mirrors tools/definitions.py) ──────────────────────────────
@@ -362,6 +410,21 @@ async def _process_audit_row(
     if not text:
         return {"id": audit_id, "status": "skip_empty_text"}
 
+    # Reject assistant-output / degenerate text: feeding the model's own reply
+    # or a context-only fragment as an intent example would poison routing.
+    if not _is_user_command_like(text):
+        record = {
+            "text": text,
+            "proposed_group": proposed_group,
+            "audit_id": audit_id,
+            "reason": "not_user_command",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        if not dry_run:
+            _append_genuinely_ambiguous(record)
+        return {"id": audit_id, "status": "genuinely_ambiguous_not_command",
+                "group": proposed_group, "text": text}
+
     # Check exact duplicate
     if _is_duplicate(text, base_groups, base_matrix, existing_additions, addition_matrix):
         return {"id": audit_id, "status": "skip_duplicate", "group": proposed_group}
@@ -477,6 +540,8 @@ async def run(db_path: str | None = None, dry_run: bool = False) -> dict:
                     addition_matrix = np.vstack([addition_matrix, vec.reshape(1, -1)])
         elif status == "genuinely_ambiguous":
             summary["ambiguous"] += 1
+        elif status == "genuinely_ambiguous_not_command":
+            summary["ambiguous"] += 1
         elif status == "skip_duplicate":
             summary["skipped"] += 1
             summary["conflicts"] += 1
@@ -549,6 +614,8 @@ def main():
                 print(f"    #{aid} → +{group} (conflict resolved by LLM)")
             elif status == "genuinely_ambiguous":
                 print(f"    #{aid} → AMBIGUOUS (proposed {group}, LLM disagreed)")
+            elif status == "genuinely_ambiguous_not_command":
+                print(f"    #{aid} → AMBIGUOUS (not a user command: {group!r})")
             elif status.startswith("skip"):
                 print(f"    #{aid} → {status}")
     print("=" * 60)
