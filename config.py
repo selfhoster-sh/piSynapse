@@ -132,6 +132,14 @@ INTENT_LLM_FALLBACK = os.getenv("INTENT_LLM_FALLBACK", "off")
 # -- Memory --
 DEFAULT_USER = os.getenv("ASSISTANT_USER", "default")
 MEMORY_SIMILARITY_THRESHOLD = _safe_float("MEMORY_SIMILARITY_THRESHOLD", 0.68)
+# Cosine threshold for the corpus-feeder "conflict" check: when a confirmed/
+# corrected trigger's nearest example of a DIFFERENT group scores at or above
+# this, the corpus disagrees with the proposed group and the row is routed to
+# conflict resolution instead of being added silently. Calibrated against the
+# live embedding model + real audit commands (own-group 0.19-0.71 vs cross-group
+# 0.16-0.65) and aligned with the intent classifier's best_sim>=0.50 decision
+# boundary, so the conflict/LLM-resolution path actually fires on real data.
+CONFLICT_COSINE = _safe_float("CONFLICT_COSINE", 0.50)
 # Data retention (days). 0 = disabled (keep forever).
 CONVERSATION_RETENTION_DAYS = _safe_int("CONVERSATION_RETENTION_DAYS", 0)
 MEMORY_RETENTION_DAYS = _safe_int("MEMORY_RETENTION_DAYS", 0)

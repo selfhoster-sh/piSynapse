@@ -309,12 +309,21 @@ def _check_conflict(
     base_matrix: np.ndarray | None,
     addition_records: list[dict],
     addition_matrix: np.ndarray | None,
-    conflict_threshold: float = 0.85,
+    conflict_threshold: float | None = None,
 ) -> dict | None:
     """Check if text conflicts with existing corpus or additions.
-    Returns conflict dict or None.
+
+    A "conflict" is flagged when the text's nearest example of a DIFFERENT
+    group scores at or above the (configurable) cosine threshold — i.e. when
+    the existing corpus routing would disagree with the user's proposed group.
+    The threshold defaults to config.CONFLICT_COSINE (calibrated, see config.py)
+    so this flow fires on real data instead of sitting dead at an unreachable
+    0.85. Returns a conflict dict or None.
     """
     from embedding import embed as embed_one
+
+    if conflict_threshold is None:
+        conflict_threshold = float(getattr(config, "CONFLICT_COSINE", 0.50))
 
     vec = np.frombuffer(embed_one(text), dtype="float32")
 
@@ -324,7 +333,7 @@ def _check_conflict(
         best_idx = int(np.argmax(sims))
         best_sim = float(sims[best_idx])
         best_group = base_groups[best_idx]
-        if best_sim >= conflict_threshold and best_group != proposed_group:
+        if best_group != proposed_group and best_sim >= conflict_threshold:
             return {
                 "text": text,
                 "proposed_group": proposed_group,
@@ -339,7 +348,7 @@ def _check_conflict(
         best_idx = int(np.argmax(sims))
         best_sim = float(sims[best_idx])
         best_group = addition_records[best_idx].get("group")
-        if best_sim >= conflict_threshold and best_group != proposed_group:
+        if best_group != proposed_group and best_sim >= conflict_threshold:
             return {
                 "text": text,
                 "proposed_group": proposed_group,
