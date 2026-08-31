@@ -286,6 +286,31 @@ _tool_embed_cache: list[tuple[str | None, str, bytes]] | None = None
 _tool_embed_lock = asyncio.Lock()
 
 
+def _additional_corpus() -> list[tuple[str | None, str]]:
+    """Load corpus examples appended by corpus_feeder.py (additions.jsonl).
+
+    Always returns a fresh list read on first classification, so a feeder run
+    takes effect on the next process restart (the embedding cache is rebuilt
+    from the base corpus + these additions). Returns [] if absent.
+    """
+    try:
+        path = __import__("pathlib").Path(__file__).resolve().parent.parent / "corpus_data" / "additions.jsonl"
+        if not path.exists():
+            return []
+        out: list[tuple[str | None, str]] = []
+        import json as _json
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            rec = _json.loads(line)
+            grp = rec.get("group")
+            out.append((grp, rec.get("text", "")))
+        return out
+    except Exception:
+        return []
+
+
 async def _get_tool_embeddings() -> list[tuple[str | None, str, bytes]]:
     global _tool_embed_cache
     if _tool_embed_cache is not None:
@@ -295,10 +320,11 @@ async def _get_tool_embeddings() -> list[tuple[str | None, str, bytes]]:
             return _tool_embed_cache
         try:
             from embedding import embed_batch_async
-            descriptions = [desc for _, desc in _TOOL_EMBED_CORPUS]
+            entries = list(_TOOL_EMBED_CORPUS) + _additional_corpus()
+            descriptions = [desc for _, desc in entries]
             vecs = await embed_batch_async(descriptions)
-            _tool_embed_cache = [(group, desc, vec) for (group, desc), vec in zip(_TOOL_EMBED_CORPUS, vecs)]
-            logger.info("Tool embedding corpus loaded (intent routing)")
+            _tool_embed_cache = [(group, desc, vec) for (group, desc), vec in zip(entries, vecs)]
+            logger.info(f"Tool embedding corpus loaded (intent routing, {len(entries)} entries)")
         except Exception as e:
             logger.warning(f"Tool embedding corpus failed: {e}, intent routing disabled")
             _tool_embed_cache = []

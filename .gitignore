@@ -34,3 +34,9 @@ litert_serve/config.json
 RELEASE_NOTES_v*.md
 notes-additions.md
 experiments/
+
+# corpus_feeder runtime artifacts (regenerated; state.json is committed)
+corpus_data/additions.jsonl
+corpus_data/additions_embeddings.npy
+corpus_data/pending_review.json
+corpus_data/genuinely_ambiguous.json
