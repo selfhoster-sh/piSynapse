@@ -543,3 +543,82 @@ class TestBug2Alignment:
         additions, matrix = cf._load_addition_embeddings()
         assert additions == []
         assert matrix is None
+
+
+class TestBug3LiveReload:
+    """C-3: intent cache rebuilds live when additions.jsonl changes (no restart)."""
+
+    def test_cache_rebuilds_when_additions_change(self, monkeypatch, tmp_path):
+        import llm.intent as li
+
+        ap = tmp_path / "corpus_data" / "additions.jsonl"
+        ap.parent.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(li, "_ADDITIONS_PATH", ap)
+
+        async def _fake_embed_batch_async(descs):
+            import numpy as np
+            out = []
+            for d in descs:
+                rng = np.random.RandomState(hash(d) % (2**31))
+                v = rng.randn(384).astype("float32")
+                v /= np.linalg.norm(v) + 1e-9
+                out.append(v.tobytes())
+            return out
+
+        monkeypatch.setattr("embedding.embed_batch_async", _fake_embed_batch_async)
+
+        async def scenario():
+            li.reset_tool_embed_cache()          # clean slate: no additions file
+            base = await li._get_tool_embeddings()   # mtime=file-absent (None)
+            base_count = len(base)
+            ap.write_text(json.dumps({"text": "notları listele", "group": "notes"},
+                                     ensure_ascii=False) + "\n")
+            fresh = await li._get_tool_embeddings()  # mtime changed -> rebuild
+            return base_count, fresh
+
+        try:
+            base_count, fresh = asyncio.run(scenario())
+        finally:
+            li.reset_tool_embed_cache()
+
+        added_groups = {g for g, _d, _v in fresh}
+        assert len(fresh) == base_count + 1
+        assert "notes" in added_groups
+
+    def test_reset_tool_embed_cache_forces_rebuild(self, monkeypatch, tmp_path):
+        import llm.intent as li
+
+        ap = tmp_path / "corpus_data" / "additions.jsonl"
+        ap.parent.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(li, "_ADDITIONS_PATH", ap)
+
+        async def _fake_embed_batch_async(descs):
+            import numpy as np
+            out = []
+            for d in descs:
+                rng = np.random.RandomState(hash(d) % (2**31))
+                v = rng.randn(384).astype("float32")
+                out.append(v.tobytes())
+            return out
+
+        monkeypatch.setattr("embedding.embed_batch_async", _fake_embed_batch_async)
+
+        async def scenario():
+            li.reset_tool_embed_cache()
+            c1 = await li._get_tool_embeddings()
+            # no additions file, same mtime (None) -> no auto rebuild
+            c2 = await li._get_tool_embeddings()
+            assert c1 is c2  # cache stable without any change
+            li.reset_tool_embed_cache()
+            c3 = await li._get_tool_embeddings()
+            return c1, c3
+
+        try:
+            c1, c3 = asyncio.run(scenario())
+        finally:
+            li.reset_tool_embed_cache()
+
+        # reset forced a rebuild (new object) but content is identical (no
+        # additions yet) — the reload path is exercised and stable.
+        assert c1 is not c3
+        assert c1 == c3

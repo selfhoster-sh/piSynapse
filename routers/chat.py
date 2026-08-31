@@ -608,6 +608,19 @@ async def get_chat_history(session_id: str = Query(...)):
     return {"session_id": session_id, "messages": msgs}
 
 
+@router.post("/reload-corpus")
+async def reload_corpus():
+    """Force the intent-routing corpus (base + additions.jsonl) to rebuild live.
+
+    Normally the cache revalidates automatically via the additions file mtime on
+    the next classification; this endpoint makes the refresh immediate and
+    deterministic (e.g. after corpus_feeder.py --commit). No service restart.
+    """
+    from llm.intent import reset_tool_embed_cache
+    reset_tool_embed_cache()
+    return {"ok": True, "reloaded": True}
+
+
 @router.delete("/history")
 async def clear_chat_history(session_id: str = Query(...)):
     _validate_session_id(session_id)
