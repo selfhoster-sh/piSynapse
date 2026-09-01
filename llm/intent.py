@@ -18,6 +18,22 @@ _EMAIL_CTX_MARKERS = (
     "mail", "gelen kutusu", "mesaj", "email",
 )
 
+# Domain markers that can be detected in RECENT CONVERSATION TEXT to infer
+# what a follow-up refers to when no tool-execution record exists. Conservative:
+# distinctive tokens only ("notu"/"notlar", never bare "not" which collides
+# with English negation). Used by resolve_resume_context as the fallback
+# evidence source behind the authoritative per-session tool-audit record.
+_GROUP_CTX_MARKERS: dict[str, tuple[str, ...]] = {
+    "weather": ("hava", "derece", "sıcaklık", "sicaklik", "yağmur", "yagmur",
+                "tahmin", "weather", "wetter", "météo", "meteo", "temperatur", "lluvia"),
+    "email": _EMAIL_CTX_MARKERS,
+    "calendar": ("takvim", "etkinlik", "randevu", "toplantı", "toplanti",
+                 "meeting", "kalender", "termin", "calendar", "event"),
+    "tasks": ("görev", "gorev", "yapılacak", "yapilacak", "todo", "task", "aufgabe"),
+    "notes": ("notlar", "notu", "notta", "not defteri", "not defter", "note", "notizen"),
+    "memory": ("hatırla", "hatirla", "hatırlama", "hatirlama", "remember"),
+}
+
 # -- Reminder disambiguation (calendar vs memory) --
 #
 # "hatırlat" / "remind" + a time or date ("perşembe saat 9'da hatırlat")
@@ -177,15 +193,19 @@ def reminder_group(message: str) -> str | None:
     return "memory"
 
 
-def _has_recent_email_context(history: list[dict]) -> bool:
+def _has_recent_context(history: list[dict], markers: tuple[str, ...]) -> bool:
     for m in history[-8:]:
         content = m.get("content") or m.get("text") or ""
         if not isinstance(content, str):
             continue
         low = content.lower()
-        if any(mk in low for mk in _EMAIL_CTX_MARKERS):
+        if any(mk in low for mk in markers):
             return True
     return False
+
+
+def _has_recent_email_context(history: list[dict]) -> bool:
+    return _has_recent_context(history, _EMAIL_CTX_MARKERS)
 
 
 def contextual_email_followup(message: str, history: list[dict]) -> bool:
@@ -193,6 +213,64 @@ def contextual_email_followup(message: str, history: list[dict]) -> bool:
     if not _FOLLOWUP_RE.search(message):
         return False
     return _has_recent_email_context(history)
+
+
+# ── contextual dependency ──────────────────────────────────────────────────────
+# Some user utterances are ANAPHORIC follow-ups: they only make sense inside the
+# conversation they reference ("devam edelim en son epostayı gönderiyordun").
+# As standalone intent examples they say nothing about the requested tool and
+# actively poison embedding routing (confirmed: they drag unrelated future
+# queries into the tool group). Industry practice (curated few-shot sets +
+# quality gates) rejects such examples instead of feeding them. The SAME gate
+# is what the live classifier uses to defer such messages to the session
+# resolver instead of trusting utterance-only embedding/keyword/LLM guesses.
+_CONTEXT_OPENERS = (
+    "devam edelim", "devam etmek istiyorum",
+    "devam edelim mi", "devam et", "devam etsin",
+    "sürdürelim", "sürdür", "kaldığımız yerden", "kaldığı yerden",
+    "nerede kalmıştık", "nerede kalmışız", "yine", "şimdi de",
+    "az önce", "önceki", "sıradaki", "diğer",
+)
+# Progressive-past suffixes mark action-still-in-progress, which implies
+# previous context ("düzenliyordun", "gönderiyordun", "yazıyordunuz").
+_CONTEXT_PROGRESSIVE_PAST = re.compile(
+    r"\b\w+(?:ıyor|iyor|uyor|üyor|yordun|yordunuz|yorduk|yordum)\b", re.IGNORECASE
+)
+# Reference to a previous by-gone action ("konuştuğumuz", "yaptığımız",
+# "söylediğim", ...). Deliberately NOT including bare time markers like
+# "en son" / "az önce" — those legitimately open fresh commands too
+# ("en son mailleri göster"), so they must not gate alone.
+_CONTEXT_ANAPHORIC = re.compile(
+    r"(kaldığımız yerden|kaldığı yerden|hangi konudaydık|yaptığımız|"
+    r"konuştuğumuz|bahsettiğim|söylediğim|yazdığım|düzenliyordun|"
+    r"gönderiyordun|yapıyordun|listeliyordun|bakıyordun|izliyordun)",
+    re.IGNORECASE,
+)
+
+
+def _is_context_dependent(text: str) -> bool:
+    """True when the utterance is an anaphoric follow-up, not a standalone intent.
+
+    These carry no meaning outside their conversation and must never be fed to
+    the corpus — see `_CONTEXT_OPENERS` for the phrase gates and
+    `_CONTEXT_PROGRESSIVE_PAST` / `_CONTEXT_ANAPHORIC` for the verb-based gates.
+    """
+    t = text.strip().lower()
+    if not t:
+        return False
+    for opener in _CONTEXT_OPENERS:
+        if t.startswith(opener):
+            return True
+    if _CONTEXT_PROGRESSIVE_PAST.search(t):
+        return True
+    if _CONTEXT_ANAPHORIC.search(t):
+        return True
+    return False
+
+
+def is_contextual_followup(message: str) -> bool:
+    """Public alias of the context-dependency gate used by the chat router."""
+    return _is_context_dependent(message)
 
 
 # Prompt fed to the LLM when INTENT_LLM_FALLBACK=on
@@ -464,6 +542,33 @@ async def _classify_intent(message: str, query_embedding: bytes | None = None) -
             return "action", reminder
     except Exception as e:
         logger.warning(f"Reminder pre-check failed (non-fatal): {e}")
+    # Anaphoric follow-ups ("devam edelim son yaptığımız işe") cannot be routed
+    # from the utterance alone: their words point at a previous conversation
+    # turn, and embedding similarity on the fragment is ACTIVELY misleading
+    # (field case: an anaphoric notes follow-up kept labelling as email, which
+    # is what poisoned the corpus in the first place). Explicit domain keywords
+    # still win — the user is naming the domain right now. Everything else is
+    # deferred (returned as question) to the chat router's session resolver
+    # (Layer 0: last tool executed; Layer 1: LLM + evidence verification)
+    # instead of an utterance-only guess.
+    try:
+        if _is_context_dependent(message):
+            ctx_groups = _hit_groups(message)
+            if not ctx_groups:
+                await _audit_intent(message, None, None, None, "context_dependent_deferred")
+                logger.info(f"Context-dependent follow-up deferred (message={message!r})")
+                return "question", None
+            if len(ctx_groups) >= 2:
+                await _audit_intent(message, ",".join(sorted(ctx_groups)), None, None,
+                                    "context_dependent_multi")
+                logger.info(f"Context-dependent follow-up with domains {sorted(ctx_groups)} — combined (message={message!r})")
+                return "action", None
+            group = next(iter(ctx_groups))
+            await _audit_intent(message, group, None, None, "context_keyword")
+            logger.info(f"Intent=action group={group} via keyword (context-dependent, message={message!r})")
+            return "action", group
+    except Exception as e:
+        logger.warning(f"Context-dependent pre-check failed (non-fatal): {e}")
     # Multi-domain free text ("hava durumu bilgisini maille gönder"): two or
     # more distinct groups matched → offer the COMBINED toolset so the model
     # can chain tools itself. Single-group routing would strand the second
@@ -530,20 +635,43 @@ async def _classify_intent(message: str, query_embedding: bytes | None = None) -
         return "action", kw_group
 
     # Optional LLM fallback — improves accuracy but adds ~15s delay before streaming starts.
+    # Runs ONLY for standalone (non-context-dependent) messages; anaphoric
+    # follow-ups are deferred by the gate above and resolved by the router.
     if get("INTENT_LLM_FALLBACK", "off") == "on":
-        backend = (get("LLM_BACKEND", "litert") or "litert").strip().lower()
-        client = _get_client()
-        model_name = get("LLM_MODEL", "gemma4-e2b")
-        payload = {
-            "model": model_name.replace(":", "-") if backend == "litert" else model_name,
-            "messages": [
-                {"role": "system", "content": _INTENT_PROMPT},
-                {"role": "user", "content": message},
-            ],
-            "stream": False,
-            "max_tokens": 20,
-            "max_completion_tokens": 20,
-        }
+        answer = await _llm_classify_call(_INTENT_PROMPT, message, max_tokens=20)
+        if answer is not None:
+            valid_groups = {"weather", "email", "calendar", "tasks", "notes", "memory"}
+            if answer in valid_groups:
+                logger.info(f"Intent=action group={answer} via LLM (raw={answer!r})")
+                return "action", answer
+            logger.info(f"Intent=question via LLM (raw={answer!r})")
+            return "question", None
+
+    logger.info(f"Intent=question via default (embedding+keywords uncertain, message={message!r})")
+    return "question", None
+
+
+async def _llm_classify_call(system: str, user: str, max_tokens: int = 20) -> str | None:
+    """Run a single-token-budget LLM classification call (litert or ollama).
+
+    Shared by the _classify_intent fallback and the evidence-verified
+    follow-up resolver (llm_resolve_with_evidence). Returns the normalized,
+    lowercased raw content or None on any failure — never raises.
+    """
+    backend = (get("LLM_BACKEND", "litert") or "litert").strip().lower()
+    client = _get_client()
+    model_name = get("LLM_MODEL", "gemma4-e2b")
+    payload = {
+        "model": model_name.replace(":", "-") if backend == "litert" else model_name,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        "stream": False,
+        "max_tokens": max_tokens,
+        "max_completion_tokens": max_tokens,
+    }
+    try:
         if backend == "litert":
             url = f"{LITERT_BASE_URL}/v1/chat/completions"
         else:
@@ -551,28 +679,163 @@ async def _classify_intent(message: str, query_embedding: bytes | None = None) -
             # burn the tiny num_predict budget on hidden reasoning -> slow,
             # always-empty classification.
             payload["think"] = False
-            payload["options"] = {"temperature": 0, "num_predict": 20, "num_ctx": 512}
+            payload["options"] = {"temperature": 0, "num_predict": max_tokens, "num_ctx": 512}
             payload["keep_alive"] = get("LLM_KEEP_ALIVE", "4h")
             url = f"{OLLAMA_BASE_URL}/api/chat"
-        try:
-            resp = await client.post(url, json=payload)
-            resp.raise_for_status()
-            rj = resp.json()
-            if backend == "litert":
-                answer = rj["choices"][0]["message"]["content"].strip().lower()
-            else:
-                answer = rj["message"]["content"].strip().lower()
-            valid_groups = {"weather", "email", "calendar", "tasks", "notes", "memory"}
-            if answer in valid_groups:
-                logger.info(f"Intent=action group={answer} via LLM (raw={answer!r})")
-                return "action", answer
-            if "question" in answer:
-                logger.info(f"Intent=question via LLM (raw={answer!r})")
-                return "question", None
-            logger.info(f"Intent=question via LLM (raw={answer!r})")
-            return "question", None
-        except Exception as e:
-            logger.warning(f"Intent classification via LLM failed: {e}, falling back to question")
+        resp = await client.post(url, json=payload)
+        resp.raise_for_status()
+        rj = resp.json()
+        if backend == "litert":
+            return rj["choices"][0]["message"]["content"].strip().lower()
+        return rj["message"]["content"].strip().lower()
+    except Exception as e:
+        logger.warning(f"Intent classification via LLM failed: {e}, falling back to question")
+        return None
 
-    logger.info(f"Intent=question via default (embedding+keywords uncertain, message={message!r})")
-    return "question", None
+
+# ── contextual follow-up resolver (Layer 0 / Layer 1) ─────────────────────────
+# When _is_context_dependent() defers a message, the chat router resolves it from
+# the SESSION, never the utterance alone:
+#   Layer 0 — deterministic: the last successfully executed tool of the session
+#             is what "devam edelim" refers to; mapped to its group via
+#             TOOL_TO_GROUP. No model call, no guess.
+#   Layer 1 — LLM verdict WITH history + evidence verification: the model must
+#             produce a supporting verbatim fragment from the conversation and
+#             only a history-backed verdict is trusted (the "don't trust chance"
+#             principle — a fabricated evidence gets discarded, not routed).
+# Shared utility tools (get_datetime lives in every group) are never evidence.
+
+
+async def _last_executed_tool_group(session_id: str) -> str | None:
+    """Determine the group of the last successfully executed tool in a session."""
+    try:
+        from db import get_db
+        from tools.definitions import TOOL_GROUPS, TOOL_TO_GROUP
+
+        db = await get_db()
+        async with db.execute(
+            """SELECT a.tool_name FROM tool_audit_log a
+               JOIN conversations m ON m.id = a.conversation_id
+               WHERE m.session_id = ? AND a.conversation_id IS NOT NULL
+                 AND a.is_summary = 0 AND a.success = 1
+               ORDER BY a.id DESC LIMIT 1""",
+            (session_id,),
+        ) as cur:
+            row = await cur.fetchone()
+        if not row:
+            return None
+        tool = row[0]
+        # Tools shared across groups (get_datetime) carry no domain evidence.
+        membership = sum(1 for names in TOOL_GROUPS.values() for n in names if n == tool)
+        if membership > 1:
+            return None
+        return TOOL_TO_GROUP.get(tool)
+    except Exception as e:
+        logger.warning(f"Last-tool resolver failed (non-fatal): {e}")
+        return None
+
+
+async def resolve_resume_context(message: str, history: list[dict],
+                                 session_id: str | None = None) -> str | None:
+    """Layer 0: deterministically route an anaphoric follow-up, no model call.
+
+    Returns the group the follow-up refers to, or None when there is no
+    evidence in the session (genuinely ambiguous — caller moves to Layer 1).
+    """
+    if not _is_context_dependent(message):
+        return None
+    if session_id:
+        group = await _last_executed_tool_group(session_id)
+        if group:
+            return group
+    for group, markers in _GROUP_CTX_MARKERS.items():
+        if _has_recent_context(history, markers):
+            return group
+    return None
+
+
+_INTENT_EVIDENCE_PROMPT = (
+    "The user's message refers to continuing an earlier task. Using only the "
+    "supplied conversation history, decide which tool domain must be resumed.\n\n"
+    "Domains: weather, email, calendar, tasks, notes, memory.\n"
+    'Reply with ONLY JSON: {"group": "<domain>", "evidence": "<verbatim short '
+    'fragment from the conversation supporting your choice>"}.\n'
+    'If the history gives no support, group MUST be "question" and evidence '
+    'MUST be "" (empty).'
+)
+
+_INTENT_JSON_RE = re.compile(
+    r'"group"\s*:\s*"?([a-z]+)"?\s*,\s*"evidence"\s*:\s*"([^"]*)"', re.IGNORECASE
+)
+
+# High-frequency words that prove nothing about domain evidence.
+_EVIDENCE_STOPWORDS = {
+    "the", "and", "that", "with", "from", "this", "what", "for", "you",
+    "user", "your", "want", "would", "said", "because", "about", "them",
+    "then", "gibi", "icin", "için", "bir", "bunu", "şey", "var", "dedin",
+}
+
+
+def _verify_evidence(evidence: str, message: str, history: list[dict]) -> bool:
+    """True when the model's supporting evidence actually matches the history.
+
+    Numeric bar: at least half the substantive evidence tokens (minimum 1) must
+    appear verbatim in the recent conversation window. A hallucinated quote
+    ("you asked me to send the weekly report" with no such text anywhere) has
+    zero overlap and is rejected — the fallback never guesses.
+    """
+    tokens = re.findall(r"[\wçğıöşüÇĞİÖŞÜ@.']+", (evidence or "").lower())
+    tokens = [t for t in tokens if len(t) > 3 and t not in _EVIDENCE_STOPWORDS]
+    unique = set(tokens)
+    if not unique:
+        return False
+    window = (message + " " + " ".join(
+        (m.get("content") or m.get("text") or "") for m in history[-8:]
+    )).lower()
+    present = sum(1 for t in unique if t in window)
+    return present >= max(1, (len(unique) + 1) // 2)
+
+
+async def llm_resolve_with_evidence(message: str, history: list[dict]) -> tuple[str, str | None]:
+    """Layer 1: LLM verdict on a deferred follow-up, gated by evidence.
+
+    The model sees the recent history and returns {group, evidence}; the
+    evidence must be verifiable against the conversation for the group to be
+    accepted. Unverified verdicts degrade to "question" and are audit-logged
+    (source llm_rejected_evidence) so the correction data accumulates for the
+    corpus without ever misrouting a session.
+    """
+    if get("INTENT_LLM_FALLBACK", "off") != "on":
+        return "question", None
+    valid_groups = {"weather", "email", "calendar", "tasks", "notes", "memory"}
+    try:
+        snippets = []
+        for m in history[-8:]:
+            role = m.get("role") or m.get("type") or "?"
+            content = (m.get("content") or m.get("text") or "").strip()
+            if content:
+                snippets.append(f"{role}: {content[:200]}")
+        if not snippets:
+            return "question", None
+        user_body = message + "\n\nConversation (most recent first):\n" + "\n".join(snippets)
+        raw = await _llm_classify_call(_INTENT_EVIDENCE_PROMPT, user_body, max_tokens=120)
+        if not raw:
+            return "question", None
+        m = _INTENT_JSON_RE.search(raw)
+        if not m:
+            await _audit_intent(message, None, None, None, "llm_rejected_evidence")
+            logger.info(f"LLM evidence response unparsable (raw={raw!r}) — question")
+            return "question", None
+        group, evidence = m.group(1).lower(), m.group(2)
+        if group == "question":
+            return "question", None
+        if group in valid_groups and _verify_evidence(evidence, message, history):
+            await _audit_intent(message, group, None, None, "llm_verified")
+            logger.info(f"Intent=action group={group} via LLM with verified evidence (message={message!r})")
+            return "action", group
+        await _audit_intent(message, group, None, None, "llm_rejected_evidence")
+        logger.info(f"LLM verdict {group!r} discarded — evidence unverified (message={message!r})")
+        return "question", None
+    except Exception as e:
+        logger.warning(f"LLM evidence resolution failed (non-fatal): {e}")
+        return "question", None
