@@ -203,7 +203,7 @@ async def chat_endpoint(req: ChatRequest, background_tasks: BackgroundTasks):
     try:
         await save_message(req.session_id, "user", req.message, images=req.images or None)
 
-        from llm import _classify_intent, contextual_email_followup
+        from llm import _classify_intent, is_contextual_followup
         query_embedding = await _shared_query_embedding(req.message)
         history_coro = get_history(req.session_id, limit=get("HISTORY_LIMIT", 12))
         retrieval_coro = retrieve_relevant_history(req.session_id, req.message, query_embedding=query_embedding)
@@ -217,9 +217,14 @@ async def chat_endpoint(req: ChatRequest, background_tasks: BackgroundTasks):
         retrieved_msgs, ret_stats = retrieved
         history = merge_history(history, retrieved_msgs)
 
-        if intent == "question" and tool_group is None and contextual_email_followup(req.message, history):
-            intent, tool_group = "action", "email"
-            logger.info(f"Contextual follow-up detected (email): {req.message!r}")
+        if intent == "question" and tool_group is None and is_contextual_followup(req.message):
+            from llm import llm_resolve_with_evidence, resolve_resume_context
+            resolved = await resolve_resume_context(req.message, history, session_id=req.session_id)
+            if resolved:
+                intent, tool_group = "action", resolved
+                logger.info(f"Resume resolver -> {resolved} (session history): {req.message!r}")
+            else:
+                intent, tool_group = await llm_resolve_with_evidence(req.message, history)
 
         result = await chat_with_ollama(
             history, memories=memories, think=req.think_mode,
@@ -270,7 +275,7 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
     try:
         await save_message(req.session_id, "user", req.message, images=req.images or None)
 
-        from llm import _classify_intent, contextual_email_followup
+        from llm import _classify_intent, is_contextual_followup
         query_embedding = await _shared_query_embedding(req.message)
         history_coro = get_history(req.session_id, limit=get("HISTORY_LIMIT", 12))
         retrieval_coro = retrieve_relevant_history(req.session_id, req.message, query_embedding=query_embedding)
@@ -284,9 +289,14 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
         retrieved_msgs, ret_stats = retrieved
         history = merge_history(history, retrieved_msgs)
 
-        if intent == "question" and tool_group is None and contextual_email_followup(req.message, history):
-            intent, tool_group = "action", "email"
-            logger.info(f"Contextual follow-up detected (email): {req.message!r}")
+        if intent == "question" and tool_group is None and is_contextual_followup(req.message):
+            from llm import llm_resolve_with_evidence, resolve_resume_context
+            resolved = await resolve_resume_context(req.message, history, session_id=req.session_id)
+            if resolved:
+                intent, tool_group = "action", resolved
+                logger.info(f"Resume resolver -> {resolved} (session history): {req.message!r}")
+            else:
+                intent, tool_group = await llm_resolve_with_evidence(req.message, history)
     except Exception as e:
         logger.error("Chat stream setup error: %s\n%s", e, traceback.format_exc())
         raise HTTPException(status_code=500, detail="Something went wrong. Please try again.")
