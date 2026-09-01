@@ -43,6 +43,12 @@ log = logging.getLogger("corpus_feeder")
 sys.path.insert(0, str(ROOT))
 import config  # noqa: E402
 
+# Context-dependency gate lives in llm.intent — the SAME patterns the runtime
+# classifier uses to defer anaphoric follow-ups, so the feeder (which must
+# NEVER feed such fragments into the corpus) and the live router can never
+# drift apart.
+from llm.intent import _is_context_dependent  # noqa: E402
+
 
 def _db_path(args_db: str | None = None) -> str:
     return args_db or os.getenv("DB_PATH", config.DB_PATH)
@@ -202,6 +208,19 @@ def _is_user_command_like(text: str) -> bool:
         if t.startswith(g):
             return False
     return True
+
+
+# ── contextual dependency ──────────────────────────────────────────────────────
+# Some user utterances are ANAPHORIC follow-ups: they only make sense inside the
+# conversation they reference ("devam edelim en son epostayı gönderiyordun").
+# As standalone intent examples they say nothing about the requested tool and
+# actively poison embedding routing (confirmed: they drag unrelated future
+# queries into the tool group). Industry practice (curated few-shot sets +
+# quality gates) rejects such examples instead of feeding them. The gate
+# itself lives in llm.intent (`_is_context_dependent`) and is the same gate
+# the live classifier uses to defer such messages to the session resolver.
+# Only anaphoric follow-ups never enter the corpus; explicit domain keywords
+# inside them are still resolvable at runtime.
 
 
 # ── TOOL_TO_GROUP (mirrors tools/definitions.py) ──────────────────────────────
@@ -509,6 +528,23 @@ async def _process_audit_row(
         return {"id": audit_id, "status": "genuinely_ambiguous_not_command",
                 "group": proposed_group, "text": text}
 
+    # Context-dependent anaphoric follow-ups ("devam edelim en son epostayı
+    # gönderiyordun") are NOT standalone intents — they are meaningless outside
+    # the conversation and warp embedding routing (their "devam edelim" core
+    # drags unrelated queries into the group). Skip without feeding.
+    if _is_context_dependent(text):
+        record = {
+            "text": text,
+            "proposed_group": proposed_group,
+            "audit_id": audit_id,
+            "reason": "context_dependent",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        if not dry_run:
+            _append_genuinely_ambiguous(record)
+        return {"id": audit_id, "status": "skip_context_dependent",
+                "group": proposed_group, "text": text}
+
     # Check exact duplicate
     if _is_duplicate(text, base_groups, base_matrix, existing_additions, addition_matrix):
         return {"id": audit_id, "status": "skip_duplicate", "group": proposed_group}
@@ -637,6 +673,8 @@ async def run(db_path: str | None = None, dry_run: bool = False) -> dict:
             summary["ambiguous"] += 1
         elif status == "genuinely_ambiguous_not_command":
             summary["ambiguous"] += 1
+        elif status == "skip_context_dependent":
+            summary["skipped"] += 1
         elif status == "skip_duplicate":
             summary["skipped"] += 1
             summary["conflicts"] += 1

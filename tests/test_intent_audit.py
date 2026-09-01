@@ -56,6 +56,10 @@ def test_purge_deletes_only_old_rows(audit_db):
 def test_classify_keyword_fallback_logs_row(audit_db, monkeypatch):
     monkeypatch.setattr(li_mod, "_tool_embed_cache", [])
     monkeypatch.setattr(li_mod, "get", lambda k, d=None: {"INTENT_LLM_FALLBACK": "off"}.get(k, d))
+    # Force an empty additions corpus so the test never depends on live
+    # corpus_data/additions.jsonl content (which would flip this to thin_margin).
+    monkeypatch.setattr(li_mod, "_additional_corpus", lambda: [])
+    monkeypatch.setattr(li_mod, "_additions_mtime", lambda: None)
 
     result = asyncio.run(li_mod._classify_intent("not düş"))
     assert result == ("action", "notes")
