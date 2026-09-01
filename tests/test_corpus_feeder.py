@@ -368,17 +368,15 @@ class TestCorpusFeederStateTracking:
 class TestIntelAdditionsLoading:
     """Verify llm.intent loads corpus additions into the embedding cache."""
 
-    def test_additional_corpus_parses_additions(self, monkeypatch):
+    def test_additional_corpus_parses_additions(self, tmp_path, monkeypatch):
         import llm.intent as li
-        repo_corpus = Path(__file__).resolve().parent.parent / "corpus_data"
-        additions_path = repo_corpus / "additions.jsonl"
-        additions_path.write_text(json.dumps(
+        ap = tmp_path / "corpus_data" / "additions.jsonl"
+        ap.parent.mkdir(parents=True)
+        ap.write_text(json.dumps(
             {"text": "yarınki etkinliği sil", "group": "calendar"}, ensure_ascii=False) + "\n")
-        try:
-            parsed = li._additional_corpus()
-            assert ("calendar", "yarınki etkinliği sil") in parsed
-        finally:
-            additions_path.unlink(missing_ok=True)
+        monkeypatch.setattr(li, "_ADDITIONS_PATH", ap)
+        parsed = li._additional_corpus()
+        assert ("calendar", "yarınki etkinliği sil") in parsed
 
     def test_base_corpus_empty_additions(self, monkeypatch):
         import llm.intent as li
@@ -725,3 +723,50 @@ class TestBug5NoopCorrection:
         additions = cf._load_jsonl(cf.ADDITIONS_FILE)
         assert additions[0]["group"] == "notes"
         assert additions[0]["source"] == "negative"
+
+
+class TestContextDependentExamples:
+    """C-7: anaphoric follow-ups ('devam edelim en son X yapıyordun') must NOT
+    be fed to the corpus — they are meaningless outside their conversation and
+    warp embedding routing toward the referenced tool.
+    """
+
+    def test_filter_rejects_anaphoric_phrases(self):
+        import corpus_feeder as cf
+        assert cf._is_context_dependent("devam edelim en son epostayı gönderiyordun")
+        assert cf._is_context_dependent("devam edelim en son notu düzenliyordun")
+        assert cf._is_context_dependent("devam edelim son yaptığımız işe")
+        assert cf._is_context_dependent("devam edelim")
+        assert cf._is_context_dependent("kaldığımız yerden devam edelim")
+        assert cf._is_context_dependent("en son konuştuğumuz etkinliği göster")
+        assert cf._is_context_dependent("az önce bahsettiğim hava durumunu göster")
+
+    def test_filter_keeps_standalone_commands(self):
+        import corpus_feeder as cf
+        assert not cf._is_context_dependent("Bugün hava nasıl?")
+        assert not cf._is_context_dependent("Notları listele")
+        assert not cf._is_context_dependent("en son mailleri göster")
+        assert not cf._is_context_dependent("yarınki etkinliği sil")
+        assert not cf._is_context_dependent("gönderilmiş 10 maili listele")
+
+    def test_audit_232_skipped_not_added(self, audit_db, corpus_data_dir, monkeypatch):
+        import corpus_feeder as cf
+
+        # BUG-7 repro: audit 232 = "devam edelim en son epostayı gönderiyordun"
+        _seed_conversation(audit_db, 8, "devam edelim en son epostayı gönderiyordun")
+        _seed_rows(audit_db, [{"tool_name": "send_email", "conversation_id": 8,
+                               "confirmed_at": "2026-08-31T12:00:00"}])
+
+        monkeypatch.setattr(cf, "_load_base_corpus_embeddings", _fake_base_corpus)
+        monkeypatch.setattr(cf, "_load_addition_embeddings", lambda: ([], None))
+        import tools.definitions as td
+        monkeypatch.setattr(td, "TOOL_TO_GROUP", {"send_email": "email"})
+        import embedding as emb
+        monkeypatch.setattr(emb, "embed", _fake_embed)
+
+        summary = asyncio.run(cf.run(db_path=audit_db))
+
+        assert summary["added"] == 0
+        assert summary["skipped"] == 1
+        assert summary["details"][0]["status"] == "skip_context_dependent"
+        assert cf._load_jsonl(cf.ADDITIONS_FILE) == []
