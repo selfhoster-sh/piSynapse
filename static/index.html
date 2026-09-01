@@ -239,7 +239,7 @@ body.minimal-chat .msg-group{margin-bottom:34px}
 /* Black theme taste: user's own sender label a bit fainter */
 body.theme-black .msg-group.user .msg-meta .who{color:var(--text3)}
 
-.bubble{max-width:100%;padding:14px 18px;border-radius:var(--r-chat);font-size:16px;
+.bubble{max-width:100%;padding:14px 18px;border-radius:var(--r-chat);font-size:18px;
   line-height:1.7;word-break:break-word;box-shadow:var(--shadow-sm)}
 .msg-group.user .bubble{background:var(--user-bg);border:1px solid var(--border);
   border-bottom-right-radius:4px;color:var(--text)}
@@ -250,7 +250,7 @@ body.theme-black .msg-group.user .msg-meta .who{color:var(--text3)}
 .bubble p{margin-bottom:12px}.bubble p:last-child{margin-bottom:0}
 .bubble p{text-wrap:pretty}
 /* Streaming caret: inline cursor at the end of the last block */
-.stream-caret{display:inline-block;width:7px;height:15px;margin-left:3px;vertical-align:-2px;
+.stream-caret{display:inline-block;width:7px;height:17px;margin-left:3px;vertical-align:-2px;
   border-radius:2px;background:var(--accent);animation:caretBlink 1s steps(1) infinite}
 @keyframes caretBlink{0%,60%{opacity:1}61%,100%{opacity:.15}}
 .bubble ul,.bubble ol{padding-left:24px;margin-bottom:12px}
@@ -267,12 +267,12 @@ body.theme-black .msg-group.user .msg-meta .who{color:var(--text3)}
 .drag-overlay.active{display:flex}
 .drag-overlay-text{color:var(--accent);font-size:18px;font-weight:600}
 .bubble code{background:var(--surface2);padding:2px 6px;border-radius:6px;
-  font-family:'JetBrains Mono','Fira Code',monospace;font-size:13px;color:var(--accent)}
+  font-family:'JetBrains Mono','Fira Code',monospace;font-size:14px;color:var(--accent)}
 .math-inline{font-family:'Cambria Math','Times New Roman',serif;font-weight:500;
   color:var(--accent);padding:0 4px}
 .math-display{display:flex;justify-content:center;margin:12px 0;
   font-family:'Cambria Math','Times New Roman',serif;font-weight:500;
-  font-size:16px;color:var(--text)}
+  font-size:18px;color:var(--text)}
 
 .code-wrapper{background:var(--surface);border:1px solid var(--border);
   border-radius:12px;overflow:hidden;margin:12px 0}
@@ -286,11 +286,11 @@ body.theme-black .msg-group.user .msg-meta .who{color:var(--text3)}
   align-items:center;gap:4px}@media (hover:hover){
 .code-header .copy-btn:hover:not(:focus){color:var(--text)}}
 .bubble pre code{display:block;padding:14px;overflow-x:auto;background:none;
-  color:var(--text2);font-size:13.5px;border-radius:0}
+  color:var(--text2);font-size:14.5px;border-radius:0}
 
 .bubble h1,.bubble h2,.bubble h3{margin:16px 0 8px;font-weight:700;color:var(--text);
   letter-spacing:-.3px}
-.bubble h1{font-size:20px}.bubble h2{font-size:18px}.bubble h3{font-size:16px}
+.bubble h1{font-size:22px}.bubble h2{font-size:20px}.bubble h3{font-size:18px}
 .bubble a{color:var(--accent);text-decoration:none;border-bottom:1px solid transparent;
   transition:border-color .2s}@media (hover:hover){
 .bubble a:hover:not(:focus){border-color:var(--accent)}}
@@ -302,7 +302,7 @@ body.theme-black .msg-group.user .msg-meta .who{color:var(--text3)}
    header so column names stay visible while horizontally scrolling on mobile,
    and a faint-but-seen zebra. Width is content-driven yet never narrower than
    the bubble (wide tables scroll inside the wrapper). */
-.bubble table{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;margin:0;font-size:13.5px}
+.bubble table{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;margin:0;font-size:14.5px}
 .bubble th,.bubble td{border:0;border-bottom:1px solid var(--border);padding:8px 12px;text-align:left;white-space:nowrap}
 .bubble th{position:sticky;top:0;z-index:1;background:var(--surface3);font-weight:600;color:var(--text);border-bottom:2px solid var(--border)}
 .bubble td{color:var(--text2)}
@@ -790,7 +790,7 @@ body:not(.glass-mode) #input-area::before{content:'';position:absolute;left:50%;
   .think-split{height:36px}
   .inline-think-btn{width:36px;height:36px}
   #send-btn{width:36px;height:36px}
-  .bubble{font-size:14px}
+  .bubble{font-size:16px}
   .w-title{font-size:20px}
   body{font-size:14px}
   #topbar-right-widgets{display:flex}
