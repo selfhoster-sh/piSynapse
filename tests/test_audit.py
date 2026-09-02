@@ -505,10 +505,11 @@ def test_run_verification_returns_audit_id(audit_db):
     """The SSE end event's audit_id is the correction endpoint's target."""
     import tool_verification as tv
 
-    aid = asyncio.run(
+    aid, status = asyncio.run(
         tv.run_verification("save_memory", {"content": "hi"}, "OK Memory saved.", True)
     )
     assert isinstance(aid, int) and aid > 0
+    assert status == "unverified"
     rows = asyncio.run(_fetch_all(
         "SELECT tool_name, verification_status FROM tool_audit_log WHERE id = ?",
         (aid,),
@@ -532,7 +533,7 @@ def test_correction_endpoint_accepts_run_verification_id(correction_client):
     """POST /tool-correction consumes the exact id run_verification returns."""
     import tool_verification as tv
 
-    aid = asyncio.run(
+    aid, _status = asyncio.run(
         tv.run_verification("save_memory", {"content": "hi"}, "OK Memory saved.", True)
     )
     assert isinstance(aid, int)

@@ -272,6 +272,7 @@ def test_verification_hook_fires_after_successful_tool_call(monkeypatch):
 
     async def fake_verify(name, params, result, success, **kwargs):
         calls.append((name, params, result, success, kwargs))
+        return (None, None)
 
     import config as _cfg
     monkeypatch.setattr(_cfg, "LLM_BACKEND", "litert")
@@ -296,6 +297,7 @@ def test_verification_hook_reports_failure_when_tool_raises(monkeypatch):
 
     async def fake_verify(name, params, result, success, **kwargs):
         calls.append((name, params, result, success, kwargs))
+        return (None, None)
 
     async def failing_tool(name, params, context=None):
         raise RuntimeError("boom")
@@ -506,7 +508,7 @@ def test_stream_litert_leak_retry_recovers_tool_calls(monkeypatch):
         return "OK Current time", None
 
     async def noop_verification(*args, **kwargs):
-        return None
+        return (None, None)
 
     monkeypatch.setattr(config, "LLM_BACKEND", "litert")
     monkeypatch.setattr(llm_stream, "_get_client", lambda: fake)
@@ -659,7 +661,7 @@ def test_stream_forwards_tool_group_to_build_full_messages(monkeypatch):
     monkeypatch.setattr(llm_stream, "_build_full_messages", fake_build)
     monkeypatch.setattr(llm_stream, "_get_client", lambda: _FakeStreamClient())
     async def _noop(*a, **k):
-        return None
+        return (None, None)
     monkeypatch.setattr(llm_stream, "run_verification", _noop)
 
     _collect_stream_events([{"role": "user", "content": "hi"}], intent="action", tool_group="email")
@@ -682,7 +684,7 @@ def test_stream_defaults_tool_group_to_none(monkeypatch):
     monkeypatch.setattr(llm_stream, "_build_full_messages", fake_build)
     monkeypatch.setattr(llm_stream, "_get_client", lambda: _FakeStreamClient())
     async def _noop(*a, **k):
-        return None
+        return (None, None)
     monkeypatch.setattr(llm_stream, "run_verification", _noop)
 
     _collect_stream_events([{"role": "user", "content": "hi"}], intent="action")

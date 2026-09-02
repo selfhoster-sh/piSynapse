@@ -16,6 +16,15 @@
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 - **Sanitization rule:** this file may be published. Never write personal data, identity clues, deployment addresses (hostnames, IPs, ports), or accounts into it. Keep every narrative in English; Turkish inline tokens are allowed only as product corpus / i18n test data.
 
+## 2026-09-02 — Faz D-1b: "claimed success" vs "backend-verified" sinyal ayrımı (verification_status consumers)
+- **Audit-driven (Bölüm E2):** `is_tool_success`'in ham `success` kolonu iki yerde "gerçek başarı" gibi tüketiliyordu: (a) `_last_executed_tool_group` WHERE `success=1` (llm/intent.py), (c) UI feedback butonları yalnız `ok=true` gated (index.html:2903) — verification_status ikisinde de okunmuyordu. Backend re-read kanıt üretiyor (tool_verification.py) ama hiçbir tüketici kullanmıyordu.
+- **Değişiklik (backend):**
+  - `run_verification` artık `(audit_id, verification_status)` döner (4 çağrı sitesi); SSE tool-end event'i `verification_status` taşır (llm/stream.py), `/sync` sonuçlarına + `/execute` yanıtına (`ChatResponse.verification_status`) eklendi.
+  - Resolver predikatı (Onaylı Öneri A): `success=1 AND (verification_status IS NULL OR verification_status IN ('verified','verified_by_fallback'))`. Gerekçe (onaylı invariant): scope tool + success=1 iken verification_status ASLA NULL olmaz (`_verify` her sonucu string yazar; hata → satır hiç yazılmaz), yani "NULL" pratikte "scope dışı tool" demektir ve VERIFY_SCOPE büyüdükçe predikat kendini otomatik korur.
+  - `unverified` de gerçek başarı sayılmaz (fallback eşleşmedi = güven yok).
+- **Tests:** `TestInvariantStatusNonNull` (scope+success her zaman non-NULL; scope-dışı NULL'lü kalır) + resolver senaryoları (verification_failed/unverified → None yani yanlış grup YOK; verified → calendar; non-scope NULL → email). Full suite **526** passing; ruff clean; py_compile ✓.
+- **UI tarafı D-1c'de** (bir sonraki commit): verification_status alanı stream/execute/sync payload'larından burada taşınır; görsel tüketim sonraki adımda.
+
 ## 2026-09-02 — Faz D-1a: is_tool_success treats CLARIFY_REQUIRED as failure
 - **Audit-driven (status verification report 2026-09-02, Bölüm E2):** `is_tool_success` (tools/dispatcher.py) counted `CLARIFY_REQUIRED: …` outcomes (chip/quick-action guard — the handler that makes the model ask the user for MORE details instead of executing) as success=True because the heuristic only rejected `ERROR`-prefixed and empty results. Sharpest false-positive source: a scope create that produced nothing was logged as a "successful" call.
 - **Change (tools/dispatcher.py):** `is_tool_success` now also returns False for a `CLARIFY_REQUIRED` prefix (works for str and `(result, entity_id)` tuples alike). No behavioral break expected: the chat/stream loop only consults the flag for auditing/UI, not flow control, and `save_memory` has no CLARIFY path.

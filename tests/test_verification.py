@@ -149,6 +149,48 @@ class TestSaveMemory:
         assert status == "unverified"
 
 
+class TestInvariantStatusNonNull:
+    """D-1b invariant: a scope-tool call that succeeds ALWAYS produces a
+    non-NULL verification_status (verified / verified_by_fallback /
+    unverified / verification_failed). The resolver predicate
+    ``success=1 AND (status IS NULL OR status IN ('verified','verified_by_fallback'))``
+    is safe ONLY because of this: NULL status on a success=1 row is a
+    reliable "outside scope" signal, never an unconfirmed scope create.
+    """
+
+    async def test_scope_success_with_id_is_non_null(self):
+        with patch("nextcloud_tasks.list_tasks", new=AsyncMock(return_value=("", [{"uid": "t1", "summary": "Buy milk"}]))):
+            assert await _verify("create_task", {"summary": "Buy milk"}, "OK", True, "t1") is not None
+        with patch("calendar_ops.list_events", return_value=("", [{"uid": "ev-1", "summary": "Dentist"}])):
+            assert await _verify("create_calendar_event", {"summary": "Dentist"}, "OK", True, "ev-1") is not None
+
+    async def test_scope_success_without_id_is_non_null(self):
+        # No entity_id + success -> content fallback runs (match or miss) — never None.
+        with patch("nextcloud_tasks.search_tasks", new=AsyncMock(return_value=("Nothing found.", []))):
+            assert await _verify("create_task", {"summary": "Ghost"}, "OK", True, None) is not None
+        with patch("calendar_ops.list_events", return_value=("No events.", [])):
+            assert await _verify("create_calendar_event", {"summary": "Ghost"}, "OK", True, None) is not None
+
+    async def test_scope_success_backend_error_is_non_null(self):
+        # The backend re-read itself errors -> mapped to verification_failed — still not NULL.
+        with patch("nextcloud_tasks.list_tasks", new=AsyncMock(side_effect=RuntimeError("nextcloud down"))):
+            assert await _verify("create_task", {"summary": "X"}, "OK", True, "t1") is not None
+
+    async def test_scope_success_save_memory_non_null(self, mem_db):
+        db = await mem_db.get_db()
+        await db.execute(
+            "INSERT INTO memories (id, user_id, content, category, importance) VALUES (?, ?, ?, ?, ?)",
+            (7, "default", "İnvariant control", "general", 5),
+        )
+        await db.commit()
+        assert await _verify("save_memory", {"content": "İnvariant control"}, "Memory saved.", True, 7) is not None
+        assert await _verify("save_memory", {"content": "İnvariant control"}, "Memory saved.", True, None) is not None
+
+    async def test_non_scope_success_is_null(self):
+        assert await _verify("send_email", {}, "Email sent!", True, None) is None
+        assert await _verify("get_datetime", {}, "12:00", True, None) is None
+
+
 def test_run_verification_passes_status_to_audit(monkeypatch):
     import tool_verification as tv
 
