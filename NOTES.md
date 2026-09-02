@@ -23,6 +23,15 @@
 - **Not touched on purpose:** the UI render path (an ok=false row) — user scoped this item to the audit signal; a separate neutral "no-op" visual would be a follow-up.
 - **Tests:** +2 `TestIsToolSuccess` (NOOP str + tuple → not success) and `test_wrapper_not_found` re-pointed to the new NOOP text. Full suite 549; E2E 39/39; ruff clean; py_compile ✓.
 
+## 2026-09-02 — Faz D-3b: UI renders a no-op as a neutral info row, not an error
+- **Motivation (follow-up to D-3):** a NOOP tool row surfaced with `ok=false`, and the default settle logic removed the label and re-added the green `ok` class on a replied round — visually indistinguishable from an error, contradicting the "already gone, nothing to do" meaning. User chose a **plain text info** treatment (no badge/color).
+- **Change (web):**
+  - Backend flags the no-op: the SSE tool-end event (llm/stream.py) and the `/execute` response (routers/chat.py, status becomes `"noop"` instead of `"error"`) now carry `noop: result.startswith("NOOP")` — mirroring the existing `clarify` flag.
+  - `showToolScan`: a `noop` phase-end renders the neutral info text (`noopInfo` i18n) with a `.tool-status.noop` class instead of the red failure.
+  - `settleFeedbackRow`: rows carrying `.noop` keep their label, drop the spinner, add neither the green `ok` state nor any confirmation pair (nothing changed to confirm).
+  - New i18n keys both languages: `noopInfo`.
+- **Tests:** +1 e2e in verification-warn.spec.cjs (noop → `.noop` class, no `ok`/`warn`, neutral label visible, no audit-bound thumbs). E2E 40/40; pytest 549; ruff clean; py_compile ✓; node --check ✓.
+
 ## 2026-09-02 — Faz D-2: ID-based verification extended to all scope mutations
 - **Fix target (from status/verification audit 2026-09-02, Section E1/E2):** only the create trio (create_task, create_calendar_event, save_memory) plus send_email were verified; every other mutation returned `(result, None)`, so creates/updates/deletes were never re-read from the backend. Scope: notes trio, complete_task, delete_task, update/delete_calendar_event. send_email stays out (no reliable read-back).
 - **Commit 1 (`f464630`, plumbing, no behavior change yet):** `nextcloud_notes.create_note` now returns `(result_text, note_id)` — the API response id used to be swallowed by the wrapper. The dispatcher forwards the tuple: create_note's new id, update_note/delete_note's resolved note id, complete_task/delete_task's resolved uid (they used to return None). Tools were still outside VERIFY_SCOPE, so status stayed None.

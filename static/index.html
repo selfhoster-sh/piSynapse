@@ -334,6 +334,7 @@ body.theme-black .msg-group.user .msg-meta .who{color:var(--text3)}
 .tool-status .fb-state.bad{color:var(--text3)}
 .tool-status.warn .fb-state{color:var(--warn,#e07c4f)}
 .tool-status.clarify .fb-state{color:var(--text2)}
+.tool-status.noop .fb-state{color:var(--text2)}
 /* Feedback thumbs live in the same bar as copy/listen/regen (same .tts-btn
    style/size/color). An active thumb gets the accent fill so the chosen
    signal is obvious at a glance. */
@@ -1393,7 +1394,8 @@ const STRINGS = {
     genRetryLabel:'Araç yanıtları sıkıştırılıp yeniden deneniyor…',
     genRetryLeak:'Araç çağrısı düzeltiliyor…',
     genRetryEscalate:'Gerekli araçlar etkinleştiriliyor…',
-    verifFail:'İşlem doğrulanamadı, kontrol edin', clarifyAsked:'Kullanıcıdan bilgi istendi'
+    verifFail:'İşlem doğrulanamadı, kontrol edin', clarifyAsked:'Kullanıcıdan bilgi istendi',
+    noopInfo:'Hedef zaten yok, işlem yapılmadı'
   },
   en:{
     newChat:'New chat', chats:'Chats', mem:'Memory', memTitle:'Memory',
@@ -1452,7 +1454,8 @@ const STRINGS = {
     genRetryLabel:'Compressing tool responses and retrying…',
     genRetryLeak:'Fixing a tool call…',
     genRetryEscalate:'Enabling the required tools…',
-    verifFail:'Operation failed verification — please check', clarifyAsked:'Asked the user for details'
+    verifFail:'Operation failed verification — please check', clarifyAsked:'Asked the user for details',
+    noopInfo:'Target already gone, nothing to do'
   }
 };
 
@@ -3209,7 +3212,14 @@ function showToolScan(toolRow, info){
     txt+='…';
   }
   if(info.phase==='end'){
-    if(info.clarify){
+    if(info.noop){
+      // NOOP (D-3): the target no longer existed, so the mutation changed
+      // nothing. success=0, but this is NOT an error — show a neutral info
+      // state instead of a red failure, and keep the round markable.
+      row.classList.remove('ok','warn');
+      row.classList.add('noop');
+      txt=t('noopInfo');
+    } else if(info.clarify){
       // CLARIFY_REQUIRED tools are now success=0 (D-1a): show a neutral
       // info state instead of a red failure, and the round stays markable.
       row.classList.remove('ok','warn');
@@ -3230,6 +3240,15 @@ function settleFeedbackRow(row, ok, audits, warn){
   // With audits the pair is the C-7 one → many (single 👎/👍 per message);
   // without (refused/interrupted round) keep the quiet ✓ (⚠ stays with label).
   if(!row || !row.isConnected) return row;
+  if(row.classList.contains('noop')){
+    // D-3: the mutation was an idempotent no-op (target already gone). success=0
+    // but NOT an error — keep the neutral info label set in showToolScan, drop the
+    // spinner, and render no confirmation pair (nothing changed to confirm).
+    row.classList.remove('ok'); row.classList.add('done');
+    row.querySelector('.tspin')?.remove();
+    row.querySelectorAll('.fb-state').forEach(s=>s.remove());
+    return row;
+  }
   if(warn){
     // D-1: a scope tool that ran but could not be backend-verified (unverified
     // or verification_failed) settles as an amber warning, NOT a green success.

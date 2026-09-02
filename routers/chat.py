@@ -765,10 +765,11 @@ async def sync_commands(req: SyncRequest, background_tasks: BackgroundTasks):
             )
             success = is_tool_success(result)
             duration_ms = (time.perf_counter() - t0) * 1000
+            is_noop = isinstance(result, str) and result.startswith("NOOP")
             audit_id, verification_status = await run_verification(cmd.tool, cmd.params, result, success, entity_id=entity_id, duration_ms=duration_ms)
             results.append({
                 "index": i,
-                "status": "ok" if success else "error",
+                "status": "noop" if is_noop else ("ok" if success else "error"),
                 "tool": cmd.tool,
                 "result": result if not success else None,
                 "verification_status": verification_status,
