@@ -60,4 +60,27 @@ test.describe('verification_status warn state', () => {
     await expect(row.locator('.fb-up')).toHaveCount(1);
     await expect(row.locator('.mark-btn')).toHaveCount(1);
   });
+
+  test('noop (target already gone): neutral info, not red, no audit-bound thumbs', async ({ page }) => {
+    await installBackendStubs(page, {
+      auditId: 501,
+      stream: () => [
+        { tool: { name: 'delete_note', phase: 'start' } },
+        { tool: { name: 'delete_note', phase: 'end', ok: false, audit_id: 501, verification_status: null, noop: true } },
+        { token: 'Yanıt geldi.' },
+        { done: true },
+      ],
+    });
+    await boot(page);
+    await sendTurn(page);
+
+    const row = page.locator('.tool-status.done');
+    await expect(row).toHaveCount(1);
+    await expect(row).toHaveClass(/noop/);
+    await expect(row).not.toHaveClass(/warn/);
+    await expect(row).not.toHaveClass(/ok/);
+    await expect(row.locator('.tlab')).toHaveText(/yok|nothing|noop/i);
+    await expect(row.locator('.mark-btn')).toHaveCount(0);
+    await expect(row.locator('.fb-up')).toHaveCount(0);
+  });
 });
