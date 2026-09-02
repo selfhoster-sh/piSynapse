@@ -16,6 +16,16 @@
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 - **Sanitization rule:** this file may be published. Never write personal data, identity clues, deployment addresses (hostnames, IPs, ports), or accounts into it. Keep every narrative in English; Turkish inline tokens are allowed only as product corpus / i18n test data.
 
+## 2026-09-02 — Faz D-1c: UI tüketimi — verification_status warn state + feedback kapısı
+- **Denetim kaynağı (Bölüm E2 item (c)):** feedback butonları yalnız `ok=true` ile açılıyordu (index.html:2903) — scope tool'un kurgusu başarısız olsa da (success=1) 👍/👎 gösteriliyordu. D-1b'de payload'lara eklenen `verification_status` artık UI tarafında tüketiliyor.
+- **Değişiklik (web):**
+  - SSE tool-end event'ine `clarify` bayrağı eklendi (llm/stream.py): CLARIFY_REQUIRED → success=0 iken kırmızı değil **nötr/bilgi** görseli ("Kullanıcıdan bilgi istendi", `.tool-status.clarify`).
+  - roundAudits kapısı: `verifiedOk = ok && (status==null || status IN ('verified','verified_by_fallback'))` → yalnızca gerçek doğrulanmış araçlar 👍 çiftini besler (index.html:2903).
+  - `roundVerifWarn`: `ok && status IN ('unverified','verification_failed')` → settleFeedbackRow warn dalı; satır amber "İşlem doğrulanamadı, kontrol edin" gösterir, **yeşil ✓ yok ve hiçbir 👍/👎 yok** (yeşile eşlik eden onay affordance'ı yalan olurdu; audit'siz satırda down mark CLARIFY stiline düşerdi).
+  - Non-scope tool (`status==null`) davranışı değişmez. Yeni i18n anahtarları: `verifFail`, `clarifyAsked`.
+  - Not: tek doğrulanamamış araç tüm round'u warn'a çeker (senaryo bazlı fail-safe; karışık round'da 👍 hedefi doğruydu/kayıt karışımı çıkmasın).
+- **Test:** 39/39 e2e pass, 4 yeni `tests/e2e/verification-warn.spec.cjs`: unverified + verification_failed → warn + thumb yok; verified → çift korunur; status yok → değişmez. Backend 526 pass; ruff clean; py_compile ✓; node --check ✓.
+
 ## 2026-09-02 — Faz D-1b: "claimed success" vs "backend-verified" sinyal ayrımı (verification_status consumers)
 - **Audit-driven (Bölüm E2):** `is_tool_success`'in ham `success` kolonu iki yerde "gerçek başarı" gibi tüketiliyordu: (a) `_last_executed_tool_group` WHERE `success=1` (llm/intent.py), (c) UI feedback butonları yalnız `ok=true` gated (index.html:2903) — verification_status ikisinde de okunmuyordu. Backend re-read kanıt üretiyor (tool_verification.py) ama hiçbir tüketici kullanmıyordu.
 - **Değişiklik (backend):**
