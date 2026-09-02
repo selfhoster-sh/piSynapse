@@ -26,12 +26,17 @@ def is_tool_success(result: str | tuple) -> bool:
 
     Tool handlers contractually prefix genuine failures with "ERROR"; an
     empty result is never a success (a blank answer must not be counted as
-    a successful tool call in the audit log). Accepts either the raw result
-    string or the ``(result_string, entity_id)`` tuple from ``run_tool``.
+    a successful tool call in the audit log). "CLARIFY_REQUIRED" outcomes —
+    the chip/quick-action guard that makes the model ask the user for more
+    details instead of executing — are likewise NOT a success: nothing was
+    created or modified. Accepts either the raw result string or the
+    ``(result_string, entity_id)`` tuple from ``run_tool``.
     """
     if isinstance(result, tuple):
         result = result[0]
-    return bool(result) and not result.startswith("ERROR")
+    if not result:
+        return False
+    return not result.startswith("ERROR") and not result.startswith("CLARIFY_REQUIRED")
 
 
 def _as_position(ref) -> int | None:
