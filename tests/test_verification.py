@@ -1,8 +1,10 @@
 """Tests for ID-based backend verification (tool_verification.py).
 
-Covers the three create tools in VERIFY_SCOPE (create_task,
-create_calendar_event, save_memory):
+Covers every tool in VERIFY_SCOPE — the create trio (create_task,
+create_calendar_event, save_memory) and the D-2 extensions (notes trio,
+complete_task, delete_task, update/delete_calendar_event):
 - success/failure mapping to the five verification_status values
+- deleted entities verify by ABSENCE (inverted confirmation)
 - duplicate summary/content DISCRIMINATION: verification must be driven by
   the structured entity_id (UID/rowid), NOT by matching the human-readable
   summary/content — two identical creates must verify independently.
@@ -149,6 +151,117 @@ class TestSaveMemory:
         assert status == "unverified"
 
 
+class TestCreateNotes:
+    async def test_verified_by_id(self):
+        with patch("nextcloud_notes.list_notes", new=AsyncMock(return_value=("", [{"id": 11, "title": "Alışveriş", "content": "süt"}]))):
+            status = await _verify("create_note", {"title": "Alışveriş", "content": "süt"}, "OK Note 'Alışveriş' created.", True, 11)
+        assert status == "verified"
+
+    async def test_id_miss_reports_failed(self):
+        with patch("nextcloud_notes.list_notes", new=AsyncMock(return_value=("", [{"id": 12, "title": "x"}]))):
+            status = await _verify("create_note", {"title": "Alışveriş", "content": "süt"}, "OK", True, 11)
+        assert status == "verification_failed"
+
+    async def test_duplicate_content_discriminates_by_id(self):
+        with patch("nextcloud_notes.list_notes", new=AsyncMock(return_value=("", [{"id": 1, "title": "N", "content": "aynı"}]))):
+            status_a = await _verify("create_note", {"title": "N", "content": "aynı"}, "OK", True, 1)
+            status_b = await _verify("create_note", {"title": "N", "content": "aynı"}, "OK", True, 2)
+        assert status_a == "verified"
+        assert status_b == "verification_failed"
+
+    async def test_fallback_content_match_when_id_missing(self):
+        with patch("nextcloud_notes.list_notes", new=AsyncMock(return_value=("", [{"id": 1, "title": "N", "content": "süt"}]))):
+            status = await _verify("create_note", {"title": "N", "content": "süt"}, "OK", True, None)
+        assert status == "verified_by_fallback"
+
+    async def test_fallback_miss_is_unverified(self):
+        with patch("nextcloud_notes.list_notes", new=AsyncMock(return_value=("No notes found.", []))):
+            status = await _verify("create_note", {"title": "N", "content": "hayalet"}, "OK", True, None)
+        assert status == "unverified"
+
+
+class TestUpdateNote:
+    async def test_verified_when_updated_note_present(self):
+        with patch("nextcloud_notes.list_notes", new=AsyncMock(return_value=("", [{"id": 7, "title": "T", "content": "yeni"}]))):
+            status = await _verify("update_note", {"note_id": 1, "content": "yeni"}, "OK Note updated.", True, 7)
+        assert status == "verified"
+
+    async def test_id_miss_reports_failed(self):
+        with patch("nextcloud_notes.list_notes", new=AsyncMock(return_value=("", [{"id": 8, "title": "T"}]))):
+            status = await _verify("update_note", {"note_id": 1, "content": "yeni"}, "OK", True, 7)
+        assert status == "verification_failed"
+
+
+class TestDeleteNote:
+    async def test_verified_by_absence(self):
+        with patch("nextcloud_notes.list_notes", new=AsyncMock(return_value=("", [{"id": 8, "title": "other"}]))):
+            status = await _verify("delete_note", {"note_id": 1}, "OK Note deleted.", True, 7)
+        assert status == "verified"
+
+    async def test_still_present_reports_failed(self):
+        with patch("nextcloud_notes.list_notes", new=AsyncMock(return_value=("", [{"id": 7, "title": "ghost"}]))):
+            status = await _verify("delete_note", {"note_id": 1}, "OK Note deleted.", True, 7)
+        assert status == "verification_failed"
+
+
+class TestCompleteTask:
+    async def test_verified_when_completed(self):
+        with patch("nextcloud_tasks.list_tasks", new=AsyncMock(return_value=("", [{"uid": "t9", "summary": "x", "completed": True}]))):
+            status = await _verify("complete_task", {"uid": "1"}, "OK marked done.", True, "t9")
+        assert status == "verified"
+
+    async def test_present_but_not_completed_reports_failed(self):
+        with patch("nextcloud_tasks.list_tasks", new=AsyncMock(return_value=("", [{"uid": "t9", "summary": "x", "completed": False}]))):
+            status = await _verify("complete_task", {"uid": "1"}, "OK marked done.", True, "t9")
+        assert status == "verification_failed"
+
+    async def test_missing_task_reports_failed(self):
+        with patch("nextcloud_tasks.list_tasks", new=AsyncMock(return_value=("", []))):
+            status = await _verify("complete_task", {"uid": "1"}, "OK marked done.", True, "t9")
+        assert status == "verification_failed"
+
+
+class TestDeleteTask:
+    async def test_verified_by_absence(self):
+        with patch("nextcloud_tasks.list_tasks", new=AsyncMock(return_value=("", [{"uid": "t1", "completed": True}]))):
+            status = await _verify("delete_task", {"uid": 2}, "OK Task deleted.", True, "t9")
+        assert status == "verified"
+
+    async def test_still_present_reports_failed(self):
+        with patch("nextcloud_tasks.list_tasks", new=AsyncMock(return_value=("", [{"uid": "t9", "completed": False}]))):
+            status = await _verify("delete_task", {"uid": 2}, "OK Task deleted.", True, "t9")
+        assert status == "verification_failed"
+
+
+class TestUpdateCalendarEvent:
+    async def test_verified_by_uid(self):
+        with patch("calendar_ops.list_events", return_value=("", [{"uid": "ev-9", "summary": "Yeni"}])):
+            status = await _verify("update_calendar_event", {"summary": "Eski", "new_summary": "Yeni"}, "OK", True, "ev-9")
+        assert status == "verified"
+
+    async def test_uid_miss_reports_failed(self):
+        with patch("calendar_ops.list_events", return_value=("", [{"uid": "ev-1", "summary": "Eski"}])):
+            status = await _verify("update_calendar_event", {"summary": "Eski", "new_summary": "Yeni"}, "OK", True, "ev-9")
+        assert status == "verification_failed"
+
+    async def test_fallback_new_summary_match(self):
+        with patch("calendar_ops.list_events", return_value=("", [{"uid": "ev-9", "summary": "Yeni"}])):
+            status = await _verify("update_calendar_event", {"summary": "Eski", "new_summary": "Yeni"}, "OK", True, "")
+        assert status == "verified_by_fallback"
+
+
+class TestDeleteCalendarEvent:
+    async def test_verified_by_absence(self):
+        with patch("calendar_ops.list_events", return_value=("", [{"uid": "ev-1", "summary": "Kalsın"}])):
+            status = await _verify("delete_calendar_event", {"summary": "Silinecek"}, "OK", True, "ev-9")
+        assert status == "verified"
+
+    async def test_still_present_reports_failed(self):
+        with patch("calendar_ops.list_events", return_value=("", [{"uid": "ev-9", "summary": "Silinecek"}])):
+            status = await _verify("delete_calendar_event", {"summary": "Silinecek"}, "OK", True, "ev-9")
+        assert status == "verification_failed"
+
+
 class TestInvariantStatusNonNull:
     """D-1b invariant: a scope-tool call that succeeds ALWAYS produces a
     non-NULL verification_status (verified / verified_by_fallback /
@@ -185,6 +298,28 @@ class TestInvariantStatusNonNull:
         await db.commit()
         assert await _verify("save_memory", {"content": "İnvariant control"}, "Memory saved.", True, 7) is not None
         assert await _verify("save_memory", {"content": "İnvariant control"}, "Memory saved.", True, None) is not None
+
+    async def test_scope_success_d2_tools_non_null(self):
+        # D-2: every extend-ed scope tool that succeeds must carry a status —
+        # verified / verification_failed / verified_by_fallback / unverified.
+        with patch("nextcloud_notes.list_notes", new=AsyncMock(return_value=("", []))):
+            assert await _verify("create_note", {"title": "T", "content": "C"}, "OK", True, None) is not None
+            assert await _verify("update_note", {"note_id": 1, "title": "T"}, "OK", True, 7) is not None
+            assert await _verify("delete_note", {"note_id": 1}, "OK", True, 7) is not None
+        with patch("nextcloud_tasks.list_tasks", new=AsyncMock(return_value=("", []))):
+            assert await _verify("complete_task", {"uid": "1"}, "OK", True, "t9") is not None
+            assert await _verify("delete_task", {"uid": "1"}, "OK", True, "t9") is not None
+        with patch("calendar_ops.list_events", return_value=("", [])):
+            assert await _verify("update_calendar_event", {"summary": "S"}, "OK", True, "ev-9") is not None
+            assert await _verify("delete_calendar_event", {"summary": "S"}, "OK", True, "ev-9") is not None
+
+    async def test_scope_success_d2_fallback_default_is_non_null(self):
+        # A D-2 tool with no id and no identifiable fallback content still
+        # settles as 'unverified' — never NULL (resolver safety).
+        with patch("nextcloud_notes.list_notes", new=AsyncMock(return_value=("", []))):
+            assert await _verify("delete_note", {"note_id": 1}, "OK", True, "") is not None
+        with patch("nextcloud_tasks.list_tasks", new=AsyncMock(return_value=("", []))):
+            assert await _verify("delete_task", {"uid": ""}, "OK", True, "") is not None
 
     async def test_non_scope_success_is_null(self):
         assert await _verify("send_email", {}, "Email sent!", True, None) is None

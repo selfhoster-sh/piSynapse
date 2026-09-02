@@ -2,18 +2,24 @@
 
 Invoked after every completed tool call inside the tool-call loops
 (llm/stream.py and llm/chat.py) and the manual routes (routers/chat.py).
-For the three create tools whose outcomes matter for fine-tuning data
-(create_task, save_memory, create_calendar_event), performs real backend
+For the create/update/delete tools in VERIFY_SCOPE, performs real backend
 verification: the dispatcher carries a structured ``(result_string,
-entity_id)`` tuple (UID / rowid returned by the create call), and here the
-entity is re-read from the backend to confirm it actually persisted.
+entity_id)`` tuple (UID / rowid returned by the create call, or the resolved
+id used by the update/delete), and here the entity is re-read from the
+backend to confirm the write actually landed (creates/updates) or the entity
+actually disappeared (deletes — verification is inverted: absence proves
+the deletion).
 
 ``verification_status`` values written to the audit log:
-    "verified"              ID-based re-read confirmed the entity exists.
+    "verified"              ID-based re-read confirmed the expected state
+                            (entity present for creates/updates, absent for
+                            deletes) — the authoritative signal.
     "verified_by_fallback"  ID unavailable -> content/summary match only
                             (low confidence; NOT a trustworthy positive).
     "unverified"            No ID and fallback match failed.
-    "verification_failed"   ID present but backend re-read errored/missed.
+    "verification_failed"   ID present but backend re-read contradicts the
+                            expected state (missing entity after create, or
+                            still-present entity after delete).
     None                    Tool not in the verification scope, or the
                             tool call itself failed (nothing to verify).
 
@@ -27,8 +33,28 @@ from db import log_tool_call
 
 logger = logging.getLogger("piSynapse")
 
-# Tools whose create outcome is verified against the real backend.
-VERIFY_SCOPE = {"create_task", "create_calendar_event", "save_memory"}
+# Tools whose create/update/delete outcome is verified against the real
+# backend. A tool only lands here when the dispatcher can hand out a
+# structured entity id (or a reliable fallback exists).
+VERIFY_SCOPE = {
+    "create_task",
+    "create_calendar_event",
+    "save_memory",
+    # D-2: notes trio (create_note/update_note/delete_note)
+    "create_note",
+    "update_note",
+    "delete_note",
+    # D-2: task mutations beyond create
+    "complete_task",
+    "delete_task",
+    # D-2: calendar mutations beyond create (dispatcher already returned uid)
+    "update_calendar_event",
+    "delete_calendar_event",
+}
+
+# Delete verification is INVERTED: the desired post-state is the entity being
+# absent from the backend, not present.
+_DELETE_TOOLS = {"delete_note", "delete_task", "delete_calendar_event"}
 
 
 async def run_verification(
@@ -92,10 +118,11 @@ async def _verify(
 ) -> str | None:
     """Compute the verification status for a finished tool call.
 
-    Only create tools in VERIFY_SCOPE are verified (other calls return None).
+    Only tools in VERIFY_SCOPE are verified (other calls return None).
     A failed tool call has nothing to verify. When an ID is available it is
     authoritative; the content/summary fallback is used only when the ID is
-    missing and is always marked ``verified_by_fallback``.
+    missing and is always marked ``verified_by_fallback``. For delete tools
+    both paths check ABSENCE (the entity must no longer exist anywhere).
     """
     if tool_name not in VERIFY_SCOPE:
         return None
@@ -113,18 +140,45 @@ async def _verify(
 
 
 async def _confirm_by_id(tool_name: str, entity_id: str | int, params: dict) -> bool:
-    """Re-read the created entity from its backend and match on ID."""
+    """Re-read the mutated entity and match on ID.
+
+    Returns True when the backend holds the state the tool claimed to produce:
+    creates/updates → entity present; deletes → entity absent (inverted).
+    """
     if tool_name == "create_task":
         from nextcloud_tasks import list_tasks
 
         _, items = await list_tasks(show_completed=True)
-        return any(item.get("uid") == entity_id for item in items)
+        return any(str(item.get("uid")) == str(entity_id) for item in items)
 
-    if tool_name == "create_calendar_event":
+    if tool_name == "complete_task":
+        from nextcloud_tasks import list_tasks
+
+        _, items = await list_tasks(show_completed=True)
+        # The completion must have landed: the task is still present AND
+        # reported as completed.
+        return any(
+            str(item.get("uid")) == str(entity_id) and bool(item.get("completed"))
+            for item in items
+        )
+
+    if tool_name == "delete_task":
+        from nextcloud_tasks import list_tasks
+
+        _, items = await list_tasks(show_completed=True)
+        return not any(str(item.get("uid")) == str(entity_id) for item in items)
+
+    if tool_name in ("create_calendar_event", "update_calendar_event"):
         from calendar_ops import list_events
 
         _, items = await asyncio.to_thread(list_events, 30)
-        return any(item.get("uid") == entity_id for item in items)
+        return any(str(item.get("uid")) == str(entity_id) for item in items)
+
+    if tool_name == "delete_calendar_event":
+        from calendar_ops import list_events
+
+        _, items = await asyncio.to_thread(list_events, 30)
+        return not any(str(item.get("uid")) == str(entity_id) for item in items)
 
     if tool_name == "save_memory":
         from db import get_db
@@ -132,6 +186,18 @@ async def _confirm_by_id(tool_name: str, entity_id: str | int, params: dict) -> 
         db = await get_db()
         async with db.execute("SELECT id FROM memories WHERE id = ?", (entity_id,)) as cur:
             return await cur.fetchone() is not None
+
+    if tool_name in ("create_note", "update_note"):
+        from nextcloud_notes import list_notes
+
+        _, items = await list_notes()
+        return any(str(item.get("id")) == str(entity_id) for item in items)
+
+    if tool_name == "delete_note":
+        from nextcloud_notes import list_notes
+
+        _, items = await list_notes()
+        return not any(str(item.get("id")) == str(entity_id) for item in items)
 
     return False
 
@@ -147,14 +213,41 @@ async def _fallback_match(tool_name: str, params: dict) -> bool:
         _, items = await search_tasks(summary)
         return bool(items)
 
-    if tool_name == "create_calendar_event":
+    if tool_name == "complete_task":
+        from nextcloud_tasks import list_tasks
+
+        _, items = await list_tasks(show_completed=True)
+        uid = str(params.get("uid") or "").strip()
+        if not uid:
+            return False
+        return any(str(item.get("uid")) == uid and bool(item.get("completed")) for item in items)
+
+    if tool_name == "delete_task":
+        from nextcloud_tasks import list_tasks
+
+        _, items = await list_tasks(show_completed=True)
+        uid = str(params.get("uid") or "").strip()
+        if not uid:
+            return False
+        return not any(str(item.get("uid")) == uid for item in items)
+
+    if tool_name in ("create_calendar_event", "update_calendar_event"):
+        from calendar_ops import list_events
+
+        summary = (params.get("new_summary") or params.get("summary") or "").strip().lower()
+        if not summary:
+            return False
+        _, items = await asyncio.to_thread(list_events, 30)
+        return any(item.get("summary", "").strip().lower() == summary for item in items)
+
+    if tool_name == "delete_calendar_event":
         from calendar_ops import list_events
 
         summary = (params.get("summary") or "").strip().lower()
         if not summary:
             return False
         _, items = await asyncio.to_thread(list_events, 30)
-        return any(item.get("summary", "").strip().lower() == summary for item in items)
+        return not any(item.get("summary", "").strip().lower() == summary for item in items)
 
     if tool_name == "save_memory":
         from db import get_db
@@ -168,5 +261,48 @@ async def _fallback_match(tool_name: str, params: dict) -> bool:
         ) as cur:
             row = await cur.fetchone()
         return bool(row and row[0] > 0)
+
+    if tool_name == "create_note":
+        from nextcloud_notes import list_notes
+
+        title = (params.get("title") or "").strip()
+        content = (params.get("content") or "").strip()
+        if not title:
+            return False
+        _, items = await list_notes()
+        for item in items:
+            if (item.get("title") or "").strip().lower() == title.lower():
+                return True
+        return bool(content) and any(
+            (item.get("content") or "").strip() == content for item in items
+        )
+
+    if tool_name == "update_note":
+        from nextcloud_notes import list_notes
+
+        title = (params.get("title") or "").strip()
+        content = (params.get("content") or "").strip()
+        if not content and not title:
+            return False
+        _, items = await list_notes()
+        for item in items:
+            if content and (item.get("content") or "").strip() == content:
+                return True
+            if not content and title and (item.get("title") or "").strip().lower() == title.lower():
+                return True
+        return False
+
+    if tool_name == "delete_note":
+        from nextcloud_notes import list_notes
+
+        title = (params.get("title") or "").strip()
+        content = (params.get("content") or "").strip()
+        _, items = await list_notes()
+        for item in items:
+            if content and (item.get("content") or "").strip() == content:
+                return False
+            if title and (item.get("title") or "").strip().lower() == title.lower():
+                return False
+        return True  # nothing matches the deleted note → gone
 
     return False
