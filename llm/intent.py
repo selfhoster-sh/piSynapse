@@ -230,6 +230,19 @@ _CONTEXT_OPENERS = (
     "sürdürelim", "sürdür", "kaldığımız yerden", "kaldığı yerden",
     "nerede kalmıştık", "nerede kalmışız", "yine", "şimdi de",
     "az önce", "önceki", "sıradaki", "diğer",
+    # EN: phrase-level continuation openers (strongly anaphoric)
+    "let's continue", "lets continue", "let us continue",
+    "continue where we left off",
+    "pick up where we left", "pick up where i left",
+    "where were we", "where did we leave off",
+    "carry on from where",
+    # DE: phrase-level continuation openers
+    "wo waren wir", "lass uns weitermachen", "lass uns dort weitermachen",
+    "machen wir weiter wo", "wir waren wo",
+    # FR
+    "où en étions", "ou en etions", "on reprend où", "reprenons où",
+    # ES
+    "dónde estábamos", "donde estabamos", "sigamos", "continuemos",
 )
 # Progressive-past suffixes mark action-still-in-progress, which implies
 # previous context ("düzenliyordun", "gönderiyordun", "yazıyordunuz").
@@ -247,13 +260,41 @@ _CONTEXT_ANAPHORIC = re.compile(
     re.IGNORECASE,
 )
 
+# Progressive-past / reference-to-action-in-progress in other languages. These
+# are deliberately phrase/suffix-agnostic regex gates: unlike Turkish (whose
+# "-ıyordu + -dun" suffixes mark an interrupted in-progress action), EN/DE/FR/ES
+# express the same idea with auxiliary verbs ("we were …ing", "wo waren wir
+# bei", "on était en train de", "estábamos a punto de") or with a demonstrative
+# referring back to a just-discussed object ("the … i was …ing", "the one we
+# were"). To keep the gate SAFE (user decision: narrow over broad), only
+# strongly demonstrative / object-anchored patterns qualify — a bare "i was
+# \w+ing" like "i was thinking about the weather" would wrongly swallow a fresh
+# command, so it is excluded. Same caution as Turkish "az önce" / "önceki".
+_CONTEXT_PROGRESSIVE_PAST_I18N = re.compile(
+    r"the \w+ i was\s+\w+ing"             # EN demonstrative "the email i was sending"
+    r"|the \w+ we were\s+\w+ing"          # EN "the notes we were editing"
+    r"|the one i was\s+\w+ing"            # EN "the one i was reading"
+    r"|the one we were\s+\w+ing"          # EN "the one we were on"
+    r"|there we were\s+\w+ing"            # EN "there we were working on"
+    r"|wir waren bei\s+\w+in\b"           # DE demonstrative progressive
+    r"|wo waren wir stehen geblieben"     # DE "where we had left off"
+    r"|celui que j['']?étais en train de\s+\w+"   # FR "the one i was …ing"
+    r"|on était en train de\s+\w+"        # FR "we were in the middle of"
+    r"|on était en train d['']\w+"        # FR with elision
+    r"|estábamos\s+\w+ndo\b"              # ES gerund "estábamos enviando"
+    r"|el \w+ que estaba\s+\w+ndo\b"      # ES "el correo que estaba escribiendo"
+    r"|la \w+ que estaba\s+\w+ndo\b",     # ES feminine "la nota que estaba editando"
+    re.IGNORECASE,
+)
+
 
 def _is_context_dependent(text: str) -> bool:
     """True when the utterance is an anaphoric follow-up, not a standalone intent.
 
     These carry no meaning outside their conversation and must never be fed to
     the corpus — see `_CONTEXT_OPENERS` for the phrase gates and
-    `_CONTEXT_PROGRESSIVE_PAST` / `_CONTEXT_ANAPHORIC` for the verb-based gates.
+    `_CONTEXT_PROGRESSIVE_PAST` / `_CONTEXT_ANAPHORIC` (Turkish) plus
+    `_CONTEXT_PROGRESSIVE_PAST_I18N` (EN/DE/FR/ES) for the verb-based gates.
     """
     t = text.strip().lower()
     if not t:
@@ -264,6 +305,8 @@ def _is_context_dependent(text: str) -> bool:
     if _CONTEXT_PROGRESSIVE_PAST.search(t):
         return True
     if _CONTEXT_ANAPHORIC.search(t):
+        return True
+    if _CONTEXT_PROGRESSIVE_PAST_I18N.search(t):
         return True
     return False
 

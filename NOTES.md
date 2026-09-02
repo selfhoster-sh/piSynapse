@@ -23,6 +23,15 @@
 - **Not touched on purpose:** the UI render path (an ok=false row) — user scoped this item to the audit signal; a separate neutral "no-op" visual would be a follow-up.
 - **Tests:** +2 `TestIsToolSuccess` (NOOP str + tuple → not success) and `test_wrapper_not_found` re-pointed to the new NOOP text. Full suite 549; E2E 39/39; ruff clean; py_compile ✓.
 
+## 2026-09-02 — Faz D-ML: anaphoric context-gate extended to EN/DE/FR/ES
+- **Fix target:** the corpus-zehirleme guard `_is_context_dependent` (C-7/C-8) only recognized Turkish (`_CONTEXT_OPENERS`, `_CONTEXT_PROGRESSIVE_PAST`, `_CONTEXT_ANAPHORIC`). An English/German/French/Spanish anaphoric follow-up ("continue where we left off", "wo waren wir", "où en étions-nous") passed the gate and could feed a context-dependent fragment into the embedding corpus — the exact risk the Turkish gate exists to prevent, but unfixed for non-Turkish.
+- **Change (llm/intent.py):**
+  - `_CONTEXT_OPENERS`: added phrase-level continuation openers for EN/DE/FR/ES (e.g. "let's continue", "continue where we left off", "where were we", "wo waren wir", "lass uns weitermachen", "où en étions-nous", "dónde estábamos", "sigamos").
+  - New `_CONTEXT_PROGRESSIVE_PAST_I18N`: regex for object/demonstrative progressive-past references in EN/DE/FR/ES ("the email i was sending", "the notes we were editing", "wir waren bei …in", "on était en train de …", "el correo que estaba escribiendo", …), wired into `_is_context_dependent`.
+  - **Scoped NARROW (user decision):** only clearly object/demonstrative progressions gate; a bare "i was …ing" like "i was thinking about the weather" or "i was reading" must NOT gate, because those can open a fresh command (mirrors the existing caution over Turkish "az önce" / "önceki").
+- **Tests:** +1 `test_is_contextual_followup_i18n` (16 assertions: gate-worthy EN/DE/FR/ES vs fresh commands that must not gate). Full suite 553; ruff clean; py_compile ✓.
+- **Not in this commit (separate follow-ups when wanted):** English keyword completion in `_KEYWORD_CHECKS` (email "send", task "complete"/"delete"…), feeder `lang` tag + English assistant-signal gating, embedding-model upgrade (re-embed cost).
+
 ## 2026-09-02 — Faz D-3c: NOOP extended to task mutations (complete_task / delete_task)
 - **Motivation (follow-up to D-3):** the same bare not-found pattern existed outside notes. `complete_task` (nextcloud_tasks.py) returned `"Task with UID '...' not found or already completed."` and `delete_task` returned `"Task with UID '...' not found."` — both without an `ERROR:` prefix, so `is_tool_success` logged them as success=1 (a false "completed"/"deleted" claim on a target that was already gone). Both are D-2 scope tools.
 - **Change (nextcloud_tasks.py):** both mutation not-found returns are now `"NOOP: …"`; the existing `is_tool_success` NOOP rule (D-3) already classifies them as failure → success=0 → `_verify` returns NULL (a no-op has nothing to re-read) and the D-3b UI renders the neutral info row automatically (the SSE `noop` flag is prefix-based).
