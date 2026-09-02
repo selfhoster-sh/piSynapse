@@ -97,6 +97,36 @@ def test_is_contextual_followup_alias():
     assert not li_mod.is_contextual_followup("en son mailleri göster")
 
 
+def test_is_contextual_followup_i18n():
+    """D-ML: the anaphoric gate covers EN/DE/FR/ES, not just Turkish.
+
+    Scoped NARROW (user decision): only clearly object/demonstrative progressions
+    gate, so a fresh command like "i was thinking about the weather" is NOT
+    swallowed by a bare "i was …ing" rule.
+    """
+    # gate-worthy (object/demonstrative anaphoric, or an opening phrase)
+    assert li_mod.is_contextual_followup("let's continue")
+    assert li_mod.is_contextual_followup("continue where we left off")
+    assert li_mod.is_contextual_followup("where were we")
+    assert li_mod.is_contextual_followup("the email i was sending")
+    assert li_mod.is_contextual_followup("the notes we were editing")
+    assert li_mod.is_contextual_followup("the one i was reading")
+    assert li_mod.is_contextual_followup("wo waren wir")
+    assert li_mod.is_contextual_followup("lass uns weitermachen")
+    assert li_mod.is_contextual_followup("où en étions nous")
+    assert li_mod.is_contextual_followup("dónde estábamos")
+    assert li_mod.is_contextual_followup("el correo que estaba escribiendo")
+    # must NOT gate (fresh commands / non-anaphoric wording)
+    assert not li_mod.is_contextual_followup("show my emails")
+    assert not li_mod.is_contextual_followup("send an email to john")
+    assert not li_mod.is_contextual_followup("what is the weather today")
+    assert not li_mod.is_contextual_followup("continue the download")
+    assert not li_mod.is_contextual_followup("i was thinking about the weather")
+    assert not li_mod.is_contextual_followup("i was reading")
+    assert not li_mod.is_contextual_followup("create a note")
+
+
+
 # ── Layer 0: deterministic session resolver ───────────────────────────────────
 
 def test_resolve_resume_context_uses_last_tool(intent_db):
