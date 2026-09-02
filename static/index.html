@@ -1673,22 +1673,6 @@ function sanitizeHTML(html) {
   return div.innerHTML;
 }
 
-// Call markdown worker for off-main-thread text processing
-function mdWorkerCall(type, text) {
-  return new Promise((resolve, reject) => {
-    if (!window._mdWorker) { resolve(text); return; }
-    window._mdPending[type] = resolve;
-    window._mdWorker.postMessage({ type, text });
-    setTimeout(() => {
-      if (window._mdPending[type]) {
-        delete window._mdPending[type];
-        console.warn('Markdown worker timeout, falling back to main thread');
-        resolve(text);
-      }
-    }, 5000);
-  });
-}
-
 function parseMath(s) {
   const dict = {
     '\\rightarrow': '\u2192', '\\leftarrow': '\u2190', '\\Rightarrow': '\u21D2', '\\Leftarrow': '\u21D0',
@@ -2529,16 +2513,6 @@ let lastInputWasVoice = false;
 document.addEventListener('DOMContentLoaded', async ()=>{
   if(window._beacon) window._beacon({t:'init', step:'start'});
   applyTheme(theme); applyGlass(glass); applyMinimal(minimal); applyLang(lang); enhanceAllSelects(); setupInput(); setupMobileKeyboard(); setupHoldToRecord();
-  // Initialize markdown worker for off-main-thread text processing
-  window._mdWorker = new Worker('/static/markdownWorker.js');
-  window._mdWorker.onmessage = (e) => {
-    const { ok, type, result, error } = e.data;
-    if (!ok) { console.error('Markdown worker error:', error); return; }
-    // Resolve pending promise
-    const resolver = window._mdPending?.[type];
-    if (resolver) { resolver(result); delete window._mdPending[type]; }
-  };
-  window._mdPending = {};
   if(window._beacon) window._beacon({t:'init', step:'prep-done'});
   // Check if API key is needed
   try {
