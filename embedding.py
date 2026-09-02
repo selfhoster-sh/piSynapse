@@ -12,7 +12,7 @@ logger = logging.getLogger("piSynapse")
 
 MODEL_NAME = os.getenv(
     "EMBED_MODEL",
-    "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
 )
 
 _model: TextEmbedding | None = None
@@ -51,6 +51,16 @@ async def embed_batch_async(texts: list[str]) -> list[bytes]:
         model = get_model()
         return [vec.astype("float32").tobytes() for vec in model.embed(texts)]
     return await asyncio.to_thread(_run)
+
+
+def model_dim() -> int:
+    """Embedding dimension of the currently configured model (lazy-loads it).
+
+    Used by migration/re-embed tooling to detect stale rows written by a
+    different-dimension model after an upgrade.
+    """
+    vec = np.frombuffer(embed(""), dtype="float32")
+    return int(vec.size)
 
 
 def cosine_similarity(blob_a: bytes, blob_b: bytes) -> float:
