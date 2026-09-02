@@ -325,7 +325,7 @@ def test_note_write_invalidates_list_cache(monkeypatch):
     client._list_cache_ts = 999.0
 
     with patch.object(nn, "_notes_client", client):
-        assert asyncio.run(nn.create_note("New", "body")) == "OK Note 'New' created."
+        assert asyncio.run(nn.create_note("New", "body")) == ("OK Note 'New' created.", 9)
         assert client._list_cache is None
 
         client._list_cache = [{"id": 1, "title": "old"}]

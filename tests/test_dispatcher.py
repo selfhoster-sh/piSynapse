@@ -361,10 +361,11 @@ class TestNotesTools:
         assert result[0] == "ERROR: title required."
 
     async def test_create_note_calls_handler(self):
-        with patch("nextcloud_notes.create_note", new=AsyncMock(return_value="created")) as cn:
+        with patch("nextcloud_notes.create_note", new=AsyncMock(return_value=("created", 5))) as cn:
             result = await run_tool("create_note", {"title": "T", "content": "C", "category": "work"})
         cn.assert_awaited_once_with(title="T", content="C", category="work")
         assert result[0] == "created"
+        assert result[1] == 5
 
     async def test_list_notes(self):
         with patch("nextcloud_notes.list_notes", new=AsyncMock(return_value=("[]", []))) as ln:
@@ -418,6 +419,7 @@ class TestNotesTools:
             result = await run_tool("delete_note", {"note_id": 1}, context={"session_id": "s1"})
         dn.assert_awaited_once_with(7)
         assert result[0] == "OK Note deleted."
+        assert result[1] == 7
 
     async def test_delete_note_out_of_range_refused(self):
         cached = [{"id": 7, "title": "Old"}]
@@ -482,6 +484,7 @@ class TestTasksTools:
             result = await run_tool("complete_task", {"uid": "1"}, context={"session_id": "s1"})
         ct.assert_awaited_once_with("uid-abc-123")
         assert result[0].startswith("OK")
+        assert result[1] == "uid-abc-123"
 
     async def test_complete_task_rejects_truncated_uid_string(self):
         """A truncated UID copied from old-style output must be refused."""

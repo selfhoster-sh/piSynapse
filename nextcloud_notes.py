@@ -279,18 +279,23 @@ async def get_note(note_id: int) -> str:
         return "ERROR: Failed to get note."
 
 
-async def create_note(title: str, content: str = "", category: str = "") -> str:
-    """Create a new note."""
+async def create_note(title: str, content: str = "", category: str = "") -> tuple[str, int | None]:
+    """Create a new note.
+
+    Returns ``(result_text, note_id)`` — the id is forwarded by the dispatcher
+    so the verification hook can re-read the note and confirm it persisted.
+    """
     client = _get_client()
     if not client:
-        return "ERROR: Nextcloud credentials missing."
+        return "ERROR: Nextcloud credentials missing.", None
     try:
-        await asyncio.to_thread(client.create_note, title, content, category)
+        resp = await asyncio.to_thread(client.create_note, title, content, category)
         _invalidate_list_cache()
-        return f"OK Note '{title}' created."
+        note_id = resp.get("id") if isinstance(resp, dict) else None
+        return f"OK Note '{title}' created.", note_id
     except Exception as e:
         logger.error(f"Nextcloud Notes Error: {e}")
-        return "ERROR: Failed to create note."
+        return "ERROR: Failed to create note.", None
 
 
 async def update_note(note_id: int, title: str | None = None, content: str | None = None,
