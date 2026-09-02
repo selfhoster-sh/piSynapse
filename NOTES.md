@@ -23,6 +23,12 @@
 - **Not touched on purpose:** the UI render path (an ok=false row) — user scoped this item to the audit signal; a separate neutral "no-op" visual would be a follow-up.
 - **Tests:** +2 `TestIsToolSuccess` (NOOP str + tuple → not success) and `test_wrapper_not_found` re-pointed to the new NOOP text. Full suite 549; E2E 39/39; ruff clean; py_compile ✓.
 
+## 2026-09-02 — Faz D-3c: NOOP extended to task mutations (complete_task / delete_task)
+- **Motivation (follow-up to D-3):** the same bare not-found pattern existed outside notes. `complete_task` (nextcloud_tasks.py) returned `"Task with UID '...' not found or already completed."` and `delete_task` returned `"Task with UID '...' not found."` — both without an `ERROR:` prefix, so `is_tool_success` logged them as success=1 (a false "completed"/"deleted" claim on a target that was already gone). Both are D-2 scope tools.
+- **Change (nextcloud_tasks.py):** both mutation not-found returns are now `"NOOP: …"`; the existing `is_tool_success` NOOP rule (D-3) already classifies them as failure → success=0 → `_verify` returns NULL (a no-op has nothing to re-read) and the D-3b UI renders the neutral info row automatically (the SSE `noop` flag is prefix-based).
+- **Not touched:** `search_tasks`' `"'{query}' not found in tasks."` is a read/search tool, not a mutation → plain text stays. Calendar already returns `ERROR:` prefixed not-found (calendar_ops.py), so it never had the no-op bug. Mail has no such mutation path.
+- **Tests:** +2 `_complete_task_sync` / `_delete_task_sync` no-op unit tests (empty todos → NOOP:), +1 `TestIsToolSuccess` task cases. Full suite 552; ruff clean; py_compile ✓.
+
 ## 2026-09-02 — Faz D-3b: UI renders a no-op as a neutral info row, not an error
 - **Motivation (follow-up to D-3):** a NOOP tool row surfaced with `ok=false`, and the default settle logic removed the label and re-added the green `ok` class on a replied round — visually indistinguishable from an error, contradicting the "already gone, nothing to do" meaning. User chose a **plain text info** treatment (no badge/color).
 - **Change (web):**

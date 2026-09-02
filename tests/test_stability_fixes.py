@@ -260,6 +260,33 @@ def test_tasks_complete_raises_on_fetch_error(monkeypatch):
         nt._complete_task_sync("abc")
 
 
+# -- Task no-op (D-3): a task already gone / already completed is NOOP, not success --
+# (these strings feed is_tool_success, which classifies the NOOP prefix as failure)
+
+def test_tasks_complete_noop_when_task_missing(monkeypatch):
+    import nextcloud_tasks as nt
+
+    class EmptyCal:
+        def todos(self):
+            return []
+
+    monkeypatch.setattr(nt, "_get_task_calendar", lambda: EmptyCal())
+    res = nt._complete_task_sync("nonexistent")
+    assert res.startswith("NOOP:")
+
+
+def test_tasks_delete_noop_when_task_missing(monkeypatch):
+    import nextcloud_tasks as nt
+
+    class EmptyCal:
+        def todos(self):
+            return []
+
+    monkeypatch.setattr(nt, "_get_task_calendar", lambda: EmptyCal())
+    res = nt._delete_task_sync("nonexistent")
+    assert res.startswith("NOOP:")
+
+
 # -- list_tasks(show_completed=True) must actually fetch completed todos (A3) --
 
 def test_tasks_list_requests_completed_flag_and_caches_per_flag(monkeypatch):

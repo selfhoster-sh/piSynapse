@@ -640,6 +640,12 @@ class TestIsToolSuccess:
 
         assert not is_tool_success(("NOOP: Note not found.", 42))
 
+    def test_noop_task_results_are_not_success(self):
+        from tools.dispatcher import is_tool_success
+
+        assert not is_tool_success("NOOP: Task with UID '1' not found or already completed.")
+        assert not is_tool_success("NOOP: Task with UID '1' not found.")
+
     def test_normal_result_is_success(self):
         from tools.dispatcher import is_tool_success
 
