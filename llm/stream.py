@@ -687,7 +687,7 @@ async def chat_with_ollama_stream(
                     success = False
                 duration_ms = (time.perf_counter() - t0) * 1000
                 audit_id, verification_status = await run_verification(tn, args, result, success, entity_id=entity_id, duration_ms=duration_ms, error=None if success else result)
-                yield {"tool": {"name": tn, "phase": "end", "ok": success, "audit_id": audit_id, "verification_status": verification_status}}
+                yield {"tool": {"name": tn, "phase": "end", "ok": success, "audit_id": audit_id, "verification_status": verification_status, "clarify": result.startswith("CLARIFY_REQUIRED")}}
                 if tn == "save_memory" and is_tool_success(result):
                     memories_saved += 1
                 # Per-call accounting MUST happen here: deferring it to a

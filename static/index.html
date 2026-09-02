@@ -332,6 +332,8 @@ body.theme-black .msg-group.user .msg-meta .who{color:var(--text3)}
 .tool-status .fb-state{flex:none;font-size:12px;line-height:1}
 .tool-status.ok .fb-state{color:var(--accent)}
 .tool-status .fb-state.bad{color:var(--text3)}
+.tool-status.warn .fb-state{color:var(--warn,#e07c4f)}
+.tool-status.clarify .fb-state{color:var(--text2)}
 /* Feedback thumbs live in the same bar as copy/listen/regen (same .tts-btn
    style/size/color). An active thumb gets the accent fill so the chosen
    signal is obvious at a glance. */
@@ -1390,7 +1392,8 @@ const STRINGS = {
     notePlaceholder:'Neden yanlıştı? (opsiyonel)…', noteSave:'Kaydet', noteCancel:'İptal',
     genRetryLabel:'Araç yanıtları sıkıştırılıp yeniden deneniyor…',
     genRetryLeak:'Araç çağrısı düzeltiliyor…',
-    genRetryEscalate:'Gerekli araçlar etkinleştiriliyor…'
+    genRetryEscalate:'Gerekli araçlar etkinleştiriliyor…',
+    verifFail:'İşlem doğrulanamadı, kontrol edin', clarifyAsked:'Kullanıcıdan bilgi istendi'
   },
   en:{
     newChat:'New chat', chats:'Chats', mem:'Memory', memTitle:'Memory',
@@ -1448,7 +1451,8 @@ const STRINGS = {
     notePlaceholder:'Why was it wrong? (optional)…', noteSave:'Save', noteCancel:'Cancel',
     genRetryLabel:'Compressing tool responses and retrying…',
     genRetryLeak:'Fixing a tool call…',
-    genRetryEscalate:'Enabling the required tools…'
+    genRetryEscalate:'Enabling the required tools…',
+    verifFail:'Operation failed verification — please check', clarifyAsked:'Asked the user for details'
   }
 };
 
@@ -2815,7 +2819,7 @@ async function sendMsg(opts){
   if(!(opts && opts.regenText)) addMsg('user',text,true,null,images);
   showTyping(); setLoading(true); refreshLastState();
   let bubble=null, fullText='', thinkBox=null, fullReasoning='';
-  let gotReply=false, terminated=false, toolRow=null, roundAudits=[], noteGroup=null;
+  let gotReply=false, terminated=false, toolRow=null, roundAudits=[], roundVerifWarn=false, noteGroup=null;
   // ⚠️ YENİ DAL EKLEME: done/confirm/error/catch — hepsi terminal durumdur.
   // Yeni bir son durum dalı eklersen, return'den ÖNCE `terminated=true` ekle.
   // Aksi halde finally bloğu gereksiz "boş yanıt" mesajı ekler.
@@ -2845,7 +2849,7 @@ async function sendMsg(opts){
           // its quiet feedback state. Multi-step revives it on the next tool
           // event and the following token re-settles (no second row).
           if(toolRow && toolRow.isConnected && !toolRow.classList.contains('done')){
-            settleFeedbackRow(toolRow, true, roundAudits);
+            settleFeedbackRow(toolRow, true, roundAudits, roundVerifWarn);
           }
           fullText+=data.token; bubble.innerHTML=withStreamCaret(renderMd(fullText)); scrollEnd(false);
         } else if(data.done){
@@ -2888,7 +2892,7 @@ async function sendMsg(opts){
           // Same as the token path: once the model starts producing output
           // (here: thinking) the tool label is done — settle the row.
           if(toolRow && toolRow.isConnected && !toolRow.classList.contains('done')){
-            settleFeedbackRow(toolRow, true, roundAudits);
+            settleFeedbackRow(toolRow, true, roundAudits, roundVerifWarn);
           }
           if(!thinkBox){ thinkBox=ensureThinkBox(bubble); }
           fullReasoning+=data.reasoning;
@@ -2900,7 +2904,17 @@ async function sendMsg(opts){
           if(!bubble) bubble=createStreamBubble();
           if(data.tool.phase==='end'){
             toolRow=showToolScan(toolRow, data.tool);
-            if(data.tool.ok && data.tool.audit_id!=null && data.tool.audit_id!=='') roundAudits.push({audit:data.tool.audit_id, name:data.tool.name});
+            // Claimed success is NOT ground truth for scope tools (D-1): a
+            // create/update without a backend-verified read-back (unverified)
+            // or a store/read mismatch (verification_failed) must not produce a
+            // green-alongside confirmation affordance. Those rounds settle as
+            // the "could not verify" warn state instead, and their audits are
+            // excluded from the 👍 pair. Non-scope tools carry no
+            // verification_status → unchanged behaviour.
+            const vs=data.tool.verification_status;
+            const verifiedOk=data.tool.ok && (vs==null || vs==='verified' || vs==='verified_by_fallback');
+            if(verifiedOk && data.tool.audit_id!=null && data.tool.audit_id!=='') roundAudits.push({audit:data.tool.audit_id, name:data.tool.name});
+            if(data.tool.ok && (vs==='unverified' || vs==='verification_failed')) roundVerifWarn=true;
           }
           else { toolRow=showToolScan(toolRow, data.tool); }
         } else if(data.gen_retry){
@@ -2932,7 +2946,7 @@ async function sendMsg(opts){
       // Round over: settle the single feedback row with the thumbs collected
       // from every tool that actually ran and got an audit. A refused or
       // interrupted round has no audits — fall back to the plain ✓/⚠ state.
-      settleFeedbackRow(toolRow, !!gotReply, roundAudits);
+      settleFeedbackRow(toolRow, !!gotReply, roundAudits, roundVerifWarn);
     }
     toolRow=null; _roundGroup=null;
     typingEl?.classList.remove('tool-pending');
@@ -3194,18 +3208,43 @@ function showToolScan(toolRow, info){
   } else {
     txt+='…';
   }
-  if(info.phase==='end') txt=txt.replace(/…$/,'');
+  if(info.phase==='end'){
+    if(info.clarify){
+      // CLARIFY_REQUIRED tools are now success=0 (D-1a): show a neutral
+      // info state instead of a red failure, and the round stays markable.
+      row.classList.remove('ok','warn');
+      row.classList.add('clarify');
+      txt=t('clarifyAsked');
+    } else {
+      txt=txt.replace(/…$/,'');
+    }
+  }
   lab.textContent=txt;
   if(info.phase==='end') row.querySelector('.tspin')?.classList.add('dead');
   scrollEnd(false);
   return row;
 }
 
-function settleFeedbackRow(row, ok, audits){
+function settleFeedbackRow(row, ok, audits, warn){
   // Round-finalize: toggle state, drop the spinner, then render the feedback.
   // With audits the pair is the C-7 one → many (single 👎/👍 per message);
   // without (refused/interrupted round) keep the quiet ✓ (⚠ stays with label).
   if(!row || !row.isConnected) return row;
+  if(warn){
+    // D-1: a scope tool that ran but could not be backend-verified (unverified
+    // or verification_failed) settles as an amber warning, NOT a green success.
+    // No thumbs: the "correct" signal would be a lie, and the down-mark would
+    // drop CLARIFY-style on a row that never got an audit. Label + warn text.
+    row.classList.remove('ok','clarify'); row.classList.add('warn','done');
+    row.querySelector('.tspin')?.remove();
+    row.querySelectorAll('.fb-state').forEach(s=>s.remove());
+    row.querySelector('.tlab')?.remove();
+    const w=document.createElement('span');
+    w.className='fb-state';
+    w.textContent='\u26A0 '+t('verifFail');
+    row.appendChild(w);
+    return row;
+  }
   row.classList.toggle('ok', !!ok);
   row.classList.add('done');
   row.querySelector('.tspin')?.remove();
