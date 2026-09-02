@@ -476,10 +476,10 @@ body:not(.glass-mode) #input-area::before{content:'';position:absolute;left:50%;
   background:rgba(0,0,0,.7);border:none;border-radius:50%;color:#fff;cursor:pointer;
   display:flex;align-items:center;justify-content:center;font-size:11px;line-height:1}
 #input-container{width:100%;max-width:800px;display:flex;align-items:flex-end;gap:8px;
-  background:var(--surface);border:1px solid var(--border);border-radius:24px;
-  padding:10px 14px;pointer-events:auto;box-shadow:var(--shadow-lg);
-  transition:border-color .2s,box-shadow .2s;margin-bottom:env(safe-area-inset-bottom,0px)}
-#input-container:focus-within{border-color:var(--accent);box-shadow:var(--shadow-lg),0 0 0 3px var(--accent-d)}
+  background:transparent;border:none;border-radius:24px;
+  padding:10px 14px;pointer-events:auto;box-shadow:none;
+  transition:background .2s;margin-bottom:env(safe-area-inset-bottom,0px)}
+#input-container:focus-within{background:rgba(255,255,255,.03);box-shadow:0 0 0 3px var(--accent-d)}
 .input-left,.input-right{display:flex;align-items:center;gap:6px;flex-shrink:0}
 
 .inline-think-btn{background:none;border:none;color:var(--text2);cursor:pointer;
@@ -872,10 +872,10 @@ body.generating.glass-mode::after{animation:grainBreathe 7s ease-in-out infinite
 body.glass-mode #aurora{display:block}
 .ab{position:absolute;border-radius:50%;will-change:transform;
   animation-play-state:paused;transition:opacity 1.4s ease}
-.ab1{width:62vmax;height:62vmax;left:-10%;top:-16%;opacity:.35;
+.ab1{width:62vmax;height:62vmax;left:8%;top:-10%;opacity:.35;
   background:radial-gradient(closest-side,var(--glow),transparent 68%);
   animation:lavaA 17s ease-in-out infinite alternate}
-.ab2{width:54vmax;height:54vmax;right:-14%;bottom:-20%;opacity:.3;
+.ab2{width:54vmax;height:54vmax;right:8%;bottom:-12%;opacity:.3;
   background:radial-gradient(closest-side,var(--glow),transparent 66%);
   animation:lavaB 23s ease-in-out infinite alternate}
 body.glass-mode:not(.generating) .ab{opacity:.15;animation-play-state:paused}
@@ -918,8 +918,8 @@ body.glass-mode #sidebar{background-color:var(--surface)}
 body.glass-mode #topbar{background-color:color-mix(in srgb, var(--accent) 7%, rgba(12,12,18,.38));border-bottom-color:var(--border)}
 body.glass-mode .modal-box,
 body.glass-mode .settings-box,
-body.glass-mode #input-container{box-shadow:0 20px 60px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.09)}
-body.glass-mode #input-container:focus-within{box-shadow:0 20px 60px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.09), 0 0 0 3px var(--accent-d)}
+body.glass-mode #input-container{box-shadow:0 -4px 20px rgba(0,0,0,.3);background:rgba(17,17,22,.7);border-radius:24px}
+body.glass-mode #input-container:focus-within{box-shadow:0 -4px 20px rgba(0,0,0,.3),0 0 0 3px var(--accent-d)}
 body.glass-mode .msg-group.user .bubble,
 body.glass-mode .mem-card,
 body.glass-mode .code-wrapper{box-shadow:0 8px 32px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,.06)}
@@ -1637,7 +1637,7 @@ let _cachedWeatherSummary = null; let _cachedWeatherRaw = null; let _cachedEvent
 let _cachedWeatherKind = null; let _cachedWeatherTemp = null; let _cachedWeatherCond = null; let _cachedWeatherWmo = null;
 
 // ── Markdown, LaTeX & Copy (local parser) ─────────────────────────────────────
-function esc(s){ return String(s||'').replace(/&/g,'&').replace(/</g,'<').replace(/>/g,'>').replace(/"/g,'"').replace(/'/g,'''); }
+function esc(s){ return String(s||'').replace(/&/g,'&').replace(/</g,'<').replace(/>/g,'>').replace(/"/g,'"').replace(/'/g,'\''); }
 
 // Minimal XSS sanitizer: native Sanitizer API (Baseline 2024) + textContent fallback
 function sanitizeHTML(html) {
