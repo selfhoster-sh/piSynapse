@@ -60,6 +60,12 @@ def test_classify_keyword_fallback_logs_row(audit_db, monkeypatch):
     # corpus_data/additions.jsonl content (which would flip this to thin_margin).
     monkeypatch.setattr(li_mod, "_additional_corpus", lambda: [])
     monkeypatch.setattr(li_mod, "_additions_mtime", lambda: None)
+    # Force the embedding path to be empty too, so classification lands
+    # deterministically on the keyword fallback (not on however confident the
+    # configured EMBED_MODEL happens to be for the phrase — the upgrade to
+    # multilingual-mpnet-base-v2 classifies "not düş" confidently via thin_margin
+    # and no longer falls back to keywords).
+    monkeypatch.setattr(li_mod, "_get_tool_embeddings", lambda: [])
 
     result = asyncio.run(li_mod._classify_intent("not düş"))
     assert result == ("action", "notes")

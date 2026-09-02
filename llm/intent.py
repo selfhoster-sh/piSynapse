@@ -514,19 +514,23 @@ async def _audit_intent(message: str, chosen_group: str | None,
 
 
 _KEYWORD_CHECKS = (
-    (["hava", "derece", "sıcaklık", "sicaklik", "tahmini", "yağmur", "yagmur", "rüzgar", "ruzgar", "kar", "bulut", "forecast", "prognoz", "vorhersage", "prévisions", "pronóstico"], "weather"),
-    (["etkinlik", "takvim", "randevu", "toplantı", "olay"], "calendar"),
+    (["hava", "derece", "sıcaklık", "sicaklik", "tahmini", "yağmur", "yagmur", "rüzgar", "ruzgar", "kar", "bulut", "forecast", "prognoz", "vorhersage", "prévisions", "pronóstico",
+      "weather", "temperature", "rain", "snow", "humidity", "windy", "forecast"], "weather"),
+    (["etkinlik", "takvim", "randevu", "toplantı", "olay",
+      "event", "meeting", "appointment", "schedule", "calendar", "agenda"], "calendar"),
     # 'gönder' generic ama tek araç-evreninde gönderim=email; multi-domain
     # tespiti için de kritik ('hava durumunu maille gönder' sınıfı).
     (["email", "e-posta", "eposta", "posta", "gelen kutusu", "ileti", "mesaj", "mail",
-      "gönder", "gonder"], "email"),
-    (["görev", "gorev", "yapılacak", "yapilacak", "task", "todo", "yapmam gereken"], "tasks"),
+      "gönder", "gonder", "send", "compose", "inbox", "draft"], "email"),
+    (["görev", "gorev", "yapılacak", "yapilacak", "task", "todo", "yapmam gereken",
+      "to-do", "deadline", "assignment", "chore"], "tasks"),
     # Bare "not" deliberately absent: it collides with English negation
     # ("I could NOT find it") and routed pure chat to the notes group.
     # Distinctive suffixed/frozen forms cover Turkish inflections instead.
     (["notlar", "notu", "nota", "not defteri", "not oluştur", "not al", "note",
-      "not düş", "not yaz"], "notes"),
-    (["hatırla", "hatirla", "unutma", "sakla", "kaydet", "remember", "don't forget", "save"], "memory"),
+      "not düş", "not yaz", "memo", "notes"], "notes"),
+    (["hatırla", "hatirla", "unutma", "sakla", "kaydet", "remember", "don't forget", "save",
+      "memorize", "recall"], "memory"),
 )
 
 

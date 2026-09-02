@@ -80,6 +80,27 @@ def test_keyword_path_when_corpus_empty(monkeypatch):
     assert (intent, group) == ("action", "weather")
 
 
+def test_keyword_group_english_routing():
+    cases = {
+        "set up a meeting for tomorrow": "calendar",
+        "add an event to my calendar": "calendar",
+        "what is the weather forecast in berlin": "weather",
+        "today's temperature": "weather",
+        "add buy milk to my to-do list": "tasks",
+        "complete the report assignment": "tasks",
+        "send an email to alice": "email",
+        "write down a note for me": "notes",
+        "please remember my wifi password": "memory",
+    }
+    for msg, expected in cases.items():
+        assert li._keyword_group(msg) == expected, f"{msg!r} -> {expected}"
+
+
+def test_keyword_group_english_does_not_collide_negation():
+    # Bare english "not" must NOT route a negation into the notes group.
+    assert li._keyword_group("i could not find the file") is None
+
+
 def test_llm_fallback_litert_branch(monkeypatch):
     monkeypatch.setattr(li, "_tool_embed_cache", [])
     _patch_cfg(monkeypatch, backend="litert", llm_fallback="on")
