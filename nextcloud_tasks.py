@@ -272,7 +272,7 @@ def _complete_task_sync(uid_prefix: str) -> str:
             _todos_cache_ts = 0
             return f"OK '{d['summary']}' marked as done."
 
-    return f"Task with UID '{uid_prefix}' not found or already completed."
+    return f"NOOP: Task with UID '{uid_prefix}' not found or already completed."
 
 
 @retry(attempts=2, delay=1.0)
@@ -294,7 +294,7 @@ def _delete_task_sync(uid_prefix: str) -> str:
             _todos_cache_ts = 0
             return f"OK '{d['summary']}' deleted."
 
-    return f"Task with UID '{uid_prefix}' not found."
+    return f"NOOP: Task with UID '{uid_prefix}' not found."
 
 
 @retry(attempts=2, delay=1.0)
