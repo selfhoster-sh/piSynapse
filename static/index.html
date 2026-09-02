@@ -1338,6 +1338,11 @@ body.glass-mode ::selection{background:color-mix(in srgb, var(--accent) 35%, tra
 })();
 </script>
 
+<!-- Self-hosted vendor libs (fully offline): marked = token-based Markdown
+     parser (GFM), DOMPurify = XSS sanitizer. Both pre-cached by sw.js. -->
+<script src="/static/vendor/marked.min.js"></script>
+<script src="/static/vendor/dompurify.min.js"></script>
+
 <script>
 // ── i18n ─────────────────────────────────────────────────────────────────────
 const STRINGS = {
@@ -1640,8 +1645,18 @@ let _cachedWeatherKind = null; let _cachedWeatherTemp = null; let _cachedWeather
 function esc(s){ return String(s||'').replace(/&/g,'&').replace(/</g,'<').replace(/>/g,'>').replace(/"/g,'"').replace(/'/g,'\''); }
 
 // Minimal XSS sanitizer: native Sanitizer API (Baseline 2024) + textContent fallback
+// XSS sanitizer: DOMPurify (battle-tested, self-hosted) with native
+// Sanitizer API and textContent as progressive fallbacks. DOMPurify must run
+// on the main thread (needs a real DOM), so markdown rendering is main-thread.
 function sanitizeHTML(html) {
   if (!html) return '';
+  if (window.DOMPurify) {
+    try {
+      return DOMPurify.sanitize(html, { USE_PROFILES: { html: true } });
+    } catch (e) {
+      console.warn('DOMPurify failed, falling back:', e);
+    }
+  }
   if (window.Sanitizer) {
     try {
       const sanitizer = new Sanitizer();
@@ -1740,18 +1755,39 @@ function stripMarkdown(text){
     .trim();
 }
 
+// Marked configuration: GitHub Flavored Markdown (tables, strikethrough, task
+// lists) + "breaks" so single newlines render as <br> (chat-style, matches the
+// old regex behavior). Link renderer adds target/rel; protocol safety is
+// enforced downstream by sanitizeHTML()/DOMPurify.
+function configMarked(){
+  if(!window.marked || window._mdConfigured) return;
+  marked.setOptions({ gfm:true, breaks:true });
+  const renderer = new marked.Renderer();
+  const link = renderer.link.bind(renderer);
+  renderer.link = (href, title, text) => {
+    const h = link(href, title, text);
+    return h.replace('<a ', '<a target="_blank" rel="noopener noreferrer" ');
+  };
+  marked.use({ renderer });
+  window._mdConfigured = true;
+}
+
 function renderMd(raw){
   if(!raw) return '';
+  configMarked();
   const CB=[], IC=[], MATH=[];
-  let s = raw;
+  // markdown-inert placeholders: letters/digits only (no *_[]#` ) so marked
+  // never mangles them; unique prefix avoids collisions with user text.
+  const T = (kind,i)=> 'ZQMD'+kind+i+'ZQ';
+  let s = String(raw);
 
   s = s.replace(/\$\$\n?([\s\S]*?)\n?\$\$/g, (_, math) => {
     MATH.push(`<div class="math-display">${parseMath(esc(math))}</div>`);
-    return `___MATH_BLOCK_${MATH.length-1}___`;
+    return T('MB', MATH.length-1);
   });
   s = s.replace(/\$([^\$\n]+)\$/g, (_, math) => {
     MATH.push(`<span class="math-inline">${parseMath(esc(math))}</span>`);
-    return `___MATH_INLINE_${MATH.length-1}___`;
+    return T('MI', MATH.length-1);
   });
   s = s.replace(/```([\w]*)\n?([\s\S]*?)```/g, (_, lang, code)=>{
     const displayLang = lang ? lang.toUpperCase() : 'CODE';
@@ -1766,64 +1802,23 @@ function renderMd(raw){
         <pre><code>${esc(code.trimEnd())}</code></pre>
       </div>
     `);
-    return `___CODE_BLOCK_${CB.length-1}___`;
+    return T('CB', CB.length-1);
   });
   s = s.replace(/`([^`\n]+)`/g, (_,code)=>{
     IC.push(`<code>${esc(code)}</code>`);
-    return `___INLINE_CODE_${IC.length-1}___`;
+    return T('IC', IC.length-1);
   });
 
-  const lines=s.split('\n'), out=[];
-  let i=0, m, olCounter=0;
+  // Token-based parse (marked) replacing the old line-by-line regex parser.
+  // Tables, nested lists, escaping, blockquotes and GFM all handled correctly.
+  let r = window.marked && window.marked.parse ? sanitizeHTML(marked.parse(s)) : s;
 
-  while(i<lines.length){
-    const l=lines[i];
-    if((m=l.match(/^(#{1,3}) (.*)/))){
-      const n=m[1].length; out.push(`<h${n}>${inl(m[2])}</h${n}>`); i++; continue;
-    }
-    if((m=l.match(/^> (.*)/))){ out.push(`<blockquote>${inl(m[1])}</blockquote>`); i++; continue; }
-    if((m=l.match(/^[-*] (.*)/))){
-      const its=[];
-      while(i<lines.length && (m=lines[i].match(/^[-*] (.*)/))){ its.push(`<li>${inl(m[1])}</li>`); i++; }
-      out.push(`<ul>${its.join('')}</ul>`); continue;
-    }
-    if((m=l.match(/^(\d+)\. (.*)/))){
-      const startN=parseInt(m[1],10);
-      if(startN!==1) olCounter=startN-1;
-      const its=[];
-      while(i<lines.length && (m=lines[i].match(/^(\d+)\. (.*)/))){ its.push(`<li><span class="ol-num">${m[1]}.</span> ${inl(m[2])}</li>`); i++; }
-      out.push(`<ol start="${olCounter+1}">${its.join('')}</ol>`);
-      olCounter+=its.length;
-      continue;
-    }
-    if(l.trim().startsWith('|')){
-      const rows=[];
-      while(i<lines.length && lines[i].trim().startsWith('|')){ rows.push(lines[i].trim()); i++; }
-      const isSep=r=>/^\|[-|: ]+\|?$/.test(r) && r.includes('-');
-      const parseCells=(row,tag)=>{
-        const inner=row.replace(/^\||\|$/g,'');
-        return inner.split('|').map(c=>`<${tag}>${inl(c.trim())}</${tag}>`).join('');
-      };
-      if(rows.length>=2 && isSep(rows[1])){
-        const head=`<thead><tr>${parseCells(rows[0],'th')}</tr></thead>`;
-        const body=`<tbody>${rows.slice(2).map(r=>`<tr>${parseCells(r,'td')}</tr>`).join('')}</tbody>`;
-        out.push(`<div class="table-wrapper"><table>${head}${body}</table></div>`);
-      } else {
-        const body=`<tbody>${rows.map(r=>`<tr>${parseCells(r,'td')}</tr>`).join('')}</tbody>`;
-        out.push(`<div class="table-wrapper"><table>${body}</table></div>`);
-      }
-      continue;
-    }
-    if(!l.trim()){ out.push('<br>'); i++; continue; }
-    out.push(`<p>${inl(l)}</p>`); i++;
-  }
-
-  let r=out.join('');
-  IC.forEach((c,i)=>{ r=r.split(`___INLINE_CODE_${i}___`).join(c); });
-  CB.forEach((c,i)=>{ r=r.split(`___CODE_BLOCK_${i}___`).join(c); });
+  // Reinsert isolated content AFTER sanitization so classes/onclick survive.
+  IC.forEach((c,i)=>{ r=r.split(T('IC',i)).join(c); });
+  CB.forEach((c,i)=>{ r=r.split(T('CB',i)).join(c); });
   MATH.forEach((c,i)=>{
-    r=r.split(`___MATH_BLOCK_${i}___`).join(c);
-    r=r.split(`___MATH_INLINE_${i}___`).join(c);
+    r=r.split(T('MB',i)).join(c);
+    r=r.split(T('MI',i)).join(c);
   });
   return r;
 }
