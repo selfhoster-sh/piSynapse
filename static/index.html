@@ -851,40 +851,23 @@ body.generating.glass-mode::after{animation:grainBreathe 7s ease-in-out infinite
 body.glass-mode #aurora{display:block}
 .ab{position:absolute;border-radius:50%;will-change:transform;
   animation-play-state:paused;transition:opacity 1.4s ease}
-.ab1{width:62vmax;height:62vmax;left:-10%;top:-16%;opacity:.62;
+.ab1{width:62vmax;height:62vmax;left:-10%;top:-16%;opacity:.35;
   background:radial-gradient(closest-side,var(--glow),transparent 68%);
   animation:lavaA 17s ease-in-out infinite alternate}
-.ab2{width:54vmax;height:54vmax;right:-14%;bottom:-20%;opacity:.58;
+.ab2{width:54vmax;height:54vmax;right:-14%;bottom:-20%;opacity:.3;
   background:radial-gradient(closest-side,var(--glow),transparent 66%);
   animation:lavaB 23s ease-in-out infinite alternate}
-.ab3{width:44vmax;height:44vmax;left:32%;top:34%;opacity:.5;
-  background:radial-gradient(closest-side,var(--glow),transparent 64%);
-  animation:lavaC 19s ease-in-out infinite alternate}
-.ab4{width:38vmax;height:38vmax;right:22%;top:-8%;opacity:.55;
-  background:radial-gradient(closest-side,var(--accent-h),transparent 62%);
-  animation:lavaD 27s ease-in-out infinite alternate}
+body.glass-mode:not(.generating) .ab{opacity:.15;animation-play-state:paused}
 body.generating.glass-mode .ab{opacity:1;animation-play-state:running}
 @keyframes lavaA{
   0%{transform:translate3d(0,0,0) scale(1)}
-  45%{transform:translate3d(28vw,16vh,0) scale(1.26)}
+  45%{transform:translate3d(28vw,16vh,0) scale(1.2)}
   100%{transform:translate3d(-4vw,44vh,0) scale(.9)}
 }
 @keyframes lavaB{
   0%{transform:translate3d(0,0,0) scale(1.06)}
-  50%{transform:translate3d(-32vw,-18vh,0) scale(.86)}
-  100%{transform:translate3d(8vw,-40vh,0) scale(1.24)}
-}
-@keyframes lavaC{
-  0%{transform:translate3d(0,0,0) scale(.95)}
-  40%{transform:translate3d(-18vw,22vh,0) scale(1.2)}
-  75%{transform:translate3d(14vw,-10vh,0) scale(.8)}
-  100%{transform:translate3d(-24vw,-26vh,0) scale(1.12)}
-}
-@keyframes lavaD{
-  0%{transform:translate3d(0,0,0) scale(1.1)}
-  35%{transform:translate3d(-22vw,30vh,0) scale(.85)}
-  70%{transform:translate3d(6vw,-14vh,0) scale(1.28)}
-  100%{transform:translate3d(18vw,8vh,0) scale(.92)}
+  50%{transform:translate3d(-32vw,-18vh,0) scale(.88)}
+  100%{transform:translate3d(8vw,-40vh,0) scale(1.18)}
 }
 
 body.glass-mode::after{
@@ -1125,7 +1108,7 @@ body.glass-mode ::selection{background:color-mix(in srgb, var(--accent) 35%, tra
 <base target="_blank">
 </head>
 <body>
-<div id="aurora" aria-hidden="true"><i class="ab ab1"></i><i class="ab ab2"></i><i class="ab ab3"></i><i class="ab ab4"></i></div>
+<div id="aurora" aria-hidden="true"><i class="ab ab1"></i><i class="ab ab2"></i></div>
 
 <div id="overlay" onclick="closeSidebar()"></div>
 <div id="drag-overlay" class="drag-overlay"><div class="drag-overlay-text" id="drag-overlay-text">Drop images here</div></div>
