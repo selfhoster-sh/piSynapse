@@ -14,6 +14,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -183,7 +184,9 @@ def _resolve_message_text(conn: sqlite3.Connection, conversation_id: int | None)
 # markers, assistant-style greetings, and a heavy prose ratio mark such rows.
 _ASST_GREETINGS = ("merhaba", "elbette", "işte", "aşağıda", "tamam,", "tabii,",
                    "hazırlıyorum", "listeliyorum", "bulabilirsin", "gönderdim",
-                   "oldu", "kaydedildi", "eklendi", "silindi", "hatırlatıcı kuruldu")
+                   "oldu", "kaydedildi", "eklendi", "silindi", "hatırlatıcı kuruldu",
+                   "here you", "here's", "heres", "here are", "i've",
+                   "i found", "i'll", "of course", "there you")
 
 
 def _is_user_command_like(text: str) -> bool:
@@ -208,6 +211,66 @@ def _is_user_command_like(text: str) -> bool:
         if t.startswith(g):
             return False
     return True
+
+
+# Lightweight language tag for additions.jsonl records. Not authoritative —
+# it is a corpus metadata hint (TR/EN/DE/FR/ES) used for analytics and future
+# language-aware gating. Heuristics: distinctive functional words first, then
+# language-specific characters; English is the fallback (most common neutral).
+_TR_WORDS = ("için", "ama", "değil", "var mı", "lütfen",
+             "yap", "gönder", "kaydet", "sil", "oluştur", "ekle", "liste", "hatırlat",
+             "hava", "notlar", "görev", "toplantı", "takvim")
+_DE_WORDS = ("und", "oder", "der", "die", "das", "nicht", "ich", "bitte", "wetter",
+             "erinner", "aufgabe", "termin", "notiz", "schick", "lösch")
+_FR_WORDS = ("je", "vous", "pour", "avec", "pas", "météo", "rappelle", "tâche",
+             "rendez", "note", "envoie", "supprime", "crée", "ajoute")
+_ES_WORDS = ("yo", "para", "con", "el tiempo", "recuerda", "tarea", "reunión",
+             "nota", "envía", "borra", "crea", "añade", "por favor", "haz")
+# Short Turkish words are matched on word boundaries (bare "not" would collide
+# with English "note"/"notes"; "bir" ⊂ "birçok" would over-trigger).
+_TR_BOUNDARY = ("bir", "ile", "şu", "bunu", "notlar")
+
+
+def _detect_lang(text: str) -> str:
+    """Best-effort ISO-639-1 language tag for a corpus example (tr/en/de/fr/es).
+
+    Falls back to 'en'. Runs on lowercased text; counts distinctive stops per
+    language and key-language characters to break near-ties (e.g. Turkish
+    accented characters are a strong TR signal).
+    """
+    t = text.strip().lower()
+
+    # Words/phrases containing a space are matched as plain substrings (a
+    # phrase like "var mı" or "el tiempo" spans boundaries).
+    def _score_part(_words: tuple[str, ...]) -> int:
+        n = 0
+        for w in _words:
+            if " " in w:
+                n += int(w in t)
+            else:
+                n += int(bool(re.search(r"\b" + re.escape(w) + r"\b", t)))
+        return n
+
+    scores = {
+        "tr": _score_part(_TR_WORDS) + _score_part(_TR_BOUNDARY),
+        "de": _score_part(_DE_WORDS),
+        "fr": _score_part(_FR_WORDS),
+        "es": _score_part(_ES_WORDS),
+    }
+    # Turkish/English character-set tie-breakers.
+    if "ğ" in t or "ı" in t or "ş" in t or ("ç" in t and "chat" not in t):
+        scores["tr"] += 2
+    if "ö" in t:
+        scores["de"] += 1
+        scores["tr"] += 1
+    if re.match(r"\b(el|la|los) ", t):
+        scores["es"] += 1
+    if re.match(r"\b(le|la|les) ", t):
+        scores["fr"] += 1
+    rank = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+    if rank[0][1] <= 0:
+        return "en"
+    return rank[0][0]
 
 
 # ── contextual dependency ──────────────────────────────────────────────────────
@@ -573,6 +636,7 @@ async def _process_audit_row(
                 "text": text,
                 "group": proposed_group,
                 "source": signal,
+                "lang": _detect_lang(text),
                 "audit_id": audit_id,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "resolution": "llm_confirmed",
@@ -602,6 +666,7 @@ async def _process_audit_row(
         "text": text,
         "group": proposed_group,
         "source": signal,
+        "lang": _detect_lang(text),
         "audit_id": audit_id,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
