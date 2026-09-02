@@ -476,6 +476,24 @@ class TestBug1UserMessageResolution:
         assert cf._is_user_command_like("1. Birinci\n2. İkinci\n3. Üçüncü") is False
         assert cf._is_user_command_like("x" * 300) is False
 
+    def test_is_user_command_like_english_signals_rejected(self):
+        # English assistant-style replies must be gated like the Turkish ones.
+        assert cf._is_user_command_like("Here you go, the notes are below") is False
+        assert cf._is_user_command_like("I've added the event to your calendar") is False
+        assert cf._is_user_command_like("there you go, your email is sent") is False
+        # A genuine English user command must still pass.
+        assert cf._is_user_command_like("add a meeting for friday") is True
+        assert cf._is_user_command_like("tell me the weather forecast") is True
+
+    def test_detect_lang_over_iso_set(self):
+        assert cf._detect_lang("hava durumunu göster lütfen") == "tr"
+        assert cf._detect_lang("notları listele ve gönder") == "tr"
+        assert cf._detect_lang("what is the weather today") == "en"
+        assert cf._detect_lang("show me my tasks for today") == "en"
+        assert cf._detect_lang("zeig mir das wetter bitte") == "de"
+        assert cf._detect_lang("rappelle-moi la réunion") == "fr"
+        assert cf._detect_lang("recuérdame la reunión por favor") == "es"
+
 
 class TestBug2Alignment:
     """C-2: jsonl ↔ npy must stay index-aligned; write atomically; guard embed."""
