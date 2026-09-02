@@ -16,6 +16,12 @@
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 - **Sanitization rule:** this file may be published. Never write personal data, identity clues, deployment addresses (hostnames, IPs, ports), or accounts into it. Keep every narrative in English; Turkish inline tokens are allowed only as product corpus / i18n test data.
 
+## 2026-09-02 — Faz D-2: ID-tabanlı doğrulama tüm scope mutasyonlarına yayıldı
+- **Denetim kaynağı (Bölüm E1/E2):** dispatcher'larin çoğu `(result, None)` dönüyordu — create/update/delete'in gerçek ardılı backend'de hiç doğrulanmıyordu; yalnız create_trio (create_task, create_calendar_event, save_memory) ve send_email `None` hariçti. Onaylı D-2 kapsamı: notes üçlüsü + complete_task + delete_task + update/delete_calendar_event. send_email hariç (güvenilir read-back yok).
+- **Commit 1 (mekanik taşıma, `f464630`):** `nextcloud_notes.create_note` artık `(metin, id)` dönüyor (API yanıtındaki id eskiden yutuluyordu); dispatcher tuple'ları taşıyor: create_note → yeni id, update_note/delete_note → çözülen note id, complete_task/delete_task → çözülen uid. Davranış değişmedi (henüz VERIFY_SCOPE dışında → status None).
+- **Commit 2 (kapsam, `5b70c71`):** VERIFY_SCOPE 3 → 10 araç. **Delete doğrulaması TERS:** hedeflenen son durum "backend'de artık YOK" — hem `_confirm_by_id` hem içerik fallback'i yokluk üzerinden doğrular. complete_task: task mevcut VE completed=True. update_calendar_event fallback'i new_summary üzerinden. D-1b resolver predikatı değişmedi (NULL = scope dışı invarianti burada da geçerli: scope aracı başarılıysa her zaman status yazar).
+- **Test:** +21 (toplam **547**): notes üçlüsü, complete/delete_task, update/delete_calendar_event — verified/verification_failed/fallback yolları ve D-2 invarianti (scope başarısı asla NULL değil). İki aynı içerikli create ayrı ayrı doğrulanıyor (ID ayrım prensibi korunuyor). E2E 39/39; ruff clean; py_compile ✓.
+
 ## 2026-09-02 — Faz D-1c: UI tüketimi — verification_status warn state + feedback kapısı
 - **Denetim kaynağı (Bölüm E2 item (c)):** feedback butonları yalnız `ok=true` ile açılıyordu (index.html:2903) — scope tool'un kurgusu başarısız olsa da (success=1) 👍/👎 gösteriliyordu. D-1b'de payload'lara eklenen `verification_status` artık UI tarafında tüketiliyor.
 - **Değişiklik (web):**
