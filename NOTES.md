@@ -23,6 +23,13 @@
 - **Not touched on purpose:** the UI render path (an ok=false row) — user scoped this item to the audit signal; a separate neutral "no-op" visual would be a follow-up.
 - **Tests:** +2 `TestIsToolSuccess` (NOOP str + tuple → not success) and `test_wrapper_not_found` re-pointed to the new NOOP text. Full suite 549; E2E 39/39; ruff clean; py_compile ✓.
 
+## 2026-09-02 — Faz D-EMB-UPGRADE: multilingual embedding model upgraded + all vectors re-embedded
+- **Change:** EMBED_MODEL `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` (384-dim, 2020) → `sentence-transformers/paraphrase-multilingual-mpnet-base-v2` (768-dim) for stronger multilingual retrieval (TR/EN/DE/FR/ES). Applied in embedding.py default, `.env` (gitignored, local), and example.env. docs/tool_intent_analysis.md:228 listed this as P3 tech debt; its `multilingual-e5-small` suggestion is NOT available in fastembed 0.8.0 (only e5-large 1024-dim exists) so mpnet-base was chosen.
+- **Why re-embed is required:** dimension change 384→768 means stored vectors and new query vectors would mismatch in dot-product cosine similarity. Migration re-embedded every persisted vector so all are 768-dim.
+- **Migration:** new one-off script `reembed_all.py` re-embeds `memories.embedding` (3), `conversations.embedding` (196), and deletes `corpus_data/additions_embeddings.npy` (the corpus feeder rebuilds it index-aligned from additions.jsonl, → 5×768). Base tool corpus `_TOOL_EMBED_CORPUS` is embedded fresh in-memory at runtime → no migration needed. New `embedding.model_dim()` helper returns the configured model's dimension for drift detection.
+- **Backfill caveat:** db.py `_backfill_task` only re-embeds rows whose blob is `None`; it does NOT detect a dimension drift — use `reembed_all.py` when the model changes.
+- **Verification:** 553 passed; ruff clean; py_compile ✓; DB rows all 768-dim, corpus npy 5×768.
+
 ## 2026-09-02 — Faz D-ML: anaphoric context-gate extended to EN/DE/FR/ES
 - **Fix target:** the corpus-zehirleme guard `_is_context_dependent` (C-7/C-8) only recognized Turkish (`_CONTEXT_OPENERS`, `_CONTEXT_PROGRESSIVE_PAST`, `_CONTEXT_ANAPHORIC`). An English/German/French/Spanish anaphoric follow-up ("continue where we left off", "wo waren wir", "où en étions-nous") passed the gate and could feed a context-dependent fragment into the embedding corpus — the exact risk the Turkish gate exists to prevent, but unfixed for non-Turkish.
 - **Change (llm/intent.py):**
