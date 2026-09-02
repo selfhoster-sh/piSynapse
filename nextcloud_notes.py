@@ -307,11 +307,11 @@ async def update_note(note_id: int, title: str | None = None, content: str | Non
     try:
         result = await asyncio.to_thread(client.update_note, note_id, title, content, category, tags)
         if not result:
-            return "ERROR: Note not found."
+            return "NOOP: Note not found."
         _invalidate_list_cache()
         return "OK Note updated."
     except NotFoundError:
-        return "Note not found."
+        return "NOOP: Note not found."
     except Exception as e:
         logger.error(f"Nextcloud Notes Error: {e}")
         return "ERROR: Failed to update note."
@@ -326,9 +326,9 @@ async def delete_note(note_id: int) -> str:
         ok = await asyncio.to_thread(client.delete_note, note_id)
         if ok:
             _invalidate_list_cache()
-        return "OK Note deleted." if ok else "Note not found."
+        return "OK Note deleted." if ok else "NOOP: Note not found."
     except NotFoundError:
-        return "Note not found."
+        return "NOOP: Note not found."
     except Exception as e:
         logger.error(f"Nextcloud Notes Error: {e}")
         return "ERROR: Failed to delete note."

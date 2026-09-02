@@ -558,7 +558,7 @@ class TestUpdateNoteRealPath:
         client.update_note = MagicMock(return_value=None)
         with patch.object(nn, "_get_client", return_value=client):
             result = await nn.update_note(42, title="T")
-        assert result == "ERROR: Note not found."
+        assert result == "NOOP: Note not found."
 
     async def test_dispatcher_end_to_end_passes_category_tags(self):
         """Full chain: run_tool → positional resolution → wrapper → client."""
@@ -629,6 +629,16 @@ class TestIsToolSuccess:
         from tools.dispatcher import is_tool_success
 
         assert not is_tool_success(("CLARIFY_REQUIRED: missing start time", None))
+
+    def test_noop_string_is_not_success(self):
+        from tools.dispatcher import is_tool_success
+
+        assert not is_tool_success("NOOP: Note not found.")
+
+    def test_noop_tuple_is_not_success(self):
+        from tools.dispatcher import is_tool_success
+
+        assert not is_tool_success(("NOOP: Note not found.", 42))
 
     def test_normal_result_is_success(self):
         from tools.dispatcher import is_tool_success

@@ -29,14 +29,18 @@ def is_tool_success(result: str | tuple) -> bool:
     a successful tool call in the audit log). "CLARIFY_REQUIRED" outcomes —
     the chip/quick-action guard that makes the model ask the user for more
     details instead of executing — are likewise NOT a success: nothing was
-    created or modified. Accepts either the raw result string or the
-    ``(result_string, entity_id)`` tuple from ``run_tool``.
+    created or modified. A "NOOP" result — the target already absent, so the
+    mutation was an idempotent no-op (e.g. deleting/updating a note that no
+    longer exists) — is also NOT a success: nothing changed. Accepts either
+    the raw result string or the ``(result_string, entity_id)`` tuple from
+    ``run_tool``.
     """
     if isinstance(result, tuple):
         result = result[0]
     if not result:
         return False
-    return not result.startswith("ERROR") and not result.startswith("CLARIFY_REQUIRED")
+    return not result.startswith("ERROR") and not result.startswith("CLARIFY_REQUIRED") \
+        and not result.startswith("NOOP")
 
 
 def _as_position(ref) -> int | None:
