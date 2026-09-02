@@ -16,6 +16,11 @@
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 - **Sanitization rule:** this file may be published. Never write personal data, identity clues, deployment addresses (hostnames, IPs, ports), or accounts into it. Keep every narrative in English; Turkish inline tokens are allowed only as product corpus / i18n test data.
 
+## 2026-09-02 — Faz D-1a: is_tool_success treats CLARIFY_REQUIRED as failure
+- **Audit-driven (status verification report 2026-09-02, Bölüm E2):** `is_tool_success` (tools/dispatcher.py) counted `CLARIFY_REQUIRED: …` outcomes (chip/quick-action guard — the handler that makes the model ask the user for MORE details instead of executing) as success=True because the heuristic only rejected `ERROR`-prefixed and empty results. Sharpest false-positive source: a scope create that produced nothing was logged as a "successful" call.
+- **Change (tools/dispatcher.py):** `is_tool_success` now also returns False for a `CLARIFY_REQUIRED` prefix (works for str and `(result, entity_id)` tuples alike). No behavioral break expected: the chat/stream loop only consults the flag for auditing/UI, not flow control, and `save_memory` has no CLARIFY path.
+- **Tests:** new `TestIsToolSuccess` (error prefix, empty str/tuple, clarify str, clarify tuple, normal success); existing clarify/loop tests assert only result content, so they still pass. Full suite **518** passing; ruff clean; py_compile ✓.
+
 ## 2026-09-01 — Faz C-8 (runtime): context-dependent follow-up resolver (no blind LLM guess)
 - **Problem (live demo):** "devam edelim son yaptığımız işe" (a follow-up with no domain keyword) went embedding-uncertain → keyword-none → LLM fallback guessed **tasks** from the utterance alone. An anaphoric follow-up carries no meaning outside its conversation, and embedding similarity on the fragment is actively misleading too (it labelled a notes follow-up as email) — so any utterance-only verdict is a coin flip.
 - **Design (user-approved):** two-layer SESSION resolution; the utterance never decides alone:

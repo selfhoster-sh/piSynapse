@@ -601,6 +601,39 @@ class TestAsPosition:
 from tools.dispatcher import _as_position  # noqa: E402
 
 
+class TestIsToolSuccess:
+    """Audit success classification: ERROR and CLARIFY_REQUIRED are failures."""
+
+    def test_error_prefix_is_failure(self):
+        from tools.dispatcher import is_tool_success
+
+        assert not is_tool_success("ERROR: failed")
+
+    def test_empty_is_failure(self):
+        from tools.dispatcher import is_tool_success
+
+        assert not is_tool_success("")
+        assert not is_tool_success(("", None))
+
+    def test_clarify_string_is_not_success(self):
+        from tools.dispatcher import is_tool_success
+
+        assert not is_tool_success(
+            "CLARIFY_REQUIRED: The task has no text. Ask the user ONE short question."
+        )
+
+    def test_clarify_tuple_is_not_success(self):
+        from tools.dispatcher import is_tool_success
+
+        assert not is_tool_success(("CLARIFY_REQUIRED: missing start time", None))
+
+    def test_normal_result_is_success(self):
+        from tools.dispatcher import is_tool_success
+
+        assert is_tool_success("OK Note created.")
+        assert is_tool_success(("created", "test-uid"))
+
+
 class TestChipOrigin:
     """Chip-sourced create/send requests must clarify, never execute."""
 
