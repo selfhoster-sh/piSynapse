@@ -230,8 +230,7 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> tupl
         return result, rowid
 
     if name in {"create_note", "list_notes", "read_note", "update_note", "delete_note", "search_notes"}:
-        result = await _run_notes_tool(name, params, context.get("session_id", ""), context.get("_user_text", ""), chip_origin)
-        return result, None
+        return await _run_notes_tool(name, params, context.get("session_id", ""), context.get("_user_text", ""), chip_origin)
 
     if name in {"create_task", "list_tasks", "complete_task", "delete_task", "search_tasks"}:
         # _run_tasks_tool already returns (result_string, entity_id)
@@ -240,8 +239,13 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> tupl
     return "ERROR: Tool not found.", None
 
 
-async def _run_notes_tool(name: str, params: dict, session_id: str = "", user_text: str = "", chip_origin: bool = False) -> str:
-    """Dispatch note tool calls with session-aware ID resolution."""
+async def _run_notes_tool(name: str, params: dict, session_id: str = "", user_text: str = "", chip_origin: bool = False) -> tuple[str, int | None]:
+    """Dispatch note tool calls with session-aware ID resolution.
+
+    Returns the ``(result_text, entity_id)`` tuple the verification hook
+    expects: create/update/delete all produce their note id so the backend can
+    re-read (or, for deletes, confirm absence of) the entity.
+    """
     from nextcloud_notes import (
         create_note,
         delete_note,
@@ -260,18 +264,18 @@ async def _run_notes_tool(name: str, params: dict, session_id: str = "", user_te
             if chip_origin:
                 return ("CLARIFY_REQUIRED: Quick-action request without details. Ask the user "
                         "ONE short question (in their language): what should the note say? "
-                        "Do not call create_note again until they answer.")
+                        "Do not call create_note again until they answer."), None
             title = params.get("title", "").strip()
             content = (params.get("content") or "").strip()
             if not title:
-                return "ERROR: title required."
+                return "ERROR: title required.", None
             if not content:
                 # Chip flow guard: never save an empty/placeholder note —
                 # the model must ask the user for the content first.
                 return ("CLARIFY_REQUIRED: The note has no content. Ask the user ONE short "
                         "question (in their language) about what to write in the note. "
                         "Do not call create_note again until they answer. "
-                        f'The user\'s original message: "{user_text}"')
+                        f'The user\'s original message: "{user_text}"'), None
             return await create_note(
                 title=title,
                 content=content,
@@ -282,51 +286,53 @@ async def _run_notes_tool(name: str, params: dict, session_id: str = "", user_te
             if not raw.startswith("ERROR") and session_id:
                 from prompt import cache_notes_context
                 await cache_notes_context(session_id, items)
-            return raw
+            return raw, None
         elif name == "read_note":
             nid = params.get("note_id")
             if not nid:
-                return "ERROR: note_id required."
+                return "ERROR: note_id required.", None
             resolved = await _resolve_position(session_id, nid, _get_context_fn("notes"), id_field="id")
             if resolved is None:
-                return f"ERROR: Note '{nid}' not found. Run list_notes first to see available notes."
-            return await get_note(resolved)
+                return f"ERROR: Note '{nid}' not found. Run list_notes first to see available notes.", None
+            return await get_note(resolved), None
         elif name == "update_note":
             nid = params.get("note_id")
             if not nid:
-                return "ERROR: note_id required."
+                return "ERROR: note_id required.", None
             resolved = await _resolve_position(session_id, nid, _get_context_fn("notes"), id_field="id")
             if resolved is None:
-                return f"ERROR: Note '{nid}' not found. Run list_notes first to see available notes."
-            return await update_note(
+                return f"ERROR: Note '{nid}' not found. Run list_notes first to see available notes.", None
+            result = await update_note(
                 resolved,
                 title=params.get("title"),
                 content=params.get("content"),
                 category=params.get("category"),
                 tags=params.get("tags"),
             )
+            return result, resolved
         elif name == "delete_note":
             nid = params.get("note_id")
             if not nid:
-                return "ERROR: note_id required."
+                return "ERROR: note_id required.", None
             resolved = await _resolve_position(session_id, nid, _get_context_fn("notes"), id_field="id")
             if resolved is None:
-                return f"ERROR: Note '{nid}' not found. Run list_notes first to see available notes."
-            return await delete_note(resolved)
+                return f"ERROR: Note '{nid}' not found. Run list_notes first to see available notes.", None
+            result = await delete_note(resolved)
+            return result, resolved
         elif name == "search_notes":
             q = params.get("query", "").strip()
             if not q:
-                return "ERROR: query required."
+                return "ERROR: query required.", None
             raw, items = await _search_notes_raw(q)
             if not raw.startswith("ERROR") and session_id:
                 from prompt import cache_notes_context
                 await cache_notes_context(session_id, items)
-            return raw
+            return raw, None
     except Exception as e:
         logger.error(f"Notes Error: {e}")
-        return "ERROR: Notes operation failed. Check server logs."
+        return "ERROR: Notes operation failed. Check server logs.", None
 
-    return "ERROR: Tool not found."
+    return "ERROR: Tool not found.", None
 
 
 async def _run_tasks_tool(name: str, params: dict, session_id: str = "", user_text: str = "", chip_origin: bool = False) -> tuple[str, str | int | None]:
@@ -380,7 +386,7 @@ async def _run_tasks_tool(name: str, params: dict, session_id: str = "", user_te
             if resolved is None:
                 return f"ERROR: Task '{uid}' not found. Run list_tasks first to see available tasks.", None
             result = await complete_task(resolved)
-            return result, None
+            return result, resolved
         elif name == "delete_task":
             uid = params.get("uid")
             uid = str(uid).strip() if uid is not None else ""
@@ -390,7 +396,7 @@ async def _run_tasks_tool(name: str, params: dict, session_id: str = "", user_te
             if resolved is None:
                 return f"ERROR: Task '{uid}' not found. Run list_tasks first to see available tasks.", None
             result = await delete_task(resolved)
-            return result, None
+            return result, resolved
         elif name == "search_tasks":
             q = params.get("query", "").strip()
             if not q:
