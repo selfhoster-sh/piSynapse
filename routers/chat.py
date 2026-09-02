@@ -97,6 +97,7 @@ class ChatResponse(BaseModel):
     memories_saved: int
     pending_action: dict | None = None
     thinking: str | None = None
+    verification_status: str | None = None
     retrieved_count: int = 0
     retrieval_ms: int = 0
 
@@ -421,11 +422,11 @@ async def execute_action(req: ExecuteRequest):
         # Manual executions (confirmed destructive actions) are exactly the
         # ones that must be audit-logged — the model loop already logs its
         # own tool calls, but /execute runs outside that loop.
-        audit_id = await run_verification(req.tool, req.params, result, success, entity_id=entity_id, duration_ms=duration_ms, error=None if success else result)
+        audit_id, verification_status = await run_verification(req.tool, req.params, result, success, entity_id=entity_id, duration_ms=duration_ms, error=None if success else result)
         msg_id = await save_message(req.session_id, "assistant", result)
         if audit_id is not None:
             await link_audits_to_message(msg_id, [audit_id])
-        return ChatResponse(reply=result, session_id=req.session_id, history_length=0, memories_saved=0)
+        return ChatResponse(reply=result, session_id=req.session_id, history_length=0, memories_saved=0, verification_status=verification_status)
     except HTTPException:
         raise
     except Exception as e:
@@ -764,12 +765,13 @@ async def sync_commands(req: SyncRequest, background_tasks: BackgroundTasks):
             )
             success = is_tool_success(result)
             duration_ms = (time.perf_counter() - t0) * 1000
-            await run_verification(cmd.tool, cmd.params, result, success, entity_id=entity_id, duration_ms=duration_ms)
+            audit_id, verification_status = await run_verification(cmd.tool, cmd.params, result, success, entity_id=entity_id, duration_ms=duration_ms)
             results.append({
                 "index": i,
                 "status": "ok" if success else "error",
                 "tool": cmd.tool,
                 "result": result if not success else None,
+                "verification_status": verification_status,
             })
         except Exception as e:
             logger.error(f"Sync command {i} failed: {e}")

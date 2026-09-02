@@ -114,7 +114,7 @@ def test_gen_retry_event_on_context_overflow(monkeypatch):
     monkeypatch.setattr(_cfg, "LLM_BACKEND", "litert")
 
     async def fake_verify(*a, **k):
-        pass
+        return (None, None)
 
     client = _SeqRoundClient([
         [_tc("list_notes"), _fin("tool_calls"), _DONE_LINE],   # bloats current_msgs

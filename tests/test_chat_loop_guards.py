@@ -52,7 +52,7 @@ def _run(monkeypatch, responses):
         return f"OK {name} sonucu", None
 
     async def fake_verify(*a, **k):
-        pass
+        return (None, None)
 
     monkeypatch.setattr(llm_chat, "_llm_request", fake_llm_request)
     monkeypatch.setattr(llm_chat, "run_tool", fake_run_tool)

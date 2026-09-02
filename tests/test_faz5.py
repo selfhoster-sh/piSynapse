@@ -181,7 +181,7 @@ def test_widget_calendar_error_returns_empty(monkeypatch):
 # -- llm/chat tool loop --
 
 async def _noop_verification(*args, **kwargs):
-    return None
+    return (None, None)
 
 
 def test_chat_returns_reply_when_no_tool_calls(monkeypatch):

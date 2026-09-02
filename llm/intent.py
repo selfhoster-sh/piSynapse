@@ -707,7 +707,15 @@ async def _llm_classify_call(system: str, user: str, max_tokens: int = 20) -> st
 
 
 async def _last_executed_tool_group(session_id: str) -> str | None:
-    """Determine the group of the last successfully executed tool in a session."""
+    """Determine the group of the last successfully executed tool in a session.
+
+    "Successfully executed" means *either* the tool is outside the backend
+    verification scope (no verification_status is ever produced for it, so a
+    successful heuristic result stands) *or* it is a verified create
+    (``verified`` / ``verified_by_fallback``). An unconfirmed create
+    (``unverified`` / ``verification_failed``) must NOT anchor the session —
+    the audit check rejects these just like a failed call.
+    """
     try:
         from db import get_db
         from tools.definitions import TOOL_GROUPS, TOOL_TO_GROUP
@@ -718,6 +726,8 @@ async def _last_executed_tool_group(session_id: str) -> str | None:
                JOIN conversations m ON m.id = a.conversation_id
                WHERE m.session_id = ? AND a.conversation_id IS NOT NULL
                  AND a.is_summary = 0 AND a.success = 1
+                 AND (a.verification_status IS NULL
+                      OR a.verification_status IN ('verified', 'verified_by_fallback'))
                ORDER BY a.id DESC LIMIT 1""",
             (session_id,),
         ) as cur:

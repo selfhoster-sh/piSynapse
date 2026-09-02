@@ -100,7 +100,7 @@ def _run(monkeypatch, rounds):
         return f"OK {name} sonucu", None
 
     async def fake_verify(*a, **k):
-        pass
+        return (None, None)
 
     client = _SeqClient(rounds)
     monkeypatch.setattr(llm_stream, "_get_client", lambda: client)
@@ -131,7 +131,7 @@ def _run_with_text(monkeypatch, rounds, user_text, group="notes"):
         return f"OK {name} sonucu", None
 
     async def fake_verify(*a, **k):
-        pass
+        return (None, None)
 
     client = _SeqClient(rounds)
     monkeypatch.setattr(llm_stream, "_get_client", lambda: client)

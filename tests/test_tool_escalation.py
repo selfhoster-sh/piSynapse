@@ -29,7 +29,7 @@ class _CaptureClient:
 
 def _drain(monkeypatch, rounds):
     async def fake_verify(*a, **k):
-        pass
+        return (None, None)
 
     executed: list[str] = []
     async def fake_run_tool(name, params, context=None):
@@ -58,7 +58,7 @@ def _drain(monkeypatch, rounds):
 
 def test_marker_escalates_to_full_toolset(monkeypatch):
     async def fake_verify(*a, **k):
-        pass
+        return (None, None)
 
     executed: list[str] = []
     async def fake_run_tool(name, params, context=None):
@@ -94,7 +94,7 @@ def test_marker_escalates_to_full_toolset(monkeypatch):
 
 def test_leak_syntax_escalates_too(monkeypatch):
     async def fake_verify(*a, **k):
-        pass
+        return (None, None)
 
     executed: list[str] = []
     async def fake_run_tool(name, params, context=None):
@@ -166,7 +166,7 @@ def test_marker_escalation_synced_on_both_backends(monkeypatch):
 
     def run(backend, marker_round, tool_round, text_round):
         async def fake_verify(*a, **k):
-            pass
+            return (None, None)
 
         executed: list[str] = []
 
@@ -269,7 +269,7 @@ def test_marker_aborts_round_before_it_finishes(monkeypatch):
     client.stream = lambda method, url, json=None: resp
 
     async def fake_verify(*a, **k):
-        pass
+        return (None, None)
 
     executed: list[str] = []
     async def fake_run_tool(name, params, context=None):
@@ -323,7 +323,7 @@ def test_hallucinated_tool_rejected_when_not_offered(monkeypatch):
     executed: list[str] = []
 
     async def fake_verify(*a, **k):
-        pass
+        return (None, None)
 
     async def fake_run_tool(name, params, context=None):
         executed.append(name)
@@ -384,7 +384,7 @@ def test_litert_server_parse_failure_recovered_via_leak(monkeypatch):
     executed: list[str] = []
 
     async def fake_verify(*a, **k):
-        pass
+        return (None, None)
 
     async def fake_run_tool(name, params, context=None):
         executed.append((name, params))
@@ -429,7 +429,7 @@ def test_chip_origin_create_gets_instant_clarify(monkeypatch):
     # INSTANT — no LLM round-trip, no tool attempts, no placeholder saves.
     import time
 
-    async def fake_verify(*a, **k): pass
+    async def fake_verify(*a, **k): return (None, None)
 
     class C:
         def stream(self, method, url, json=None):
@@ -465,7 +465,7 @@ def test_chip_origin_create_gets_instant_clarify(monkeypatch):
 def test_create_tools_single_shot(monkeypatch):
     # Two IDENTICAL create calls inside ONE response: second must be refused
     # (cap=1 for creates) instead of double-writing to Nextcloud.
-    async def fake_verify(*a, **k): pass
+    async def fake_verify(*a, **k): return (None, None)
 
     executed: list[str] = []
     async def fake_run_tool(name, params, context=None):

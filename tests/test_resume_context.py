@@ -25,7 +25,8 @@ def intent_db(tmp_path, monkeypatch):
     asyncio.run(dbmod.close_db())
 
 
-def _seed_tool_execution(session_id: str, tool_name: str, user_text: str):
+def _seed_tool_execution(session_id: str, tool_name: str, user_text: str,
+                         verification_status: str | None = None):
     """Insert a user->assistant turn linked to a successful tool audit row."""
 
     async def _go():
@@ -46,9 +47,9 @@ def _seed_tool_execution(session_id: str, tool_name: str, user_text: str):
         )
         asst_id = (await cur.fetchall())[0][0]
         await db.execute(
-            "INSERT INTO tool_audit_log (tool_name, conversation_id, success, is_summary) "
-            "VALUES (?, ?, 1, 0)",
-            (tool_name, asst_id),
+            "INSERT INTO tool_audit_log (tool_name, conversation_id, success, is_summary, verification_status) "
+            "VALUES (?, ?, 1, 0, ?)",
+            (tool_name, asst_id, verification_status),
         )
         await db.commit()
 
@@ -128,6 +129,28 @@ def test_resolve_resume_context_ignores_failed_tool(intent_db):
     result = asyncio.run(li_mod.resolve_resume_context(
         "devam edelim", [], session_id="s3"))
     assert result is None
+
+
+def test_resolver_rejects_verification_failed_scope_tool(intent_db):
+    # success=1 but the backend re-read could not confirm the create -> the
+    # scope-tool create must NOT anchor the session (D-1b).
+    _seed_tool_execution("s10", "create_calendar_event", "yarın etkinlik oluştur",
+                         verification_status="verification_failed")
+    result = asyncio.run(li_mod.resolve_resume_context("devam edelim", [], session_id="s10"))
+    assert result is None
+
+
+def test_resolver_rejects_unverified_scope_tool(intent_db):
+    _seed_tool_execution("s11", "create_task", "görev oluştur", verification_status="unverified")
+    result = asyncio.run(li_mod.resolve_resume_context("devam edelim", [], session_id="s11"))
+    assert result is None
+
+
+def test_resolver_accepts_verified_scope_tool(intent_db):
+    _seed_tool_execution("s12", "create_calendar_event", "yarın etkinlik oluştur",
+                         verification_status="verified")
+    result = asyncio.run(li_mod.resolve_resume_context("devam edelim", [], session_id="s12"))
+    assert result == "calendar"
 
 
 def test_resolve_resume_context_non_followup_returns_none():
