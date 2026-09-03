@@ -198,7 +198,7 @@ def _escalation_tools(full_text: str, user_message: str = "") -> tuple[list, str
     except Exception:
         g = None
     if g:
-        return get_tools_for_group(g), f"{g} (keyword)"
+        return get_tools_for_group(g), g
     return get_combined_tools(), "combined"
 
 
@@ -315,11 +315,23 @@ async def chat_with_ollama_stream(
     from tools import get_combined_tools
     intent_no_tools = intent == "question" and tool_group is None
     if intent_no_tools:
+        try:
+            from llm.intent import _hit_groups
+        except Exception:
+            _hit_groups = None
         use_tools = False
         filtered_tools = None
-        # Escape hatch hint: the model can request tools with a literal token.
-        full_msgs = full_msgs + [{"role": "system", "content": _TOOL_ASK_HINT}]
-        logger.info("Pure chat (question+None) — tools disabled")
+        # Polyglot escape-hatch hint injected ONLY when the message actually
+        # touches a tool domain (keyword hit). Pure-chat turns (no keyword)
+        # previously always received it, which pushed small models into
+        # spurious TOOL_NEEDED escalations ("uykum var ama uyuyamıyorum").
+        # Without the hint the model answers normally and never re-arms the
+        # hatch, killing the "gereksiz araç etkinleştiriliyor" symptom.
+        hint_armed = False
+        if _hit_groups and _hit_groups(context["_user_text"]):
+            full_msgs = full_msgs + [{"role": "system", "content": _TOOL_ASK_HINT}]
+            hint_armed = True
+        logger.info("Pure chat (question+None) — tools disabled (hint_armed=%s)", hint_armed)
     else:
         use_tools = True
         if tool_group:
@@ -435,7 +447,7 @@ async def chat_with_ollama_stream(
 
                     if token:
                         full_text += token
-                        hatch_armed = intent_no_tools and not tools_escalated and not think
+                        hatch_armed = intent_no_tools and hint_armed and not tools_escalated and not think
                         if not suppressing and not tool_calls_acc:
                             if _check_tool_leak(full_text) or _check_tool_leak(buf + token):
                                 suppressing = True
@@ -510,7 +522,7 @@ async def chat_with_ollama_stream(
         if done_reason == "length":
             logger.warning(f"Model stopped early (done_reason='length'). Consider raising LLM_NUM_CTX (currently {get('LLM_NUM_CTX', DEFAULT_LLM_NUM_CTX)}).")
 
-        if not escalate_now and intent_no_tools and not think and not tools_escalated \
+        if not escalate_now and intent_no_tools and hint_armed and not think and not tools_escalated \
                 and (_check_tool_leak(full_text) or _wants_tools_hint(full_text)):
             # Round ended with a tool-signal we could not cut early —
             # escalate through the same path below.
