@@ -193,12 +193,25 @@ def _escalation_tools(full_text: str, user_message: str = "") -> tuple[list, str
         if g:
             return get_tools_for_group(g), g
     try:
-        from llm.intent import _keyword_group
+        from llm.intent import _keyword_group, _hit_groups
+        groups = _hit_groups(user_message or "")
+    except Exception:
+        groups = set()
+    if len(groups) == 1:
+        return get_tools_for_group(next(iter(groups))), f"{next(iter(groups))} (keyword)"
+    if len(groups) > 1:
+        # Genuinely multi-domain ("hava durumunu maille gönder"): a single
+        # group would misroute one of the intents, so fall through to the
+        # full combined set.
+        return get_combined_tools(), "combined"
+    # No keyword group matched — as a last resort use the single first-hit
+    # heuristic (or combined if even that finds nothing).
+    try:
         g = _keyword_group(user_message or "")
     except Exception:
         g = None
     if g:
-        return get_tools_for_group(g), g
+        return get_tools_for_group(g), f"{g} (keyword)"
     return get_combined_tools(), "combined"
 
 

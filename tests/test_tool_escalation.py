@@ -113,9 +113,12 @@ def test_leak_syntax_escalates_too(monkeypatch):
     assert len(client.payloads[1].get("tools") or []) == 7
 
 
-def test_marker_without_hints_falls_back_to_combined(monkeypatch):
+def test_multi_domain_marker_falls_back_to_combined(monkeypatch):
     import llm.intent as li
-    monkeypatch.setattr(li, "_keyword_group", lambda m: None)
+    # A multi-domain message ("hava durumunu maille gönder") must NOT be
+    # narrowed to a single group — both intents need their tools, so the
+    # escalation falls back to the full combined set.
+    monkeypatch.setattr(li, "_hit_groups", lambda m: {"email", "weather"})
     rounds = [
         [_tok("TOOL_NEEDED"), _fin("stop"), _DONE_LINE],
         [_tc("get_weather"), _fin("tool_calls"), _DONE_LINE],
@@ -124,7 +127,7 @@ def test_marker_without_hints_falls_back_to_combined(monkeypatch):
     events, client = asyncio.run(_drain(monkeypatch, rounds)())
     reasons = [ev["gen_retry"]["reason"] for ev in events if "gen_retry" in ev]
     assert reasons == ["tools_escalated"]
-    # no name, no keywords -> combined fallback
+    # multi-domain -> combined fallback (no single group is sufficient)
     assert len(client.payloads[1].get("tools") or []) > 7
 
 
@@ -503,3 +506,32 @@ def test_create_tools_single_shot(monkeypatch):
     events = asyncio.run(drain())
     refusals = [e for e in events if e.get("tool", {}).get("phase") == "refused"]
     assert len(refusals) == 1 and refusals[0]["tool"]["max"] == 1
+
+
+def test_escalation_tools_single_group(monkeypatch):
+    """Adım 2: with a single keyword group hit, escalation must NOT fall back
+    to the 23-tool combined set (~49s TTFT); it narrows to that group (~13s)."""
+    import llm.intent as li
+    monkeypatch.setattr(li, "_hit_groups", lambda m: {"weather"})
+    monkeypatch.setattr(li, "_keyword_group", lambda m: None)
+    tools, scope = llm_stream._escalation_tools("TOOL_NEEDED", "hava nasıl")
+    assert scope == "weather (keyword)"
+    assert len(tools) <= 7
+
+
+def test_escalation_tools_multidomain_falls_back_to_combined(monkeypatch):
+    import llm.intent as li
+    monkeypatch.setattr(li, "_hit_groups", lambda m: {"email", "weather"})
+    monkeypatch.setattr(li, "_keyword_group", lambda m: None)
+    tools, scope = llm_stream._escalation_tools("TOOL_NEEDED", "hava durumunu maille gönder")
+    assert scope == "combined"
+    assert len(tools) > 7
+
+
+def test_escalation_tools_no_group_falls_back_to_combined(monkeypatch):
+    import llm.intent as li
+    monkeypatch.setattr(li, "_hit_groups", lambda m: set())
+    monkeypatch.setattr(li, "_keyword_group", lambda m: None)
+    tools, scope = llm_stream._escalation_tools("TOOL_NEEDED", "anlamsız rastgele cümle")
+    assert scope == "combined"
+    assert len(tools) > 7
