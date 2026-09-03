@@ -2946,13 +2946,18 @@ async function sendMsg(opts){
           terminated=true; hideTyping(); showConfirmModal(data.confirm); setLoading(false); _pendingStream=null; return;
         } else if(data.error){
           terminated=true; hideTyping();
-          const eMsg = /connection error/i.test(data.error) ? t('errConnLost')
+          // Adım 3: don't collapse every backend error into the generic
+          // "Sunucuya ulaşılamadı" (connErr). Show the actual failure — only a
+          // real connection drop is a connection problem; anything else (context
+          // overflow, generation failure…) is its own, specific recoverable error.
+          const isConnErr = /connection error/i.test(data.error);
+          const eMsg = isConnErr ? t('errConnLost')
             : /context too long/i.test(data.error) ? t('errContextTooLong')
             : data.error;
           const errText = '\u26A0\uFE0F '+eMsg;
           if(bubble){ bubble.textContent=errText; }
           else { noteGroup=addMsg('assistant',errText); }
-          toast(t('connErr'),true); setLoading(false); _pendingStream=null; return;
+          toast(isConnErr ? t('connErr') : eMsg, true); setLoading(false); _pendingStream=null; return;
         }
       }
     }
