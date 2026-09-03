@@ -285,7 +285,7 @@ def test_marker_aborts_round_before_it_finishes(monkeypatch):
     async def drain():
         events = []
         async for ev in llm_stream.chat_with_ollama_stream(
-            [{"role": "user", "content": "bunu halleder misin"}],
+            [{"role": "user", "content": "not oluşturur musun"}],
             memories=[], think=False, summary="", user_id="t",
             session_id="s-abort", intent="question", tool_group=None,
             reasoning_effort="",
@@ -503,4 +503,3 @@ def test_create_tools_single_shot(monkeypatch):
     events = asyncio.run(drain())
     refusals = [e for e in events if e.get("tool", {}).get("phase") == "refused"]
     assert len(refusals) == 1 and refusals[0]["tool"]["max"] == 1
-
