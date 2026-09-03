@@ -24,6 +24,8 @@ build/
 
 # Agent/dev notes — kept local only
 # NOTES.md artık git'te takip ediliyor (2026-08-23 karar)
+# BUG_RAFLAMA_DURUM.md — local oturum-arası teşhis notu; push EDİLMEZ (2026-09-04)
+BUG_RAFLAMA_DURUM.md
 
 # Yerel hassas kopya — push EDİLMEZ (IP/domain içerir)
 NOTES.local.md
@@ -35,8 +37,9 @@ RELEASE_NOTES_v*.md
 notes-additions.md
 experiments/
 
-# corpus_feeder runtime artifacts (regenerated; state.json is committed)
+# corpus_feeder runtime artifacts (regenerated; state.json kept local only since 2026-09-04)
 corpus_data/additions.jsonl
 corpus_data/additions_embeddings.npy
 corpus_data/pending_review.json
 corpus_data/genuinely_ambiguous.json
+corpus_data/state.json
