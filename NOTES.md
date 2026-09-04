@@ -16,6 +16,33 @@
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 - **Sanitization rule:** this file may be published. Never write personal data, identity clues, deployment addresses (hostnames, IPs, ports), or accounts into it. Keep every narrative in English; Turkish inline tokens are allowed only as product corpus / i18n test data.
 
+## 2026-09-05 — Faz UI-PERF+THEME: hardware-accel root cause, animation budget, WCAG AA dark ramp
+- **The "4–5 fps" feel was NOT the CSS:** the tester's Brave had hardware acceleration fully disabled (`chrome://gpu`: compositing/rasterization/OpenGL all "Software only", "GPU access is disabled in chrome://settings"). Re-enabling it restores smoothness. The CSS budget work below was kept because it pays off even on constrained machines:
+  - Send-button breathing glow (`subtleGlow`/`glassGlow`) now animates ONLY while `body.generating` (idle = static glow) — the previously always-on box-shadow animation forced per-frame style invalidation.
+  - Non-glass topbar/sidebar `backdrop-filter` removed (`backdrop-filter:none` beats the base blur rule); glass mode keeps genuine frost — topbar/sidebar `blur(8px) saturate(160%)`, settings `blur(12px)` — with translucent accent tints instead of raised opacity, so frosted readability comes from the blur itself.
+  - Compositor-friendly motion: `will-change:transform` on sidebar, top-ticker and marquee tracks; sidebar slides via translate only; `#main` margin transition 0.3→0.22s + `overflow-anchor:none`.
+  - `?lite=1` effects-lite diagnostic mode (kills all blur/aurora/marquee animation) as an emergency low-power fallback; ticker marquees also pause while the tab is hidden (`body.tab-hidden`).
+  - Mobile glass tap bug: `.top-new-btn` tap-flash drew a SQUARE accent glow — the "no box" override lived inside `@media (hover:hover)` so touch devices never got it. The `box-shadow:none` + glyph-shaped `drop-shadow` active rule is now outside the media query (touch probe: `box-shadow: none`, `scale(.94)`, drop-shadow only).
+- **Non-glass palette retuned + WCAG AA across all 6 themes × dry/glass** (scripted measure: `contrast_audit` probe over default/blue/green/purple/red/mono):
+  - Base dark ramp: pure `#000000` → deep charcoal `#0d0d13` (halation relief on wide-gamut displays; still clearly dark). `--text4` `#626276`→`#808098` (was 4.45:1 borderline on surfaces → 4.84 ✓). Measured on bg: text2 5.73:1, text1 ~17:1, accent ~12:1 — all AA.
+  - White-on-accent fills replaced with dark ink `#141419` (`.settings-save`, `.note-save`, `.gp-save`, non-glass `#send-btn` icon, `.modal-confirm.danger`); danger hover now LIGHTENS to `#ef6464` instead of darkening so dark ink stays ≥4.5:1 (worst theme 5.36 ✓). Glass send button keeps its white icon (dark translucent surface → ~9:1).
+  - Primary CTAs dropped the glaring white pill: `.new-btn`, `.w-start`, `.modal-confirm` are now accent-tinted dark pills (accent glyph + label, subtle accent border/glow). The old `opacity:.9` hover is gone — that semi-transparent white over dark chrome read as a blur on the label.
+- **Cache:** SW bumped `pisynapse-v54`→`v55` for this round.
+
+## 2026-09-05 — Faz UI-NEW-ICON (final): icon-only top button becomes a bare accent icon
+- Final shape per user (remove the box; draw the icon directly in the theme color; add glow in glass mode):
+  - ~~The top-bar button was a 40×40px square icon-only button with a 28px icon~~ → the box is gone entirely: `background:transparent; border:none; box-shadow:none`, accent-colored 30px glyph, invisible 40×40 hit area for the touch target.
+  - Sidebar `.new-btn` icon ~~26px~~ → 28px (pointer:coarse + global blocks).
+  - Glass mode keeps an accent `drop-shadow` glow on the glyph (hover/active only), and the square tap-flash glow is fixed — see the UI-PERF+THEME entry above.
+
+## 2026-09-04 — Faz UI-NEW-ICON: new chat button redesign (pill+pencil+plus icon, top-bar icon-only)
+- **Goal / user feedback:** replace the plain new-chat icon with a custom Gemini-inspired hybrid: a soft horizontal pill outline with an open top-right entry where a diagonal pencil slides in, plus a centered symmetrical '+' inside the left section.
+- **Top bar vs sidebar:**
+  - Sidebar `.new-btn` keeps the text label with the new larger ~~26px~~ 28px icon (final size after the 2026-09-05 bump).
+  - Top-bar `.top-new-btn` (visible when sidebar is closed) stripped its "New" text label to become a compact 40×40px icon-only button — later made fully boxless (bare accent icon), see the 2026-09-05 entry.
+- **Path & clipping polish:** outer pill coordinates inset with padding inside the 24×24 viewBox so strokes never clip; equilateral '+' lines centered at (7.5, 12); wide top-right gap (`M22 13.5...H12.5`) leaves the pencil entrance completely open with no touching diagonal arc.
+- **Cache:** SW cache bumped to `pisynapse-v54` so clients pick up the new layout without serving stale shell.
+
 ## 2026-09-04 — Faz UI-LIST-BUG: numbered lists not showing after the marked engine switch
 - **Symptom (user):** email and other multi-item results were not numbered "1., 2., 3." anymore; user suspected the markdown engine change invalidated the listing instructions.
 - **Root cause (two-fold, frontend):**
