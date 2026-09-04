@@ -16,6 +16,13 @@
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 - **Sanitization rule:** this file may be published. Never write personal data, identity clues, deployment addresses (hostnames, IPs, ports), or accounts into it. Keep every narrative in English; Turkish inline tokens are allowed only as product corpus / i18n test data.
 
+## 2026-09-04 — Faz UI-LIST-BUG: numbered lists not showing after the marked engine switch
+- **Symptom (user):** email and other multi-item results were not numbered "1., 2., 3." anymore; user suspected the markdown engine change invalidated the listing instructions.
+- **Root cause (two-fold, frontend):**
+  1. **CSS hid the markers.** The old regex engine rendered numbered items by hand (via a `.ol-num` span, `font-weight:600`), so `.bubble ol{list-style:none}` was correct then. After the switch to `marked` (UI-MD), marked emits a real `<ol><li>` but `list-style:none` was still active → the browser rendered no markers. Same rule existed on `.think-box .think-body ol`. Fixed both to `list-style:decimal` (the shared `padding-left` rules already apply).
+  2. **Model may emit bold numbers.** marked does NOT turn a leading `**1.**` into an `<ol>` (it stays a `<p>` with `<strong>`). Even though the system prompt instructs plain `1.` (prompt.py), the model sometimes writes `**1.**`. renderMd now normalizes a line-initial `**N.**`/`**N)` marker to plain `N.` before `marked.parse`, so either form builds a real `<ol>`. Code blocks are placeholder-extracted first, so `**1.**` inside code is untouched; a mid-sentence `**1.**` stays bold.
+- **Verification:** `node --check` ✓; headless marked run: `1.` and `**1.**` both → `<ol>`, mid-text `**1.**` stays `<strong>`, code content untouched. Frontend-only → no `py_compile`/`pytest`.
+
 ## 2026-09-04 — Faz UI-POLISH: welcome marquee gap, settings scroll jank, glass blur, tooltip→aria, mobile touch-target/icon balance
 
 Squashed into a single commit (rule exception, user-approved: "so much is already done and interleaved in one file — take the exception this once"). Two frontend-control files changed, frontend-only (no `py_compile`/`pytest`; `node --check` ✓ on the main `<script>` and the SW).
