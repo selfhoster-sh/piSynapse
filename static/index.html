@@ -254,7 +254,7 @@ body.theme-black .msg-group.user .msg-meta .who{color:var(--text3)}
   border-radius:2px;background:var(--accent);animation:caretBlink 1s steps(1) infinite}
 @keyframes caretBlink{0%,60%{opacity:1}61%,100%{opacity:.15}}
 .bubble ul,.bubble ol{padding-left:24px;margin-bottom:12px}
-.bubble ol{list-style:none;padding-left:4px}
+.bubble ol{list-style:decimal}
 .bubble ol li{margin-bottom:2px}
 .ol-num{font-weight:600;margin-right:8px}
 .bubble li{margin-bottom:4px}
@@ -541,7 +541,7 @@ body:not(.glass-mode) #input-area::before{content:'';position:absolute;left:50%;
 .think-box.collapsed .think-body{display:none}
 .think-box .think-body p{margin-bottom:10px}.think-box .think-body p:last-child{margin-bottom:0}
 .think-box .think-body ul,.think-box .think-body ol{padding-left:22px;margin-bottom:10px}
-.think-box .think-body ol{list-style:none;padding-left:4px}
+.think-box .think-body ol{list-style:decimal}
 .think-box .think-body li{margin-bottom:4px}
 .think-box .think-body h1{font-size:16px}.think-box .think-body h2{font-size:14.5px}.think-box .think-body h3{font-size:13.5px}
 .think-box .think-body h1,.think-box .think-body h2,.think-box .think-body h3{margin:14px 0 8px;font-weight:700;color:var(--text)}
@@ -1802,6 +1802,12 @@ function renderMd(raw){
     IC.push(`<code>${esc(code)}</code>`);
     return T('IC', IC.length-1);
   });
+
+  // Normalize leading bold-number list markers ("**1.** Foo") to plain
+  // ordered-list markers ("1. Foo") so marked builds a real <ol> regardless of
+  // whether the model emitted bold numbers (the old regex engine did NOT
+  // produce <ol>, so CSS used list-style:none; marked does, and must not hide it).
+  s = s.replace(/^(\s*)\*\*(\d+)[.)]\*\*(?=\s|$)/gm, '$1$2.');
 
   // Token-based parse (marked) replacing the old line-by-line regex parser.
   // Tables, nested lists, escaping, blockquotes and GFM all handled correctly.
