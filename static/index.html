@@ -23,16 +23,16 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   /* WCAG AA: text 4.5:1, text2 5.1:1, text3 5.07:1 on surface2 (5.75 on bg);
      text4 3.16:1 (decorative) */
   /* Pure-black (OLED) base — saf siyah is THE default look, not a toggle */
-  --bg:#000000; --surface:#0a0a0e; --surface2:#131319; --surface3:#1d1d26;
-  --border:#16161f; --accent:#f0943a; --accent-d:rgba(240,148,58,.12);
+  --bg:#0d0d13; --surface:#12121a; --surface2:#1a1a24; --surface3:#232330;
+  --border:#23232f; --accent:#f0943a; --accent-d:rgba(240,148,58,.12);
   --accent-h:#e08020; --text:#e2e2e8; --text1:#f2f2f8; --text2:#8a8a9e; --text3:#84849b;
-  --text4:#626276; --user-bg:#111118; --danger:#e05555; --success:#4ecb71; --warning:#f59e0b;
+  --text4:#808098; --user-bg:#14141c; --danger:#e05555; --success:#4ecb71; --warning:#f59e0b;
   /* Category chip hues — one formula (hue + 15% translucent wash) for every card */
   --chip-work:#4f9df2; --chip-habit:#b788f2; --chip-general:#8f8fa0;
   --btn-primary:#d4d5db;
   /* Raised row/tap feedback below the surface3 step so sidebar items stay
      clearly distinguishable in both normal and glass mode */
-  --row-hover:#242430;
+  --row-hover:#2c2c38;
   --glow:rgba(240,148,58,.30);
   --r:16px; --r-sm:10px; --r-chat:18px;
   --shadow-sm:0 1px 3px rgba(0,0,0,.2);
@@ -57,15 +57,15 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .theme-black{
   --glow:rgba(242,242,245,.22);
   --accent:#f2f2f5; --accent-d:rgba(242,242,245,.13); --accent-h:#d6d6dd;
-  --bg:#000000; --surface:#08080b; --surface2:#0f0f14; --surface3:#17171e;
-  --border:#12121b; --user-bg:#0d0d13;
+  --bg:#0d0d13; --surface:#101018; --surface2:#17171f; --surface3:#1f1f2a;
+  --border:#1f1f2b; --user-bg:#14141c;
 }
 /* Light text sits on solid accent fills; flip to dark ink ONLY where the
    fill is actually solid. In glass mode the send button is a translucent
    dark-tinted surface -> keep its default white icon there. */
 .theme-black .settings-save{color:#141419}
-body.theme-black:not(.glass-mode) #send-btn{color:#141419;
-  box-shadow:0 3px 14px rgba(242,242,245,.22)}
+body:not(.glass-mode) #send-btn{color:#141419}
+body.theme-black:not(.glass-mode) #send-btn{box-shadow:0 3px 14px rgba(242,242,245,.22)}
 html,body{height:100%;height:100svh;overflow:hidden;padding:0;margin:0}
 body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
   background:var(--bg);color:var(--text);display:flex;font-size:16px;line-height:1.6;
@@ -83,7 +83,7 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 #sidebar{width:264px;min-width:264px;height:100%;background:var(--surface);
   border-right:1px solid var(--border);display:flex;flex-direction:column;
   position:fixed;left:0;top:0;z-index:60;
-  transition:transform .3s cubic-bezier(.4,0,.2,1)}
+  transition:transform .22s cubic-bezier(.4,0,.2,1);will-change:transform}
 .sb-head{padding:18px 16px 14px;border-bottom:1px solid var(--border)}
 .sb-top-controls{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
 .sb-brand-text{font-size:14px;font-weight:800;letter-spacing:1.2px;color:var(--text);text-transform:uppercase}
@@ -100,13 +100,17 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
  .status-dot.error{background:#ef4444}
  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}
 
-.new-btn{width:100%;padding:10px 14px;background:var(--btn-primary);border:none;
-  border-radius:var(--r-sm);color:var(--bg);font-size:13.5px;font-weight:600;
-  cursor:pointer;text-align:left;font-family:inherit;
-  transition:transform .15s,opacity .15s;display:flex;align-items:center;gap:8px}@media (hover:hover){
-.new-btn:hover,.top-new-btn:hover{opacity:.9}}
-.new-btn:active,.new-btn.tap-flash{transform:scale(.98);opacity:.85}
-.top-new-btn:active,.top-new-btn.tap-flash{transform:scale(.98);opacity:.85}
+.new-btn{width:100%;padding:10px 14px;background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 14%,var(--surface2)),color-mix(in srgb,var(--accent) 6%,var(--surface2)));
+  border:1px solid color-mix(in srgb,var(--accent) 24%,var(--border));border-radius:var(--r-sm);
+  color:var(--accent);font-size:13.5px;font-weight:600;
+  cursor:pointer;text-align:left;font-family:inherit;display:flex;align-items:center;gap:8px;
+  transition:transform .15s,box-shadow .15s,border-color .2s,background .2s;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 2px 10px rgba(0,0,0,.28)}@media (hover:hover){
+.new-btn:hover{border-color:color-mix(in srgb,var(--accent) 45%,var(--border));
+  background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 22%,var(--surface2)),color-mix(in srgb,var(--accent) 10%,var(--surface2)));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.09),0 3px 16px color-mix(in srgb,var(--accent) 26%,transparent)}}
+.new-btn:active,.new-btn.tap-flash{transform:scale(.98)}
+.top-new-btn:active,.top-new-btn.tap-flash{transform:scale(.98)}
 
 #sidebar-scroll-container{flex:1;overflow-y:auto;display:flex;flex-direction:column;padding-bottom:10px}
 .sb-label{padding:12px 12px 6px;font-size:11px;font-weight:700;
@@ -179,12 +183,13 @@ body:not(.glass-mode) .sb-footer{border-top-color:rgba(255,255,255,.09)}
 #ticker{height:36px;background:var(--surface2);border:1px solid var(--border);
   border-radius:var(--r-sm);display:flex;align-items:center;overflow:hidden;position:relative}
 .marquee-container{width:100%;overflow:hidden;display:flex;align-items:center}
-.marquee-content{display:inline-flex;white-space:nowrap}
+.marquee-content{display:inline-flex;white-space:nowrap;will-change:transform}
 @keyframes marquee{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
 
 /* ── Main Area ─────────────────────────────────────────────────────────────── */
 #main{flex:1;display:flex;flex-direction:column;min-width:0;height:100%;position:relative;
-  margin-left:264px;transition:margin-left .3s cubic-bezier(.4,0,.2,1);
+  margin-left:264px;transition:margin-left .22s cubic-bezier(.4,0,.2,1);
+  overflow-anchor:none;
   padding-bottom:env(safe-area-inset-bottom,0px)}
 
 #topbar{height:56px;padding:0 20px;display:flex;align-items:center;justify-content:space-between;
@@ -349,7 +354,7 @@ body.theme-black .msg-group.user .msg-meta .who{color:var(--text3)}
 .msg-note-editor input{flex:1;min-width:0;padding:7px 10px;border:1px solid var(--border);border-radius:9px;background:var(--surface2);color:var(--text);font-size:13px;outline:none}
 .msg-note-editor input:focus{border-color:var(--accent)}
 .msg-note-editor button{padding:7px 12px;border:0;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer}
-.msg-note-editor .note-save{background:var(--accent);color:#fff}
+.msg-note-editor .note-save{background:var(--accent);color:#141419}
 .msg-note-editor .note-cancel{background:transparent;color:var(--text2);border:1px solid var(--border)}
 /* The correction picker opens BELOW the feedback row, in-flow (static child of
    the same message group): it expands the message column and can never overlap
@@ -365,7 +370,7 @@ body.theme-black .msg-group.user .msg-meta .who{color:var(--text3)}
 .group-picker .gp-opt:hover{background:var(--surface2)}
 .group-picker .gp-opt.sel{background:color-mix(in srgb, var(--accent) 16%, transparent);color:var(--accent);font-weight:500}
 .group-picker .gp-foot{flex:none;display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--border);background:var(--surface2)}
-.group-picker .gp-save{flex:1;padding:9px 12px;border:0;border-radius:9px;font-size:13.5px;font-weight:600;cursor:pointer;background:var(--accent);color:#fff;transition:filter .15s,opacity .15s}
+.group-picker .gp-save{flex:1;padding:9px 12px;border:0;border-radius:9px;font-size:13.5px;font-weight:600;cursor:pointer;background:var(--accent);color:#141419;transition:filter .15s,opacity .15s}
 .group-picker .gp-save:hover:not(:disabled){filter:brightness(1.08)}
 .group-picker .gp-save:disabled{opacity:.45;cursor:default}
 .group-picker .gp-cancel{padding:9px 14px;border:1px solid var(--border);border-radius:9px;font-size:13.5px;cursor:pointer;background:transparent;color:var(--text2);transition:background .15s,color .15s}
@@ -448,10 +453,12 @@ body.glass-mode .fb-tab.done{background:color-mix(in srgb, var(--accent) 20%, rg
   font-size:13px;padding:7px 13px;border-radius:999px;cursor:pointer;
   transition:border-color .2s,color .2s,background .2s}
 @media (hover:hover){.w-chip:hover{border-color:var(--accent);color:var(--text);background:var(--surface3)}}
-.w-start{padding:10px 24px;background:var(--text);border:none;border-radius:24px;
-  color:var(--bg);font-size:14px;font-weight:600;cursor:pointer;margin-top:8px;
-  font-family:inherit;transition:all .2s}@media (hover:hover){
-.w-start:hover:not(:focus){transform:translateY(-2px);box-shadow:0 4px 15px rgba(255,255,255,.1)}}
+.w-start{padding:10px 24px;background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 18%,var(--surface2)),color-mix(in srgb,var(--accent) 8%,var(--surface2)));
+  border:1px solid color-mix(in srgb,var(--accent) 28%,var(--border));border-radius:24px;
+  color:var(--accent);font-size:14px;font-weight:600;cursor:pointer;margin-top:8px;
+  font-family:inherit;transition:transform .2s,border-color .2s,background .2s,box-shadow .2s}@media (hover:hover){
+.w-start:hover:not(:focus){transform:translateY(-2px);border-color:color-mix(in srgb,var(--accent) 50%,var(--border));
+  box-shadow:0 4px 15px color-mix(in srgb,var(--accent) 28%,transparent)}}
 
 /* ── Input Area ────────────────────────────────────────────────────────────── */
 .hidden{display:none!important}
@@ -667,11 +674,13 @@ body:not(.glass-mode) #input-area::before{content:'';position:absolute;left:50%;
   border-radius:10px;color:var(--text2);font-size:14px;font-weight:600;cursor:pointer;
   font-family:inherit;transition:all .2s}@media (hover:hover){
 .modal-cancel:hover:not(:focus){background:var(--surface2);color:var(--text)}}
-.modal-confirm{padding:10px 24px;background:var(--text);border:none;border-radius:10px;
-  color:var(--bg);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .2s}@media (hover:hover){
-.modal-confirm:hover:not(:focus){transform:translateY(-1px);box-shadow:0 4px 12px rgba(255,255,255,.1)}}
-.modal-confirm.danger{background:var(--danger);color:#fff}@media (hover:hover){
-.modal-confirm.danger:hover:not(:focus){background:#c94444;box-shadow:0 4px 12px rgba(224,85,85,.2)}}
+.modal-confirm{padding:10px 24px;background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 18%,var(--surface2)),color-mix(in srgb,var(--accent) 8%,var(--surface2)));
+  border:1px solid color-mix(in srgb,var(--accent) 28%,var(--border));border-radius:10px;
+  color:var(--accent);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .2s}@media (hover:hover){
+.modal-confirm:hover:not(:focus){transform:translateY(-1px);border-color:color-mix(in srgb,var(--accent) 50%,var(--border));
+  box-shadow:0 4px 12px color-mix(in srgb,var(--accent) 26%,transparent)}}
+.modal-confirm.danger{background:var(--danger);color:#141419}@media (hover:hover){
+.modal-confirm.danger:hover:not(:focus){background:#ef6464;box-shadow:0 4px 12px rgba(224,85,85,.2)}}
 
 /* ── Settings Modal ────────────────────────────────────────────────────────── */
 #settings-modal{position:fixed;inset:0;z-index:200;display:none;
@@ -764,7 +773,7 @@ body.glass-mode.settings-open .modal-backdrop{background:rgba(5,5,9,.85)}
 .settings-appearance,.settings-section{scroll-margin-top:8px}
 .settings-appearance .appearance-group .minimal-desc{font-size:11px;color:var(--text4);margin-top:4px;line-height:1.4;font-weight:400;text-transform:none;letter-spacing:0}
 .settings-save{padding:10px 24px;background:var(--accent);border:none;border-radius:10px;
-  color:#fff;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .2s}@media (hover:hover){
+  color:#141419;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .2s}@media (hover:hover){
 .settings-save:hover:not(:focus){background:var(--accent-h);transform:translateY(-1px)}}
 
 /* ── Overlay & Toast ───────────────────────────────────────────────────────── */
@@ -817,20 +826,28 @@ body.glass-mode.settings-open .modal-backdrop{background:rgba(5,5,9,.85)}
   .icon-btn svg,.settings-btn svg,.tts-btn svg{width:14px;height:14px}
   .mem-btn svg{width:17px;height:17px}
   .new-btn{min-height:40px;padding:0 12px}
-  .new-btn svg{width:26px;height:26px}
+  .new-btn svg{width:28px;height:28px}
   .top-new-btn{width:40px;height:40px;min-height:40px;min-width:40px;padding:0;display:grid;place-items:center;gap:0}
   .top-new-btn #lbl-top-new{display:none}
-  .top-new-btn svg{width:28px;height:28px}
+  .top-new-btn svg{width:30px;height:30px}
   .group-picker .gp-opt{padding:13px 10px;min-height:44px}
   .group-picker .gp-save,.group-picker .gp-cancel{padding:13px 14px;min-height:44px}
   .fb-tab{padding:11px 16px;min-height:44px}
   .fb-tabs .fb-tabs-cap{padding:11px 2px 11px 0;line-height:1}
 }
 
-/* Top-bar New chat is icon-only (sidebar button keeps text) */
-.top-new-btn{width:40px;height:40px;min-height:40px;min-width:40px;padding:0;display:grid;place-items:center;gap:0}
+/* Top-bar New chat is a bare theme-colored icon — NO box, just the glyph.
+   The invisible 40x40 hit area stays for a comfortable tap target. */
+.top-new-btn{width:40px;height:40px;min-height:40px;min-width:40px;padding:0;display:grid;place-items:center;gap:0;
+  background:transparent;border:none;color:var(--accent);box-shadow:none;
+  backdrop-filter:none;-webkit-backdrop-filter:none;
+  transition:color .15s,opacity .15s,filter .15s,transform .15s}
 .top-new-btn #lbl-top-new{display:none}
-.top-new-btn svg{width:28px;height:28px}
+.top-new-btn svg{width:30px;height:30px}
+@media (hover:hover){
+  .top-new-btn:hover{opacity:1;color:color-mix(in srgb, var(--accent) 75%, #fff);
+    filter:drop-shadow(0 0 6px color-mix(in srgb, var(--accent) 55%, transparent))}
+}
 
 /* Focus-visible for inputs and select (form fields). The chat textarea
    intentionally has no per-field outline: #input-container:focus-within
@@ -1016,8 +1033,8 @@ body.glass-mode #send-btn:not(:disabled){
   background:radial-gradient(circle at 29% 24%, rgba(255,255,255,.34), rgba(255,255,255,.06) 45%, transparent 60%),
              linear-gradient(145deg, color-mix(in srgb, var(--accent) 26%, rgba(255,255,255,.06)), color-mix(in srgb, var(--accent) 10%, rgba(255,255,255,.04)));
   border:1px solid color-mix(in srgb, var(--accent) 28%, rgba(255,255,255,.16));
-  animation:glassGlow 4s ease-in-out infinite;
-}@media (hover:hover){
+}
+body.glass-mode.generating #send-btn:not(:disabled){animation:glassGlow 4s ease-in-out infinite}@media (hover:hover){
 body.glass-mode #send-btn:hover:not(:focus):not(:disabled){
   animation:none;
   background:radial-gradient(circle at 29% 24%, rgba(255,255,255,.42), rgba(255,255,255,.08) 45%, transparent 60%),
@@ -1072,6 +1089,21 @@ body.glass-mode .mem-btn:active,
 body.glass-mode .settings-btn:active{
   box-shadow:inset 0 1px 0 rgba(255,255,255,.14),
              0 0 18px color-mix(in srgb, var(--accent) 40%, transparent)}
+
+/* Top-bar New chat: bare accent icon keeps its glow in glass mode too (no box) */
+body.glass-mode .top-new-btn{background:transparent;border:none;color:var(--accent);
+  box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;
+  filter:drop-shadow(0 0 6px color-mix(in srgb, var(--accent) 60%, transparent))}
+body.glass-mode .top-new-btn:active,
+body.glass-mode .top-new-btn.tap-flash{box-shadow:none;transform:scale(.94);
+  filter:drop-shadow(0 0 8px color-mix(in srgb, var(--accent) 70%, transparent))}
+@media (hover:hover){
+body.glass-mode .top-new-btn:hover{background:transparent;color:color-mix(in srgb, var(--accent) 75%, #fff);
+  box-shadow:none;transform:none;
+  filter:drop-shadow(0 0 10px color-mix(in srgb, var(--accent) 90%, transparent))}
+body.glass-mode .top-new-btn:active,
+body.glass-mode .top-new-btn.tap-flash{box-shadow:none;transform:scale(.94)}
+}
 
 /* Modal backdrop gets deeper frost */
 body.glass-mode .modal-backdrop{background:rgba(5,5,9,.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
@@ -1131,6 +1163,46 @@ body.glass-mode ::selection{background:color-mix(in srgb, var(--accent) 35%, tra
   body.glass-mode .modal-backdrop{backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
   body.glass-mode .welcome::before{display:none}
 }
+
+/* Effects-lite (?lite=1): hard perf mode — kills every backdrop blur, the
+   aurora layers and continuous animations. Diagnostic A/B + a permanent
+   low-power fallback for weak GPUs / software blur environments. */
+html.effects-lite #topbar, html.effects-lite #sidebar, html.effects-lite #input-container,
+html.effects-lite #ticker, html.effects-lite #top-ticker,
+html.effects-lite .modal-box, html.effects-lite .settings-box, html.effects-lite .settings-appearance,
+html.effects-lite .msg-group.user .bubble, html.effects-lite .mem-card,
+html.effects-lite .code-wrapper, html.effects-lite .w-icon, html.effects-lite .preview-item,
+html.effects-lite #toast, html.effects-lite .icon-btn, html.effects-lite .mem-btn,
+html.effects-lite .settings-btn, html.effects-lite .inline-think-btn, html.effects-lite .think-split,
+html.effects-lite .think-bolt, html.effects-lite .think-caret, html.effects-lite .tts-btn,
+html.effects-lite .sb-compact-toggle, html.effects-lite .copy-btn, html.effects-lite .modal-cancel,
+html.effects-lite .sess-del, html.effects-lite .mem-del-btn, html.effects-lite .preview-remove,
+html.effects-lite .w-start, html.effects-lite .new-btn, html.effects-lite .top-new-btn,
+html.effects-lite .modal-confirm:not(.danger), html.effects-lite #send-btn:not(:disabled),
+html.effects-lite .modal-backdrop, html.effects-lite #overlay, html.effects-lite .sel-menu,
+html.effects-lite .group-picker, html.effects-lite .fb-tab, html.effects-lite .sb-search input,
+html.effects-lite .lang-select, html.effects-lite .setting-input{
+  backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+html.effects-lite #aurora{display:none!important}
+html.effects-lite #ticker-text-inner .marquee-content,
+html.effects-lite #top-ticker-text-inner .marquee-content{animation-play-state:paused!important}
+html.effects-lite .msg-group, html.effects-lite .sess-item{animation:none!important}
+html.effects-lite #send-btn:not(:disabled){animation:none!important}
+html.effects-lite .w-marquee .chip-track{animation:none!important}
+body.tab-hidden #ticker-text-inner .marquee-content,
+body.tab-hidden #top-ticker-text-inner .marquee-content{animation-play-state:paused!important}
+
+/* Sidebar toggle animates #main's margin-left -> one full layout pass per
+   frame; keeping backdrop blur on the bars re-blurs the whole strip every
+   frame on top of that (worst on software-rendered / weak GPUs). Frost stays
+   on floating panels; bars are tinted translucent gradients instead. */
+/* Glass bars & settings stay transparent-frosted: blur does the readability
+   work, no opacity sacrifice. Cheap on GPU once hardware accel is on. */
+body.glass-mode #topbar{
+  backdrop-filter:blur(8px) saturate(160%);-webkit-backdrop-filter:blur(8px) saturate(160%)}
+body.glass-mode .settings-box,
+body.glass-mode .settings-appearance{
+  backdrop-filter:blur(12px) saturate(160%);-webkit-backdrop-filter:blur(12px) saturate(160%)}
 
 
 /* ── Toggle switch ────────────────────────────────────────────────────────── */
@@ -1362,6 +1434,10 @@ body.glass-mode ::selection{background:color-mix(in srgb, var(--accent) 35%, tra
 <script src="/static/vendor/dompurify.min.js"></script>
 
 <script>
+// ── Effects-lite (?lite=1): sets the class consumed by the effects-lite CSS
+if(new URLSearchParams(location.search).has('lite')){document.documentElement.classList.add('effects-lite');}
+// Pause ticker marquees while the tab is hidden (saves compositor work)
+document.addEventListener('visibilitychange',()=>document.body.classList.toggle('tab-hidden',document.hidden));
 // ── i18n ─────────────────────────────────────────────────────────────────────
 const STRINGS = {
   tr:{
@@ -3750,7 +3826,7 @@ function initWelcomeMarquee(){
     (function frame(now){
       if(!track.isConnected){ removeEventListener('resize',measure); return; }
       const dt=Math.min(50,now-last)/1000; last=now;
-      if(!ctl.drag && !reduce && !document.body.classList.contains('settings-open') && !document.hidden && now>=ctl.holdUntil){
+      if(!ctl.drag && !reduce && !document.body.classList.contains('settings-open') && !document.hidden && now>=ctl.holdUntil && !document.documentElement.classList.contains('effects-lite')){
         ctl.x+=ctl.dir*ctl.speed*dt;
         if(Math.abs(ctl.vx)>2){ ctl.x+=ctl.vx*dt; ctl.vx*=Math.exp(-3*dt); }
         wrap(); paint();
@@ -4521,8 +4597,8 @@ if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.s
   /* ── Glass & Blur ──────────────────────────────────────────────── */
   /* Normal-mode bars stay on the palette: --surface at high opacity rather
      than a hand-picked clamp, so the pure-black base harmonises everywhere */
-  #topbar{background:color-mix(in srgb, var(--surface) 84%, transparent);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px)}
-  #sidebar{background:color-mix(in srgb, var(--surface) 93%, transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+  #topbar{background:color-mix(in srgb, var(--surface) 92%, transparent);backdrop-filter:none;-webkit-backdrop-filter:none}
+  #sidebar{background:color-mix(in srgb, var(--surface) 96%, transparent);backdrop-filter:none;-webkit-backdrop-filter:none}
 
   /* ── Message Animations ───────────────────────────────────────── */
   @keyframes msgSlideIn{from{opacity:0;transform:translateY(14px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
@@ -4539,7 +4615,10 @@ if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.s
     0%,100%{box-shadow:0 0 8px var(--accent-d), inset -2px -3px 6px rgba(0,0,0,.22), inset 1px 2px 4px rgba(255,255,255,.22)}
     50%{box-shadow:0 0 20px var(--accent-d), inset -2px -3px 6px rgba(0,0,0,.22), inset 1px 2px 4px rgba(255,255,255,.22)}
   }
-  body:not(.glass-mode) #send-btn:not(:disabled){animation:subtleGlow 3s ease-in-out infinite}
+  body:not(.glass-mode) #send-btn:not(:disabled){
+    box-shadow:0 0 8px var(--accent-d), inset -2px -3px 6px rgba(0,0,0,.22), inset 1px 2px 4px rgba(255,255,255,.22);
+    transition:box-shadow .35s}
+  body:not(.glass-mode).generating #send-btn:not(:disabled){animation:subtleGlow 3s ease-in-out infinite}
   body:not(.glass-mode) #send-btn:hover:not(:focus):not(:disabled){animation:none;box-shadow:0 6px 24px var(--accent-d), inset -2px -3px 6px rgba(0,0,0,.18), inset 1px 2px 5px rgba(255,255,255,.32)}
 
   /* ── Hover Effects ────────────────────────────────────────────── */
