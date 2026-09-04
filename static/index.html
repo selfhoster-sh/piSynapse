@@ -816,13 +816,21 @@ body.glass-mode.settings-open .modal-backdrop{background:rgba(5,5,9,.85)}
   .icon-btn,.settings-btn{padding:8px;width:30px;height:30px}
   .icon-btn svg,.settings-btn svg,.tts-btn svg{width:14px;height:14px}
   .mem-btn svg{width:17px;height:17px}
-  .top-new-btn,.new-btn{min-height:40px;padding:0 12px}
-  .top-new-btn svg,.new-btn svg{width:30px;height:18px}
+  .new-btn{min-height:40px;padding:0 12px}
+  .new-btn svg{width:26px;height:26px}
+  .top-new-btn{width:40px;height:40px;min-height:40px;min-width:40px;padding:0;display:grid;place-items:center;gap:0}
+  .top-new-btn #lbl-top-new{display:none}
+  .top-new-btn svg{width:28px;height:28px}
   .group-picker .gp-opt{padding:13px 10px;min-height:44px}
   .group-picker .gp-save,.group-picker .gp-cancel{padding:13px 14px;min-height:44px}
   .fb-tab{padding:11px 16px;min-height:44px}
   .fb-tabs .fb-tabs-cap{padding:11px 2px 11px 0;line-height:1}
 }
+
+/* Top-bar New chat is icon-only (sidebar button keeps text) */
+.top-new-btn{width:40px;height:40px;min-height:40px;min-width:40px;padding:0;display:grid;place-items:center;gap:0}
+.top-new-btn #lbl-top-new{display:none}
+.top-new-btn svg{width:28px;height:28px}
 
 /* Focus-visible for inputs and select (form fields). The chat textarea
    intentionally has no per-field outline: #input-container:focus-within
@@ -1156,7 +1164,7 @@ body.glass-mode ::selection{background:color-mix(in srgb, var(--accent) 35%, tra
       </div>
     </div>
     <button class="new-btn" id="btn-new" onclick="newChat()">
-      <svg width="30" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M18 5.5A6.5 6.5 0 0 1 22.9 12A6.5 6.5 0 0 1 16.4 18.5H6.9A6.5 6.5 0 0 1 0.4 12A6.5 6.5 0 0 1 6.9 5.5H15" stroke-width="1.6" fill="none"></path><line x1="5.2" y1="12" x2="9.6" y2="12" stroke-width="1.7"></line><line x1="7.4" y1="9.8" x2="7.4" y2="14.2" stroke-width="1.7"></line><path d="M17.2 4.6a1 1 0 0 1 2.9 2.9L12.5 15.1a2 2 0 0 1-.85.5l-1.9.55a.5.5 0 0 1-.62-.62l.55-1.9a2 2 0 0 1 .5-.85L17.2 4.6z" stroke-width="1.45" fill="none"></path></svg>
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M22 13.5A6.5 6.5 0 0 1 15.5 18.5H8A6.5 6.5 0 0 1 1.5 12A6.5 6.5 0 0 1 8 5.5H12.5" stroke-width="1.6" fill="none"></path><line x1="5.5" y1="12" x2="9.5" y2="12" stroke-width="1.65"></line><line x1="7.5" y1="10" x2="7.5" y2="14" stroke-width="1.65"></line><path d="M18 4.4a1 1 0 0 1 2.9 2.9l-4.6 4.6a1.8 1.8 0 0 1-.8.45l-1.7.5a.45.45 0 0 1-.56-.56l.5-1.7a1.8 1.8 0 0 1 .45-.8L18 4.4z" stroke-width="1.4" fill="none"></path></svg>
       <span id="btn-new-text">New chat</span>
     </button>
   </div>
@@ -1213,7 +1221,7 @@ body.glass-mode ::selection{background:color-mix(in srgb, var(--accent) 35%, tra
         <div class="marquee-container" id="top-ticker-text-inner"></div>
       </div>
       <button class="top-new-btn" onclick="newChat()">
-        <svg width="30" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M18 5.5A6.5 6.5 0 0 1 22.9 12A6.5 6.5 0 0 1 16.4 18.5H6.9A6.5 6.5 0 0 1 0.4 12A6.5 6.5 0 0 1 6.9 5.5H15" stroke-width="1.6" fill="none"></path><line x1="5.2" y1="12" x2="9.6" y2="12" stroke-width="1.7"></line><line x1="7.4" y1="9.8" x2="7.4" y2="14.2" stroke-width="1.7"></line><path d="M17.2 4.6a1 1 0 0 1 2.9 2.9L12.5 15.1a2 2 0 0 1-.85.5l-1.9.55a.5.5 0 0 1-.62-.62l.55-1.9a2 2 0 0 1 .5-.85L17.2 4.6z" stroke-width="1.45" fill="none"></path></svg>
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M22 13.5A6.5 6.5 0 0 1 15.5 18.5H8A6.5 6.5 0 0 1 1.5 12A6.5 6.5 0 0 1 8 5.5H12.5" stroke-width="1.6" fill="none"></path><line x1="5.5" y1="12" x2="9.5" y2="12" stroke-width="1.65"></line><line x1="7.5" y1="10" x2="7.5" y2="14" stroke-width="1.65"></line><path d="M18 4.4a1 1 0 0 1 2.9 2.9l-4.6 4.6a1.8 1.8 0 0 1-.8.45l-1.7.5a.45.45 0 0 1-.56-.56l.5-1.7a1.8 1.8 0 0 1 .45-.8L18 4.4z" stroke-width="1.4" fill="none"></path></svg>
         <span id="lbl-top-new"></span>
       </button>
     </div>
