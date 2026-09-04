@@ -193,7 +193,7 @@ def _escalation_tools(full_text: str, user_message: str = "") -> tuple[list, str
         if g:
             return get_tools_for_group(g), g
     try:
-        from llm.intent import _keyword_group, _hit_groups
+        from llm.intent import _hit_groups, _keyword_group
         groups = _hit_groups(user_message or "")
     except Exception:
         groups = set()

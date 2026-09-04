@@ -510,7 +510,8 @@ def test_create_tools_single_shot(monkeypatch):
 
 def test_escalation_tools_single_group(monkeypatch):
     """Adım 2: with a single keyword group hit, escalation must NOT fall back
-    to the 23-tool combined set (~49s TTFT); it narrows to that group (~13s)."""
+    to the 23-tool combined set (~49s TTFT); it narrows to that group (~13s).
+    """
     import llm.intent as li
     monkeypatch.setattr(li, "_hit_groups", lambda m: {"weather"})
     monkeypatch.setattr(li, "_keyword_group", lambda m: None)
