@@ -1,5 +1,9 @@
 package com.pisynapse.app
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
@@ -101,6 +105,72 @@ class PiSynapseBridge : Plugin() {
         } catch (e: Exception) {
             call.reject(e.message ?: "write failed", e)
         }
+    }
+
+    // ── Memories (native, server'sız) ─────────────────────────────────────
+    @PluginMethod
+    fun listMemory(call: PluginCall) {
+        val limit = call.getInt("limit", 50) ?: 50
+        val offset = call.getInt("offset", 0) ?: 0
+        val all = local.listMemory().optJSONArray("memories")
+        val page = org.json.JSONArray()
+        for (i in offset until limit.coerceAtMost(all?.length() ?: 0)) {
+            val o = all?.getJSONObject(i)?.put("importance", 5)
+            if (o != null) page.put(o)
+        }
+        call.resolve(JSObject()
+            .put("user_id", call.getString("user_id") ?: "default")
+            .put("count", all?.length() ?: 0)
+            .put("limit", limit)
+            .put("offset", offset)
+            .put("memories", page))
+    }
+
+    @PluginMethod
+    fun deleteMemory(call: PluginCall) {
+        val id = call.getString("id") ?: ""
+        val ok = local.deleteMemory(id)
+        call.resolve(JSObject().put("status", if (ok) "success" else "error")
+            .put("message", if (ok) "Memory deleted." else "Memory not found."))
+    }
+
+    // ── Runtime permissions (Android özellikleri için tek seferlik izin) ──
+    private fun permFor(kind: String): String? = when (kind) {
+        "calendar" -> Manifest.permission.WRITE_CALENDAR
+        "microphone" -> Manifest.permission.RECORD_AUDIO
+        "location" -> Manifest.permission.ACCESS_FINE_LOCATION
+        else -> null
+    }
+
+    @PluginMethod
+    fun requestPermission(call: PluginCall) {
+        val kind = call.getString("kind") ?: "calendar"
+        val perm = permFor(kind)
+        if (perm == null) {
+            call.resolve(JSObject().put("status", "not-requestable").put("kind", kind))
+            return
+        }
+        val activity = getActivity()
+        if (activity == null) {
+            call.resolve(JSObject().put("status", "no-activity").put("kind", kind))
+            return
+        }
+        if (ContextCompat.checkSelfPermission(context, perm) == PackageManager.PERMISSION_GRANTED) {
+            call.resolve(JSObject().put("status", "granted").put("kind", kind))
+            return
+        }
+        androidx.core.app.ActivityCompat.requestPermissions(activity, arrayOf(perm), 1001)
+        call.resolve(JSObject().put("status", "requested").put("kind", kind))
+    }
+
+    @PluginMethod
+    fun permissionStatus(call: PluginCall) {
+        val out = JSObject()
+        for (k in listOf("calendar", "microphone", "location")) {
+            val p = permFor(k)
+            out.put(k, p != null && ContextCompat.checkSelfPermission(context, p) == PackageManager.PERMISSION_GRANTED)
+        }
+        call.resolve(out)
     }
 
     // ── LLM (LiteRT-LM / Gemma E2B) ───────────────────────────────────────

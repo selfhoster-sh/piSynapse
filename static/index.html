@@ -764,6 +764,11 @@ body.glass-mode.settings-open .modal-backdrop{background:rgba(5,5,9,.85)}
 #settings-chips{flex-shrink:0;display:none;gap:6px;padding:12px 24px 2px;overflow-x:auto}
 @media (pointer:fine) and (min-width:700px){ #settings-chips{display:flex} }
 #settings-chips.min{display:none!important}
+.settings-tabs{display:flex;gap:4px;padding:12px 24px 0;border-bottom:1px solid var(--surface2)}
+.set-tab{flex:0 0 auto;background:transparent;border:1px solid transparent;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:600;color:var(--text3);cursor:pointer;letter-spacing:.2px}
+.set-tab:hover{color:var(--text1)}
+.set-tab.active{background:var(--surface2);border-color:var(--surface3);color:var(--accent)}
+#settings-pane-server{padding-top:4px}
 .set-chip{flex:none;padding:5px 12px;border-radius:999px;border:1px solid var(--border);
   background:var(--surface2);color:var(--text3);font-size:12px;font-weight:600;cursor:pointer;
   transition:all .15s;white-space:nowrap}
@@ -1369,42 +1374,18 @@ body.glass-mode .settings-appearance{
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
       <span id="lbl-settings-title"></span>
     </div>
+    <div class="settings-tabs" id="settings-tabs" hidden>
+      <button type="button" class="set-tab active" data-tab="phone" id="tab-phone"></button>
+      <button type="button" class="set-tab" data-tab="server" id="tab-server"></button>
+    </div>
     <div class="settings-chips" id="settings-chips"></div>
     <div class="settings-body">
       <div class="settings-restart-notice" id="settings-restart-notice"></div>
-    <div id="settings-appearance" class="settings-appearance">
-      <div class="appearance-group">
-        <label id="lbl-theme-select"></label>
-        <div class="theme-grid" id="theme-grid"></div>
-      </div>
-      <div class="appearance-group">
-        <label id="lbl-lang-select"></label>
-        <select class="lang-select" id="lang-select" onchange="applyLang(this.value)">
-          <option value="tr">Türkçe</option>
-          <option value="en">English</option>
-        </select>
-      </div>
-      <div class="appearance-group">
-        <label id="lbl-glass-label"></label>
-        <div class="switch-wrap">
-          <label class="switch">
-            <input type="checkbox" id="glass-toggle" onchange="applyGlass(this.checked)">
-            <span class="track"></span>
-          </label>
-        </div>
-      </div>
-      <div class="appearance-group">
-        <label id="lbl-minimal-label"></label>
-        <div class="switch-wrap">
-          <label class="switch">
-            <input type="checkbox" id="minimal-toggle" onchange="applyMinimal(this.checked)">
-            <span class="track"></span>
-          </label>
-        </div>
-        <div class="minimal-desc" id="minimal-desc"></div>
-      </div>
-    </div>
+      <div id="settings-pane-phone">
+    <div id="settings-appearance" class="settings-appearance"></div>
     <div id="settings-form"></div>
+      </div>
+      <div id="settings-pane-server" hidden></div>
     </div>
     <div class="settings-actions">
       <button class="modal-cancel" onclick="closeSettings()" id="settings-cancel-btn"></button>
@@ -2623,8 +2604,23 @@ async function _nativeApiRoute(method, path, body){
   if(method === 'GET' && path.startsWith('/chat/search')){
     return { results: [], sessions: [] };
   }
+  if(method === 'GET' && path.split('?')[0] === '/chat/memories'){
+    const m = await P().listMemory();
+    return m;
+  }
+  if(method === 'DELETE' && path.startsWith('/chat/memories')){
+    const q = new URLSearchParams((path.split('?')[1]) || '');
+    const res = await P().deleteMemory({ id: q.get('id') || '' });
+    return { status: res.status, message: res.message };
+  }
   if(method === 'GET' && path === '/tools/groups'){
     return { groups: [] };
+  }
+  if(method === 'POST' && path === '/chat/execute' && body && body.tool){
+    const res = await P().invokeTool({ group: body.tool, name: body.tool, params: body.params || {} });
+    if(res.ok === false) throw new Error(res.error || 'tool-failed');
+    const text = res.reply || res.result || res.note || '';
+    return { reply: text };
   }
   return undefined;
 }
@@ -2766,6 +2762,18 @@ document.addEventListener('DOMContentLoaded', async ()=>{
     }
   } catch {}
   await _nativeChatRestore();
+  // Native: once-per-install runtime permission pass (calendar/mic/location).
+  // Android shows its own dialog; this only triggers it ONCE via localStorage.
+  if(_NATIVE){
+    try{
+      const st = await _NATIVE.permissionStatus();
+      const want = ['calendar','microphone','location'].filter(k=>!(st&&st[k]));
+      if(want.length && !localStorage.getItem('ps_perm_asked')){
+        localStorage.setItem('ps_perm_asked','1');
+        for(const k of want){ try{ await _NATIVE.requestPermission({kind:k}); }catch(e){} }
+      }
+    }catch(e){}
+  }
   await loadSessions(); showWelcome(); startTicker(); startHealthPoll();
   if(window._beacon) window._beacon({t:'init', step:'all-done'});
 });
@@ -4106,8 +4114,8 @@ const ADVANCED_KEYS = new Set([
 const HIDDEN_KEYS = new Set(['LLM_REASONING_EFFORT']);
 
 const SECTION_LABELS = {
-  tr:{'Appearance':'Görünüm','General':'Genel','Generation':'Üretim','Model':'Model & Motor','Chat':'Sohbet','Voice':'Ses','Personal':'Kişisel','Other':'Diğer','Advanced':'Gelişmiş Ayarlar'},
-  en:{'Appearance':'Appearance','General':'General','Generation':'Generation','Model':'Model & Engine','Chat':'Chat','Voice':'Voice','Personal':'Personal','Other':'Other','Advanced':'Advanced Settings'},
+  tr:{'Appearance':'Görünüm','General':'Genel','Generation':'Üretim','Model':'Model & Motor','Chat':'Sohbet','Voice':'Ses','Personal':'Kişisel','Other':'Diğer','Advanced':'Gelişmiş Ayarlar','Telefon':'Telefon','Sunucu':'Sunucu','Zeka':'Zeka','Üretim':'Üretim','Sohbet':'Sohbet','Hava':'Hava','Notlar':'Notlar','Ses':'Ses','Uygulama':'Uygulama','Senkron':'Senkron','Bağlantı':'Bağlantı','Kişisel':'Kişisel'},
+  en:{'Appearance':'Appearance','General':'General','Generation':'Generation','Model':'Model & Engine','Chat':'Chat','Voice':'Voice','Personal':'Personal','Other':'Other','Advanced':'Advanced Settings','Telefon':'Phone','Sunucu':'Server','Zeka':'Intelligence','Üretim':'Generation','Sohbet':'Chat','Hava':'Weather','Notlar':'Notes','Ses':'Voice','Uygulama':'App','Senkron':'Sync','Bağlantı':'Connection','Kişisel':'Personal'},
 };
 
 // Desktop chip rail order; 'Appearance' maps to the always-on UI settings row.
@@ -4204,6 +4212,17 @@ function _settingLabel(entry) {
 function _renderSetting(key, entry, advanced) {
   const val = entry.value;
   const type = entry.type;
+  // Native schema sends options as "a|b|c"; web server sends an array of
+  // {value,label}. Normalize both to {value,label}[] here.
+  let optsArr = entry.options;
+  if (typeof optsArr === 'string') {
+    optsArr = '|'.repeat(0) + optsArr; // keep parity
+    optsArr = optsArr.split('|').filter(Boolean).map(o => ({value:o, label:{tr:o, en:o}}));
+  } else if (Array.isArray(optsArr)) {
+    optsArr = optsArr.map(o => typeof o === 'string' ? {value:o, label:{tr:o, en:o}} : o);
+  } else {
+    optsArr = [];
+  }
   const label = _settingLabel(entry);
   const dl = entry.desc || {};
   const descText = dl[lang] || dl.tr || dl.en || '';
@@ -4211,8 +4230,8 @@ function _renderSetting(key, entry, advanced) {
   const infoBtn = advanced ? `<button class="info-btn" id="ib-${key}" onclick="toggleSettingInfo('${key}')" aria-label="?">\u24D8</button>` : '';
   const hintDiv = advanced ? `<div class="setting-hint" id="hi-${key}" style="display:none">${esc(_settingHint(key))}</div>` : '';
 
-  if (type === 'select' && entry.options && entry.options.length === 2 &&
-      entry.options.some(o => o.value === 'on') && entry.options.some(o => o.value === 'off')) {
+  if (type === 'select' && optsArr.length === 2 &&
+      optsArr.some(o => o.value === 'on') && optsArr.some(o => o.value === 'off')) {
     const checked = val === 'on';
     const row = advanced
       ? `<div class="setting-label"><span class="label-wrap"><span>${esc(label || key)}</span>${infoBtn}</span><label class="switch"><input type="checkbox" id="si-${key}" ${checked ? 'checked' : ''} onchange="this.dataset.val=this.checked?'on':'off'"><span class="track"></span></label></div>`
@@ -4220,9 +4239,9 @@ function _renderSetting(key, entry, advanced) {
     return `<div class="setting-item${advanced ? ' advanced' : ''}">${row}${hintDiv}${descDiv}</div>`;
   }
 
-  if (type === 'select' && entry.options) {
+  if (type === 'select' && optsArr.length) {
     let opts = '';
-    for (const opt of entry.options) {
+    for (const opt of optsArr) {
       const olbl = _settingLabel(opt);
       opts += `<option value="${esc(opt.value)}" ${opt.value === val ? 'selected' : ''}>${esc(olbl)}</option>`;
     }
@@ -4251,11 +4270,43 @@ async function openSettings(){
   document.body.classList.add('settings-open');
   const form = document.getElementById('settings-form');
   form.innerHTML = `<div style="text-align:center;padding:12px;color:var(--text3)">${t('loading')}</div>`;
+  document.getElementById('settings-pane-server').innerHTML = '';
   const notice = document.getElementById('settings-restart-notice');
   notice.style.display = 'none';
 
   // Sync appearance controls — these are UI-only (localStorage) and render
   // WITHOUT waiting for the backend, so they survive offline / fetch errors.
+  document.querySelector('#settings-appearance').innerHTML = `
+    <div class="appearance-group">
+      <label id="lbl-theme-select"></label>
+      <div class="theme-grid" id="theme-grid"></div>
+    </div>
+    <div class="appearance-group">
+      <label id="lbl-lang-select"></label>
+      <select class="lang-select" id="lang-select" onchange="applyLang(this.value)">
+        <option value="tr">Türkçe</option>
+        <option value="en">English</option>
+      </select>
+    </div>
+    <div class="appearance-group">
+      <label id="lbl-glass-label"></label>
+      <div class="switch-wrap">
+        <label class="switch">
+          <input type="checkbox" id="glass-toggle" onchange="applyGlass(this.checked)">
+          <span class="track"></span>
+        </label>
+      </div>
+    </div>
+    <div class="appearance-group">
+      <label id="lbl-minimal-label"></label>
+      <div class="switch-wrap">
+        <label class="switch">
+          <input type="checkbox" id="minimal-toggle" onchange="applyMinimal(this.checked)">
+          <span class="track"></span>
+        </label>
+      </div>
+      <div class="minimal-desc" id="minimal-desc"></div>
+    </div>`;
   document.getElementById('lbl-theme-select').textContent = t('themeLabel');
   document.getElementById('lbl-lang-select').textContent = t('langLabel');
   const glassLabel = document.getElementById('lbl-glass-label');
@@ -4270,6 +4321,22 @@ async function openSettings(){
   if(minimalToggleEl){ minimalToggleEl.checked = minimal; }
   document.getElementById('lang-select').value = lang;
   renderThemeGrid();
+
+  const tabsEl = document.getElementById('settings-tabs');
+  const phoneTab = document.getElementById('tab-phone');
+  const serverTab = document.getElementById('tab-server');
+  if(phoneTab) phoneTab.textContent = _sectionLabel('Telefon');
+  if(serverTab) serverTab.textContent = _sectionLabel('Sunucu');
+  const setTabActive = (tab)=>{
+    phoneTab.classList.toggle('active', tab==='phone');
+    serverTab.classList.toggle('active', tab==='server');
+    document.getElementById('settings-pane-phone').hidden = tab!=='phone';
+    document.getElementById('settings-pane-server').hidden = tab!=='server';
+  };
+  if(tabsEl) tabsEl.onclick = (e)=>{
+    const b = e.target.closest('.set-tab'); if(!b) return;
+    setTabActive(b.dataset.tab);
+  };
 
   try {
     _settingsData = await api('GET', '/config/settings');
@@ -4288,20 +4355,69 @@ async function openSettings(){
       return `<div class="settings-section" data-sec="${title}"><div class="settings-section-title">${_sectionLabel(title)}</div><div class="settings-section-inner">${items}</div></div>`;
     };
 
-    for (const [sectionLabel, keys] of Object.entries(SETTINGS_GROUPS)) {
-      html += renderGroup(sectionLabel, keys, false);
-    }
-    html += renderGroup('Advanced', Object.keys(_settingsData), true);
+    // SPLIT: native (this build) returns groups prefixed "Telefon ·" / "Sunucu ·".
+    // Web server returns legacy flat groups; detect which pane a key belongs to.
+    const groupOf = (k)=> (_settingsData[k] && _settingsData[k].group) || '';
+    const isPhoneGroup = (g)=> g.indexOf('Telefon') === 0;
+    const isServerGroup = (g)=> g.indexOf('Sunucu') === 0;
 
-    // Render any remaining uncategorized keys
-    const remaining = Object.keys(_settingsData).filter(k => !usedKeys.has(k) && !HIDDEN_KEYS.has(k) && !ADVANCED_KEYS.has(k));
-    if (remaining.length) {
-      const items = remaining.map(k => _renderSetting(k, _settingsData[k], false)).join('');
-      html += `<div class="settings-section"><div class="settings-section-title">${_sectionLabel('Other')}</div><div class="settings-section-inner">${items}</div></div>`;
-    }
+    const phoneKeys = Object.keys(_settingsData).filter(k => {
+      const g = groupOf(k);
+      if (isServerGroup(g)) return false;
+      if (isPhoneGroup(g)) return true;
+      return false; // unknown server-origin keys stay out unless explicitly assigned
+    });
+    const serverKeys = Object.keys(_settingsData).filter(k => isServerGroup(groupOf(k)));
 
-    form.innerHTML = html;
-    enhanceAllSelects(form);
+    // Build distinct section groups by the group label for both panes.
+    const byGroup = (keys)=> {
+      const map = {};
+      for (const k of keys) {
+        let g = groupOf(k).replace(/^(Telefon|Sunucu) · /, '');
+        map[g] = map[g] || [];
+        map[g].push(k);
+      }
+      return map;
+    };
+
+    const renderFromGroups = (groups)=>{
+      let h = '';
+      for (const g in groups) {
+        const keys = groups[g];
+        const items = keys.filter(k => !usedKeys.has(k)).map(k => { usedKeys.add(k); return _renderSetting(k, _settingsData[k], false); }).join('');
+        if (!items) continue;
+        h += `<div class="settings-section" data-sec="${_sectionLabel(g)}"><div class="settings-section-title">${_sectionLabel(g)}</div><div class="settings-section-inner">${items}</div></div>`;
+      }
+      return h;
+    };
+
+    if (phoneKeys.length || serverKeys.length) {
+      // Native (Telefon/Sunucu) schema
+      html = renderFromGroups(byGroup(phoneKeys));
+      document.getElementById('settings-form').innerHTML = html;
+      const serverHtml = renderFromGroups(byGroup(serverKeys));
+      document.getElementById('settings-pane-server').innerHTML = serverHtml;
+      enhanceAllSelects(form);
+      enhanceAllSelects(document.getElementById('settings-pane-server'));
+      if (tabsEl) tabsEl.hidden = !serverKeys.length;
+      setTabActive('phone');
+    } else {
+      // Legacy web server schema (single pane, no tabs)
+      tabsEl.hidden = true;
+      document.getElementById('settings-pane-server').hidden = true;
+      document.getElementById('settings-pane-phone').hidden = false;
+      for (const [sectionLabel, keys] of Object.entries(SETTINGS_GROUPS)) {
+        html += renderGroup(sectionLabel, keys, false);
+      }
+      html += renderGroup('Advanced', Object.keys(_settingsData), true);
+      const remaining = Object.keys(_settingsData).filter(k => !usedKeys.has(k) && !HIDDEN_KEYS.has(k) && !ADVANCED_KEYS.has(k));
+      if (remaining.length) {
+        const items = remaining.map(k => _renderSetting(k, _settingsData[k], false)).join('');
+        html += `<div class="settings-section"><div class="settings-section-title">${_sectionLabel('Other')}</div><div class="settings-section-inner">${items}</div></div>`;
+      }
+      form.innerHTML = html;
+      enhanceAllSelects(form);
+    }
     bindSettingsChips();
   } catch {
     form.innerHTML = `<div style="text-align:center;padding:12px;color:var(--danger)">${t('connErr')}</div>`;
