@@ -1482,8 +1482,12 @@ const STRINGS = {
     obS2T:'İzinler', obS2S:'Deneyimi zenginleştirmek için birkaç izin isteyeceğiz (dilersen atla).', obPermCal:'Takvim', obPermCalS:'Etkinlik oluştur/güncelle', obPermMic:'Mikrofon', obPermMicS:'Sesli komut ve dikte', obPermLoc:'Konum', obPermLocS:'Hava durumu için şehir tespiti', obGrant:'İzin ver', obGranted:'Verildi', obSkipPerm:'İzinleri atla',
     obS3T:'Kişisel bilgiler', obS3S:'Asistanı sana göre özelleştirelim. İstersen boş bırak.', obName:'Adın', obNamePh:'örn. Salih', obCity:'Şehir', obCityPh:'örn. İstanbul', obAsync:'Asistan adı', obAsyncPh:'örn. Selim',
     obS4T:'Model durumu', obS4S:'Yanıtlan üreten yerel model kontrol ediliyor…', obModelOk:'Model yüklü ve hazır ✓', obModelNone:'Yerel model bulunamadı. Ayarlar → Zeka üzerinden bir .litertlm dosyası seç veya ekle.', obModelLoading:'Model yükleniyor…', obModelHint:'Model çok yıllık bir dosyadır (2.5GB+); ilk yükleme birkaç dakika sürebilir.',
+    obModelDown:'Modeli indir', obModelDownCustom:'Kendi adresinden indir', obModelDownStart:'İndirme başlatılıyor…', obModelPct:'İndiriliyor… %s', obModelDownDone:'İndirme tamamlandı, model hazırlanıyor…', obModelDownFail:'İndirme başarısız oldu', obModelCancel:'İptal',
+    obS6T:'Sunucu', obS6S:'Bu cihazı bir piSynapse sunucusuna bağla (isteğe bağlı). Boş bırakıp atlayabilir, sonradan Ayarlar → Sunucu üzerinden düzenleyebilirsin.', obS6Url:'Sunucu adresi', obS6UrlPh:'örn. https://pisynapse.local', obS6Key:'API anahtarı', obS6KeyPh:'Sunucunun API_KEY bilgisi', obS6User:'Sunucu kullanıcı', obS6UserPh:'Sunucudaki kullanıcı kimliği', obS6Hint:'API anahtarı sunucunun .env dosyasındaki API_KEY değeridir. Tarayıcıda sunucu adresi zaten açtığın adresle doldurulur.',
     obS5T:'Kısa tanıtım', obS5S:'Birkaç ipucu:', obTip1:'Kenar çubuğu: sohbet geçmişi ve hafıza', obTip2:'Yeni sohbeti üstteki + ile aç', obTip3:'Think modu düşünme seviyesini ayarlar', obTip4:'Ayarlar: tema, dil, font, AMOLED, model', obDone:'Kullanmaya başla',
     advanced:'Gelişmiş Ayarlar',
+    setServerUrl:'Sunucu adresi', setServerUrlDesc:'Bu sayfanın erişildiği konum. Farklı bir piSynapse sunucusu kullanıyorsan burayı düzenle.', setServerUrlPh:'örn. https://pisynapse.local',
+    setApiKeyLabel:'API anahtarı', setApiKeyDesc:'Sunucunun .env dosyasındaki API_KEY değeri ile eşleşmelidir.', setApiKeyPh:'Sunucudaki API_KEY değerinizi girin', setSrvHint:'Bu adres, tarayıcıda açtığın sayfanın kaynağı olarak kullanılır.',
     micDenied:'Mikrofon izni reddedildi', transcribeErr:'Ses tanıma başarısız oldu',
     micHttps:'Mikrofon HTTPS gerektirir. HTTPS ile erişin veya localhost kullanın.',
     micTryingWhisper:'Whisper deneniyor…',
@@ -1549,8 +1553,12 @@ const STRINGS = {
     obS2T:'Permissions', obS2S:'We will ask for a few permissions to enrich the experience (you can skip).', obPermCal:'Calendar', obPermCalS:'Create/update events', obPermMic:'Microphone', obPermMicS:'Voice commands & dictation', obPermLoc:'Location', obPermLocS:'City detection for weather', obGrant:'Grant', obGranted:'Granted', obSkipPerm:'Skip permissions',
     obS3T:'Personal info', obS3S:'Let us tailor your assistant. You can leave these empty.', obName:'Your name', obNamePh:'e.g. Salih', obCity:'City', obCityPh:'e.g. Istanbul', obAsync:'Assistant name', obAsyncPh:'e.g. Selim',
     obS4T:'Model status', obS4S:'Checking the local model that powers replies…', obModelOk:'Model is loaded and ready ✓', obModelNone:'No local model found. Pick or add a .litertlm file under Settings → Intelligence.', obModelLoading:'Model is loading…', obModelHint:'The model is a large file (2.5GB+); first load may take a couple minutes.',
+    obModelDown:'Download model', obModelDownCustom:'Download from custom URL', obModelDownStart:'Starting download…', obModelPct:'Downloading… %s', obModelDownDone:'Download complete, preparing model…', obModelDownFail:'Download failed', obModelCancel:'Cancel',
+    obS6T:'Server', obS6S:'Connect this device to a piSynapse server (optional). Leave empty to skip; you can edit it later from Settings → Server.', obS6Url:'Server URL', obS6UrlPh:'e.g. https://pisynapse.local', obS6Key:'API key', obS6KeyPh:'Your server API_KEY', obS6User:'Server user', obS6UserPh:'Your user ID on the server', obS6Hint:'The API key is the API_KEY value in your server\'s .env file. In browser mode the server URL is pre-filled with the address you opened.',
     obS5T:'Quick tour', obS5S:'A few tips:', obTip1:'Sidebar: chat history and memory', obTip2:'Start a new chat with the + above', obTip3:'Think mode controls the reasoning level', obTip4:'Settings: theme, language, font, AMOLED, model', obDone:'Start using',
     advanced:'Advanced Settings',
+    setServerUrl:'Server URL', setServerUrlDesc:'Where this page is served from. Edit if you use a different piSynapse server.', setServerUrlPh:'e.g. https://pisynapse.local',
+    setApiKeyLabel:'API key', setApiKeyDesc:'Must match the API_KEY value in your server\'s .env file.', setApiKeyPh:'Enter your server API_KEY', setSrvHint:'This address is used as the origin of the page you opened in the browser.',
     micDenied:'Microphone permission denied', transcribeErr:'Transcription failed',
     micHttps:'Microphone requires HTTPS. Use HTTPS or localhost.',
     micTryingWhisper:'Trying Whisper…',
@@ -4497,6 +4505,7 @@ async function openSettings(){
         const items = remaining.map(k => _renderSetting(k, _settingsData[k], false)).join('');
         html += `<div class="settings-section"><div class="settings-section-title">${_sectionLabel('Other')}</div><div class="settings-section-inner">${items}</div></div>`;
       }
+      html += serverSectionHtml();
       form.innerHTML = html;
       enhanceAllSelects(form);
     }
@@ -4525,6 +4534,27 @@ function toggleSettingInfo(key){
   if(ib) ib.classList.toggle('on', show);
 }
 
+function serverSectionHtml(){
+  const url = localStorage.getItem('ps_server_url') || (window.location.origin.startsWith('http') ? window.location.origin : '');
+  const key = localStorage.getItem('ps_api_key') || '';
+  return `
+    <div class="settings-section" data-sec="Sunucu">
+      <div class="settings-section-title">${_sectionLabel('Sunucu')}</div>
+      <div class="settings-section-inner">
+        <div class="setting-item">
+          <div class="setting-label"><span>${esc(t('setServerUrl'))}</span></div>
+          <div class="setting-desc">${esc(t('setServerUrlDesc'))}</div>
+          <input type="text" class="setting-input" style="padding:8px 10px" id="si-ps_server_url" maxlength="200" value="${esc(url)}">
+        </div>
+        <div class="setting-item">
+          <div class="setting-label"><span>${esc(t('setApiKeyLabel'))}</span></div>
+          <div class="setting-desc">${esc(t('setApiKeyDesc'))}</div>
+          <input type="password" class="setting-input" style="padding:8px 10px" id="si-ps_api_key" maxlength="200" autocomplete="off" value="${esc(key)}" placeholder="${esc(t('setApiKeyPh'))}">
+        </div>
+      </div>
+    </div>`;
+}
+
 function closeSettings(){ document.getElementById('settings-modal').classList.remove('open'); document.body.classList.remove('settings-open'); }
 document.addEventListener('keydown', (e)=>{
   if(e.key==='Escape'){
@@ -4540,6 +4570,15 @@ async function saveSettings(){
   for (const key of Object.keys(_settingsData)) {
     const el = document.getElementById('si-' + key);
     if (el) values[key] = el.type === 'checkbox' ? (el.dataset.val || (el.checked ? 'on' : 'off')) : el.value;
+  }
+  if(!_NATIVE){
+    const urlEl = document.getElementById('si-ps_server_url');
+    if(urlEl){
+      const v = urlEl.value.trim();
+      if(v) localStorage.setItem('ps_server_url', v);
+    }
+    const keyEl = document.getElementById('si-ps_api_key');
+    if(keyEl) setApiKey(keyEl.value.trim());
   }
 
   try {
@@ -4561,9 +4600,9 @@ async function saveSettings(){
 }
 
 // ── Onboarding (first-run setup wizard) ─────────────────────────────────────────
-// Native: welcome → permissions → personal → model status → tour (5 steps).
+// Native: welcome → permissions → personal → server → model status → tour.
 // Browser: permissions (native-only) and model status (native-only) are skipped.
-const OB_STEPS = _NATIVE ? ['s1','s2','s3','s4','s5'] : ['s1','s3','s5'];
+const OB_STEPS = _NATIVE ? ['s1','s2','s3','s6','s4','s5'] : ['s1','s3','s6','s5'];
 let _ob = { step: 0, perms: { calendar:false, microphone:false, location:false } };
 
 function obIcon(name){
@@ -4573,6 +4612,7 @@ function obIcon(name){
     user:'<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle>',
     chip:'<rect x="4" y="4" width="16" height="16" rx="2"></rect><rect x="9" y="9" width="6" height="6"></rect>',
     tour:'<circle cx="12" cy="12" r="10"></circle><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"></path><path d="M12 17h.01"></path>',
+    server:'<rect x="2" y="2" width="20" height="8" rx="2"></rect><rect x="2" y="14" width="20" height="8" rx="2"></rect><path d="M6 6h.01M6 18h.01"></path>',
   };
   return `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${I[name]||''}</svg>`;
 }
@@ -4596,6 +4636,20 @@ async function obNextAction(){
   try{
     if(_ob.step === OB_STEPS.length - 1){ finishOnboarding(); return; }
     const action = btn && btn.dataset.action;
+    if(action === 'server'){
+      const url = document.getElementById('ob-surl')?.value.trim();
+      const key = document.getElementById('ob-skey')?.value.trim() || '';
+      if(_NATIVE){
+        const values = {};
+        if(url) values.SERVER_URL = url;
+        const user = document.getElementById('ob-suser')?.value.trim();
+        if(user) values.SERVER_USER = user;
+        try{ await api('PATCH','/config/settings',{values}); }catch(e){}
+      } else {
+        if(url) localStorage.setItem('ps_server_url', url);
+        setApiKey(key);
+      }
+    }
     if(action === 'save'){
       // persist personal info
       const name = document.getElementById('ob-aname')?.value.trim();
@@ -4633,9 +4687,96 @@ async function preloadModelCheck(){
     if(st && typeof st === 'object' && (st.loaded === true || st.available === true)){
       statusEl.innerHTML = `<div class="ob-status ok"><span class="ob-status-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12l5 5L20 7"></path></svg></span><span class="ob-status-msg">${esc(t('obModelOk'))}</span></div>`;
     } else {
-      statusEl.innerHTML = `<div class="ob-status warn"><span class="ob-status-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg></span><span class="ob-status-msg">${esc(t('obModelNone'))}</span></div><div class="ob-hint">${esc(t('obModelHint'))}</div>`;
+      statusEl.innerHTML = `
+        <div class="ob-status warn"><span class="ob-status-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg></span><span class="ob-status-msg">${esc(t('obModelNone'))}</span></div>
+        <div class="ob-hint">${esc(t('obModelHint'))}</div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px">
+          <button class="ob-btn" id="ob-dl-hf" style="width:100%" onclick="obStartModelDl('hf')">${esc(t('obModelDown'))}</button>
+          <button class="ob-btn ghost" id="ob-dl-custom" style="width:100%" onclick="obStartModelDl('custom')">${esc(t('obModelDownCustom'))}</button>
+        </div>
+        <div id="ob-dl-progress" style="display:none;flex-direction:column;gap:8px;margin-top:12px">
+          <div class="progress"><div class="progress-bar" id="ob-dl-bar" style="width:0%"></div></div>
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span class="ob-status-msg" id="ob-dl-pct" style="font-size:13px">${esc(t('obModelDownStart'))}</span>
+            <button class="ob-btn ghost" style="font-size:12px;padding:7px 12px" onclick="obCancelModelDl()">${esc(t('obModelCancel'))}</button>
+          </div>
+        </div>`;
     }
   } catch(e){ statusEl.innerHTML = `<div class="ob-status warn"><span class="ob-status-msg">${esc(t('obModelNone'))}</span></div>`; }
+}
+
+let _obDlActive = false;
+
+async function obStartModelDl(kind){
+  if(_obDlActive) return;
+  const wrap = document.getElementById('ob-dl-hf');
+  const prev = document.getElementById('ob-dl-custom');
+  try{
+    const st = await _NATIVE.modelDownloadStatus();
+    const targets = st && Array.isArray(st.targets) ? st.targets : [];
+    let target = 'custom';
+    if(kind === 'hf') target = 'hf';
+    const any = targets.find(x => x.id && x.id.indexOf(kind === 'hf' ? 'hf-' : 'custom') === 0) || targets[targets.length-1];
+    if(!any){ if(prev){prev.textContent = t('obModelDownFail');} return; }
+    _obDlActive = true;
+    wrap.style.display='none';
+    prev.style.display='none';
+    const prog = document.getElementById('ob-dl-progress');
+    prog.style.display='flex';
+    prog.style.flexDirection='column';
+    const bar = document.getElementById('ob-dl-bar');
+    const pctEl = document.getElementById('ob-dl-pct');
+    bar.style.width='0%';
+    pctEl.textContent = t('obModelDownStart');
+    const off = await _NATIVE.addListener('modelProgress', (d)=>{
+      if(d && d.state === 'done'){
+        pctEl.textContent = t('obModelDownDone');
+        bar.style.width='100%';
+        obModelDlDone();
+      } else if(d && (d.state === 'failed' || d.state === 'cancelled')){
+        pctEl.textContent = t('obModelDownFail');
+        _obDlActive = false;
+        rendDlButtons();
+      } else if(d){
+        const p = Math.max(0, Math.min(100, Math.round(d.percentage || 0)));
+        bar.style.width = p + '%';
+        pctEl.textContent = t('obModelPct').replace('%s', d.total>0 ? formatBytes(d.bytes) + ' / ' + formatBytes(d.total) : formatBytes(d.bytes));
+      }
+    });
+    await _NATIVE.startModelDownload({target: any.id});
+    setTimeout(async ()=>{ try{ await off; }catch(e){ obModelDlDone(); } }, 600);
+  }catch(e){
+    _obDlActive = false;
+    try{ await _NATIVE.cancelModelDownload(); }catch(_){}
+    rendDlButtons();
+  }
+}
+
+function rendDlButtons(){
+  const wrap = document.getElementById('ob-dl-hf');
+  const prev = document.getElementById('ob-dl-custom');
+  if(wrap) wrap.style.display = '';
+  if(prev) prev.style.display = '';
+  const prog = document.getElementById('ob-dl-progress');
+  if(prog) prog.style.display = 'none';
+}
+
+async function obCancelModelDl(){
+  _obDlActive = false;
+  try{ await _NATIVE.cancelModelDownload(); }catch(e){}
+  rendDlButtons();
+}
+
+function obModelDlDone(){
+  _obDlActive = false;
+  preloadModelCheck();
+}
+
+function formatBytes(n){
+  if(n===undefined||n===null||isNaN(n)) return '0 B';
+  const u=['B','KB','MB','GB','TB']; let i=0;
+  while(n>=1024 && i<u.length-1){ n/=1024; i++; }
+  return (i===0 ? Math.round(n) : n.toFixed(1)) + ' ' + u[i];
 }
 
 function renderOnboarding(){
@@ -4689,6 +4830,28 @@ function renderOnboarding(){
       <div class="ob-field"><label for="ob-aname">${esc(t('obAsync'))}</label><input class="ob-input" id="ob-aname" maxlength="40" placeholder="${esc(t('obAsyncPh'))}" value="${esc(window.config?.assistant_user||'')}"></div>
       <div class="ob-field"><label for="ob-city">${esc(t('obCity'))}</label><input class="ob-input" id="ob-city" maxlength="40" placeholder="${esc(t('obCityPh'))}" value="${esc(window.config?.default_city||'')}"></div>`;
     next.dataset.action = 'save';
+    next.textContent = t('obS1B');
+  } else if(step === 's6'){
+    if(_NATIVE){
+      body.innerHTML = `
+        <div class="ob-icon">${obIcon('server')}</div>
+        <div class="ob-title">${esc(t('obS6T'))}</div>
+        <div class="ob-sub">${esc(t('obS6S'))}</div>
+        <div class="ob-field"><label for="ob-surl">${esc(t('obS6Url'))}</label><input class="ob-input" id="ob-surl" maxlength="200" placeholder="${esc(t('obS6UrlPh'))}" value="${esc(window.config?.server_url || '')}"></div>
+        <div class="ob-field"><label for="ob-suser">${esc(t('obS6User'))}</label><input class="ob-input" id="ob-suser" maxlength="200" autocomplete="off" placeholder="${esc(t('obS6UserPh'))}" value="${esc(window.config?.server_user || '')}"></div>
+        <div class="ob-hint">${esc(t('obS6Hint'))}</div>`;
+    } else {
+      const savedUrl = localStorage.getItem('ps_server_url') || (window.location.origin.startsWith('http') ? window.location.origin : '');
+      const savedKey = localStorage.getItem('ps_api_key') || '';
+      body.innerHTML = `
+        <div class="ob-icon">${obIcon('server')}</div>
+        <div class="ob-title">${esc(t('obS6T'))}</div>
+        <div class="ob-sub">${esc(t('obS6S'))}</div>
+        <div class="ob-field"><label for="ob-surl">${esc(t('obS6Url'))}</label><input class="ob-input" id="ob-surl" maxlength="200" placeholder="${esc(t('obS6UrlPh'))}" value="${esc(savedUrl)}"></div>
+        <div class="ob-field"><label for="ob-skey">${esc(t('obS6Key'))}</label><input class="ob-input" id="ob-skey" type="password" maxlength="200" autocomplete="off" placeholder="${esc(t('obS6KeyPh'))}" value="${esc(savedKey)}"></div>
+        <div class="ob-hint">${esc(t('obS6Hint'))}</div>`;
+    }
+    next.dataset.action = 'server';
     next.textContent = t('obS1B');
   } else if(step === 's4'){
     body.innerHTML = `
@@ -5227,6 +5390,9 @@ if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.s
   .ob-btn.ghost:hover{color:var(--text);border-color:var(--text4)}
   .ob-perm-icon{flex-shrink:0;color:var(--text3)}
   .ob-perm-icon.granted{color:var(--success)}
+  .progress{flex-shrink:0;background:var(--surface3);border-radius:999px;height:8px;overflow:hidden}
+  .progress-bar{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent-h));
+    transition:width .3s ease;border-radius:999px}
 
   /* ── Mobile black-density boost ───────────────────────────────── */
   /* Small/OLED screens read better with slightly lifted backgrounds so
