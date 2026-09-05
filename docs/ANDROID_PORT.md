@@ -1,16 +1,21 @@
 # piSynapse Android Port — Durum Dokümanı
 
-> Durum: **CANLI (v0.12).** Kapaciter + Kotlin portu telefondaki `com.pisynapse.app` üzerinde çalışıyor; Gemma-4-E2B tamamen çevrimdışı, native tool-call döngüsünde. Bu dosya gerçekleşen mimariyi yansıtır (9/2025-09-05 güncel).
+> Durum: **CANLI (v0.14).** Kapaciter + Kotlin portu telefondaki `com.pisynapse.app` üzerinde çalışıyor; Gemma-4-E2B tamamen çevrimdışı, native tool-call döngüsünde. Bu dosya gerçekleşen mimariyi yansıtır (2026-09-05 güncel).
 > Karar zinciri (geçmiş): native Yeniden derleme → UI mevcut SPA'dan (Capacitor) → LiteRT-LM + Gemma E2B.
 
 ## 0. Gerçekleşen durum özeti (2026-09-05)
 
 - **UI:** `static/index.html` birebir paketlendi (Capacitor 8, WebView/Chromium; HW accel Android'de yerleşik açık). SW yok — asset pakette, model native'de. (Plan §7 onaylandı.)
+- **UI — full-bleed (v0.14):** `#topbar` / `#sidebar` `env(safe-area-inset-top)` ile edge-to-edge çiziyor; `styles.xml` `Theme.AppCompat.NoActionBar` + `windowBackground`/`statusBarColor`/`navigationBarColor` = `@color/amoled_black` (#000) → üstten taşma yok, döndürmede gri/ışık flash yok, splash sonrası da siyah. Splash tema: `Theme.SplashScreen` → `postSplashScreenTheme`.
+- **Statik yol düzeltmesi (v0.14):** Web'de SPA `/static/...` mount altında, WebView'de `public/` kökünde sunuluyor → mutlak `/static/...` yolları WebView'da 404 veriyordu (marked/DOMPurify/DM Sans). `index.html`, `manifest.json`, `sw.js` relative path'lere geçirildi (her iki ortamda çalışır; `<base target>` href kurmuyor).
+- **Yeni UI ayarları (v0.14):** görünüm bölümüne **AMOLED (saf siyah)** toggle + **Yazı Tipi** (DM Sans / Sistem) select eklendi (`ps_amoled`/`ps_font` localStorage, `body.amoled`/`body.font-system` CSS). Text-bar fade artık giriş alanının tam genişliğini kaplıyor (kenarlara taşan hover'ları örter).
+- **İlk-açılış onboarding (v0.14):** sıfırdan kurulumda `ps_onboarded` yoksa 5 adımlı sihirbaz: 1) karşılama 2) izinler (takvim/mikrofon/konum, her satırda "İzin ver", native dialog) 3) kişisel bilgi (ASSISTANT_USER, DEFAULT_CITY → config) 4) model durumu (`modelStatus`: yüklü/mevcut ya da `.litertlm` ekleme yönlendirmesi) 5) kısa UI tanıtımı. Bittiğinde bayrak yazılır, overlay kapanır.
+- **Init crash düzeltmesi (v0.14):** `applyLang` `lbl-theme-select`/`lbl-lang-select`'i guardsız yazıyordu; bu öğeler yalnızca `openSettings`'te oluşuyor → ilk açılışta init async handler'ı patlıyor, kalan adımlar (config/sessions/ticker/health) başlamıyordu. Guard eklendi → init uçtan uca çalışıyor.
 - **Bridge:** tek `PiSynapseBridge` (Capacitor plugin); `window.PiSynapse.*`/`window.Capacitor.Plugins.PiSynapse`. `configGet/Set`, `invokeTool`, `modelStatus`, `chatStream` (SSE event kanalı), `deviceStatus`, `sensorsList`, `chatHistorySave/Load`, **`listMemory`/`deleteMemory`**, **`requestPermission`/`permissionStatus`**, `requestPermissions/checkPermissions` (Capacitor-standart).
 - **LLM:** `com.google.ai.edge.litertlm:litertlm-android:0.12.0` (Google Maven; minSdk 23; arm64+x86_64). Gemma-4-E2B-it `.litertlm` (2.59GB) internal storage (`files/models/`). Streaming `Flow<Message>`, `automaticToolCalling=true` native tool döngüsü.
 - **Tools (16):** datetime, weather, notes (Nextcloud), memory, tasks (lokalde JSON), email (intent), calendar (intent/ACTION_INSERT). Ortak dispatch tablosu `ToolRunner` (bridge + OpenApiTool aynı havuz). Ayrıca `save_memory`/`create_task`/`send_email`/`create_calendar_event` web tool'ları web tarafında.
 - **Config:** `ConfigStore` → `filesDir/config.json`; schema `configGet`; yeni anahtarlar `HISTORY_LIMIT`, `MEMORY_LIMIT`, `LLM_TITLE_ENRICHMENT`, `ASSISTANT_USER`, `MAIL_PROVIDER`, `SERVER_URL`, `SERVER_USER`, `SYNC_MODE`, `SYNC_ALWAYS`; legacy `TEMPERATURE`/`TOP_P`/`TOP_K` alias'tır. Şema 2 sekme: **Telefon** (Zeka/Üretim/Sohbet/Hava/Notlar/Ses/Uygulama) + **Sunucu** (Senkron/Bağlantı/Kişisel) — `byGroup()` ile ayrılır.
-- **İzinler:** manifest'e `WRITE_CALENDAR`, `READ_CALENDAR`, `RECORD_AUDIO`, `ACCESS_FINE_LOCATION`; JS ilk açılışta `requestPermission` ile tek seferlik sistem diyaloğu başlatır (`localStorage ps_perm_asked`).
+- **İzinler:** manifest'e `WRITE_CALENDAR`, `READ_CALENDAR`, `RECORD_AUDIO`, `ACCESS_FINE_LOCATION`. İlk açılışta onboarding adım 2 (satır başı "İzin ver" butonları, native dialog); sonraki kurulumlarda `ps_onboarded` setse tek seferlik otomatik pass (`ps_perm_asked`) çalışır.
 - **Chat kalıcılığı:** `filesDir/chat_history.json` (native), JS `_nativeChatSave/Restore`; restart sonrası geri gelir. Gerçek-native geçişe hazır.
 - **Hafıza:** native `listMemory`/`deleteMemory` → JS `_nativeApiRoute` `/chat/memories` GET/DELETE → `loadMem()` sidebar `#sidebar-mem-list .mem-card` render. `importance:5` varsayılan.
 - **Kısıt/öğrenilmiş:** `.litertlm` ikilisi **CPU-only** (tüm bölümlerde `section_backend_constraint: cpu`) → GPU/NPU isteği reddedilir. `maxNumTokens` = **toplam context slot** (input+output); yetersizse `Status 3: input token ids too long` görülür, `max_tokens` artır.
@@ -138,7 +143,7 @@ piSynapse Android APK (Gradle, Kotlin 2.3.21)
 - **Build zinciri (güncel):** Pi'de `npx cap copy android` → `static/index.html`` + asset `android/android/app/src/main/assets/public/`'e → scp laptop `pisynapse-android/android/app/src/main/assets/public/` → gradle `assembleDebug` → APK.
 - `static/` değişiklikleri (UI) Pi'de oturur; Kotlin kaynakları laptop'ta, Pi'deki kopyayla eşleştirilir (git'in single-source-of-truth olması için android/ klasörü repo'ya girmeli).
 - **Senkron akışı (hedef):** `SYNC_MODE`: `only-phone` (tüm veri cihazda, server'a yazmaz) / `only-server` (server ana depo, cihaz aracı) — ayarlarda her zaman görünür; DB schema phone/server ayrımına göre `updated_at`+`deleted`+origin kolonlarıyla hazırlanır (çakışmalarda last-write-wins). Henüz UYGULANMADI (hedef).
-- **Hafıza (bilinen sorun):** native modda `/chat/memories` route'u yok → JS `loadMem` server fetch'e düşüyor → "sunucuya ulaşılamadı". Düzeltilecek: native memory route (LocalStore memory.json) + JS'te native-first. (Kullanıcı raporu, 2026-09-05.)
+- **Hafıza (çözüldü, v0.12):** native modda `/chat/memories` GET/DELETE route'u eklendi (query string `path.split('?')[0]` ile normalize edilir); `loadMem()` native listeye düşüyor, sidebar `#sidebar-mem-list .mem-card` render + DELETE doğrulandı. (v0.12)
 
 ## 12. Referanslar
 
