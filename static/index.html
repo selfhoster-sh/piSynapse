@@ -7,13 +7,13 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="piSynapse">
-<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
-<link rel="icon" type="image/x-icon" href="/favicon.ico">
-<link rel="manifest" href="/static/manifest.json">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/x-icon" href="icons/favicon.ico">
+<link rel="manifest" href="manifest.json">
 <title>piSynapse</title>
 <style>
-@font-face{font-family:'DM Sans';font-style:normal;font-weight:400 700;font-display:swap;src:url('/static/fonts/dm-sans-latin.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
-@font-face{font-family:'DM Sans';font-style:normal;font-weight:400 700;font-display:swap;src:url('/static/fonts/dm-sans-latin-ext.woff2') format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+@font-face{font-family:'DM Sans';font-style:normal;font-weight:400 700;font-display:swap;src:url('fonts/dm-sans-latin.woff2') format('woff2');unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:'DM Sans';font-style:normal;font-weight:400 700;font-display:swap;src:url('fonts/dm-sans-latin-ext.woff2') format('woff2');unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 /* Focus handling: suppress sticky post-click highlight residue, keep keyboard focus visible */
 button:focus{outline:none}
@@ -66,6 +66,13 @@ button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .theme-black .settings-save{color:#141419}
 body:not(.glass-mode) #send-btn{color:#141419}
 body.theme-black:not(.glass-mode) #send-btn{box-shadow:0 3px 14px rgba(242,242,245,.22)}
+/* AMOLED: pure-black base for OLED panels. Orthogonal to accent theme —
+   flips every surface one step darker so blacks are true #000. */
+body.amoled{
+  --bg:#000; --surface:#060609; --surface2:#0b0b11; --surface3:#13131b;
+  --border:#14141c; --user-bg:#040406; --shadow-sm:0 1px 3px rgba(0,0,0,.5);
+  --shadow-md:0 4px 12px rgba(0,0,0,.55); --shadow-lg:0 12px 40px rgba(0,0,0,.7);
+}
 html,body{height:100%;height:100svh;overflow:hidden;padding:0;margin:0}
 body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
   background:var(--bg);color:var(--text);display:flex;font-size:16px;line-height:1.6;
@@ -73,6 +80,7 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
   font-feature-settings:'cv02','cv03','cv04','cv11';
   overflow-x:hidden;font-weight:500;
   -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility}
+body.font-system{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,system-ui,sans-serif;font-weight:400}
 
 ::-webkit-scrollbar{width:5px;height:5px}
 ::-webkit-scrollbar-track{background:transparent}
@@ -83,6 +91,7 @@ body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui
 #sidebar{width:264px;min-width:264px;height:100%;background:var(--surface);
   border-right:1px solid var(--border);display:flex;flex-direction:column;
   position:fixed;left:0;top:0;z-index:60;
+  padding-top:env(safe-area-inset-top,0px);box-sizing:border-box;
   transition:transform .22s cubic-bezier(.4,0,.2,1);will-change:transform}
 .sb-head{padding:18px 16px 14px;border-bottom:1px solid var(--border)}
 .sb-top-controls{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
@@ -192,10 +201,11 @@ body:not(.glass-mode) .sb-footer{border-top-color:rgba(255,255,255,.09)}
   overflow-anchor:none;
   padding-bottom:env(safe-area-inset-bottom,0px)}
 
-#topbar{height:56px;padding:0 20px;display:flex;align-items:center;justify-content:space-between;
+#topbar{height:calc(56px + env(safe-area-inset-top,0px));padding-top:env(safe-area-inset-top,0px);padding-right:20px;padding-left:20px;
+  padding-bottom:0;display:flex;align-items:center;justify-content:space-between;
   border-bottom:1px solid var(--border);flex-shrink:0;
   background:rgba(10,10,15,.85);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);
-  position:absolute;top:0;width:100%;z-index:20}
+  position:absolute;top:0;width:100%;z-index:20;box-sizing:border-box}
 
 #logo-btn{background:transparent;border:none;cursor:pointer;padding:6px;border-radius:10px;
   display:flex;align-items:center;margin-right:8px;transition:background .2s;outline:none}
@@ -221,7 +231,7 @@ body:not(.glass-mode) .sb-footer{border-top-color:rgba(255,255,255,.09)}
 .top-new-btn:hover{opacity:.9}}
 
 /* ── Messages ──────────────────────────────────────────────────────────────── */
-#messages{flex:1;overflow-y:auto;padding:80px 20px 160px;display:flex;
+#messages{flex:1;overflow-y:auto;padding:calc(80px + env(safe-area-inset-top,0px)) 20px 160px;display:flex;
   flex-direction:column;
   /* Edge fade: content dissolves instead of hard-clipping under the
      topbar / above the input bar. Long, soft ramp at the bottom so scrolled
@@ -465,13 +475,13 @@ body.glass-mode .fb-tab.done{background:color-mix(in srgb, var(--accent) 20%, rg
 #input-area{position:absolute;bottom:calc(20px + env(safe-area-inset-bottom,0px));
   left:0;right:0;padding:0 20px;display:flex;flex-direction:column;align-items:center;
    pointer-events:none;z-index:15}
-/* Upward shadow above the input bar (normal mode): a roomy, soft wash that
-   hugs the message column (same width as the bar), uniform across the width —
+/* Upward shadow above the input bar (normal mode): a full-width wash that
+   covers the entire message background edge-to-edge, soft and uniform —
    no center focus, no square full-bleed band. Glass sits on heavy layered
    shadows, so it opts out. */
-body:not(.glass-mode) #input-area::before{content:'';position:absolute;left:50%;transform:translateX(-50%);
-  width:min(800px,calc(100% - 40px));height:110px;bottom:100%;
-  background:linear-gradient(to top, rgba(0,0,0,.36) 0, rgba(0,0,0,.15) 40%, transparent 100%);
+body:not(.glass-mode) #input-area::before{content:'';position:absolute;left:0;right:0;transform:none;
+  width:100%;height:120px;bottom:100%;
+  background:linear-gradient(to top, rgba(0,0,0,.42) 0, rgba(0,0,0,.18) 45%, transparent 100%);
   pointer-events:none}
 #image-preview{display:flex;gap:8px;padding:8px 0;pointer-events:auto;overflow-x:auto;
   max-width:820px;width:100%}
@@ -802,8 +812,8 @@ body.glass-mode.settings-open .modal-backdrop{background:rgba(5,5,9,.85)}
   body.sidebar-mobile-open #sidebar{transform:translateX(0)}
   body.sidebar-mobile-open #overlay{display:block}
   #main{margin-left:0}
-  #topbar{padding:0 14px}
-  #messages{padding:66px 14px 130px}
+  #topbar{padding-top:env(safe-area-inset-top,0px);padding-right:14px;padding-bottom:0;padding-left:14px}
+  #messages{padding:calc(66px + env(safe-area-inset-top,0px)) 14px 130px}
   #input-area{padding:0 12px;bottom:calc(10px + env(safe-area-inset-bottom,0px));position:absolute;left:0;right:0}
   #input-container{max-width:100%;width:100%;padding:8px 10px;gap:8px;border-radius:20px;flex-wrap:wrap}
   #msg-input{order:1;flex:1 1 100%;min-height:24px;max-height:200px;font-size:16px;field-sizing:content}
@@ -1396,6 +1406,21 @@ body.glass-mode .settings-appearance{
 
 <div id="toast"></div>
 
+<!-- Onboarding wizard (first-run setup) -->
+<div id="onboard">
+  <div class="ob-box">
+    <div class="ob-head">
+      <div class="ob-dots" id="ob-dots"></div>
+      <span style="font-size:11px;color:var(--text4);font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin-left:auto" id="ob-badge"></span>
+    </div>
+    <div class="ob-body" id="ob-body"></div>
+    <div class="ob-actions">
+      <button type="button" class="ob-btn ghost" id="ob-back" style="visibility:hidden" onclick="obGoBack()"></button>
+      <button type="button" class="ob-btn" id="ob-next" onclick="obNextAction()"></button>
+    </div>
+  </div>
+</div>
+
 <script>
 (function(){
   function beacon(d){ try{ var k=''; try{ k=window.getApiKey?window.getApiKey():''; }catch(_e){} var p={...d, _k:k}; navigator.sendBeacon('/debug', new Blob([JSON.stringify(p)],{type:'application/json'})); }catch(e){} }
@@ -1411,8 +1436,8 @@ body.glass-mode .settings-appearance{
 
 <!-- Self-hosted vendor libs (fully offline): marked = token-based Markdown
      parser (GFM), DOMPurify = XSS sanitizer. Both pre-cached by sw.js. -->
-<script src="/static/vendor/marked.min.js"></script>
-<script src="/static/vendor/dompurify.min.js"></script>
+<script src="vendor/marked.min.js"></script>
+<script src="vendor/dompurify.min.js"></script>
 
 <script>
 // ── Effects-lite (?lite=1): sets the class consumed by the effects-lite CSS
@@ -1451,6 +1476,13 @@ const STRINGS = {
     themeLabel:'Tema Rengi', langLabel:'Dil',
     glassLabel:'Cam Efekti',
     minimalLabel:'Sade Görünüm', minimalDesc:'Mesaj başlarındaki gönderen adı ve zaman etiketi gizlenir.',
+    amoledLabel:'AMOLED (saf siyah)', amoledDesc:'OLED panellerde tam siyah arkaplan — pil dostu, daha derin kontrast.',
+    fontLabel:'Yazı Tipi',
+    obBadge:'Kurulum', obS1T:'Hoş geldin 👋', obS1S:'piSynapse tamamen telefonda çalışır — sohbetlerin ve hafızan cihazda kalır.', obS1B:'Başla',
+    obS2T:'İzinler', obS2S:'Deneyimi zenginleştirmek için birkaç izin isteyeceğiz (dilersen atla).', obPermCal:'Takvim', obPermCalS:'Etkinlik oluştur/güncelle', obPermMic:'Mikrofon', obPermMicS:'Sesli komut ve dikte', obPermLoc:'Konum', obPermLocS:'Hava durumu için şehir tespiti', obGrant:'İzin ver', obGranted:'Verildi', obSkipPerm:'İzinleri atla',
+    obS3T:'Kişisel bilgiler', obS3S:'Asistanı sana göre özelleştirelim. İstersen boş bırak.', obName:'Adın', obNamePh:'örn. Salih', obCity:'Şehir', obCityPh:'örn. İstanbul', obAsync:'Asistan adı', obAsyncPh:'örn. Selim',
+    obS4T:'Model durumu', obS4S:'Yanıtlan üreten yerel model kontrol ediliyor…', obModelOk:'Model yüklü ve hazır ✓', obModelNone:'Yerel model bulunamadı. Ayarlar → Zeka üzerinden bir .litertlm dosyası seç veya ekle.', obModelLoading:'Model yükleniyor…', obModelHint:'Model çok yıllık bir dosyadır (2.5GB+); ilk yükleme birkaç dakika sürebilir.',
+    obS5T:'Kısa tanıtım', obS5S:'Birkaç ipucu:', obTip1:'Kenar çubuğu: sohbet geçmişi ve hafıza', obTip2:'Yeni sohbeti üstteki + ile aç', obTip3:'Think modu düşünme seviyesini ayarlar', obTip4:'Ayarlar: tema, dil, font, AMOLED, model', obDone:'Kullanmaya başla',
     advanced:'Gelişmiş Ayarlar',
     micDenied:'Mikrofon izni reddedildi', transcribeErr:'Ses tanıma başarısız oldu',
     micHttps:'Mikrofon HTTPS gerektirir. HTTPS ile erişin veya localhost kullanın.',
@@ -1511,6 +1543,13 @@ const STRINGS = {
     themeLabel:'Theme Color', langLabel:'Language',
     glassLabel:'Glass Effect',
     minimalLabel:'Minimal View', minimalDesc:'Hides sender names and timestamps above messages.',
+    amoledLabel:'AMOLED (true black)', amoledDesc:'Pure-black background on OLED panels — battery friendly, deeper contrast.',
+    fontLabel:'Font',
+    obBadge:'Setup', obS1T:'Welcome 👋', obS1S:'piSynapse runs entirely on your phone — chats and memory stay on-device.', obS1B:'Get started',
+    obS2T:'Permissions', obS2S:'We will ask for a few permissions to enrich the experience (you can skip).', obPermCal:'Calendar', obPermCalS:'Create/update events', obPermMic:'Microphone', obPermMicS:'Voice commands & dictation', obPermLoc:'Location', obPermLocS:'City detection for weather', obGrant:'Grant', obGranted:'Granted', obSkipPerm:'Skip permissions',
+    obS3T:'Personal info', obS3S:'Let us tailor your assistant. You can leave these empty.', obName:'Your name', obNamePh:'e.g. Salih', obCity:'City', obCityPh:'e.g. Istanbul', obAsync:'Assistant name', obAsyncPh:'e.g. Selim',
+    obS4T:'Model status', obS4S:'Checking the local model that powers replies…', obModelOk:'Model is loaded and ready ✓', obModelNone:'No local model found. Pick or add a .litertlm file under Settings → Intelligence.', obModelLoading:'Model is loading…', obModelHint:'The model is a large file (2.5GB+); first load may take a couple minutes.',
+    obS5T:'Quick tour', obS5S:'A few tips:', obTip1:'Sidebar: chat history and memory', obTip2:'Start a new chat with the + above', obTip3:'Think mode controls the reasoning level', obTip4:'Settings: theme, language, font, AMOLED, model', obDone:'Start using',
     advanced:'Advanced Settings',
     micDenied:'Microphone permission denied', transcribeErr:'Transcription failed',
     micHttps:'Microphone requires HTTPS. Use HTTPS or localhost.',
@@ -1547,6 +1586,8 @@ let lang  = localStorage.getItem('ps_lang') || ((navigator.language||'').toLower
 let theme = localStorage.getItem('ps_theme') || 'orange';
 let glass = localStorage.getItem('ps_glass') === '1';
 let minimal = localStorage.getItem('ps_minimal') === '1';
+let amoled = localStorage.getItem('ps_amoled') === '1';
+let fontMode = localStorage.getItem('ps_font') || 'dmsans';
 function enhanceSelect(sel){
   if(!sel || sel.dataset.enhanced) return;
   sel.dataset.enhanced = '1';
@@ -1924,6 +1965,18 @@ function applyMinimal(on){
   localStorage.setItem('ps_minimal', on ? '1' : '0');
 }
 
+function applyAmoled(on){
+  amoled = on;
+  document.body.classList.toggle('amoled', on);
+  localStorage.setItem('ps_amoled', on ? '1' : '0');
+}
+
+function applyFont(f){
+  fontMode = f;
+  document.body.classList.toggle('font-system', f === 'system');
+  localStorage.setItem('ps_font', f);
+}
+
 function renderThemeGrid(){
   const grid = document.getElementById('theme-grid');
   if(!grid) return;
@@ -1952,8 +2005,10 @@ function applyLang(l){
   document.getElementById('settings-cancel-btn').textContent = t('settingsCancel');
   document.getElementById('settings-save-btn').textContent = t('settingsSave');
   document.getElementById('settings-restart-notice').textContent = t('settingsRestart');
-  document.getElementById('lbl-theme-select').textContent = t('themeLabel');
-  document.getElementById('lbl-lang-select').textContent = t('langLabel');
+  const themeLabel = document.getElementById('lbl-theme-select');
+  if(themeLabel) themeLabel.textContent = t('themeLabel');
+  const langLabel = document.getElementById('lbl-lang-select');
+  if(langLabel) langLabel.textContent = t('langLabel');
   const glassLabel = document.getElementById('lbl-glass-label');
   if(glassLabel) glassLabel.textContent = t('glassLabel');
   const glassToggle = document.getElementById('glass-toggle');
@@ -2731,7 +2786,7 @@ let lastInputWasVoice = false;
 
 document.addEventListener('DOMContentLoaded', async ()=>{
   if(window._beacon) window._beacon({t:'init', step:'start'});
-  applyTheme(theme); applyGlass(glass); applyMinimal(minimal); applyLang(lang); enhanceAllSelects(); setupInput(); setupMobileKeyboard(); setupHoldToRecord();
+  applyTheme(theme); applyGlass(glass); applyMinimal(minimal); applyAmoled(amoled); applyFont(fontMode); applyLang(lang); enhanceAllSelects(); setupInput(); setupMobileKeyboard(); setupHoldToRecord();
   if(window._beacon) window._beacon({t:'init', step:'prep-done'});
   // Check if API key is needed
   try {
@@ -2764,7 +2819,8 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   await _nativeChatRestore();
   // Native: once-per-install runtime permission pass (calendar/mic/location).
   // Android shows its own dialog; this only triggers it ONCE via localStorage.
-  if(_NATIVE){
+  // On a clean first run the onboarding wizard (step 2) handles permissions instead.
+  if(_NATIVE && localStorage.getItem('ps_onboarded')){
     try{
       const st = await _NATIVE.permissionStatus();
       const want = ['calendar','microphone','location'].filter(k=>!(st&&st[k]));
@@ -2774,6 +2830,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
       }
     }catch(e){}
   }
+  startOnboarding();
   await loadSessions(); showWelcome(); startTicker(); startHealthPoll();
   if(window._beacon) window._beacon({t:'init', step:'all-done'});
 });
@@ -4306,9 +4363,33 @@ async function openSettings(){
         </label>
       </div>
       <div class="minimal-desc" id="minimal-desc"></div>
+    </div>
+    <div class="appearance-group">
+      <label id="lbl-amoled-label"></label>
+      <div class="switch-wrap">
+        <label class="switch">
+          <input type="checkbox" id="amoled-toggle" onchange="applyAmoled(this.checked)">
+          <span class="track"></span>
+        </label>
+      </div>
+      <div class="minimal-desc" id="amoled-desc"></div>
+    </div>
+    <div class="appearance-group">
+      <label id="lbl-font-label"></label>
+      <select class="lang-select" id="font-select" onchange="applyFont(this.value)">
+        <option value="dmsans">DM Sans</option>
+        <option value="system">Sistem</option>
+      </select>
     </div>`;
   document.getElementById('lbl-theme-select').textContent = t('themeLabel');
   document.getElementById('lbl-lang-select').textContent = t('langLabel');
+  if(document.getElementById('lbl-amoled-label')) document.getElementById('lbl-amoled-label').textContent = t('amoledLabel');
+  if(document.getElementById('amoled-desc')) document.getElementById('amoled-desc').textContent = t('amoledDesc');
+  const amoledToggle = document.getElementById('amoled-toggle');
+  if(amoledToggle){ amoledToggle.checked = amoled; }
+  if(document.getElementById('lbl-font-label')) document.getElementById('lbl-font-label').textContent = t('fontLabel');
+  const fontSelect = document.getElementById('font-select');
+  if(fontSelect){ fontSelect.value = fontMode; }
   const glassLabel = document.getElementById('lbl-glass-label');
   if(glassLabel) glassLabel.textContent = t('glassLabel');
   const glassToggle = document.getElementById('glass-toggle');
@@ -4478,7 +4559,189 @@ async function saveSettings(){
   }
 }
 
-// ── Ticker (Marquee) ────────────────────────────────────────────────────────────
+// ── Onboarding (first-run setup wizard) ─────────────────────────────────────────
+const OB_STEPS = ['s1','s2','s3','s4','s5'];
+let _ob = { step: 0, perms: { calendar:false, microphone:false, location:false } };
+
+function obIcon(name){
+  const I = {
+    wave:'<path d="M5 12h14M12 5v14"></path>',
+    perm:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>',
+    user:'<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle>',
+    chip:'<rect x="4" y="4" width="16" height="16" rx="2"></rect><rect x="9" y="9" width="6" height="6"></rect>',
+    tour:'<circle cx="12" cy="12" r="10"></circle><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"></path><path d="M12 17h.01"></path>',
+  };
+  return `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${I[name]||''}</svg>`;
+}
+
+function obPermIcon(kind, granted){
+  const g = granted ? ' granted' : '';
+  return `<div class="ob-perm-icon${g}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${granted?'<path d="M5 12l5 5L20 7"></path>':'<circle cx="12" cy="12" r="10"></circle>'}</svg></div>`;
+}
+
+function obRenderDots(){
+  const dots = document.getElementById('ob-dots');
+  if(!dots) return;
+  dots.innerHTML = OB_STEPS.map((_,i)=>`<div class="ob-dot${i===_ob.step?' cur':''}"></div>`).join('');
+  const badge = document.getElementById('ob-badge');
+  if(badge) badge.textContent = `${_ob.step+1}/${OB_STEPS.length} · ${t('obBadge')}`;
+}
+
+async function obNextAction(){
+  const btn = document.getElementById('ob-next');
+  if(btn) btn.disabled = true;
+  try{
+    if(_ob.step === OB_STEPS.length - 1){ finishOnboarding(); return; }
+    const action = btn && btn.dataset.action;
+    if(action === 'save'){
+      // persist personal info
+      const name = document.getElementById('ob-aname')?.value.trim();
+      const city = document.getElementById('ob-city')?.value.trim();
+      const values = {};
+      if(name) values.ASSISTANT_USER = name;
+      if(city) values.DEFAULT_CITY = city;
+      if(Object.keys(values).length){
+        try{ await api('PATCH','/config/settings',{values}); if(window.config) config = await api('GET','/config'); }catch(e){}
+      }
+    }
+    _ob.step++;
+    if(_ob.step < OB_STEPS.length){
+      renderOnboarding();
+      if(OB_STEPS[_ob.step] === 's4') preloadModelCheck();
+    } else {
+      finishOnboarding();
+    }
+  } finally {
+    if(btn) btn.disabled = false;
+  }
+}
+
+function obGoBack(){
+  if(_ob.step === 0) return;
+  _ob.step--;
+  renderOnboarding();
+}
+
+async function preloadModelCheck(){
+  const statusEl = document.getElementById('ob-model-status');
+  if(!statusEl || !_NATIVE) return;
+  try{
+    const st = await _NATIVE.modelStatus();
+    if(st && typeof st === 'object' && (st.loaded === true || st.available === true)){
+      statusEl.innerHTML = `<div class="ob-status ok"><span class="ob-status-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12l5 5L20 7"></path></svg></span><span class="ob-status-msg">${esc(t('obModelOk'))}</span></div>`;
+    } else {
+      statusEl.innerHTML = `<div class="ob-status warn"><span class="ob-status-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg></span><span class="ob-status-msg">${esc(t('obModelNone'))}</span></div><div class="ob-hint">${esc(t('obModelHint'))}</div>`;
+    }
+  } catch(e){ statusEl.innerHTML = `<div class="ob-status warn"><span class="ob-status-msg">${esc(t('obModelNone'))}</span></div>`; }
+}
+
+function renderOnboarding(){
+  const body = document.getElementById('ob-body');
+  if(!body) return;
+  const back = document.getElementById('ob-back');
+  const next = document.getElementById('ob-next');
+  if(back) back.style.visibility = _ob.step === 0 ? 'hidden' : 'visible';
+  if(back) back.textContent = t('cancel');
+  _ob.step = Math.max(0, Math.min(_ob.step, OB_STEPS.length-1));
+  obRenderDots();
+
+  const step = OB_STEPS[_ob.step];
+  if(step === 's1'){
+    body.innerHTML = `
+      <div class="ob-icon" style="width:64px;height:64px;border-radius:20px">${obIcon('chip')}</div>
+      <div class="ob-title">${esc(t('obS1T'))}</div>
+      <div class="ob-sub">${esc(t('obS1S'))}</div>`;
+    next.dataset.action = '';
+    next.textContent = t('obS1B');
+  } else if(step === 's2'){
+    const perms = [
+      {k:'calendar', label: t('obPermCal'), sub: t('obPermCalS')},
+      {k:'microphone', label: t('obPermMic'), sub: t('obPermMicS')},
+      {k:'location', label: t('obPermLoc'), sub: t('obPermLocS')},
+    ];
+    body.innerHTML = `
+      <div class="ob-icon">${obIcon('perm')}</div>
+      <div class="ob-title">${esc(t('obS2T'))}</div>
+      <div class="ob-sub">${esc(t('obS2S'))}</div>
+      ${perms.map(p=>`
+        <div class="ob-row">
+          <div style="display:flex;align-items:center;gap:12px">
+            ${obPermIcon(p.k, _ob.perms[p.k])}
+            <div><div class="ob-row-txt">${esc(p.label)}</div><div class="ob-row-sub">${esc(p.sub)}</div></div>
+          </div>
+          ${_ob.perms[p.k]
+            ? `<span style="font-size:12px;font-weight:700;color:var(--success)">${esc(t('obGranted'))}</span>`
+            : (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.PiSynapse
+              ? `<button class="ob-btn ghost" style="font-size:12px;padding:7px 12px" onclick="obGrantPerm('${p.k}')">${esc(t('obGrant'))}</button>`
+              : `<span style="font-size:12px;color:var(--text3)">web</span>`)}
+        </div>`).join('')}
+      <div class="ob-hint">${esc(t('obSkipPerm'))}</div>`;
+    next.dataset.action = '';
+    next.textContent = t('obS1B');
+  } else if(step === 's3'){
+    body.innerHTML = `
+      <div class="ob-icon">${obIcon('user')}</div>
+      <div class="ob-title">${esc(t('obS3T'))}</div>
+      <div class="ob-sub">${esc(t('obS3S'))}</div>
+      <div class="ob-field"><label for="ob-aname">${esc(t('obAsync'))}</label><input class="ob-input" id="ob-aname" maxlength="40" placeholder="${esc(t('obAsyncPh'))}" value="${esc(window.config?.assistant_user||'')}"></div>
+      <div class="ob-field"><label for="ob-city">${esc(t('obCity'))}</label><input class="ob-input" id="ob-city" maxlength="40" placeholder="${esc(t('obCityPh'))}" value="${esc(window.config?.default_city||'')}"></div>`;
+    next.dataset.action = 'save';
+    next.textContent = t('obS1B');
+  } else if(step === 's4'){
+    body.innerHTML = `
+      <div class="ob-icon">${obIcon('chip')}</div>
+      <div class="ob-title">${esc(t('obS4T'))}</div>
+      <div class="ob-sub">${esc(t('obS4S'))}</div>
+      <div id="ob-model-status"><div class="ob-status"><span class="spinner"></span><span class="ob-status-msg">${esc(t('obModelLoading'))}</span></div></div>`;
+    next.dataset.action = '';
+    next.textContent = t('obS1B');
+  } else if(step === 's5'){
+    body.innerHTML = `
+      <div class="ob-icon">${obIcon('tour')}</div>
+      <div class="ob-title">${esc(t('obS5T'))}</div>
+      <div class="ob-sub">${esc(t('obS5S'))}</div>
+      ${[t('obTip1'),t('obTip2'),t('obTip3'),t('obTip4')].map(tp=>`
+        <div class="ob-row"><div style="display:flex;align-items:center;gap:12px"><span style="color:var(--accent);font-weight:700">•</span><div class="ob-row-txt">${esc(tp)}</div></div></div>`).join('')}`;
+    next.dataset.action = '';
+    next.textContent = t('obDone');
+  }
+}
+
+async function obGrantPerm(kind){
+  try{
+    if(_NATIVE){
+      await _NATIVE.requestPermission({kind});
+      // give the OS time to settle before reading back the result
+      await new Promise(r=>setTimeout(r,1200));
+      const st = await _NATIVE.permissionStatus();
+      if(st) _ob.perms[kind]=!!st[kind];
+    }
+  } catch(e){}
+  renderOnboarding();
+}
+
+async function startOnboarding(){
+  if(localStorage.getItem('ps_onboarded')) return;
+  // initialize permission status if native
+  if(_NATIVE){
+    try{
+      const st = await _NATIVE.permissionStatus();
+      if(st) Object.assign(_ob.perms, { calendar:!!st.calendar, microphone:!!st.microphone, location:!!st.location });
+    }catch(e){}
+  }
+  document.getElementById('onboard').classList.add('open');
+  _ob.step = 0;
+  renderOnboarding();
+  if(OB_STEPS[_ob.step] === 's4') preloadModelCheck();
+}
+
+function finishOnboarding(){
+  localStorage.setItem('ps_onboarded','1');
+  document.getElementById('onboard').classList.remove('open');
+  document.body.classList.remove('settings-open');
+}
+
+// ── Ticker (Marquee) ────────────────────────────────────────────────────────
 async function startTicker(){
   await refreshTicker();
   setInterval(refreshTicker, 3_600_000);
@@ -4904,6 +5167,56 @@ if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.s
   .welcome-anim .w-icon svg .inner-wrap{transform-origin:12px 12px;animation:boxPop .35s cubic-bezier(.34,1.56,.64,1) 0s both}
   .welcome-anim .w-icon svg .outer-wrap{transform-origin:12px 12px;animation:boxPopOuter .4s cubic-bezier(.34,1.56,.64,1) .15s both}
   .welcome-anim .w-icon{animation:rippleRing .5s ease-out .35s}
+
+  /* ── Onboarding wizard ──────────────────────────────────────── */
+  #onboard{position:fixed;inset:0;z-index:300;display:none;align-items:center;justify-content:center;
+    padding:16px;background:rgba(3,3,4,.72);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+  #onboard.open{display:flex}
+  .ob-box{position:relative;background:var(--surface);border:1px solid var(--border);border-radius:22px;
+    max-width:440px;width:100%;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;
+    box-shadow:var(--shadow-lg);animation:modalIn .16s ease-out}
+  .ob-head{flex-shrink:0;display:flex;align-items:center;gap:10px;padding:20px 24px 12px;
+    border-bottom:1px solid var(--border)}
+  .ob-dots{display:flex;gap:6px}
+  .ob-dot{width:7px;height:7px;border-radius:50%;background:var(--surface3);transition:background .2s,transform .2s}
+  .ob-dot.cur{background:var(--accent);transform:scale(1.25)}
+  .ob-body{flex:1;min-height:0;overflow-y:auto;padding:20px 24px 8px;contain:content}
+  .ob-title{font-size:17px;font-weight:700;color:var(--text);margin-bottom:6px}
+  .ob-sub{font-size:13.5px;color:var(--text2);line-height:1.55;margin-bottom:16px}
+  .ob-icon{width:54px;height:54px;border-radius:16px;display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(135deg,var(--accent),var(--accent-h));color:#000;margin-bottom:16px;box-shadow:0 4px 18px var(--accent-d)}
+  .ob-row{display:flex;align-items:center;justify-content:space-between;gap:12px;
+    background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);
+    padding:12px 14px;margin-bottom:10px}
+  .ob-row-txt{font-size:13.5px;color:var(--text)}
+  .ob-row-sub{font-size:12px;color:var(--text3);margin-top:2px}
+  .ob-field{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+  .ob-field label{font-size:12px;font-weight:600;color:var(--text2)}
+  .ob-input{background:var(--surface2);border:1px solid var(--border);border-radius:10px;
+    color:var(--text);font-size:14.5px;padding:11px 13px;font-family:inherit;outline:none;transition:border-color .2s}
+  .ob-input:focus{border-color:var(--accent)}
+  .ob-status{display:flex;align-items:center;gap:10px;background:var(--surface2);
+    border:1px solid var(--border);border-radius:var(--r-sm);padding:14px;margin-bottom:12px}
+  .ob-status .spinner{width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--accent);
+    border-radius:50%;animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .ob-status.ok{border-color:color-mix(in srgb,var(--success) 40%,var(--border))}
+  .ob-status.ok .ob-status-icon{color:var(--success)}
+  .ob-status.warn{border-color:color-mix(in srgb,var(--warning) 45%,var(--border))}
+  .ob-status.warn .ob-status-icon{color:var(--warning)}
+  .ob-status-msg{font-size:13px;color:var(--text2)}
+  .ob-hint{font-size:12px;color:var(--text3);line-height:1.5;margin-top:10px;padding:0 2px}
+  .ob-actions{flex-shrink:0;display:flex;justify-content:space-between;align-items:center;
+    gap:10px;padding:14px 24px;border-top:1px solid var(--border)}
+  .ob-btn{background:linear-gradient(135deg,var(--accent),var(--accent-h));border:none;border-radius:12px;
+    color:#141419;font-size:14px;font-weight:700;padding:11px 22px;cursor:pointer;font-family:inherit;
+    transition:filter .15s,transform .15s}
+  .ob-btn:hover{filter:brightness(1.08)}
+  .ob-btn:active{transform:scale(.97)}
+  .ob-btn.ghost{background:transparent;border:1px solid var(--border);color:var(--text2);font-weight:600}
+  .ob-btn.ghost:hover{color:var(--text);border-color:var(--text4)}
+  .ob-perm-icon{flex-shrink:0;color:var(--text3)}
+  .ob-perm-icon.granted{color:var(--success)}
 
   /* ── Mobile black-density boost ───────────────────────────────── */
   /* Small/OLED screens read better with slightly lifted backgrounds so

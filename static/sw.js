@@ -1,13 +1,13 @@
 const CACHE_NAME = 'pisynapse-v55';
 const STATIC_ASSETS = [
-  '/',
-  '/static/manifest.json',
-  '/static/icons/icon-192.png',
-  '/static/icons/icon-512.png',
-  '/static/fonts/dm-sans-latin.woff2',
-  '/static/fonts/dm-sans-latin-ext.woff2',
-  '/static/vendor/marked.min.js',
-  '/static/vendor/dompurify.min.js',
+  './',
+  './manifest.json',
+  './icons/icon-192.png',
+  './icons/icon-512.png',
+  './fonts/dm-sans-latin.woff2',
+  './fonts/dm-sans-latin-ext.woff2',
+  './vendor/marked.min.js',
+  './vendor/dompurify.min.js',
 ];
 
 self.addEventListener('install', event => {
