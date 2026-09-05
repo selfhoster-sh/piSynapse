@@ -1,0 +1,15 @@
+{
+  "name": "pisynapse-android",
+  "private": true,
+  "version": "0.0.1",
+  "description": "piSynapse native Android shell (Capacitor) — UI ships the existing SPA",
+  "scripts": {
+    "cap:sync": "cap sync android",
+    "cap:add": "cap add android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.1",
+    "@capacitor/cli": "^8.5.1",
+    "@capacitor/core": "^8.5.1"
+  }
+}
