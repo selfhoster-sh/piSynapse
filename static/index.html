@@ -4438,17 +4438,18 @@ async function openSettings(){
 
     // SPLIT: native (this build) returns groups prefixed "Telefon ·" / "Sunucu ·".
     // Web server returns legacy flat groups; detect which pane a key belongs to.
+    // Browser never shows the phone/server tabs regardless of schema.
     const groupOf = (k)=> (_settingsData[k] && _settingsData[k].group) || '';
     const isPhoneGroup = (g)=> g.indexOf('Telefon') === 0;
     const isServerGroup = (g)=> g.indexOf('Sunucu') === 0;
 
-    const phoneKeys = Object.keys(_settingsData).filter(k => {
+    const phoneKeys = _NATIVE ? Object.keys(_settingsData).filter(k => {
       const g = groupOf(k);
       if (isServerGroup(g)) return false;
       if (isPhoneGroup(g)) return true;
       return false; // unknown server-origin keys stay out unless explicitly assigned
-    });
-    const serverKeys = Object.keys(_settingsData).filter(k => isServerGroup(groupOf(k)));
+    }) : [];
+    const serverKeys = _NATIVE ? Object.keys(_settingsData).filter(k => isServerGroup(groupOf(k))) : [];
 
     // Build distinct section groups by the group label for both panes.
     const byGroup = (keys)=> {
@@ -4560,7 +4561,9 @@ async function saveSettings(){
 }
 
 // ── Onboarding (first-run setup wizard) ─────────────────────────────────────────
-const OB_STEPS = ['s1','s2','s3','s4','s5'];
+// Native: welcome → permissions → personal → model status → tour (5 steps).
+// Browser: permissions (native-only) and model status (native-only) are skipped.
+const OB_STEPS = _NATIVE ? ['s1','s2','s3','s4','s5'] : ['s1','s3','s5'];
 let _ob = { step: 0, perms: { calendar:false, microphone:false, location:false } };
 
 function obIcon(name){
@@ -5083,8 +5086,15 @@ function setupHoldToRecord(){
 if(localStorage.getItem('ps_compact')) document.body.classList.add('sidebar-compact');
 
 // ── PWA Service Worker ──────────────────────────────────────
-if('serviceWorker' in navigator){
+// Browser-only: the native WebView loads assets from the package and its
+// scheme/local server makes SW caching unreliable — never register there.
+if(!_NATIVE && 'serviceWorker' in navigator){
   navigator.serviceWorker.register('/sw.js').catch(()=>{});
+}
+// Native: purge any service worker registration that survived from older
+// builds (a stale controller would serve outdated cached assets on device).
+if(_NATIVE && 'serviceWorker' in navigator){
+  navigator.serviceWorker.getRegistrations().then(rs=>{ rs.forEach(r=>r.unregister()); }).catch(()=>{});
 }
 
 // ── Standalone PWA adjustments ──────────────────────────────────────────────
