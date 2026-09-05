@@ -1,16 +1,18 @@
 # piSynapse Android Port — Durum Dokümanı
 
-> Durum: **CANLI (v0.11).** Kapaciter + Kotlin portu telefondaki `com.pisynapse.app` üzerinde çalışıyor; Gemma-4-E2B tamamen çevrimdışı, native tool-call döngüsünde. Bu dosya gerçekleşen mimariyi yansıtır (9/2025-09-05 güncel).
+> Durum: **CANLI (v0.12).** Kapaciter + Kotlin portu telefondaki `com.pisynapse.app` üzerinde çalışıyor; Gemma-4-E2B tamamen çevrimdışı, native tool-call döngüsünde. Bu dosya gerçekleşen mimariyi yansıtır (9/2025-09-05 güncel).
 > Karar zinciri (geçmiş): native Yeniden derleme → UI mevcut SPA'dan (Capacitor) → LiteRT-LM + Gemma E2B.
 
 ## 0. Gerçekleşen durum özeti (2026-09-05)
 
 - **UI:** `static/index.html` birebir paketlendi (Capacitor 8, WebView/Chromium; HW accel Android'de yerleşik açık). SW yok — asset pakette, model native'de. (Plan §7 onaylandı.)
-- **Bridge:** tek `PiSynapseBridge` (Capacitor plugin); `window.PiSynapse.*`/`window.Capacitor.Plugins.PiSynapse`. `configGet/Set`, `invokeTool`, `modelStatus`, `chatStream` (SSE event kanalı), `deviceStatus`, `sensorsList`, `chatHistorySave/Load`.
+- **Bridge:** tek `PiSynapseBridge` (Capacitor plugin); `window.PiSynapse.*`/`window.Capacitor.Plugins.PiSynapse`. `configGet/Set`, `invokeTool`, `modelStatus`, `chatStream` (SSE event kanalı), `deviceStatus`, `sensorsList`, `chatHistorySave/Load`, **`listMemory`/`deleteMemory`**, **`requestPermission`/`permissionStatus`**, `requestPermissions/checkPermissions` (Capacitor-standart).
 - **LLM:** `com.google.ai.edge.litertlm:litertlm-android:0.12.0` (Google Maven; minSdk 23; arm64+x86_64). Gemma-4-E2B-it `.litertlm` (2.59GB) internal storage (`files/models/`). Streaming `Flow<Message>`, `automaticToolCalling=true` native tool döngüsü.
-- **Tools (16):** datetime, weather, notes (Nextcloud), memory, tasks (lokalde JSON), email (intent), calendar (intent/ACTION_INSERT). Ortak dispatch tablosu `ToolRunner` (bridge + OpenApiTool aynı havuz).
-- **Config:** `ConfigStore` → `filesDir/config.json`; schema `configGet`; `LLM_BACKEND_TYPE` (cpu/gpu/npu), `LLM_MODEL` (gemma-4-E2B-it önde), `SYNC_MODE` planlandı.
+- **Tools (16):** datetime, weather, notes (Nextcloud), memory, tasks (lokalde JSON), email (intent), calendar (intent/ACTION_INSERT). Ortak dispatch tablosu `ToolRunner` (bridge + OpenApiTool aynı havuz). Ayrıca `save_memory`/`create_task`/`send_email`/`create_calendar_event` web tool'ları web tarafında.
+- **Config:** `ConfigStore` → `filesDir/config.json`; schema `configGet`; yeni anahtarlar `HISTORY_LIMIT`, `MEMORY_LIMIT`, `LLM_TITLE_ENRICHMENT`, `ASSISTANT_USER`, `MAIL_PROVIDER`, `SERVER_URL`, `SERVER_USER`, `SYNC_MODE`, `SYNC_ALWAYS`; legacy `TEMPERATURE`/`TOP_P`/`TOP_K` alias'tır. Şema 2 sekme: **Telefon** (Zeka/Üretim/Sohbet/Hava/Notlar/Ses/Uygulama) + **Sunucu** (Senkron/Bağlantı/Kişisel) — `byGroup()` ile ayrılır.
+- **İzinler:** manifest'e `WRITE_CALENDAR`, `READ_CALENDAR`, `RECORD_AUDIO`, `ACCESS_FINE_LOCATION`; JS ilk açılışta `requestPermission` ile tek seferlik sistem diyaloğu başlatır (`localStorage ps_perm_asked`).
 - **Chat kalıcılığı:** `filesDir/chat_history.json` (native), JS `_nativeChatSave/Restore`; restart sonrası geri gelir. Gerçek-native geçişe hazır.
+- **Hafıza:** native `listMemory`/`deleteMemory` → JS `_nativeApiRoute` `/chat/memories` GET/DELETE → `loadMem()` sidebar `#sidebar-mem-list .mem-card` render. `importance:5` varsayılan.
 - **Kısıt/öğrenilmiş:** `.litertlm` ikilisi **CPU-only** (tüm bölümlerde `section_backend_constraint: cpu`) → GPU/NPU isteği reddedilir. `maxNumTokens` = **toplam context slot** (input+output); yetersizse `Status 3: input token ids too long` görülür, `max_tokens` artır.
 
 ## 1. Amaç & kapsam
