@@ -25,6 +25,7 @@ class PiSynapseBridge : Plugin() {
     private val platform get() = PlatformTools(context)
     private val runner by lazy { ToolRunner(store, weather, notes, local, platform) }
     private val llm by lazy { LlmEngine(context, store, PiTools(runner).providers()) }
+    private val downloader by lazy { ModelDownloader(context, store) }
 
     private val io: ExecutorService = Executors.newCachedThreadPool()
 
@@ -173,10 +174,63 @@ class PiSynapseBridge : Plugin() {
         call.resolve(out)
     }
 
-    // ── LLM (LiteRT-LM / Gemma E2B) ───────────────────────────────────────
+// ── LLM (LiteRT-LM / Gemma E2B) ───────────────────────────────────────
     @PluginMethod
     fun modelStatus(call: PluginCall) {
-        call.resolve(JSObject(llm.status().toString()))
+        val s = JSObject(llm.status().toString())
+        val dl = downloader.status()
+        s.put("downloading", dl.optBoolean("downloading"))
+            .put("model_size", dl.optLong("size"))
+        call.resolve(s)
+    }
+
+    @PluginMethod
+    fun modelDownloadStatus(call: PluginCall) {
+        call.resolve(js(
+            downloader.status().put(
+                "targets",
+                org.json.JSONArray(downloader.targets().map { t ->
+                    JSObject().put("id", t.id).put("url", t.url).put("model", t.modelName)
+                })
+            )))
+    }
+
+    @PluginMethod
+    fun startModelDownload(call: PluginCall) {
+        val targetId = call.getString("target")
+        io.execute {
+            var lastEmit = 0L
+            val r = downloader.download(targetId) { p ->
+                val now = System.currentTimeMillis()
+                if (p.state == "done" || now - lastEmit > 500) {
+                    lastEmit = now
+                    emit("modelProgress", JSObject()
+                        .put("bytes", p.bytesRead)
+                        .put("total", p.bytesTotal)
+                        .put("percentage", if (p.bytesTotal > 0) (p.bytesRead * 100 / p.bytesTotal).toInt() else 0)
+                        .put("state", p.state))
+                }
+            }
+            if (r.cancelled) {
+                emit("modelProgress", JSObject().put("state", "cancelled"))
+                call.resolve(JSObject().put("ok", false).put("error", "cancelled"))
+            } else if (r.path != null) {
+                emit("modelProgress", JSObject()
+                    .put("state", "done")
+                    .put("model", store.get("LLM_MODEL"))
+                    .put("path", r.path))
+                call.resolve(JSObject().put("ok", true).put("path", r.path))
+            } else {
+                emit("modelProgress", JSObject().put("state", "failed"))
+                call.resolve(JSObject().put("ok", false).put("error", "download failed"))
+            }
+        }
+    }
+
+    @PluginMethod
+    fun cancelModelDownload(call: PluginCall) {
+        downloader.cancel()
+        call.resolve(JSObject().put("ok", true))
     }
 
     @PluginMethod

@@ -29,6 +29,7 @@ class ConfigStore(private val ctx: Context) {
 
     private fun defaults(): JSONObject = JSONObject()
         .put("LLM_MODEL", "")
+        .put("MODEL_URL", "")
         .put("LLM_BACKEND", "litert-lm")
         .put("LLM_BACKEND_TYPE", "cpu")
         .put("LLM_NUM_CTX", 6144)
@@ -119,6 +120,12 @@ class ConfigStore(private val ctx: Context) {
         save(cur)
     }
 
+    fun set(name: String, value: String) {
+        val cur = load()
+        cur.put(name, value)
+        save(cur)
+    }
+
     fun schema(): JSONObject {
         val out = JSONObject()
         fun add(name: String, value: Any, type: String, label: String, desc: String = "", group: String = "Genel", options: Array<String> = emptyArray()) {
@@ -145,6 +152,7 @@ class ConfigStore(private val ctx: Context) {
         // ── Telefon sekmesi ──
         add("LLM_MODEL", v("LLM_MODEL"), "select", "Yerel Model (litertlm)", "Telefon içinde çalışan Gemma E2B modeli.", "Telefon · Zeka",
             arrayOf("gemma-4-E2B-it", "gemma-3-1b-it", "gemma-3-270m"))
+        add("MODEL_URL", v("MODEL_URL"), "text", "Model indirme adresi (opsiyonel)", "Boş bırakılırsa Hugging Face üzerinden ön tanımlı model çekilir. Kendı sunucundaki bir .litertlm dosyasının doğrudan URL'sini verebilirsin.", "Telefon · Zeka")
         add("LLM_BACKEND", v("LLM_BACKEND"), "select", "Motor", "Google LiteRT-LM (Gemma E2B için).", "Telefon · Zeka",
             arrayOf("litert-lm"))
         add("LLM_BACKEND_TYPE", v("LLM_BACKEND_TYPE"), "select", "Donanım", "CPU / GPU / NPU. Bu model ikilisi CPU'ya kilitli.", "Telefon · Zeka",
