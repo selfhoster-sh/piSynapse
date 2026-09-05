@@ -23,8 +23,8 @@
 - **Service worker tarayıcıya özel:** `sw.js` `STATIC_ASSETS` absolute `/static/...` (tarayıcı scope'u `/`; relative olsa yanlış yerlere iner). Kayıt `if(!_NATIVE ...)` ile sadece tarayıcıda; native'de eski build'lerden kalma kayıt temizleniyor (`getRegistrations()→unregister()`). NOT: cihazda eski sürümlerden kalma **aktif bir SW controller** vardı (`pm clear` ile temizlendi) — purge recovery ile kalıcı korunuyor.
 - **Onboarding ortama göre:** native 5 adım (s1 karşılama, s2 izinler, s3 kişisel, s4 model, s5 tanıtım); tarayıcıda native'e özgü s2+s4 atlanır → `OB_STEPS = _NATIVE ? ['s1..s5'] : ['s1','s3','s5']`.
 - **Ayarlar sekmesiz:** `openSettings` `phoneKeys`/`serverKeys` artık `_NATIVE` gate'li (`!_NATIVE` → `[]`) — tarayıcıda Telefon/Sunucu sekmesi HİÇ çizilmez (web `/config/settings` zaten `group` alanı döndürmüyor; gate gelecekteki grup isimlerine karşı da garanti).
-- **Doğrulama:** native tarafı cihazda tam (5 adım onboarding walkthrough, topbar 92px, AMOLED/off rgb(3,3,4), fade 392.7px, config yüklü, SW kayıtları `[]`); tarayıcı tarafı curl ile (307 + asset 200'leri; headless chromium tabanlı DOM doğrulaması devam ediyor — `prompt()` 401 akışı headless'ta sayfayı kilitleyebiliyor).
-- **Durum:** tam pompa rebuild + yeniden kuruldu; commit `cd3b74b` üzerinde duruyoruz.
+- **Doğrulama:** native tarafı cihazda tam (5 adım onboarding walkthrough, topbar 92px, AMOLED/off rgb(3,3,4), fade 392.7px, config yüklü, SW kayıtları `[]`); tarayıcı tarafı curl ile (`/` 307 + tüm asset'ler 200) ve headless chromium `file://` DOM dump ile (`#ob-dots` render edildi: **3 dot** → browser `OB_STEPS=['s1','s3','s5']` fiilen çalışıyor; overlay açılıyor). Canlı-sunucu DOM testi: headless'ta `prompt()` 401 akışı sayfayı kilitliyor, telefon WebView cleartext HTTP'yi engelliyor → gerçek ağ üzeri DOM doğrulaması yapılamadı (deterministik `_NATIVE` dal + curl transport + file:// dump yeterli).
+- **Durum:** tam pompa rebuild + yeniden kuruldu; commit `cd3b74b` + `00c975d` üzerinde duruyoruz.
 
 ## 2026-09-05 — Faz ANDROID-UX: full-bleed + AMOLED/font ayarı + fade + ilk-açılış onboarding (v0.14)
 
