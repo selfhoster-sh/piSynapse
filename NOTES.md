@@ -16,6 +16,16 @@
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 - **Sanitization rule:** this file may be published. Never write personal data, identity clues, deployment addresses (hostnames, IPs, ports), or accounts into it. Keep every narrative in English; Turkish inline tokens are allowed only as product corpus / i18n test data.
 
+## 2026-09-05 — Faz BROWSER-NATIVE SPLIT: tek dosya, `_NATIVE` ortam algılaması (v0.15)
+
+- **Karar:** kullanıcı split için "Tek dosya, ortam algılamalı" yaklaşımını seçti (iki ayrı UI dosyası reddedildi). Yedek alındı: `backups/piSynapse-native-src-20260905-2125.tar.gz` (kaynak-only; venv/.git/build içermez).
+- **Tarayıcı asset bozulması + kök neden:** Web'de SPA `/static/...` mount altında ama `GET /` `FileResponse` idi; HTML'deki relative yollar tarayıcıda köke çözülüyor → `/icons/...`, `/fonts/...`, `/vendor/...`, `/manifest.json` API-key korumasına takılıp **401**'di (yalnız `/static` muaf) — WebView'da doğruydu. Çözüm: `app.mount("/static", StaticFiles(html=True))` + `GET /` → `RedirectResponse("/static/", 307)`; böylece tarayıcıda relative yollar `/static/...`'e çözülür (WebView kökü ≡ tarayıcı `/static/`). Canlı sunucuda doğrulandı: `/` 307, tüm asset'ler 200.
+- **Service worker tarayıcıya özel:** `sw.js` `STATIC_ASSETS` absolute `/static/...` (tarayıcı scope'u `/`; relative olsa yanlış yerlere iner). Kayıt `if(!_NATIVE ...)` ile sadece tarayıcıda; native'de eski build'lerden kalma kayıt temizleniyor (`getRegistrations()→unregister()`). NOT: cihazda eski sürümlerden kalma **aktif bir SW controller** vardı (`pm clear` ile temizlendi) — purge recovery ile kalıcı korunuyor.
+- **Onboarding ortama göre:** native 5 adım (s1 karşılama, s2 izinler, s3 kişisel, s4 model, s5 tanıtım); tarayıcıda native'e özgü s2+s4 atlanır → `OB_STEPS = _NATIVE ? ['s1..s5'] : ['s1','s3','s5']`.
+- **Ayarlar sekmesiz:** `openSettings` `phoneKeys`/`serverKeys` artık `_NATIVE` gate'li (`!_NATIVE` → `[]`) — tarayıcıda Telefon/Sunucu sekmesi HİÇ çizilmez (web `/config/settings` zaten `group` alanı döndürmüyor; gate gelecekteki grup isimlerine karşı da garanti).
+- **Doğrulama:** native tarafı cihazda tam (5 adım onboarding walkthrough, topbar 92px, AMOLED/off rgb(3,3,4), fade 392.7px, config yüklü, SW kayıtları `[]`); tarayıcı tarafı curl ile (307 + asset 200'leri; headless chromium tabanlı DOM doğrulaması devam ediyor — `prompt()` 401 akışı headless'ta sayfayı kilitleyebiliyor).
+- **Durum:** tam pompa rebuild + yeniden kuruldu; commit `cd3b74b` üzerinde duruyoruz.
+
 ## 2026-09-05 — Faz ANDROID-UX: full-bleed + AMOLED/font ayarı + fade + ilk-açılış onboarding (v0.14)
 
 - **Üstten taşma çözüldü (full-bleed):** WebView artık edge-to-edge; `#topbar`/`#sidebar` `env(safe-area-inset-top)` (cihazda 36px) ile durum çubuğu altında başlıyor, `#messages` üst padding'i buna göre arttırıldı. Cihaz doğrulaması: `#topbar` height 92px = 56 + 36 safe-area, `paddingTop:36px`. Mobil media sorgusu `#topbar{padding:0 14px}` shorthand'ı safe-area padding'i sıfırlıyordu → `padding-top`/`padding-bottom` ayrı yazıldı.
