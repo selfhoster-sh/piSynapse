@@ -16,7 +16,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from config import (
@@ -504,13 +504,17 @@ app.include_router(tools_router)
 app.include_router(widgets_router)
 app.include_router(media_router)
 
-# Mount static files
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# Mount static files. html=True makes the dir index serve index.html so the
+# SPA's relative asset paths (fonts/vendor/icons/manifest) resolve under
+# /static/ — identical to the WebView's public/ root.
+app.mount("/static", StaticFiles(directory="static", html=True), name="static")
 
 
 @app.get("/")
 async def read_index():
-    return FileResponse("static/index.html", headers={"Cache-Control": "no-store"})
+    # Redirect the root to /static/ so relative asset references resolve
+    # against /static/ in a browser (the WebView bundles assets at its root).
+    return RedirectResponse("/static/", status_code=307)
 
 
 @app.get("/favicon.ico")
