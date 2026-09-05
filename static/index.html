@@ -2582,7 +2582,130 @@ const API = window.location.origin;
 function getApiKey(){ return localStorage.getItem('ps_api_key') || ''; }
 function setApiKey(k){ localStorage.setItem('ps_api_key', k); }
 
+// ── Yerel (Capacitor) köprüsü ─────────────────────────────────────────────
+// Web'de PiSynapse yokken _NATIVE null kalır; tüm bu olay akışı devre dışıdır.
+const _NATIVE = (()=>{ try{ if('PiSynapse' in window) return window.PiSynapse; if(typeof window.Capacitor!=='undefined' && window.Capacitor.Plugins && window.Capacitor.Plugins.PiSynapse) return window.Capacitor.Plugins.PiSynapse; return null; }catch(e){ return null; } })();
+let _nativeHistory = [];
+let _nativeSessions = [];
+
+async function _nativeApiRoute(method, path, body){
+  const P = ()=>_NATIVE;
+  if(method === 'GET' && path === '/config'){
+    const s = await P().configGet();
+    const v = (k)=>{ const o=s[k]; return o?o.value:''; };
+    return { username:'default', default_city:v('DEFAULT_CITY'), model:v('LLM_MODEL'),
+      stt_engine:'whisper', tts_engine:'piper', auto_send_on_voice:'off',
+      auto_tts_on_voice:v('TTS_AUTO_REPLY')==='on'?'on':'off', llm_title_enrichment:'off',
+      has_llm:true, native:true };
+  }
+  if(method === 'GET' && path === '/config/settings'){
+    const s = await P().configGet();
+    const out = {};
+    Object.keys(s).forEach(k=>{ out[k] = s[k]; });
+    return out;
+  }
+  if(method === 'PATCH' && path === '/config/settings'){
+    if(body && body.values) await P().configSet({ values: body.values });
+    return { ok:true };
+  }
+  if(method === 'GET' && path === '/widget/weather'){
+    const w = await P().invokeTool({ group:'weather', name:'get_weather', params:{} });
+    if(w.ok === false || !w.temp_c) throw new Error('weather-unavailable');
+    return { summary:w.summary, kind:w.kind, temp_c:w.temp_c, condition:w.condition, wmo_code:w.wmo_code };
+  }
+  if(method === 'GET' && path === '/health'){
+    const ms = await P().modelStatus();
+    return { ok:true, llm: ms.available?'yedek':'yok', model_file: ms.model_file||'' };
+  }
+  if(method === 'GET' && path === '/chat/sessions'){
+    return { sessions: _nativeSessions };
+  }
+  if(method === 'GET' && path.startsWith('/chat/search')){
+    return { results: [], sessions: [] };
+  }
+  if(method === 'GET' && path === '/tools/groups'){
+    return { groups: [] };
+  }
+  return undefined;
+}
+
+// chatStream'ı SPA'nın beklediği SSE biçimine dönüştürür: plugin olaylarını
+// `data: {...}` satırlarına çeviren {ok, body:{getReader}} nesnesi döndürür.
+async function _nativeSSEResponse(payload){
+  const queue=[], enc=new TextEncoder();
+  let waiting=null, finished=false, _acc='', lh=null;
+  const pushEvent=(d)=>{
+    if(finished) return;
+    queue.push(d);
+    if(d.done || d.error || d.confirm) finished=true;
+    if(waiting){ const w=waiting; waiting=null; w(); }
+  };
+  const onEvt=(evt)=>{
+    const d=(evt && evt.data && typeof evt.data==='object') ? evt.data : evt;
+    if(!d) return;
+    if(d.token) _acc += d.token;
+    if(d.done || d.error){ _nativeHistory.push({role:'assistant', content:_acc}); _nativeChatSave(); }
+    pushEvent(d);
+  };
+  _nativeHistory.push({role:'user', content: payload.message||''});
+  if(payload.session_id && !_nativeSessions.some(s=>s.session_id===payload.session_id)){
+    _nativeSessions.push({session_id:payload.session_id, title:'', updated_at:new Date().toISOString()});
+  }
+  lh = await _NATIVE.addListener('chatEvent', onEvt);
+  _NATIVE.chatStream({ payload }).catch(err=>{
+    pushEvent({error: (err && err.message) || String(err) || 'native-stream-failed'});
+  });
+  return {
+    ok:true, status:200,
+    body: { getReader(){ return {
+      async read(){
+        if(queue.length===0){
+          if(finished) return {done:true, value:undefined};
+          await new Promise(res=>{ waiting=res; });
+        }
+        const d=queue.shift();
+        return {done:false, value: enc.encode('data: '+JSON.stringify(d)+'\n')};
+      }
+    }; } }
+  };
+}
+
+function _nativeChatSave(){
+  if(!_NATIVE) return;
+  try{
+    const payload={sessions:_nativeSessions||[], history:_nativeHistory||[]};
+    _NATIVE.chatHistorySave({ data: JSON.stringify(payload) }).catch(()=>{});
+  }catch(e){}
+}
+
+async function _nativeChatRestore(){
+  if(!_NATIVE) return;
+  try{
+    const r = await _NATIVE.chatHistoryLoad();
+    if(r && Array.isArray(r.history)) _nativeHistory = r.history;
+    if(r && Array.isArray(r.sessions)) _nativeSessions = r.sessions;
+  }catch(e){}
+}
+
+function _nativeSystem(){
+  return 'Sen PiSynapse asistanısın; Türkçe yanıt ver, kısa ve doğrudan konuş, markdown kullanabilirsin. '+
+    'Bu telefon uygulaması tamamen yerel çalışır. Araçlar: get_datetime (saat/tarih), get_weather (Ayarlardaki şehir), '+
+    'list_notes/read_note/create_note/update_note/delete_note (Nextcloud), save_memory, create_task/list_tasks/complete_task, '+
+    'send_email (e-posta uygulamasını açar), create_calendar_event (takvim uygulamasını açar). '+
+    'Sunucuya, önceki oturumlara ve internete kalıcı erişimin yok; yalnız bu konuşmadaki bağlamı kullan. '+
+    'Kullanıcı geçmiş isterse, bunun yerel kısıtlı bir uygulama olduğunu söyle.';
+}
+
 async function api(method, path, body){
+  if(_NATIVE){
+    try{
+      const r = await _nativeApiRoute(method, path, body);
+      if(r !== undefined) return r;
+    }catch(e){
+      // Swallow offline-style failures; network routes below apply on web.
+      if(path.startsWith('/chat') || path.startsWith('/config')) throw e;
+    }
+  }
   const headers = {'Content-Type':'application/json'};
   const key = getApiKey();
   if(key) headers['X-API-Key'] = key;
@@ -2642,6 +2765,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
       if((srv==='tr'||srv==='en') && srv!==lang) applyLang(srv);
     }
   } catch {}
+  await _nativeChatRestore();
   await loadSessions(); showWelcome(); startTicker(); startHealthPoll();
   if(window._beacon) window._beacon({t:'init', step:'all-done'});
 });
@@ -2948,11 +3072,10 @@ async function sendMsg(opts){
     const headers={'Content-Type':'application/json'};
     const _k=getApiKey(); if(_k) headers['X-API-Key']=_k;
     const originFlag = _chipOrigin ? 'chip' : ''; _chipOrigin = false;
-    const resp=await fetch(API+'/chat/stream',{ method:'POST', headers,
-      body:JSON.stringify({ message: text, session_id: sid, user_id: config.username||'default', think_mode: thinkMode, images, reasoning_effort: thinkEffort, origin: originFlag })
-    });
-    if(!resp.ok) throw new Error('HTTP '+resp.status);
-    const reader=resp.body.getReader(), dec=new TextDecoder(); let buf='';
+    const _payload = { message: text, session_id: sid, user_id: config.username||'default', think_mode: thinkMode, images: images||[], reasoning_effort: thinkEffort, origin: originFlag };
+    const _resp = _NATIVE ? await _nativeSSEResponse(Object.assign({}, _payload, { system: _nativeSystem(), messages: _nativeHistory.slice(-12) })) : await fetch(API+'/chat/stream',{ method:'POST', headers, body: JSON.stringify(_payload) });
+    if(!_resp.ok) throw new Error('HTTP '+_resp.status);
+    const reader=_resp.body.getReader(), dec=new TextDecoder(); let buf='';
     while(true){
       const {done,value}=await reader.read(); if(done) break;
       buf+=dec.decode(value,{stream:true}); const lines=buf.split('\n'); buf = lines.pop() || '';
@@ -2994,6 +3117,7 @@ async function sendMsg(opts){
           // Title is set by backend (first 4 words instant + LLM enriched background if enabled).
           // Frontend must NOT call PATCH to override it.
           await loadSessions(false);
+          if(_NATIVE) _nativeChatSave();
           // Enriched title arrives ~4-5s later via background LLM — refresh again if smart title on
           if(config.llm_title_enrichment !== 'off'){
             setTimeout(async()=>{
