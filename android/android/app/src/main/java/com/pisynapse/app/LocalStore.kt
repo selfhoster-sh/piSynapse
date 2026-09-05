@@ -96,4 +96,20 @@ class LocalStore(ctx: Context) {
 
     fun listMemory(): JSONObject =
         JSONObject().put("memories", read(memoryFile)).put("ok", true)
+
+    fun deleteMemory(id: String): Boolean {
+        val arr = read(memoryFile)
+        val out = JSONArray()
+        var found = false
+        for (i in 0 until arr.length()) {
+            val o = arr.getJSONObject(i)
+            if (o.optString("id") == id || o.optString("id") == "" && o.optInt("id").toString() == id) {
+                found = true
+            } else {
+                out.put(o)
+            }
+        }
+        write(memoryFile, out)
+        return found
+    }
 }
