@@ -16,6 +16,31 @@
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 - **Sanitization rule:** this file may be published. Never write personal data, identity clues, deployment addresses (hostnames, IPs, ports), or accounts into it. Keep every narrative in English; Turkish inline tokens are allowed only as product corpus / i18n test data.
 
+## 2026-09-05 — Android port ilerlemesi: LiteRT-LM + Gemma-4-E2B telefonda canlı
+
+- **Durum:** Capacitor + Kotlin portu (`piSynapse/android/`, laptop'ta `pisynapse-android/` gradle iskeleti) çalışır durumda. Telefonda v0.11 kurulu. Gemma-4-E2B-it `.litertlm` (2.59GB) telefonun internal storage'ında (`Android/data/com.pisynapse.app/files/models/`), LiteRT-LM 0.12.0 (`com.google.ai.edge.litertlm:litertlm-android`) ile yükleniyor.
+- **Engine:** `EngineConfig(maxNumTokens=…, backend=CPU, visionBackend=CPU, audioBackend=CPU, cacheDir=…/cache/litertlm)`. `maxNumTokens` = **toplam context slot** (Pi'deki `litert_serve` gibi); formül `LLM_NUM_CTX(6144)+LLM_MAX_OUTPUT_TOKENS(512)` → 6656, `coerceAtMost(8192)`.
+- **Başarılanlar:**
+  - Otomatik tool-calling native döngüde çalışıyor (`automaticToolCalling=true`): `get_datetime` + `get_weather` gerçek çağrıldı, İstanbul gerçek değerleri döndü. 16 araç `OpenApiTool` şemasıyla `ConversationConfig.tools`'dan veriliyor.
+  - İlk denemedeki `Status 3: Input token ids too long (2886)` hatası `max_tokens` düzeltmesiyle çözüldü (2886 = gönderilen input token sayısı; model max'i düşüktü).
+  - İlk denemedeki `Status 13: failed to invoke the compiled model` — 2. izole denemede tekrar etmedi; state'i bozma ihtimali vardı, netice itibarıyla kalıcı sorun değil.
+  - Chat kalıcılığı native: `filesDir/chat_history.json` (bridge `chatHistorySave/Load`), JS `_nativeChatSave/Restore` ile restart'ta geri geliyor.
+  - Engine startup'ta arka planda prewarm ediliyor (`PiSynapseBridge.load()` içinde async `ensureLoaded()`), soğuk açılış first-chat masrafı azaldı.
+- **GPU/NPU dead-end:** `LLM_BACKEND_TYPE` (cpu/gpu/npu) config anahtarı eklendi; GPU denendi → model yüklenemedi. Litert-LM logcat: `section_backend_constraint: cpu` TÜM model bölümlerinde (prefill/decode/drafter/vision/audio) — bu `.litertlm` ikilisi CPU'ya kilitli çevrilmiş, runtime ayarıyla açılmıyor. `npu` de aynı. **(Kullanıcıya raporlandı)**
+- **Performans:** warm ~264ms/token (~3.8 tps); ilk-chat tek seferlik ~80s (executor compile, cacheDir CPU yolunda kalıcı değil). Tool-call'lı hava durumu yanıtı warm'ta ~5s.
+- **Sıradaki (kullanıcı istekleri, 2026-09-05):**
+  - Runtime izinler: uygulama tek seferlik izin istesin (takvim/mail/sensör içintemel).
+  - İn-app ayarlar düzeltilecek (ŞU AN native yol kısmen hardcode: `_nativeApiRoute` GET /config birkaç key'i sabit döndürüyor).
+  - Hafıza panosu native'de çalışmıyor ("sunucuya ulaşılamadı" — `loadMem` `/chat/memories` çağırıyor, native route yok).
+  - Sync modu: **only-phone / only-server** seçenekleri ayarlarda her zaman görünür olacak; offline-first ama server senkronu da ayarlanabilir.
+  - Ayarlar ayrı sekmelere bölünecek (phone ayarları / server ayarları karışmayacak).
+  - only-server modunda da Android özellikleri (mail/calendar intent, sensör) kullanılabilir kalacak ama web tarafıyla karışmayacak.
+  - **KURAL:** DB yapısı her zaman senkron edilebilir kalmalı (sync kırılırsa hata çıkar); phone/server ayrımı DB şemasında arkaplanda hazır olacak şekilde tasarlanmalı.
+
+## ⚠️ 2026-09-05 TEKNİK UYARI — DB sync mimarisi (bkz. yukarı)
+
+- Server tarafı (`routers/chat.py` `POST /chat/sync`) yalnızca sıralı komut replay'idir; idempotency key, çakışma çözümü, outbox, silme tombstone'u YOK. Per-row `deleted`/`dirty`/`updated_at`/`version` kolonları db.py'de ŞU AN mevcut değil. **Herhangi bir yeni tablo, sync'e uygun (updated_at + deleted + device origin) tasarlanmalı** — aksi halde phone/server sync'i ileride kırılır.
+
 ## 2026-09-05 — Faz UI-PERF+THEME: hardware-accel root cause, animation budget, WCAG AA dark ramp
 - **The "4–5 fps" feel was NOT the CSS:** the tester's Brave had hardware acceleration fully disabled (`chrome://gpu`: compositing/rasterization/OpenGL all "Software only", "GPU access is disabled in chrome://settings"). Re-enabling it restores smoothness. The CSS budget work below was kept because it pays off even on constrained machines:
   - Send-button breathing glow (`subtleGlow`/`glassGlow`) now animates ONLY while `body.generating` (idle = static glow) — the previously always-on box-shadow animation forced per-frame style invalidation.
