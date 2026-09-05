@@ -1,10 +1,11 @@
 # piSynapse Android Port — Durum Dokümanı
 
-> Durum: **CANLI (v0.14).** Kapaciter + Kotlin portu telefondaki `com.pisynapse.app` üzerinde çalışıyor; Gemma-4-E2B tamamen çevrimdışı, native tool-call döngüsünde. Bu dosya gerçekleşen mimariyi yansıtır (2026-09-05 güncel).
+> Durum: **CANLI (v0.15).** Kapaciter + Kotlin portu telefondaki `com.pisynapse.app` üzerinde çalışıyor; Gemma-4-E2B tamamen çevrimdışı, native tool-call döngüsünde. Bu dosya gerçekleşen mimariyi yansıtır (2026-09-05 güncel).
 > Karar zinciri (geçmiş): native Yeniden derleme → UI mevcut SPA'dan (Capacitor) → LiteRT-LM + Gemma E2B.
 
 ## 0. Gerçekleşen durum özeti (2026-09-05)
 
+- **Tarayıcı/native UI ayrımı (v0.15, tek dosya + `_NATIVE`):** Web SPA artık `/static/` üzerinden servis ediliyor (`GET /` → 307 `/static/`; `StaticFiles(html=True)`) → tarayıcıda relative asset yolları `/static/...`'e çözülüyor, önceden 401 olan fonts/vendor/icons/manifest artık 200. `sw.js` absolute `/static/...` cache path'leri ve kayıt sadece tarayıcıda (`!_NATIVE`); native kökünde SW'lar temizleniyor. Onboarding tarayıcıda izin+model adımlarını atlar (3 adım), native 5 adım kalır. Ayarlarda Telefon/Sunucu sekmeleri `_NATIVE` gate'li — tarayıcıda tek panel. (Backup: `backups/piSynapse-native-src-20260905-2125.tar.gz`.)
 - **UI:** `static/index.html` birebir paketlendi (Capacitor 8, WebView/Chromium; HW accel Android'de yerleşik açık). SW yok — asset pakette, model native'de. (Plan §7 onaylandı.)
 - **UI — full-bleed (v0.14):** `#topbar` / `#sidebar` `env(safe-area-inset-top)` ile edge-to-edge çiziyor; `styles.xml` `Theme.AppCompat.NoActionBar` + `windowBackground`/`statusBarColor`/`navigationBarColor` = `@color/amoled_black` (#000) → üstten taşma yok, döndürmede gri/ışık flash yok, splash sonrası da siyah. Splash tema: `Theme.SplashScreen` → `postSplashScreenTheme`.
 - **Statik yol düzeltmesi (v0.14):** Web'de SPA `/static/...` mount altında, WebView'de `public/` kökünde sunuluyor → mutlak `/static/...` yolları WebView'da 404 veriyordu (marked/DOMPurify/DM Sans). `index.html`, `manifest.json`, `sw.js` relative path'lere geçirildi (her iki ortamda çalışır; `<base target>` href kurmuyor).
