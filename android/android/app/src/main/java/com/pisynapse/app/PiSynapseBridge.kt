@@ -9,6 +9,7 @@ import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.UUID
@@ -18,11 +19,17 @@ import java.util.concurrent.Executors
 @CapacitorPlugin(name = "PiSynapse")
 class PiSynapseBridge : Plugin() {
 
+    companion object {
+        @JvmStatic
+        @Volatile var instance: PiSynapseBridge? = null
+    }
+
     private val store get() = ConfigStore(context)
     private val weather get() = WeatherClient(store)
     private val notes get() = NotesClient(store)
     private val local get() = LocalStore(context)
     private val platform get() = PlatformTools(context)
+    private val server get() = ServerStore(store)
     private val runner by lazy { ToolRunner(store, weather, notes, local, platform) }
     private val llm by lazy { LlmEngine(context, store, PiTools(runner).providers()) }
     private val downloader by lazy { ModelDownloader(context, store) }
@@ -33,6 +40,7 @@ class PiSynapseBridge : Plugin() {
 
     override fun load() {
         super.load()
+        instance = this
         try {
             io.execute {
                 try {
@@ -41,6 +49,130 @@ class PiSynapseBridge : Plugin() {
             }
         } catch (t: Throwable) {}
     }
+
+    /** Frees the 2.5GB native model when the OS asks for memory. Reloads lazily on next chat. */
+    @PluginMethod
+    fun llmRelease(call: PluginCall) {
+        llmReleaseNoCall()
+        call.resolve(JSObject().put("ok", true))
+    }
+
+    fun llmReleaseNoCall() {
+        try {
+            llm.release()
+        } catch (t: Throwable) {}
+    }
+
+    // ── Server sync ────────────────────────────────────────────────────────
+    /** Reports whether a server route is available and reachable. */
+    @PluginMethod
+    fun serverStatus(call: PluginCall) {
+        call.resolve(JSObject()
+            .put("configured", server.configured())
+            .put("server_url", store.get("SERVER_URL"))
+            .put("sync_mode", store.get("SYNC_MODE"))
+            .put("sync_always", store.get("SYNC_ALWAYS")))
+    }
+
+    private fun syncMode(): String = store.get("SYNC_MODE").ifBlank { "only-phone" }
+
+    /** Should remote data be used for this store? only-server uses the server as truth. */
+    private fun wantsServer(): Boolean = syncMode() == "only-server"
+
+    private fun wantsSyncAlways(): Boolean = store.get("SYNC_ALWAYS") == "on"
+
+    /**
+     * Two-phase two-way sync of the phone's local entities (tasks, memory):
+     *  1. PUSH local items that changed since last sync (last-write-wins),
+     *  2. PULL server items changed since last sync and merge (wins if newer).
+     * Tombstones remove remote copies; server tombstones remove local ones.
+     */
+    @PluginMethod
+    fun syncNow(call: PluginCall) {
+        io.execute {
+            try {
+                val result = runSync()
+                call.resolve(result)
+            } catch (e: Exception) {
+                call.resolve(JSObject()
+                    .put("ok", false)
+                    .put("error", e.message ?: e.toString()))
+            }
+        }
+    }
+
+    private fun lastSyncKey(type: String) = "ps_since_$type"
+
+    fun runSync(): JSObject {
+        if (!server.configured()) {
+            return JSObject().put("ok", false).put("error", "Sunucu adresi ayarlanmamış.")
+        }
+        val summary = JSONObject().put("ok", true).put("pushed", 0).put("pulled", 0).put("applied_local", 0)
+        for (type in local.entityTypes) {
+            val since = store.get(lastSyncKey(type))
+            // PUSH local changes since last sync.
+            val localItems = local.allEntities(type)
+            val pushArr = JSONArray()
+            for (i in 0 until localItems.length()) {
+                val o = localItems.getJSONObject(i)
+                val (uuid, ts) = local.metaOf(o)
+                pushArr.put(JSONObject()
+                    .put("uuid", uuid)
+                    .put("entity_type", type)
+                    .put("data", stripMeta(o))
+                    .put("updated_at", ts)
+                    .put("deleted", false))
+            }
+            var applied = 0
+            if (pushArr.length() > 0) applied = server.postSyncItems(pushArr)
+            summary.put("pushed", summary.optInt("pushed") + applied)
+            // PULL server changes since last sync.
+            val remote = server.getSyncItems(type, since = since.ifBlank { null })
+            var appliedLocal = 0
+            for (i in 0 until remote.length()) {
+                val item = remote.getJSONObject(i)
+                val uuid = item.optString("uuid")
+                val rts = item.optString("updated_at")
+                val deleted = item.optBoolean("deleted")
+                val existing = findLocalByUuid(type, uuid)
+                if (deleted) {
+                    if (local.deleteLocalByUuid(type, uuid)) appliedLocal++
+                } else if (existing == null || (rts > existing.optString("_updated_at") && rts != existing.optString("_updated_at"))) {
+                    val merged = if (existing != null) JSONObject(existing.toString()) else JSONObject()
+                    val data = item.optJSONObject("data")
+                    if (data != null) for (k in data.keys()) merged.put(k, data.get(k))
+                    merged.put("_uuid", uuid).put("_updated_at", rts)
+                    local.upsertLocal(type, merged)
+                    appliedLocal++
+                }
+            }
+            summary.put("applied_local", summary.optInt("applied_local") + appliedLocal)
+            if (since.isBlank() || remote.length() > 0 || applied > 0) {
+                store.set(lastSyncKey(type), nowIso())
+            }
+        }
+        return JSObject(summary.toString())
+    }
+
+    private fun stripMeta(o: JSONObject): JSONObject {
+        val out = JSONObject()
+        for (k in o.keys()) {
+            if (k == "_uuid" || k == "_updated_at") continue
+            out.put(k, o.get(k))
+        }
+        return out
+    }
+
+    private fun findLocalByUuid(type: String, uuid: String): JSONObject? {
+        val arr = local.allEntities(type)
+        for (i in 0 until arr.length()) {
+            if (arr.getJSONObject(i).optString("_uuid") == uuid) return arr.getJSONObject(i)
+        }
+        return null
+    }
+
+    private fun nowIso(): String =
+        java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", java.util.Locale.US).format(java.util.Date())
 
     // ── Config ─────────────────────────────────────────────────────────────
     @PluginMethod
@@ -59,7 +191,59 @@ class PiSynapseBridge : Plugin() {
         call.resolve(JSObject().put("ok", true))
     }
 
-    // ── Generic tool dispatcher ────────────────────────────────────────────
+    // ── Location → city detection ────────────────────────────────────────────
+    @PluginMethod
+    fun detectCity(call: PluginCall) {
+        val act = activity
+        if (act == null || ContextCompat.checkSelfPermission(act, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            call.resolve(JSObject().put("ok", false).put("error", "location-denied"))
+            return
+        }
+        io.execute {
+            try {
+                val lm = act.getSystemService(android.content.Context.LOCATION_SERVICE) as android.location.LocationManager
+                val loc = try {
+                    lm.getLastKnownLocation(android.location.LocationManager.GPS_PROVIDER)
+                        ?: lm.getLastKnownLocation(android.location.LocationManager.NETWORK_PROVIDER)
+                } catch (t: Throwable) { null }
+                if (loc == null) {
+                    call.resolve(JSObject().put("ok", false).put("error", "no-location"))
+                    return@execute
+                }
+                val city = reverseGeocode(loc.latitude, loc.longitude)
+                if (city.isNullOrBlank()) {
+                    call.resolve(JSObject().put("ok", false).put("error", "no-city"))
+                    return@execute
+                }
+                val cur = store.get("DEFAULT_CITY")
+                call.resolve(JSObject()
+                    .put("ok", true)
+                    .put("city", city)
+                    .put("latitude", loc.latitude)
+                    .put("longitude", loc.longitude)
+                    .put("existing", cur))
+            } catch (e: Exception) {
+                call.resolve(JSObject().put("ok", false).put("error", e.message ?: e.toString()))
+            }
+        }
+    }
+
+    private fun reverseGeocode(lat: Double, lon: Double): String? {
+        return try {
+            val req = okhttp3.Request.Builder().url(
+                "https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=tr"
+            ).header("User-Agent", "piSynapse/0.16").build()
+            HttpClient.client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@use null
+                val json = org.json.JSONObject(resp.body?.string() ?: return@use null)
+                val addr = json.optJSONObject("address") ?: return@use null
+                addr.optString("city").takeIf { it.isNotBlank() }
+                    ?: addr.optString("town").takeIf { it.isNotBlank() }
+                    ?: addr.optString("village").takeIf { it.isNotBlank() }
+                    ?: addr.optString("county").takeIf { it.isNotBlank() }
+            }
+        } catch (e: Exception) { null }
+    }
     @PluginMethod
     fun invokeTool(call: PluginCall) {
         val group = call.getString("group") ?: ""
@@ -93,24 +277,55 @@ class PiSynapseBridge : Plugin() {
     @PluginMethod
     fun chatHistoryLoad(call: PluginCall) {
         val f = File(context.filesDir, "chat_history.json")
-        call.resolve(JSObject(if (f.exists()) f.readText() else "{}"))
+        if (!f.exists()) {
+            call.resolve(JSObject("{}"))
+            return
+        }
+        io.execute {
+            try {
+                call.resolve(JSObject(f.readText()))
+            } catch (e: Exception) {
+                call.reject(e.message ?: "read failed", e)
+            }
+        }
     }
 
     @PluginMethod
     fun chatHistorySave(call: PluginCall) {
         val data = call.getString("data") ?: "{}"
         val f = File(context.filesDir, "chat_history.json")
-        try {
-            f.writeText(data)
-            call.resolve(JSObject().put("ok", true))
-        } catch (e: Exception) {
-            call.reject(e.message ?: "write failed", e)
+        io.execute {
+            try {
+                f.writeText(data)
+                call.resolve(JSObject().put("ok", true))
+            } catch (e: Exception) {
+                call.reject(e.message ?: "write failed", e)
+            }
         }
     }
 
     // ── Memories (native, server'sız) ─────────────────────────────────────
     @PluginMethod
     fun listMemory(call: PluginCall) {
+        if (wantsServer() && server.configured()) {
+            io.execute {
+                try {
+                    val all = server.listMemories()
+                    val page = org.json.JSONArray()
+                    val uid = server.userId
+                    for (i in 0 until all.length()) page.put(all.getJSONObject(i).put("user_id", uid).put("count", all.length()))
+                    call.resolve(JSObject()
+                        .put("user_id", uid)
+                        .put("count", all.length())
+                        .put("limit", 200)
+                        .put("offset", 0)
+                        .put("memories", page))
+                } catch (e: Exception) {
+                    call.resolve(JSObject().put("user_id", server.userId).put("count", 0).put("limit", 200).put("offset", 0).put("memories", org.json.JSONArray()))
+                }
+            }
+            return
+        }
         val limit = call.getInt("limit", 50) ?: 50
         val offset = call.getInt("offset", 0) ?: 0
         val all = local.listMemory().optJSONArray("memories")
@@ -130,6 +345,18 @@ class PiSynapseBridge : Plugin() {
     @PluginMethod
     fun deleteMemory(call: PluginCall) {
         val id = call.getString("id") ?: ""
+        if (wantsServer() && server.configured()) {
+            io.execute {
+                try {
+                    val ok = server.deleteMemoryRow(id)
+                    call.resolve(JSObject().put("status", if (ok) "success" else "error")
+                        .put("message", if (ok) "Memory deleted." else "Memory not found."))
+                } catch (e: Exception) {
+                    call.resolve(JSObject().put("status", "error").put("message", e.message ?: "error"))
+                }
+            }
+            return
+        }
         val ok = local.deleteMemory(id)
         call.resolve(JSObject().put("status", if (ok) "success" else "error")
             .put("message", if (ok) "Memory deleted." else "Memory not found."))
@@ -238,6 +465,40 @@ class PiSynapseBridge : Plugin() {
         val payload = call.getObject("payload") ?: call.getObject("data") ?: JSObject()
         io.execute {
             try {
+                // ── Remote LLM (only-server mode) ──────────────────────────────────
+                if (wantsServer() && server.configured()) {
+                    // No local model needed: forward the prompt to the Python server
+                    // and relay its SSE events to the JS chatEvent listener.
+                    val userText = payload.optString("message", "")
+                    if (userText.isBlank()) {
+                        emit("chatEvent", JSObject().put("error", "Mesaj boş."))
+                        call.resolve(JSObject().put("ok", false))
+                        return@execute
+                    }
+                    val msgArr = payload.optJSONArray("messages")
+                    val messages = JSONArray()
+                    if (msgArr != null) {
+                        for (i in 0 until msgArr.length()) messages.put(msgArr.getJSONObject(i))
+                    }
+                    val body = JSONObject()
+                        .put("message", userText)
+                        .put("session_id", payload.optString("session_id", ""))
+                        .put("user_id", store.get("SERVER_USER").ifBlank { store.get("ASSISTANT_USER").ifBlank { "default" } })
+                    if (messages.length() > 0) body.put("messages", messages)
+                    if (payload.has("images")) body.put("images", payload.opt("images"))
+                    try {
+                        server.chatStreamSSE(body) { evt ->
+                            // Server uses {token:...}, {done:...}, {error:...} etc — relay as-is.
+                            emit("chatEvent", JSObject(evt.toString()))
+                        }
+                        call.resolve(JSObject().put("ok", true).put("remote", true))
+                    } catch (e: Exception) {
+                        emit("chatEvent", JSObject().put("error", "Sunucu hatası: ${e.message ?: e.toString()}"))
+                        call.resolve(JSObject().put("ok", false).put("error", e.message ?: e.toString()))
+                    }
+                    return@execute
+                }
+
                 if (!llm.ensureLoaded()) {
                     val p = llm.findModel()
                     emit("chatEvent", JSObject().put("error", if (p == null)

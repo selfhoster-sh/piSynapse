@@ -328,6 +328,25 @@ async def init_db():
 
     await db.execute("CREATE INDEX IF NOT EXISTS idx_calendar_session_map_session ON calendar_session_map(session_id, seq)")
 
+    # ── Two-way device sync store ──────────────────────────────────────────
+    # Generic last-write-wins entity table: phones push local items (tasks,
+    # phone-side notes/memory) and pull other devices' changes. `deleted` is a
+    # tombstone so removals propagate. `uuid` is the client-generated stable id.
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS sync_items (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            uuid       TEXT NOT NULL,
+            user_id    TEXT NOT NULL DEFAULT 'default',
+            entity_type TEXT NOT NULL,
+            data       TEXT NOT NULL DEFAULT '{}',
+            updated_at TEXT NOT NULL,
+            deleted    INTEGER NOT NULL DEFAULT 0,
+            UNIQUE(user_id, uuid)
+        )
+    """)
+
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_sync_items_user_type ON sync_items(user_id, entity_type, updated_at)")
+
     # FTS5 full-text index for session message search
     # unicode61 tokenizer: proper Turkish/diacritik support
     # content= + content_rowid= : external-content table (conversations)
@@ -1334,6 +1353,82 @@ async def clear_tasks_map(session_id: str):
         return
     db = await get_db()
     await _write_with_retry(db, "DELETE FROM tasks_session_map WHERE session_id = ?", (session_id,))
+
+
+# -- Sync Items (two-way device sync) --
+
+async def upsert_sync_items(user_id: str, items: list[dict]) -> int:
+    """Upsert remote sync items for a user. Each item: uuid|entity_type|data|updated_at|deleted.
+    Last-write-wins: a newer updated_at overwrites the stored row wholesale."""
+    if not items:
+        return 0
+    db = await get_db()
+    n = 0
+
+    async def _apply():
+        nonlocal n
+        for it in items:
+            uuid = str(it.get("uuid") or "").strip()
+            etype = str(it.get("entity_type") or "").strip() or "generic"
+            data = it.get("data") or {}
+            if not isinstance(data, str):
+                data = json.dumps(data, ensure_ascii=False, default=str)
+            ts = str(it.get("updated_at") or "")
+            deleted = 1 if it.get("deleted") else 0
+            if not uuid or not ts:
+                continue
+            await db.execute(
+                """INSERT INTO sync_items (uuid, user_id, entity_type, data, updated_at, deleted)
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(user_id, uuid) DO UPDATE SET
+                       data = excluded.data,
+                       entity_type = excluded.entity_type,
+                       updated_at = excluded.updated_at,
+                       deleted = excluded.deleted""",
+                (uuid, user_id, etype, data, ts, deleted),
+            )
+            n += 1
+
+    await _apply()
+    await db.commit()
+    return n
+
+
+async def get_sync_items(user_id: str, entity_type: str | None = None, since: str | None = None) -> list[dict]:
+    """Return all sync items (or a subtype) for a user, optionally filtered by
+    `since` (ISO updated_at cutoff, exclusive). Includes tombstones (deleted=1)."""
+    db = await get_db()
+    if entity_type and since:
+        sql = ("SELECT uuid, entity_type, data, updated_at, deleted FROM sync_items "
+               "WHERE user_id = ? AND entity_type = ? AND updated_at > ?")
+        params = (user_id, entity_type, since)
+    elif entity_type:
+        sql = "SELECT uuid, entity_type, data, updated_at, deleted FROM sync_items WHERE user_id = ? AND entity_type = ?"
+        params = (user_id, entity_type)
+    elif since:
+        sql = "SELECT uuid, entity_type, data, updated_at, deleted FROM sync_items WHERE user_id = ? AND updated_at > ?"
+        params = (user_id, since)
+    else:
+        sql = "SELECT uuid, entity_type, data, updated_at, deleted FROM sync_items WHERE user_id = ?"
+        params = (user_id,)
+    async with db.execute(sql, params) as cur:
+        rows = await cur.fetchall()
+    out = []
+    for uuid, etype, data, ts, deleted in rows:
+        parsed = {}
+        if data:
+            try:
+                parsed = json.loads(data)
+            except Exception:
+                parsed = {"_raw": data}
+        out.append({
+            "uuid": uuid,
+            "entity_type": etype,
+            "data": parsed,
+            "updated_at": ts,
+            "deleted": bool(deleted),
+        })
+    return out
 
 
 # -- Calendar Session Map --
