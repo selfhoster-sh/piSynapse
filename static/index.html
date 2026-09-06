@@ -222,6 +222,14 @@ body:not(.glass-mode) .sb-footer{border-top-color:rgba(255,255,255,.09)}
 #sess-title{flex:1;font-size:14px;font-weight:600;color:var(--text2);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
+#srv-status{margin-right:2px;display:flex;align-items:center;padding:6px 8px;border-radius:10px;transition:background .15s}
+#srv-status:hover{background:color-mix(in srgb, var(--text3) 12%, transparent)}
+#srv-dot{width:9px;height:9px;border-radius:50%;background:var(--text4);transition:background .25s;box-shadow:0 0 0 0 rgba(0,0,0,.3)}
+#srv-status.online #srv-dot{background:#34c759;box-shadow:0 0 6px rgba(52,199,89,.45)}
+#srv-status.local #srv-dot{background:#f0943a;box-shadow:0 0 6px rgba(240,148,58,.4)}
+#srv-status.offline #srv-dot{background:#ff3b30;box-shadow:0 0 6px rgba(255,59,48,.35)}
+#srv-status.hidden{display:none}
+
 #topbar-right-widgets{display:none;align-items:center;gap:10px;animation:fadeIn .2s ease}
 #top-ticker{height:32px;padding:0 4px;background:var(--surface2);border:1px solid var(--border);
   border-radius:var(--r-sm);display:flex;align-items:center;width:220px;overflow:hidden}
@@ -1302,6 +1310,7 @@ body.glass-mode .settings-appearance{
       </div>
     </button>
     <span id="sess-title">piSynapse</span>
+    <span id="srv-status" title="Sunucu bağlantısı" onclick="toggleServerStatus()" role="status" aria-live="polite" style="cursor:pointer"><span id="srv-dot"></span></span>
 
     <div id="topbar-right-widgets">
       <div id="top-ticker">
@@ -2740,7 +2749,7 @@ async function _nativeSSEResponse(payload){
   _nativeHistory.push({role:'user', content: payload.message||''});
   _nativeSessionPush(sid,{role:'user', content: payload.message||''});
   if(payload.session_id && !_nativeSessions.some(s=>s.session_id===payload.session_id)){
-    _nativeSessions.push({session_id:payload.session_id, title:'', updated_at:new Date().toISOString()});
+    _nativeSessions.push({session_id:payload.session_id, name:'', last_active:new Date().toISOString(), message_count:0});
   }
   lh = await _NATIVE.addListener('chatEvent', onEvt);
   _NATIVE.chatStream({ payload }).catch(err=>{
@@ -2813,11 +2822,19 @@ async function _nativeChatRestore(){
       const pr = await _NATIVE.chatPull();
       if(pr && pr.ok){
         if(Array.isArray(pr.sessions) && pr.sessions.length){
-          _nativeSessions = pr.sessions.map(s=>({session_id:s.session_id, title:s.name||'', updated_at:s.updated_at||s.last_active||''}));
+          // Server sessions already carry {session_id, name, last_active, message_count}
+          // — exactly what renderSessions()/sessName() expect.
+          _nativeSessions = pr.sessions;
         }
         if(pr.sessionHistory && typeof pr.sessionHistory==='object'){
           _nativeSessionHistory = pr.sessionHistory;
         }
+        // Persist the pulled state so it survives an app restart even offline.
+        // Deliberately NOT _nativeChatSave(): that would re-arm the push timer
+        // and re-import server mesgages under a phone: key, creating duplicates.
+        try{
+          _NATIVE.chatHistorySave({ data: JSON.stringify({sessions:_nativeSessions||[], history:_nativeHistory||[], sessionHistory:_nativeSessionHistory||{}}) }).catch(()=>{});
+        }catch(e){}
       }
     }catch(e){}
   }
@@ -2931,6 +2948,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   }
   startOnboarding();
   await loadSessions(); showWelcome(); startTicker(); startHealthPoll();
+  refreshServerStatus();
   if(window._beacon) window._beacon({t:'init', step:'all-done'});
 });
 
@@ -2968,6 +2986,42 @@ async function loadSessions(animate=true){
     else if(!sessionList.length) renderSessions([], animate);
   }
 }
+
+// Topbar sunucu durum göstergesi: only-server=yeşil (online), only-phone=amber (yerel),
+  // bağlantı yok/offline=boş (gizli). Tıklayınca durum detayını toast ile gösterir.
+  async function refreshServerStatus(){
+    const el=document.getElementById('srv-status');
+    if(!el) return;
+    const mode = _serverMode || (_settingsData.SYNC_MODE && _settingsData.SYNC_MODE.value) || '';
+    if(!_NATIVE || mode===''){
+      el.classList.add('hidden');
+      return;
+    }
+    el.classList.remove('hidden');
+    if(mode==='only-server'){
+      try{
+        const st=await _NATIVE.serverStatus();
+        el.classList.toggle('online', !!st && st.configured);
+        el.classList.remove('local','offline');
+        if(!st || !st.configured){ el.classList.add('offline'); if(!el.classList.contains('offline')) el.textContent=''; }
+      }catch(e){
+        el.classList.add('offline'); el.classList.remove('online','local');
+      }
+    } else {
+      el.classList.add('local'); el.classList.remove('online','offline');
+    }
+  }
+  function toggleServerStatus(){
+    if(!_NATIVE) return;
+    _NATIVE.serverStatus().then(st=>{
+      const mode=_serverMode||'';
+      if(mode==='only-server'){
+        toast((st&&st.configured) ? ('Sunucu: '+(st.server_url||'')+' — bağlı') : 'Sunucu yapılandırılmadı');
+      } else {
+        toast('Yerel mod (model cihazda çalışıyor)' + ((st&&st.configured)?' · Sunucu hazır':''));
+      }
+    }).catch(()=>toast(t('connErr'), true));
+  }
 
 function renderAuthNeeded(){
   const el=document.getElementById('session-list');
@@ -4685,7 +4739,12 @@ async function saveSettings(){
     try {
       config = await api('GET', '/config');
       const s = await api('GET', '/config/settings');
-      if(s) Object.assign(_settingsData, s);
+      if(s){
+        Object.assign(_settingsData, s);
+        _serverMode = (s.SYNC_MODE && s.SYNC_MODE.value) ? s.SYNC_MODE.value : _serverMode;
+        refreshServerStatus();
+        if(_serverMode==='only-server') _nativeChatRestore();
+      }
       if(_autoSync) setTimeout(_autoSync, 800);
     } catch {}
     setTimeout(closeSettings, 800);
