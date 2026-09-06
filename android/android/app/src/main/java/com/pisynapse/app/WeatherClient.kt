@@ -26,8 +26,8 @@ class WeatherClient(private val cfg: ConfigStore) {
     )
 
     fun fetch(cityArg: String?): Wx {
-        val city = cityArg?.takeIf { it.isNotBlank() } ?: cfg.get("DEFAULT_CITY").takeIf { it.isNotBlank() }
-            ?: throw IOException("Hava durumu için şehir ayarlanmamış (Ayarlar → Hava → Şehir).")
+        val fallback = cfg.get("DEFAULT_CITY").takeIf { it.isNotBlank() } ?: "London"
+        val city = cityArg?.takeIf { it.isNotBlank() } ?: fallback
         val geoJson = getJson("https://geocoding-api.open-meteo.com/v1/search?name=${url(city)}&count=1&language=tr&format=json")
         val res = geoJson.optJSONArray("results")
         if (res == null || res.length() == 0) throw IOException("Şehir bulunamadı: $city")

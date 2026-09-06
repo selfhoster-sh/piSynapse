@@ -11,7 +11,7 @@ import traceback
 
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from config import get
 from db import (
@@ -732,6 +732,19 @@ class SyncRequest(BaseModel):
     commands: list[SyncCommand]
 
 
+class SyncItem(BaseModel):
+    uuid: str
+    entity_type: str = "generic"
+    data: dict = Field(default_factory=dict)
+    updated_at: str
+    deleted: bool = False
+
+
+class SyncItemsRequest(BaseModel):
+    user_id: str = "default"
+    items: list[SyncItem]
+
+
 @router.post("/sync", tags=["sync"])
 async def sync_commands(req: SyncRequest, background_tasks: BackgroundTasks):
     """Process batched offline commands from mobile client.
@@ -787,4 +800,28 @@ async def sync_commands(req: SyncRequest, background_tasks: BackgroundTasks):
     confirm_count = sum(1 for r in results if r["status"] == "needs_confirm")
     error_count = sum(1 for r in results if r["status"] == "error")
     return {"ok": True, "total": len(req.commands), "executed": ok_count, "needs_confirm": confirm_count, "errors": error_count, "results": results}
+
+
+# ── Two-way device sync items ─────────────────────────────────────────────
+# Generic last-write-wins entity sync. The phone stores its local items
+# (tasks, phone-side notes/memory) in the server's sync_items table and pulls
+# back other devices' changes, including tombstones.
+
+@router.get("/sync/items", tags=["sync"])
+async def get_sync_items_local(user_id: str = Query("default"), entity_type: str | None = Query(None), since: str | None = Query(None)):
+    """Return the user's sync items, optionally filtered by entity_type or an
+    ISO `since` cutoff (exclusive). Includes tombstones (deleted=true)."""
+    from db import get_sync_items
+    items = await get_sync_items(user_id, entity_type=entity_type, since=since)
+    return {"ok": True, "user_id": user_id, "items": items}
+
+
+@router.post("/sync/items", tags=["sync"])
+async def post_sync_items_local(req: SyncItemsRequest):
+    """Upsert the user's items (last-write-wins). Items carry uuid/entity_type/data/
+    updated_at/deleted; a deleted item acts as a tombstone that replicates the
+    removal to other devices. Returns the applied count."""
+    from db import upsert_sync_items
+    n = await upsert_sync_items(req.user_id, [it.model_dump() for it in req.items])
+    return {"ok": True, "user_id": req.user_id, "applied": n}
 

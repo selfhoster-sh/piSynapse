@@ -53,6 +53,7 @@ class ConfigStore(private val ctx: Context) {
         .put("SYNC_ALWAYS", "off")
         .put("SERVER_URL", "")
         .put("SERVER_USER", "")
+        .put("SERVER_API_KEY", "")
         // Voice (web names)
         .put("TTS_AUTO_REPLY", "off")
         .put("STT_SEND_ON_PAUSE", "off")
@@ -181,6 +182,7 @@ class ConfigStore(private val ctx: Context) {
             arrayOf("off", "on"))
         add("SERVER_URL", v("SERVER_URL"), "text", "Sunucu adresi", "API ana sunucu adresi (https:// ile).", "Sunucu · Bağlantı")
         add("SERVER_USER", v("SERVER_USER"), "text", "Sunucu kullanıcı", "Sunucudaki kullanıcı kimliği.", "Sunucu · Bağlantı")
+        add("SERVER_API_KEY", v("SERVER_API_KEY"), "password", "Sunucu API anahtarı", "Sunucuya erişim için API anahtarı (opsiyonel).", "Sunucu · Bağlantı")
         add("ASSISTANT_USER", v("ASSISTANT_USER"), "text", "Asistan kullanıcı adı", "Sunucu oturumlarında kullanılan kimlik.", "Sunucu · Kişisel")
         add("MAIL_PROVIDER", v("MAIL_PROVIDER"), "text", "E-posta sağlayıcı (sunucu)", "Sunucu tarafı e-posta bağlantısı için.", "Sunucu · Kişisel")
         return out

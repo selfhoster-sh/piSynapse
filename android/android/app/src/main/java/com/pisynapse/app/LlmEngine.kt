@@ -139,12 +139,12 @@ class LlmEngine(
             runBlocking {
                 conv.sendMessageAsync(user).collect { msg ->
                     msg.contents.contents.forEach { c ->
-                        if (c is Content.Text && c.text.isNotBlank()) {
+                        if (c is Content.Text && c.text.isNotEmpty()) {
                             buf.append(c.text)
                             if (buf.length > shown) {
                                 val delta = buf.substring(shown)
                                 shown = buf.length
-                                if (delta.isNotBlank()) emitChunk(delta)
+                                if (delta.isNotEmpty()) emitChunk(delta)
                             }
                         }
                     }
