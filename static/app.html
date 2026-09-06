@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="theme-color" content="#0a0a0f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="piSynapse">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/x-icon" href="icons/favicon.ico">
+<link rel="manifest" href="manifest.json">
+<title>piSynapse</title>
+<link rel="stylesheet" href="ui.css">
+<base target="_blank">
+</head>
+<body>
+<div id="aurora" aria-hidden="true"><i class="ab ab1"></i><i class="ab ab2"></i></div>
+
+<div id="overlay" onclick="closeSidebar()"></div>
+<div id="drag-overlay" class="drag-overlay"><div class="drag-overlay-text" id="drag-overlay-text">Drop images here</div></div>
+
+<aside id="sidebar">
+  <div class="sb-head">
+    <div class="sb-top-controls">
+      <span class="sb-brand-text">PISYNAPSE</span>
+      <div class="logo-controls">
+        <button class="icon-btn" id="settings-btn" onclick="openSettings()" aria-label="Settings">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        </button>
+        <div class="status-dot" id="status-dot"></div>
+      </div>
+    </div>
+    <button class="new-btn" id="btn-new" onclick="newChat()">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M22 13.5A6.5 6.5 0 0 1 15.5 18.5H8A6.5 6.5 0 0 1 1.5 12A6.5 6.5 0 0 1 8 5.5H12.5" stroke-width="1.6" fill="none"></path><line x1="5.5" y1="12" x2="9.5" y2="12" stroke-width="1.65"></line><line x1="7.5" y1="10" x2="7.5" y2="14" stroke-width="1.65"></line><path d="M18 4.4a1 1 0 0 1 2.9 2.9l-4.6 4.6a1.8 1.8 0 0 1-.8.45l-1.7.5a.45.45 0 0 1-.56-.56l.5-1.7a1.8 1.8 0 0 1 .45-.8L18 4.4z" stroke-width="1.4" fill="none"></path></svg>
+      <span id="btn-new-text">New chat</span>
+    </button>
+  </div>
+
+  <div id="sidebar-scroll-container">
+    <div class="sb-label sb-chats-label" id="sb-chats-label">
+      <span id="lbl-chats"></span>
+      <span class="sb-label-controls">
+        <button class="icon-btn" id="search-toggle" onclick="toggleSearch()" aria-label="Search">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        </button>
+        <button class="icon-btn" id="compact-toggle" onclick="toggleCompact()" aria-label="Dar">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+        </button>
+      </span>
+    </div>
+    <div class="sb-search" id="sb-search">
+      <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+      <input type="text" id="sess-search" placeholder="Ara..." aria-label="Ara" oninput="filterSessions(this.value)">
+    </div>
+    <div id="session-list"></div>
+
+    <div class="sb-label sb-mem-head" id="sb-mem-head">
+      <span id="sidebar-mem-section"></span>
+      <button class="icon-btn sb-mem-back" id="mem-back" onclick="closeMem()" aria-label="Sohbetler">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+      </button>
+    </div>
+    <div id="sidebar-mem-list"></div>
+  </div>
+
+  <div class="sb-footer">
+    <button class="mem-btn" id="mem-toggle-btn" onclick="toggleMem()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="15" x2="23" y2="15"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="15" x2="4" y2="15"></line></svg>
+      <span id="lbl-mem"></span>
+    </button>
+    <div id="ticker">
+      <div class="marquee-container" id="ticker-text-inner"></div>
+    </div>
+  </div>
+</aside>
+
+<div id="main">
+  <div id="topbar">
+    <button id="logo-btn" onclick="toggleSidebar()" aria-label="Toggle menu">
+      <div class="logo-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2.5"><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="6" r="3"></circle><line x1="8.5" y1="15.5" x2="15.5" y2="8.5"></line></svg>
+      </div>
+    </button>
+    <span id="sess-title">piSynapse</span>
+    <span id="srv-status" title="Sunucu bağlantısı" onclick="toggleServerStatus()" role="status" aria-live="polite" style="cursor:pointer"><span id="srv-dot"></span></span>
+
+    <div id="topbar-right-widgets">
+      <div id="top-ticker">
+        <div class="marquee-container" id="top-ticker-text-inner"></div>
+      </div>
+      <button class="top-new-btn" onclick="newChat()">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M22 13.5A6.5 6.5 0 0 1 15.5 18.5H8A6.5 6.5 0 0 1 1.5 12A6.5 6.5 0 0 1 8 5.5H12.5" stroke-width="1.6" fill="none"></path><line x1="5.5" y1="12" x2="9.5" y2="12" stroke-width="1.65"></line><line x1="7.5" y1="10" x2="7.5" y2="14" stroke-width="1.65"></line><path d="M18 4.4a1 1 0 0 1 2.9 2.9l-4.6 4.6a1.8 1.8 0 0 1-.8.45l-1.7.5a.45.45 0 0 1-.56-.56l.5-1.7a1.8 1.8 0 0 1 .45-.8L18 4.4z" stroke-width="1.4" fill="none"></path></svg>
+        <span id="lbl-top-new"></span>
+      </button>
+    </div>
+  </div>
+
+  <div id="messages"></div>
+
+  <div id="input-area">
+    <div id="image-preview" class="hidden"></div>
+    <div id="input-container">
+      <div class="input-left">
+      <div class="think-wrap" id="think-wrap">
+        <button class="inline-think-btn" id="inline-think-btn" onclick="toggleThink()" aria-label="Think mode">
+          <svg id="think-bolt-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+        </button>
+        <div class="think-popover hidden" id="think-popover" role="dialog" aria-label="Think effort">
+          <div class="tp-arrow"></div>
+          <div class="tp-head">
+            <span class="tp-title" id="tp-title"></span>
+            <span class="tp-level" id="tp-level"></span>
+          </div>
+          <div class="tp-slider" id="tp-slider" tabindex="0" role="slider" aria-valuemin="0" aria-valuemax="4" aria-valuenow="0">
+            <div class="tp-track">
+              <div class="tp-fill" id="tp-fill"></div>
+              <div class="tp-dots" id="tp-dots"></div>
+              <div class="tp-thumb" id="tp-thumb"></div>
+            </div>
+          </div>
+          <div class="tp-hint" id="tp-hint"></div>
+        </div>
+      </div>
+      <input type="file" id="file-input" accept="image/*" multiple class="hidden" onchange="handleFiles(this.files)">
+      <button class="inline-think-btn" id="attach-btn" onclick="document.getElementById('file-input').click()" aria-label="Upload image">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+      </button>
+      </div>
+      <textarea id="msg-input" rows="1" aria-label="Mesaj"></textarea>
+      <div class="input-right">
+      <button class="inline-think-btn" id="mic-btn" onclick="toggleVoice()" aria-label="Voice input">
+        <svg id="mic-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="22"></line></svg>
+        <span id="mic-timer" class="mic-timer"></span>
+      </button>
+      <button id="send-btn" onclick="sendMsg()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+        </svg>
+      </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm Modal -->
+<div id="confirm-modal">
+  <div class="modal-backdrop" onclick="cancelAction()"></div>
+  <div class="modal-box">
+    <div class="modal-icon" id="m-icon"></div>
+    <div class="modal-title" id="m-title"></div>
+    <div id="m-fields"></div>
+    <div class="modal-warn" id="m-warn" style="display:none"></div>
+    <div class="modal-actions">
+      <button class="modal-cancel" id="m-cancel" onclick="cancelAction()"></button>
+      <button class="modal-confirm" id="m-confirm" onclick="confirmAction()"></button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings Modal -->
+<div id="settings-modal">
+  <div class="modal-backdrop" onclick="closeSettings()"></div>
+  <div class="settings-box">
+    <div class="settings-title">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+      <span id="lbl-settings-title"></span>
+    </div>
+    <div class="settings-tabs" id="settings-tabs" hidden>
+      <button type="button" class="set-tab active" data-tab="phone" id="tab-phone"></button>
+      <button type="button" class="set-tab" data-tab="server" id="tab-server"></button>
+    </div>
+    <div class="settings-chips" id="settings-chips"></div>
+    <div class="settings-body">
+      <div class="settings-restart-notice" id="settings-restart-notice"></div>
+      <div id="settings-pane-phone">
+    <div id="settings-appearance" class="settings-appearance"></div>
+    <div id="settings-form"></div>
+      </div>
+      <div id="settings-pane-server" hidden></div>
+    </div>
+    <div class="settings-actions">
+      <button class="modal-cancel" onclick="closeSettings()" id="settings-cancel-btn"></button>
+      <button class="settings-save" onclick="saveSettings()" id="settings-save-btn"></button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<!-- Onboarding wizard (first-run setup) -->
+<div id="onboard">
+  <div class="ob-box">
+    <div class="ob-head">
+      <div class="ob-dots" id="ob-dots"></div>
+      <span style="font-size:11px;color:var(--text4);font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin-left:auto" id="ob-badge"></span>
+    </div>
+    <div class="ob-body" id="ob-body"></div>
+    <div class="ob-actions">
+      <button type="button" class="ob-btn ghost" id="ob-back" style="visibility:hidden" onclick="obGoBack()"></button>
+      <button type="button" class="ob-btn" id="ob-next" onclick="obNextAction()"></button>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  function beacon(d){ try{ var k=''; try{ k=window.getApiKey?window.getApiKey():''; }catch(_e){} var p={...d, _k:k}; navigator.sendBeacon('/debug', new Blob([JSON.stringify(p)],{type:'application/json'})); }catch(e){} }
+  window.addEventListener('error', function(e){
+    beacon({t:'err', msg:String(e.message||'').slice(0,400), src:String(e.filename||'')+':'+e.lineno+':'+e.colno, ua:navigator.userAgent.slice(0,200)});
+  }, true);
+  window.addEventListener('unhandledrejection', function(e){
+    var r=e.reason; beacon({t:'rej', msg:String(r&&r.message||r).slice(0,400)});
+  });
+  window._beacon=beacon;
+})();
+</script>
+<script src="vendor/marked.min.js"></script>
+<script src="vendor/dompurify.min.js"></script>
+<script src="ui.js"></script>
+</body>
+</html>
