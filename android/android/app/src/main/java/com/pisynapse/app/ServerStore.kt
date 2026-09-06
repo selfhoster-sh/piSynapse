@@ -49,6 +49,13 @@ class ServerStore(private val cfg: ConfigStore) {
         }
     }
 
+    /** Generic passthrough for SPA endpoints (widgets, feedback, corrections) that
+     *  the device forwards to the server in only-server mode. */
+    fun raw(method: String, path: String, query: String = "", body: JSONObject? = null): JSONObject {
+        val p = if (query.isBlank()) path else "$path?$query"
+        return exec(method, p, body)
+    }
+
     // ── Sync items ─────────────────────────────────────────────────────────
     fun getSyncItems(entityType: String? = null, since: String? = null): JSONArray {
         val parts = mutableListOf("user_id=${java.net.URLEncoder.encode(userId, "UTF-8")}")
@@ -154,6 +161,49 @@ class ServerStore(private val cfg: ConfigStore) {
                 }
                 line = br.readLine()
             }
+        }
+    }
+
+    // ── Voice (STT / TTS) ─────────────────────────────────────────────────
+    /** POST /chat/transcribe (whisper) or /chat/transcribe-gemma4 as multipart. */
+    fun transcribe(audioBytes: ByteArray, fileName: String, mime: String, lang: String, gemma4: Boolean = false): String? {
+        if (!configured()) throw IOException("Sunucu adresi ayarlanmamış.")
+        val mimeType = mime.ifBlank { "audio/webm" }.toMediaType()
+        val rb = okhttp3.MultipartBody.Builder()
+            .setType(okhttp3.MultipartBody.FORM)
+            .addFormDataPart("audio", fileName, audioBytes.toRequestBody(mimeType))
+            .build()
+        val path = if (gemma4) "/chat/transcribe-gemma4" else "/chat/transcribe"
+        val queryLang = java.net.URLEncoder.encode(lang, "UTF-8")
+        val rq = okhttp3.Request.Builder()
+            .url(url("$path?lang=$queryLang"))
+            .addHeader("X-API-Key", apiKey)
+            .post(rb)
+            .build()
+        val resp: Response = HttpClient.client.newCall(rq).execute()
+        resp.use { r ->
+            val text = r.body?.string() ?: ""
+            if (!r.isSuccessful) throw IOException("HTTP ${r.code}: ${text.take(300)}")
+            val out = try { JSONObject(text).optString("text") } catch (e: Exception) { "" }
+            return out.ifBlank { null }
+        }
+    }
+
+    /** POST /chat/tts (piper) → raw audio bytes (null/empty on failure). */
+    fun tts(text: String, voice: String): ByteArray? {
+        if (!configured()) throw IOException("Sunucu adresi ayarlanmamış.")
+        val body = JSONObject()
+            .put("text", text.take(2000))
+            .put("voice", voice)
+        val rq = req("POST", "/chat/tts", body.toString())
+        val resp: Response = HttpClient.client.newCall(rq).execute()
+        resp.use { r ->
+            if (!r.isSuccessful) {
+                val errText = r.body?.string() ?: ""
+                throw IOException("HTTP ${r.code}: ${errText.take(300)}")
+            }
+            val bytes = r.body?.bytes() ?: return null
+            return bytes.takeIf { it.isNotEmpty() }
         }
     }
 }

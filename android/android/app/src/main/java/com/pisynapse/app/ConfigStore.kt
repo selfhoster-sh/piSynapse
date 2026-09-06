@@ -24,6 +24,9 @@ class ConfigStore(private val ctx: Context) {
             "LLM_TOP_P" to "TOP_P",
             "LLM_TOP_K" to "TOP_K",
             "LANGUAGE" to "UI_LANGUAGE",
+            // Server-aligned voice names read/write the legacy phone keys.
+            "AUTO_TTS_ON_VOICE" to "TTS_AUTO_REPLY",
+            "AUTO_SEND_ON_VOICE" to "STT_SEND_ON_PAUSE",
         )
     }
 
@@ -57,6 +60,9 @@ class ConfigStore(private val ctx: Context) {
         // Voice (web names)
         .put("TTS_AUTO_REPLY", "off")
         .put("STT_SEND_ON_PAUSE", "off")
+        // Model lifetime / semantic dedup (server-parity keys)
+        .put("LLM_KEEP_ALIVE", "4h")
+        .put("MEMORY_SIMILARITY_THRESHOLD", "0.68")
         .put("UI_LANGUAGE", "tr")
         .put("UI_THEME", "dark")
 
@@ -118,6 +124,13 @@ class ConfigStore(private val ctx: Context) {
         val cur = load()
         // Store under the canonical (web-aligned) key; readers resolve aliases.
         values.keys().forEach { k -> cur.put(k, values.get(k)) }
+        // Keep legacy voice keys in sync so older readers never diverge.
+        listOf(
+            "AUTO_TTS_ON_VOICE" to "TTS_AUTO_REPLY",
+            "AUTO_SEND_ON_VOICE" to "STT_SEND_ON_PAUSE"
+        ).forEach { (new, legacy) ->
+            if (values.has(new)) cur.put(legacy, values.get(new))
+        }
         save(cur)
     }
 
@@ -164,14 +177,17 @@ class ConfigStore(private val ctx: Context) {
         add("LLM_NUM_CTX", v("LLM_NUM_CTX"), "number", "Bağlam (tok)", "Bağlam penceresi (input+output toplam slot).", "Telefon · Üretim")
         add("LLM_MAX_OUTPUT_TOKENS", v("LLM_MAX_OUTPUT_TOKENS"), "number", "Maks. çıktı (tok)", "Yanıt uzunluğu üst sınırı.", "Telefon · Üretim")
         add("LLM_TITLE_ENRICHMENT", v("LLM_TITLE_ENRICHMENT"), "select", "Sohbet başlık üretimi", "Sohbet başlıklarını modelle zenginleştir.", "Telefon · Sohbet", arrayOf("off", "on"))
+        add("LLM_KEEP_ALIVE", v("LLM_KEEP_ALIVE"), "select", "Modeli bellekte tut", "Son kullanımdan sonra yerel model bellekte ne kadar tutulur — belleği rahatlatmak için otomatik boşaltılır.", "Telefon · Zeka",
+            arrayOf("10m", "30m", "1h", "2h", "4h", "12h", "24h", "0"))
+        add("MEMORY_SIMILARITY_THRESHOLD", v("MEMORY_SIMILARITY_THRESHOLD"), "number", "Bellek benzerlik eşiği", "Yeni bir hafıza kaydı, ne kadar benzerlikte mevcut kayıtla birleştirilir (0-1; varsayılan 0.68).", "Telefon · Sohbet")
         add("HISTORY_LIMIT", v("HISTORY_LIMIT"), "number", "Geçmiş limiti", "Sohbette tutulan mesaj sayısı.", "Telefon · Sohbet")
         add("MEMORY_LIMIT", v("MEMORY_LIMIT"), "number", "Hafıza limiti", "Bağlama alınan hafıza kartı sayısı.", "Telefon · Sohbet")
         add("DEFAULT_CITY", v("DEFAULT_CITY"), "text", "Şehir", "Hava durumu için varsayılan şehir.", "Telefon · Hava")
         add("NEXTCLOUD_URL", v("NEXTCLOUD_URL"), "text", "Nextcloud adresi", "örn. nextcloud.sunucu.tld (https:// olmadan).", "Telefon · Notlar")
         add("NEXTCLOUD_USER", v("NEXTCLOUD_USER"), "text", "Nextcloud kullanıcı", "Notlar hesabı kullanıcı adı.", "Telefon · Notlar")
         add("NEXTCLOUD_PASSWORD", v("NEXTCLOUD_PASSWORD"), "password", "Nextcloud parola", "Uygulama parolası önerilir.", "Telefon · Notlar")
-        add("TTS_AUTO_REPLY", v("TTS_AUTO_REPLY"), "select", "Otomatik seslendirme", "Yanıt sonrası TTS.", "Telefon · Ses", arrayOf("off", "on"))
-        add("STT_SEND_ON_PAUSE", v("STT_SEND_ON_PAUSE"), "select", "Konuşmada duraklayınca gönder", "Sesli girişte duraklama algılanınca gönder.", "Telefon · Ses", arrayOf("off", "on"))
+        add("AUTO_TTS_ON_VOICE", v("AUTO_TTS_ON_VOICE"), "select", "Otomatik seslendirme", "Yanıt sonrası TTS.", "Telefon · Ses", arrayOf("off", "on"))
+        add("AUTO_SEND_ON_VOICE", v("AUTO_SEND_ON_VOICE"), "select", "Konuşmada duraklayınca gönder", "Sesli girişte duraklama algılanınca gönder.", "Telefon · Ses", arrayOf("off", "on"))
         add("UI_LANGUAGE", v("UI_LANGUAGE"), "select", "Arayüz dili", "Uygulama dili.", "Telefon · Uygulama", arrayOf("tr", "en"))
         add("UI_THEME", v("UI_THEME"), "select", "Tema", "Karanlık / aydınlık.", "Telefon · Uygulama", arrayOf("dark", "light"))
 

@@ -11,6 +11,7 @@ import java.util.UUID
 
 class LocalStore(ctx: Context) {
 
+    private val app: Context = ctx
     private val tasksFile = File(ctx.filesDir, "tasks.json")
     private val memoryFile = File(ctx.filesDir, "memory.json")
 
@@ -146,6 +147,14 @@ class LocalStore(ctx: Context) {
     // ── Memory ─────────────────────────────────────────────────────────────
     fun saveMemory(content: String, category: String?): JSONObject {
         if (content.isBlank()) return JSONObject().put("ok", false).put("error", "İçerik boş.")
+        val sem = try { LocalSemanticStore.instance(app) } catch (e: Exception) { null }
+        if (sem != null && sem.ensureReady() == null) {
+            val dupId = sem.duplicateMemoryId(content)
+            if (dupId != null) {
+                return JSONObject().put("id", dupId).put("dup", true).put("ok", true)
+                    .put("status", "duplicate").put("memories", 0)
+            }
+        }
         val arr = read(memoryFile)
         val id = (0 until arr.length()).maxOrNull()?.let { arr.getJSONObject(it).optInt("id") }?.plus(1) ?: 1
         val m = JSONObject()
@@ -156,6 +165,7 @@ class LocalStore(ctx: Context) {
         ensureMeta(m)
         arr.put(m)
         write(memoryFile, arr)
+        sem?.rememberMemory(m.optString("_uuid"), content)
         return JSONObject().put("id", id).put("memories", arr.length()).put("ok", true)
     }
 

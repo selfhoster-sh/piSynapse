@@ -2,6 +2,7 @@ package com.pisynapse.app
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.util.Base64
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.getcapacitor.JSObject
@@ -34,14 +35,39 @@ class PiSynapseBridge : Plugin() {
     private val runner by lazy { ToolRunner(store, weather, notes, local, platform) }
     private val llm by lazy { LlmEngine(context, store, PiTools(runner).providers()) }
     private val downloader by lazy { ModelDownloader(context, store) }
+    private val semantic by lazy {
+        LocalSemanticStore.instance(context).apply {
+            setToolDescriptions(PiTools(runner).toolDescriptions())
+        }
+    }
 
     private val io: ExecutorService = Executors.newCachedThreadPool()
+
+    private val uiHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    /** Periodically releases the resident LLM when it exceeds LLM_KEEP_ALIVE. */
+    private val keepAliveWatchdog = object : Runnable {
+        override fun run() {
+            try {
+                if (llm.isLoaded()) {
+                    val alive = llm.keepAliveMs()
+                    if (alive > 0 && System.currentTimeMillis() - llm.lastUsedAt() > alive) {
+                        llmReleaseNoCall()
+                    }
+                }
+            } catch (t: Throwable) {}
+            val alive = llm.keepAliveMs()
+            val interval = if (alive > 0) (alive / 6).coerceIn(10_000L, 60_000L) else 30_000L
+            uiHandler.postDelayed(this, interval)
+        }
+    }
 
     private fun js(o: JSONObject): JSObject = JSObject(o.toString())
 
     override fun load() {
         super.load()
         instance = this
+        uiHandler.post(keepAliveWatchdog)
         try {
             io.execute {
                 try {
@@ -476,6 +502,7 @@ class PiSynapseBridge : Plugin() {
             return
         }
         val ok = local.deleteMemory(id)
+        try { semantic.dropMemory(id) } catch (e: Exception) {}
         call.resolve(JSObject().put("status", if (ok) "success" else "error")
             .put("message", if (ok) "Memory deleted." else "Memory not found."))
     }
@@ -602,6 +629,8 @@ class PiSynapseBridge : Plugin() {
                         .put("message", userText)
                         .put("session_id", payload.optString("session_id", ""))
                         .put("user_id", store.get("SERVER_USER").ifBlank { store.get("ASSISTANT_USER").ifBlank { "default" } })
+                        .put("think_mode", payload.optBoolean("think_mode", false))
+                        .put("reasoning_effort", payload.optString("reasoning_effort", ""))
                     if (messages.length() > 0) body.put("messages", messages)
                     if (payload.has("images")) body.put("images", payload.opt("images"))
                     try {
@@ -643,11 +672,35 @@ class PiSynapseBridge : Plugin() {
                 }
 
                 val text = StringBuilder()
-                val g = llm.chat(system, sessionId, history, userText) { chunk ->
-                    text.append(chunk)
-                    emit("chatEvent", JSObject().put("token", chunk))
+                val think = payload.optBoolean("think_mode", false)
+                val effort = payload.optString("reasoning_effort", "")
+                var contextSystem = system
+                try {
+                    val ctx = semantic.relevantContext(userText, 2, 3)
+                    if (ctx.isNotEmpty()) {
+                        contextSystem = if (system.isBlank()) ctx.joinToString("\n")
+                        else system + "\n\nSohbete bağlam olarak eklenen bilgiler:\n" + ctx.joinToString("\n")
+                    }
+                } catch (e: Exception) {
+                    // embedding unavailable — proceed without retrieval context
                 }
+                val g = llm.chat(
+                    contextSystem, sessionId, history, userText,
+                    think = think, reasoningEffort = effort,
+                    emitChunk = { chunk ->
+                        text.append(chunk)
+                        emit("chatEvent", JSObject().put("token", chunk))
+                    },
+                    emitReasoning = { r ->
+                        emit("chatEvent", JSObject().put("reasoning", r))
+                    },
+                )
                 val finalText = text.toString().trim()
+                try {
+                    semantic.rememberMessage("u-$sessionId-${userText.hashCode()}", userText)
+                    if (finalText.isNotBlank()) semantic.rememberMessage("a-$sessionId-${finalText.hashCode()}", finalText)
+                } catch (e: Exception) {
+                }
 
                 if (finalText.isBlank()) {
                     emit("chatEvent", JSObject().put("error", "Model boş yanıt döndürdü."))
@@ -660,6 +713,7 @@ class PiSynapseBridge : Plugin() {
                     .put("message_id", "local-${UUID.randomUUID().toString().take(8)}")
                     .put("memories_saved", 0)
                     .put("retrieved_count", 0)
+                    .put("reasoning", g.reasoning)
                     .put("tokens", g.tokens)
                     .put("tps", g.tps))
                 call.resolve(JSObject()
@@ -674,6 +728,240 @@ class PiSynapseBridge : Plugin() {
             } catch (e: Exception) {
                 emit("chatEvent", JSObject().put("error", e.message ?: e.toString()))
                 call.resolve(JSObject().put("ok", false).put("error", e.message))
+            }
+        }
+    }
+
+    // ── Server-parity passthrough (only-server mode) ──────────────────────
+    /** Abort the running server or local generation. */
+    @PluginMethod
+    fun chatAbort(call: PluginCall) {
+        val sid = call.getString("session_id") ?: ""
+        if (wantsServer() && server.configured()) {
+            io.execute {
+                try {
+                    val r = server.raw("POST", "/chat/abort/${java.net.URLEncoder.encode(sid, "UTF-8")}", body = JSONObject())
+                    call.resolve(JSObject(r.toString()))
+                } catch (e: Exception) {
+                    call.resolve(JSObject().put("ok", false).put("error", e.message ?: e.toString()))
+                }
+            }
+            return
+        }
+        call.resolve(JSObject().put("ok", true))
+    }
+
+    /** Local tool-group list matching the server's GET /tools/groups keys. */
+    @PluginMethod
+    fun toolGroups(call: PluginCall) {
+        call.resolve(JSObject().put("groups", PiTools.GROUPS))
+    }
+
+    /** Generic server proxy (widgets, feedback, corrections) for only-server mode. */
+    @PluginMethod
+    fun httpProxy(call: PluginCall) {
+        val method = call.getString("method") ?: "GET"
+        val path = call.getString("path") ?: ""
+        val query = call.getString("query") ?: ""
+        val body = call.getObject("body")
+        io.execute {
+            try {
+                if (!server.configured()) {
+                    call.resolve(JSObject().put("ok", false).put("error", "Sunucu adresi ayarlanmamış"))
+                    return@execute
+                }
+                val r = server.raw(method, path, query, body)
+                call.resolve(JSObject(r.toString()))
+            } catch (e: Exception) {
+                call.resolve(JSObject().put("ok", false).put("error", e.message ?: e.toString()))
+            }
+        }
+    }
+
+    @PluginMethod
+    fun messageFeedback(call: PluginCall) {
+        val body = JSObject()
+            .put("message_id", call.getInt("message_id", 0) ?: 0)
+            .put("value", call.getString("value") ?: "")
+        val note = call.getString("note")
+        if (!note.isNullOrBlank()) body.put("note", note)
+        io.execute {
+            try {
+                val r = if (wantsServer() && server.configured()) {
+                    server.raw("POST", "/chat/message-feedback", body = body)
+                } else {
+                    JSObject().put("ok", true).put("skipped", true)
+                }
+                call.resolve(JSObject(r.toString()))
+            } catch (e: Exception) {
+                call.resolve(JSObject().put("ok", false).put("error", e.message ?: e.toString()))
+            }
+        }
+    }
+
+    @PluginMethod
+    fun toolCorrection(call: PluginCall) {
+        val body = JSObject().put("audit_id", call.getInt("audit_id", 0) ?: 0)
+        val tool = call.getString("expected_tool") ?: ""
+        val group = call.getString("expected_group") ?: ""
+        if (tool.isNotBlank()) body.put("expected_tool", tool)
+        if (group.isNotBlank()) body.put("expected_group", group)
+        io.execute {
+            try {
+                val r = if (wantsServer() && server.configured()) {
+                    server.raw("POST", "/chat/tool-correction", body = body)
+                } else {
+                    JSObject().put("ok", true).put("skipped", true)
+                }
+                call.resolve(JSObject(r.toString()))
+            } catch (e: Exception) {
+                call.resolve(JSObject().put("ok", false).put("error", e.message ?: e.toString()))
+            }
+        }
+    }
+
+    @PluginMethod
+    fun toolConfirm(call: PluginCall) {
+        val body = JSObject().put("audit_id", call.getInt("audit_id", 0) ?: 0)
+        io.execute {
+            try {
+                val r = if (wantsServer() && server.configured()) {
+                    server.raw("POST", "/chat/tool-confirm", body = body)
+                } else {
+                    JSObject().put("ok", true).put("skipped", true)
+                }
+                call.resolve(JSObject(r.toString()))
+            } catch (e: Exception) {
+                call.resolve(JSObject().put("ok", false).put("error", e.message ?: e.toString()))
+            }
+        }
+    }
+
+    @PluginMethod
+    fun transcribe(call: PluginCall) {
+        val data = call.getString("data") ?: run {
+            call.resolve(JSObject().put("ok", false).put("error", "no audio data"))
+            return
+        }
+        val mime = call.getString("mime") ?: "audio/webm"
+        val file = call.getString("file") ?: "recording.webm"
+        val lang = call.getString("lang") ?: ""
+        io.execute {
+            try {
+                if (!server.configured()) throw IOException("Sunucu adresi ayarlanmamış (STT).")
+                val bytes = Base64.decode(data, Base64.DEFAULT)
+                var text = server.transcribe(bytes, file, mime, lang, gemma4 = false)
+                if (text == null) text = server.transcribe(bytes, file, mime, lang, gemma4 = true)
+                call.resolve(JSObject().put("ok", text != null).put("text", text ?: "")
+                    .put("error", if (text == null) "Boş transkripsiyon" else ""))
+            } catch (e: Exception) {
+                call.resolve(JSObject().put("ok", false).put("error", e.message ?: e.toString()))
+            }
+        }
+    }
+
+    @PluginMethod
+    fun tts(call: PluginCall) {
+        val text = call.getString("text") ?: ""
+        val voice = call.getString("voice") ?: ""
+        io.execute {
+            try {
+                if (!server.configured()) throw IOException("Sunucu adresi ayarlanmamış (TTS).")
+                val bytes = server.tts(text, voice) ?: throw IOException("TTS boş yanıt döndü.")
+                val b64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+                call.resolve(JSObject().put("ok", true).put("audio", b64).put("mime", "audio/wav"))
+            } catch (e: Exception) {
+                call.resolve(JSObject().put("ok", false).put("error", e.message ?: e.toString()))
+            }
+        }
+    }
+
+    // ── Embedding (semantic search / retrieval / intent) ───────────────────
+    @PluginMethod
+    fun semanticStatus(call: PluginCall) {
+        io.execute {
+            try {
+                call.resolve(JSObject(semantic.status().toString()))
+            } catch (e: Exception) {
+                call.resolve(JSObject().put("ready", false).put("error", e.message ?: "error"))
+            }
+        }
+    }
+
+    @PluginMethod
+    fun semanticDownload(call: PluginCall) {
+        io.execute {
+            var lastEmit = 0L
+            val r = downloader.downloadEmbedding { p ->
+                val now = System.currentTimeMillis()
+                if (now - lastEmit > 500) {
+                    lastEmit = now
+                    emit("modelProgress", JSObject()
+                        .put("bytes", p.bytesRead)
+                        .put("total", p.bytesTotal)
+                        .put("percentage", if (p.bytesTotal > 0) (p.bytesRead * 100 / p.bytesTotal).toInt() else 0)
+                        .put("state", p.state)
+                        .put("kind", "embedding"))
+                }
+            }
+            if (r.cancelled) {
+                emit("modelProgress", JSObject().put("state", "cancelled").put("kind", "embedding"))
+                call.resolve(JSObject().put("ok", false).put("error", "cancelled"))
+                return@execute
+            }
+            if (r.path == null) {
+                emit("modelProgress", JSObject().put("state", "failed").put("kind", "embedding"))
+                call.resolve(JSObject().put("ok", false).put("error", "embedding download failed"))
+                return@execute
+            }
+            emit("modelProgress", JSObject().put("state", "done").put("kind", "embedding"))
+            val err = semantic.ensureReady()
+            call.resolve(JSObject().put("ok", err == null).put("error", err ?: ""))
+        }
+    }
+
+    @PluginMethod
+    fun semanticSearch(call: PluginCall) {
+        val query = call.getString("query") ?: ""
+        val topK = call.getInt("topK", 5) ?: 5
+        io.execute {
+            try {
+                if (semantic.ensureReady() != null) {
+                    call.resolve(JSObject().put("ok", false).put("messages", org.json.JSONArray())
+                        .put("memories", org.json.JSONArray()).put("error", semantic.initError ?: "not ready"))
+                    return@execute
+                }
+                val msgs = org.json.JSONArray()
+                for ((item, score) in semantic.searchMessages(query, topK)) {
+                    msgs.put(JSONObject().put("id", item.id).put("text", item.text).put("score", score.toDouble()))
+                }
+                val mems = org.json.JSONArray()
+                for ((item, score) in semantic.searchMemories(query, topK)) {
+                    mems.put(JSONObject().put("id", item.id).put("text", item.text).put("score", score.toDouble()))
+                }
+                call.resolve(JSObject().put("ok", true).put("messages", msgs).put("memories", mems))
+            } catch (e: Exception) {
+                call.resolve(JSObject().put("ok", false).put("error", e.message ?: "error"))
+            }
+        }
+    }
+
+    @PluginMethod
+    fun semanticTool(call: PluginCall) {
+        val query = call.getString("query") ?: ""
+        io.execute {
+            try {
+                if (semantic.ensureReady() != null) {
+                    call.resolve(JSObject().put("ok", false).put("error", semantic.initError ?: "not ready"))
+                    return@execute
+                }
+                val hit = semantic.toolsForQuery(query)
+                call.resolve(JSObject()
+                    .put("ok", hit != null)
+                    .put("tool", hit?.first ?: "")
+                    .put("score", hit?.second?.toDouble() ?: 0.0))
+            } catch (e: Exception) {
+                call.resolve(JSObject().put("ok", false).put("error", e.message ?: "error"))
             }
         }
     }

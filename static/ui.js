@@ -41,6 +41,7 @@ const STRINGS = {
     obS3T:'Kişisel bilgiler', obS3S:'Asistanı sana göre özelleştirelim. İstersen boş bırak.', obName:'Adın', obNamePh:'örn. Salih', obCity:'Şehir', obCityPh:'örn. İstanbul', obAsync:'Asistan adı', obAsyncPh:'örn. Selim', optional:'opsiyonel', obCityDetecting:'Konumdan şehir algılanıyor…',
     obS4T:'Model durumu', obS4S:'Yanıtlan üreten yerel model kontrol ediliyor…', obModelOk:'Model yüklü ve hazır ✓', obModelNone:'Yerel model bulunamadı. Ayarlar → Zeka üzerinden bir .litertlm dosyası seç veya ekle.', obModelLoading:'Model yükleniyor…', obModelHint:'Model çok yıllık bir dosyadır (2.5GB+); ilk yükleme birkaç dakika sürebilir.',
     obModelDown:'Modeli indir', obModelDownCustom:'Kendi adresinden indir', obModelDownUrl:'Bu adresten indir', obModelDownStart:'İndirme başlatılıyor…', obModelPct:'İndiriliyor… %s', obModelDownDone:'İndirme tamamlandı, model hazırlanıyor…', obModelDownFail:'İndirme başarısız oldu', obModelCancel:'İptal',
+    obEmbedding:'Hafıza modeli (embedding) indiriliyor… %s', obEmbeddingOk:'Hafıza modeli hazır ✓', obEmbeddingPending:'Hafıza modeli indiriliyor…', obEmbeddingFail:'Hafıza modeli indirilemedi — Ayarlar → Zeka\'dan tekrar deneyin.',
     obS6T:'Sunucu', obS6S:'Bu cihazı bir piSynapse sunucusuna bağla (isteğe bağlı). Boş bırakıp atlayabilir, sonradan Ayarlar → Sunucu üzerinden düzenleyebilirsin.', obS6Url:'Sunucu adresi', obS6UrlPh:'örn. https://pisynapse.local', obS6Key:'API anahtarı', obS6KeyPh:'Sunucunun API_KEY bilgisi', obS6User:'Sunucu kullanıcı', obS6UserPh:'Sunucudaki kullanıcı kimliği', obS6Hint:'API anahtarı sunucunun .env dosyasındaki API_KEY değeridir. Tarayıcıda sunucu adresi zaten açtığın adresle doldurulur.',
     obS5T:'Kısa tanıtım', obS5S:'Birkaç ipucu:', obTip1:'Kenar çubuğu: sohbet geçmişi ve hafıza', obTip2:'Yeni sohbeti üstteki + ile aç', obTip3:'Think modu düşünme seviyesini ayarlar', obTip4:'Ayarlar: tema, dil, font, AMOLED, model', obDone:'Kullanmaya başla',
     advanced:'Gelişmiş Ayarlar',
@@ -112,6 +113,7 @@ const STRINGS = {
     obS3T:'Personal info', obS3S:'Let us tailor your assistant. You can leave these empty.', obName:'Your name', obNamePh:'e.g. Salih', obCity:'City', obCityPh:'e.g. Istanbul', obAsync:'Assistant name', obAsyncPh:'e.g. Selim', optional:'optional', obCityDetecting:'Detecting city from location…',
     obS4T:'Model status', obS4S:'Checking the local model that powers replies…', obModelOk:'Model is loaded and ready ✓', obModelNone:'No local model found. Pick or add a .litertlm file under Settings → Intelligence.', obModelLoading:'Model is loading…', obModelHint:'The model is a large file (2.5GB+); first load may take a couple minutes.',
     obModelDown:'Download model', obModelDownCustom:'Download from custom URL', obModelDownUrl:'Download from this URL', obModelDownStart:'Starting download…', obModelPct:'Downloading… %s', obModelDownDone:'Download complete, preparing model…', obModelDownFail:'Download failed', obModelCancel:'Cancel',
+    obEmbedding:'Downloading the memory (embedding) model… %s', obEmbeddingOk:'Memory model ready ✓', obEmbeddingPending:'Downloading the memory model…', obEmbeddingFail:'Memory model failed to download — retry from Settings → Intelligence.',
     obS6T:'Server', obS6S:'Connect this device to a piSynapse server (optional). Leave empty to skip; you can edit it later from Settings → Server.', obS6Url:'Server URL', obS6UrlPh:'e.g. https://pisynapse.local', obS6Key:'API key', obS6KeyPh:'Your server API_KEY', obS6User:'Server user', obS6UserPh:'Your user ID on the server', obS6Hint:'The API key is the API_KEY value in your server\'s .env file. In browser mode the server URL is pre-filled with the address you opened.',
     obS5T:'Quick tour', obS5S:'A few tips:', obTip1:'Sidebar: chat history and memory', obTip2:'Start a new chat with the + above', obTip3:'Think mode controls the reasoning level', obTip4:'Settings: theme, language, font, AMOLED, model', obDone:'Start using',
     advanced:'Advanced Settings',
@@ -933,13 +935,21 @@ function startVoice(){
   });
 }
 
+function blobToBase64(blob){
+  return new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onload = () => { const s = String(fr.result || ''); res(s.split(',')[1] || ''); };
+    fr.onerror = rej;
+    fr.readAsDataURL(blob);
+  });
+}
+
 async function processRecording(mimeUsed){
   voiceStream.getTracks().forEach(t => t.stop());
   voiceStream = null;
   const blob = new Blob(audioChunks, {type: mimeUsed || 'audio/webm'});
   audioChunks = [];
   if(blob.size < 500){ resetVoice(); return; }
-
   voiceState = 'transcribing';
   showTranscribing();
   const el = document.getElementById('msg-input');
@@ -947,6 +957,29 @@ async function processRecording(mimeUsed){
 
   const isWebM = (mimeUsed || '').includes('webm');
   const audioFile = isWebM ? 'recording.webm' : 'recording.mp4';
+  if(_NATIVE){
+    // Native bridge → server STT (whisper then gemma4). Avoids the raw
+    // fetch to the WebView origin which has no HTTP server behind it.
+    try {
+      const b64 = await blobToBase64(blob);
+      const r = await _NATIVE.transcribe({data: b64, mime: mimeUsed || 'audio/webm', file: audioFile, lang});
+      if(r && r.ok && r.text && r.text.trim()){
+        el.value = r.text;
+        el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px';
+        resetVoice();
+        const autoSend = config.auto_send_on_voice === 'on';
+        if(autoSend){
+          lastInputWasVoice = true;
+          setTimeout(() => sendMsg(), 50);
+        }
+        return;
+      }
+      if(r && !r.ok) console.warn('native transcribe: ' + (r.error || r.message || ''));
+    } catch(e) {
+      console.warn('native transcribe failed:', e);
+    }
+  }
+
   const engines = engine === 'whisper'
     ? (isWebM ? ['/chat/transcribe', '/chat/transcribe-gemma4'] : ['/chat/transcribe-gemma4', '/chat/transcribe'])
     : (isWebM ? ['/chat/transcribe-gemma4', '/chat/transcribe'] : ['/chat/transcribe', '/chat/transcribe-gemma4']);
@@ -1134,8 +1167,27 @@ function playBrowserTTS(text, btn){
 async function playPiperTTS(text, btn){
   const ac = new AbortController();
   ttsAbort = ac;
+  const voice = (_settingsData.TTS_VOICE && _settingsData.TTS_VOICE.value) || '';
   try {
-    const voice = (_settingsData.TTS_VOICE && _settingsData.TTS_VOICE.value) || '';
+    if(_NATIVE){
+      // Native bridge → server TTS; returns base64 audio (there is no real
+      // HTTP server on the WebView origin for a raw fetch).
+      const resp = await _NATIVE.tts({text: text.slice(0, 2000), voice});
+      if(resp && resp.ok && resp.audio){
+        if(ac.signal.aborted) return;
+        const mime = (resp.mime || 'audio/wav').split(';')[0];
+        ttsAudio = new Audio('data:' + mime + ';base64,' + resp.audio);
+        ttsAudio.onplay = () => { if(ttsBtn){ ttsBtn.classList.remove('tts-loading'); ttsBtn.classList.add('tts-playing'); } };
+        ttsAudio.onended = () => { if(ttsBtn) ttsBtn.classList.remove('tts-playing'); ttsBtn = null; };
+        ttsAudio.onerror = () => { toast(t('ttsErr'), true); resetTTS(); };
+        ttsAudio.play().catch(() => {
+          if(ac.signal.aborted){ resetTTS(); return; }
+          toast(t('ttsErr'), true); resetTTS();
+        });
+        return;
+      }
+      if(resp && !resp.ok) console.warn('native tts: ' + (resp.error || resp.message || ''));
+    }
     const headers = {'Content-Type':'application/json'};
     const key = getApiKey();
     if(key) headers['X-API-Key'] = key;
@@ -1228,8 +1280,8 @@ async function _nativeApiRoute(method, path, body){
     const v = (k)=>{ const o=s[k]; return o?o.value:''; };
     const uname = (v('ASSISTANT_USER')||'').trim() || (v('SERVER_USER')||'').trim() || 'default';
     return { username:uname, default_city:v('DEFAULT_CITY'), model:v('LLM_MODEL'),
-      stt_engine:'whisper', tts_engine:'piper', auto_send_on_voice:'off',
-      auto_tts_on_voice:v('TTS_AUTO_REPLY')==='on'?'on':'off', llm_title_enrichment:'off',
+      stt_engine:'whisper', tts_engine:'piper', auto_send_on_voice:v('AUTO_SEND_ON_VOICE')==='on'?'on':'off',
+      auto_tts_on_voice:v('AUTO_TTS_ON_VOICE')==='on'?'on':'off', llm_title_enrichment:'off',
       has_llm:true, native:true };
   }
   if(method === 'GET' && path === '/config/settings'){
@@ -1249,7 +1301,8 @@ async function _nativeApiRoute(method, path, body){
   }
   if(method === 'GET' && path === '/health'){
     const ms = await P().modelStatus();
-    return { ok:true, llm: ms.available?'yedek':'yok', model_file: ms.model_file||'' };
+    return { ok:true, native:true, llm: ms.available?'yedek':'yok', model_file: ms.model_file||'',
+      llm_loaded: !!ms.loaded, loaded_seconds: ms.loaded_seconds||0, keep_alive: ms.keep_alive||'' };
   }
   if(method === 'GET' && path === '/chat/sessions'){
     if(_serverMode === 'only-server'){
@@ -1268,7 +1321,20 @@ async function _nativeApiRoute(method, path, body){
     return { session_id: sid, messages: msgs };
   }
   if(method === 'GET' && path.startsWith('/chat/search')){
+    const q = new URLSearchParams((path.split('?')[1]) || '');
+    const query = q.get('q') || q.get('query') || '';
+    try{
+      const r = await P().semanticSearch({ query, topK: 10 });
+      if(r && r.ok) return { results: r.messages||[], sessions: [], memories: r.memories||[] };
+    }catch(e){}
     return { results: [], sessions: [] };
+  }
+  if(method === 'POST' && path === '/chat/intent' && body && body.query){
+    try{
+      const r = await P().semanticTool({ query: body.query });
+      if(r && r.ok) return { intent: r.tool, score: r.score };
+    }catch(e){}
+    return { intent: '', score: 0 };
   }
   if(method === 'GET' && path.split('?')[0] === '/chat/memories'){
     const m = await P().listMemory();
@@ -1292,13 +1358,45 @@ async function _nativeApiRoute(method, path, body){
     return { status: res.status, message: res.message };
   }
   if(method === 'GET' && path === '/tools/groups'){
+    try{
+      const g = await P().toolGroups();
+      if(g && Array.isArray(g.groups) && g.groups.length) return g;
+    }catch(e){}
     return { groups: [] };
+  }
+  if(method === 'GET' && path === '/widget/calendar'){
+    if(_serverMode === 'only-server'){
+      try{
+        const r = await P().httpProxy({ method:'GET', path:'/widget/calendar' });
+        if(r && r.ok !== false) return { events: r.events || [] };
+      }catch(e){}
+    }
+    return { events: [] };
   }
   if(method === 'POST' && path === '/chat/execute' && body && body.tool){
     const res = await P().invokeTool({ group: body.tool, name: body.tool, params: body.params || {} });
     if(res.ok === false) throw new Error(res.error || 'tool-failed');
     const text = res.reply || res.result || res.note || '';
     return { reply: text };
+  }
+  if(method === 'POST' && path === '/chat/message-feedback' && body){
+    const r = await P().messageFeedback({ message_id: body.message_id, value: body.value, note: body.note || null });
+    if(!r || r.ok === false) throw new Error((r && r.error) || 'feedback-failed');
+    return r;
+  }
+  if(method === 'POST' && path === '/chat/tool-confirm' && body){
+    const r = await P().toolConfirm({ audit_id: body.audit_id });
+    if(!r || r.ok === false) throw new Error((r && r.error) || 'confirm-failed');
+    return r;
+  }
+  if(method === 'POST' && path === '/chat/tool-correction' && body){
+    const r = await P().toolCorrection({
+      audit_id: body.audit_id,
+      expected_tool: body.expected_tool || null,
+      expected_group: body.expected_group || null,
+    });
+    if(!r || r.ok === false) throw new Error((r && r.error) || 'correction-failed');
+    return r;
   }
   return undefined;
 }
@@ -1833,6 +1931,9 @@ async function abortStream(){
   userAborted=true;
   try{
     const h={'Content-Type':'application/json'}; const k=getApiKey(); if(k) h['X-API-Key']=k;
+    if(_NATIVE){
+      try{ if(_NATIVE.chatAbort) await _NATIVE.chatAbort({session_id:sid}); return; }catch(e){}
+    }
     await fetch(API+'/chat/abort/'+encodeURIComponent(sid), {method:'POST', headers:h});
   }catch{}
 }
@@ -3450,7 +3551,7 @@ async function preloadModelCheck(){
   const statusEl = document.getElementById('ob-model-status');
   if(!statusEl) return;
   if(_NATIVE){
-    const s = await P().configGet();
+    const s = await _NATIVE.configGet();
     const c = (k)=>{ const o=s[k]; return o?o.value:''; };
     _ob.modelUrl = c('MODEL_URL') || '';
   }
@@ -3459,6 +3560,8 @@ async function preloadModelCheck(){
     const st = await _NATIVE.modelStatus();
     if(st && typeof st === 'object' && (st.loaded === true || st.available === true)){
       statusEl.innerHTML = `<div class="ob-status ok"><span class="ob-status-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12l5 5L20 7"></path></svg></span><span class="ob-status-msg">${esc(t('obModelOk'))}</span></div>`;
+      // LLM ready → make sure the memory (embedding) model is on board too.
+      obEmbeddingCheck();
     } else {
       statusEl.innerHTML = `
         <div class="ob-status warn"><span class="ob-status-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></svg></span><span class="ob-status-msg">${esc(t('obModelNone'))}</span></div>
@@ -3478,8 +3581,68 @@ async function preloadModelCheck(){
             <button class="ob-btn ghost" style="font-size:12px;padding:7px 12px" onclick="obCancelModelDl()">${esc(t('obModelCancel'))}</button>
           </div>
         </div>`;
+      // Fresh device: install everything automatically, no taps required.
+      if(!_obDlActive) setTimeout(()=>obStartModelDl('hf'), 400);
     }
   } catch(e){ statusEl.innerHTML = `<div class="ob-status warn"><span class="ob-status-msg">${esc(t('obModelNone'))}</span></div>`; }
+}
+
+let _obEmbeddingDownloading = false;
+
+async function obEmbeddingCheck(){
+  if(!_NATIVE) return;
+  const box = document.getElementById('ob-embed-status');
+  try{
+    const s = await _NATIVE.semanticStatus();
+    if(s && s.ready === true){
+      if(box) box.innerHTML = `<div class="ob-status ok"><span class="ob-status-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12l5 5L20 7"></path></svg></span><span class="ob-status-msg">${esc(t('obEmbeddingOk'))}</span></div>`;
+      return;
+    }
+    const missing = !!(s && s.model_missing === true);
+    if(!missing || _obEmbeddingDownloading){
+      if(missing) obRenderEmbeddingDownloading(box);
+      return;
+    }
+    _obEmbeddingDownloading = true;
+    if(box){
+      box.innerHTML = `
+        <div class="ob-status warn"><span class="ob-status-msg" id="ob-embed-msg">${esc(t('obEmbeddingPending'))}</span></div>
+        <div class="progress"><div class="progress-bar" id="ob-embed-bar" style="width:0%"></div></div>`;
+    }
+    const off = await _NATIVE.addListener('modelProgress', (d)=>{
+      if(d && d.kind === 'embedding'){
+        const bar = document.getElementById('ob-embed-bar');
+        const msg = document.getElementById('ob-embed-msg');
+        if(d.state === 'done'){
+          _obEmbeddingDownloading = false;
+          if(bar) bar.style.width = '100%';
+          if(msg) msg.textContent = t('obEmbeddingOk');
+          off().catch(()=>{});
+        } else if(d.state === 'failed' || d.state === 'cancelled'){
+          _obEmbeddingDownloading = false;
+          if(bar) bar.style.width = '0%';
+          if(msg) msg.textContent = t('obEmbeddingFail');
+          off().catch(()=>{});
+        } else if(d.state === 'downloading' && bar){
+          const p = Math.max(0, Math.min(100, Math.round(d.percentage||0)));
+          bar.style.width = p + '%';
+          if(msg) msg.textContent = t('obEmbedding').replace('%s', (d.total>0 ? formatBytes(d.bytes)+' / '+formatBytes(d.total) : formatBytes(d.bytes)));
+        }
+      }
+    });
+    try{ await _NATIVE.semanticDownload(); }catch(e){
+      _obEmbeddingDownloading = false;
+      const bar = document.getElementById('ob-embed-bar');
+      if(bar) bar.style.width = '0%';
+    }
+  }catch(e){}
+}
+
+function obRenderEmbeddingDownloading(box){
+  if(!box || box.innerHTML) return;
+  box.innerHTML = `
+    <div class="ob-status warn"><span class="ob-status-msg" id="ob-embed-msg">${esc(t('obEmbeddingPending'))}</span></div>
+    <div class="progress"><div class="progress-bar" id="ob-embed-bar" style="width:0%"></div></div>`;
 }
 
 function obCustomUrlToggle(){
@@ -3658,7 +3821,8 @@ function renderOnboarding(){
       <div class="ob-icon">${obIcon('chip')}</div>
       <div class="ob-title">${esc(t('obS4T'))}</div>
       <div class="ob-sub">${esc(t('obS4S'))}</div>
-      <div id="ob-model-status"><div class="ob-status"><span class="spinner"></span><span class="ob-status-msg">${esc(t('obModelLoading'))}</span></div></div>`;
+      <div id="ob-model-status"><div class="ob-status"><span class="spinner"></span><span class="ob-status-msg">${esc(t('obModelLoading'))}</span></div></div>
+      <div id="ob-embed-status" style="margin-top:10px"></div>`;
     next.dataset.action = '';
     next.textContent = t('obS1B');
   } else if(step === 's5'){
@@ -3751,13 +3915,26 @@ async function pollHealth(){
       dot.title = notes.join('\n');
     } else {
       dot.classList.add('ok');
-      dot.title = 'piSynapse: all systems operational';
+      // Native: surface how long the local model has been resident (keep-alive).
+      if(h.native && h.llm_loaded){
+        dot.title = 'piSynapse \u2014 model in memory \u00b7 ' +
+          (h.loaded_seconds ? formatDurationShort(h.loaded_seconds) : '') +
+          (h.keep_alive ? ' \u00b7 keep-alive ' + h.keep_alive : '');
+      } else {
+        dot.title = 'piSynapse: all systems operational';
+      }
     }
   }catch(e){
     dot.classList.remove('ok','warn','error');
     dot.classList.add('error');
     dot.title = 'piSynapse: server unreachable';
   }
+}
+
+function formatDurationShort(sec){
+  if(sec < 60) return sec + 's';
+  if(sec < 3600) return Math.round(sec/60) + 'm';
+  return (sec/3600).toFixed(1) + 'h';
 }
 
 async function startHealthPoll(){
