@@ -332,6 +332,11 @@ SETTINGS_SCHEMA: dict = {
         {"value": "off",  "label": {"tr": "Kapal\u0131 (h\u0131zl\u0131, embedding+keywords yeterli)", "en": "Off (fast, embedding+keywords)"}},
         {"value": "on",   "label": {"tr": "A\u00e7\u0131k (daha do\u011fru ama yan\u0131t +15sn gecikir)", "en": "On (more accurate, but +15s delay)"}},
     ]},
+    "NEXTCLOUD_URL":      {"type": "str",   "default": "", "label": {"tr": "Nextcloud Sunucu", "en": "Nextcloud Server"},
+        "desc": {"tr": "Sunucu ayarlarından telefona pull edilen Nextcloud adresi.", "en": "Nextcloud address pulled to the phone from the server settings."}},
+    "NEXTCLOUD_USER":     {"type": "str",   "default": "", "label": {"tr": "Nextcloud Kullanıcı", "en": "Nextcloud User"}},
+    "NEXTCLOUD_PASSWORD": {"type": "str",   "default": "", "label": {"tr": "Nextcloud Parola", "en": "Nextcloud Password"},
+        "desc": {"tr": "Sunucudaki parola yalnız telefona okunur, buradan değiştirilemez.", "en": "Password from the server is read-only here, not editable from here."}},
 }
 
 # Settings that require a server restart to take effect. Only keys settable
@@ -343,7 +348,7 @@ RESTART_REQUIRED_KEYS = {"LLM_BACKEND"}
 # LLM_BACKEND is intentionally NOT here: switching engines via PATCH
 # /config/settings triggers model auto-mapping (routers/config.py) so the
 # stored LLM_MODEL always matches the active daemon's registry format.
-PROTECTED_SETTINGS = {"OLLAMA_BASE_URL", "LITERT_BASE_URL", "API_KEY", "CORS_ORIGINS", "TRUSTED_HOSTS", "TRUST_X_FORWARDED_FOR", "MEDIA_MAX_MB"}
+PROTECTED_SETTINGS = {"OLLAMA_BASE_URL", "LITERT_BASE_URL", "API_KEY", "CORS_ORIGINS", "TRUSTED_HOSTS", "TRUST_X_FORWARDED_FOR", "MEDIA_MAX_MB", "NEXTCLOUD_URL", "NEXTCLOUD_USER", "NEXTCLOUD_PASSWORD"}
 
 # All integer/float config keys that should be re-synced after .env updates
 _NUMERIC_KEYS = {

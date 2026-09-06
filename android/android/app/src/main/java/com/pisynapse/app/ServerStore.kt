@@ -69,6 +69,11 @@ class ServerStore(private val cfg: ConfigStore) {
         return exec("GET", "/chat/sessions").optJSONArray("sessions") ?: JSONArray()
     }
 
+    /** Full server settings map (SETTINGS_SCHEMA) — used for MASTER→SLAVE pull. */
+    fun getServerSettings(): JSONObject {
+        return exec("GET", "/config/settings")
+    }
+
     fun getHistory(sessionId: String): JSONArray {
         return exec("GET", "/chat/history?session_id=${java.net.URLEncoder.encode(sessionId, "UTF-8")}")
             .optJSONArray("messages") ?: JSONArray()

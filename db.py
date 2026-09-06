@@ -148,6 +148,8 @@ MIGRATIONS: list[tuple[str, str, str]] = [
     ("tool_audit_log", "confirmed_at", "DATETIME"),
     ("tool_audit_log", "conversation_id", "INTEGER"),
     ("conversations", "client_key", "TEXT"),
+    ("conversations", "user_id", "TEXT DEFAULT 'default'"),
+    ("sessions", "user_id", "TEXT DEFAULT 'default'"),
 ]
 
 
@@ -184,7 +186,8 @@ async def init_db():
             reasoning  TEXT,
             embedding  BLOB,
             timestamp  DATETIME DEFAULT CURRENT_TIMESTAMP,
-            client_key TEXT
+            client_key TEXT,
+            user_id    TEXT DEFAULT 'default'
         )
     """)
 
@@ -206,7 +209,8 @@ async def init_db():
             last_active DATETIME DEFAULT CURRENT_TIMESTAMP,
             name        TEXT,
             summary     TEXT,
-            summarized_until INTEGER DEFAULT 0
+            summarized_until INTEGER DEFAULT 0,
+            user_id     TEXT DEFAULT 'default'
         )
     """)
 

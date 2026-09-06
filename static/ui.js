@@ -1413,6 +1413,8 @@ async function _nativeChatRestore(){
         }catch(e){}
       }
     }catch(e){}
+    // MASTER→SLAVE: existing server session on restart — pull portable settings.
+    try{ await _serverSettingsPull(); }catch(e){}
   }
 }
 
@@ -1423,6 +1425,37 @@ function _nativeSystem(){
     'send_email (e-posta uygulamasını açar), create_calendar_event (takvim uygulamasını açar). '+
     'Sunucuya, önceki oturumlara ve internete kalıcı erişimin yok; yalnız bu konuşmadaki bağlamı kullan. '+
     'Kullanıcı geçmiş isterse, bunun yerel kısıtlı bir uygulama olduğunu söyle.';
+}
+
+// MASTER→SLAVE: pull portable server settings into the phone on successful
+// server login. Only security-safe, portable keys are written to the local
+// ConfigStore (NEXTCLOUD_* connection, personal identity) — never the server's
+// LLM/model or infrastructure settings.
+const _PORTABLE_KEYS = ['NEXTCLOUD_URL','NEXTCLOUD_USER','NEXTCLOUD_PASSWORD','ASSISTANT_USER','DEFAULT_CITY'];
+async function _serverSettingsPull(){
+  if(!_NATIVE) return;
+  try{
+    const pr = await _NATIVE.pullServerSettings();
+    if(!pr || !pr.ok || !pr.settings) return;
+    const values = {};
+    for(const k of _PORTABLE_KEYS){
+      const entry = pr.settings[k];
+      if(entry && entry.value !== undefined && entry.value !== '') values[k] = entry.value;
+    }
+    if(Object.keys(values).length){
+      // Save directly to local ConfigStore (not the global _settingsData which
+      // is native-backed anyway). Non-destructive merge.
+      try{ await _NATIVE.configSet({ values }); }catch(e){}
+      // Re-read local config so the UI reflects synced identity/Nextcloud.
+      try{
+        const s = await _NATIVE.configGet();
+        if(s) Object.assign(_settingsData, s);
+      }catch(e){}
+      try{ if(window._beacon) window._beacon({t:'settings-pull', n:Object.keys(values).length}); }catch(e){}
+    }
+  }catch(e){
+    // Silent: server unreachable right after login is acceptable; next restore retries.
+  }
 }
 
 async function api(method, path, body){
@@ -3377,6 +3410,8 @@ async function obNextAction(){
         if(key) values.SERVER_API_KEY = key;
         try{ await api('PATCH','/config/settings',{values}); }catch(e){}
         if(key) setApiKey(key);
+        // User just logged in to a server: pull its portable settings to the phone.
+        if(url || key){ try{ await _serverSettingsPull(); }catch(e){} }
       } else {
         if(url) localStorage.setItem('ps_server_url', url);
         setApiKey(key);
