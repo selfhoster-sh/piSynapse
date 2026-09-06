@@ -2733,6 +2733,7 @@ async function _nativeApiRoute(method, path, body){
 async function _nativeSSEResponse(payload){
   const queue=[], enc=new TextEncoder();
   let waiting=null, finished=false, _acc='', lh=null;
+  const sid = payload.session_id || '';
   const pushEvent=(d)=>{
     if(finished) return;
     queue.push(d);
