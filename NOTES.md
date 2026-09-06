@@ -16,6 +16,24 @@
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 - **Sanitization rule:** this file may be published. Never write personal data, identity clues, deployment addresses (hostnames, IPs, ports), or accounts into it. Keep every narrative in English; Turkish inline tokens are allowed only as product corpus / i18n test data.
 
+## 2026-09-06 — Faz UI-SPLIT: iki ayrı kök dosya (web.html=MASTER / app.html=SLAVE), ortak ui.js/ui.css
+
+- **Karar değişikliği:** 09-05'teki "tek dosya, ortam algılamalı" yaklaşımı **REVOKED**. Bugünkü kullanıcı kararı: "iki ayrı kök UI dosyası (browser.html + app.html)". Mimari hedef: piSynapse dağıtık asistan — **Python sunucusu = MASTER**, cihazlar (telefon) = **SLAVE**; sunucusuz device **standalone (only-phone)** çalışır; sunucuya bağlanmak = **API key ile oturum açma** gibi; sohbet listesi + hafıza + Nextcloud bilgileri/şifresi sunucudan telefona sync olup only-phone'da da kullanılabilir; geleceğe çok kullanıcılı (key + veri bazında kişi başına izolasyon) hazırlıklı.
+- **Yeni dosya düzeni (`static/`):**
+  - `index.html` → **yönlendirici dispatcher** (~40 satır): `_NATIVE` (Capacitor) varsa `location.replace('app.html')`, yoksa `web.html'`.  Tarayıcı `/` → 307 `/static/` → dispatcher → `web.html`.
+  - `web.html` → **MASTER / tarayıcı kökü**: `#srv-status`/`#srv-dot` paneli YOK, onboarding metinleri sunucu-merkezli override ediliyor ("Kendi sunucun...", "kendi sunucunda çalışır", obTip4'te "model" yok). Setup = "Bu sunucuya bağlan (oturum aç)".
+  - `app.html` → **SLAVE / WebView kökü**: mevcut telefon deneyimi (srv-status, model/izin/ayar adımları, only-phone). Capacitor `server.appStartPath=/app.html` ile WebView direkt app.html yükler.
+  - `ui.css` = eski iki `<style>` bloğu → tek dosya (1363 satır); `ui.js` = eski inline ana script (4024 satır) + **web override bloğu** (`if(!_NATIVE){ STRINGS.master metinler }`). İki HTML de aynı ui.css/ui.js yükler; davranış `_NATIVE` ile ayrışır.
+- **Capacitor config kritik üretim notu:** `server.appStartPath: "app.html"` **slash'sız authority'ye yapışıyor** → WebView `https://localhostapp.html/` "sayfa mevcut değil" hatası. Değer **`"/app.html"`** olmalı (uygulama asset'lerindeki `capacitor.config.json`'a `webDir:../static` → public/ üzerinden birebir kopyalanır).
+- **Doğrulama (v0.19, TECNO CM5):**
+  - WebView URL hatası giderildi → `https://localhost/app.html`.
+  - CDP: `_NATIVE` true, `capPlugins` true, `_serverMode`=only-server, API key 43 kar. korundu, `#srv-status` DOM'da, sidebar **65 session**, onboarding kapalı (zaten onboarded).
+  - Uçtan uca chat: UI'dan mesaj → sunucu cevap döndü (bubble render); test session silinip 65'e döndü.
+  - Override fonksiyonel doğrulandı (Function-ctor testi): native=false iken welcomeSub/obS1S/obTip4/obS6 → sunucu-merkezli; native=true'te telefon metinleri korunuyor.
+  - DOM kalıntı taraması: web.html'de srv-status/srv-dot/modelStatus/startModelDownload/Telefon·/AMOLED **0**; app.html'de srv-status/srv-dot **1**.
+  - `checkjs` 3 html (12 inline blok) + ui.js → 0 hata.
+- **TODO devam:** (a) sunucu tarafı `user_id` + kullanıcı başına veri izolasyon şeması (şimdi tek kullanıcı, API_KEY tek; ilerde key başına user'a açılır), (b) MASTER→SLAVE ayar pull'ı (NEXTCLOUD_URL/USER/PASSWORD + diğer sunucu ayarları → ConfigStore, only-phone'da kullanılabilir), (c) NOTES.md + commit.
+
 ## 2026-09-06 — Faz CHAT-SYNC: sohbet geçmişi iki yönlü senkron (Android ↔ sunucu)
 
 - **Amaç:** todo'nun ikinci sırasındaki açık iş: sohbet geçmişi iki yönlü senkron (tasks+memory senkronu `393d8dc` ile bitmişti). Only-server modda soğuk telefonun sidebar'ı + konuşmaları sunucudaki panele birebir yansımalı.
