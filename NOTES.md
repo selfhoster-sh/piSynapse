@@ -16,6 +16,13 @@
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 - **Sanitization rule:** this file may be published. Never write personal data, identity clues, deployment addresses (hostnames, IPs, ports), or accounts into it. Keep every narrative in English; Turkish inline tokens are allowed only as product corpus / i18n test data.
 
+## 2026-09-06 — Faz PISERVE-CONV-CACHE: piServe conversation reuse altyapısı (A.1)
+
+- **Amaç (kullanıcı, önce A sonra B):** piServe'i conversation reuse ile ileride hızlandırmak için altyapı. Şu an davranış DEĞİŞMEZ (`conversation_cache_max` varsayılan 0 = stateless). B (Android rolling summary) ayrı faz.
+- **server.py:** `Handler._conv_cache` (session_id→Conversation, LRU) + `_cached_conversation`/`_preserve_conversation` + per-cache `threading.Lock`. `_chat` artık `body["session_id"]` varsa ve `conversation_cache_max>0` ise conversation'ı yeniden kullanır (prelude tekrar kurulmaz); yoksa eski davranış (create+close). LRU eviction en eskiyi `close()`lar. `admin/reload` engine swap öncesi tüm cache'i close+clear eder. Config: `conversation_cache_max` (DEFAULT_CONFIG + `admin/config` GET).
+- **Not:** conversation yeniden kullanıldığında `messages[-1]` (current) `send_message`/`send_message_async`'e gider; prelude conversation kuruluşuna aittir, tekrar eklenmez. Bir sonraki fazda (A.2) istemcinin `session_id` göndermesi + `conversation_cache_max>0` ile aktifleşecek.
+- **Test:** 3 yeni birim test (cache kapalıyken no-op; aynı conversation döner; LRU eviction victim close). **563 passed** (38s). Commit adayı.
+
 ## 2026-09-06 — Faz B-AUTOINSTALL+PARITY: otomatik kurulum + sunucu parite kapanışı (v0.21)
 
 - **Komut (kullanıcı):** "sıradaki kişiler: otomatik kurulum + sunucu parite maddeleri — tümü". Kapsam: (1) ilk açılışta model yoksa otomatik indirme, (2) parite maddeleri: tool grupları, tool-correction/tool-confirm/message-feedback, /widget/calendar, abort, ses ayarı adları, MEMORY_SIMILARITY_THRESHOLD, model bellekte tutma süresi.

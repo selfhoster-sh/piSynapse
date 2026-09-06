@@ -44,6 +44,9 @@ DEFAULT_CONFIG = {
     "speculative_decoding": True,
     "use_ringbuffers_local_attention": False,
     "enable_ynnpack": False,
+    # Number of session-keyed conversations kept alive across requests (LRU).
+    # 0 = stateless (every request builds and closes its own conversation).
+    "conversation_cache_max": 0,
     # Must match the app's LITERT_BASE_URL port (config.LITERT_PORT).
     "host": "127.0.0.1",
     "port": 9379,
@@ -186,6 +189,15 @@ def reload_engine() -> dict:
                 _active_lock.acquire()
         LOG.info("reload: all requests drained, swapping engine")
 
+        # Cached conversations belong to the old engine — close and drop them.
+        with Handler._conv_cache_lock:
+            for _, victim in Handler._conv_cache.items():
+                try:
+                    victim.close()
+                except Exception:
+                    LOG.warning("reload: failed to close cached conversation", exc_info=True)
+            Handler._conv_cache.clear()
+
         old_engine = Handler.engine
         try:
             new_engine = _create_engine(new_cfg)
@@ -235,6 +247,10 @@ class Handler(BaseHTTPRequestHandler):
     engine = None
     model_id = "gemma4-e2b"
     _lock = threading.Lock()
+    # session_id -> live Conversation kept across requests (LRU). Off unless
+    # config "conversation_cache_max" > 0; a reload drains and clears it.
+    _conv_cache: dict[str, object] = {}
+    _conv_cache_lock = threading.Lock()
     protocol_version = "HTTP/1.1"
 
     def log_message(self, fmt, *args):
@@ -266,6 +282,47 @@ class Handler(BaseHTTPRequestHandler):
             return True
         return self.headers.get("X-Admin-Token", "") == ADMIN_TOKEN
 
+    @staticmethod
+    def _cache_max() -> int:
+        try:
+            return max(0, int(_cfg.get("conversation_cache_max", 0)))
+        except (TypeError, ValueError):
+            return 0
+
+    @classmethod
+    def _cached_conversation(cls, session_id: str):
+        """Return a live conversation for session_id, or None if not cached.
+
+        Caller holds self._lock, so LRU bookkeeping is race-free here.
+        """
+        if cls._cache_max() <= 0:
+            return None
+        with cls._conv_cache_lock:
+            conv = cls._conv_cache.get(session_id)
+            if conv is None:
+                return None
+            # LRU touch: move to most-recently-used position.
+            del cls._conv_cache[session_id]
+            cls._conv_cache[session_id] = conv
+            return conv
+
+    @classmethod
+    def _preserve_conversation(cls, session_id: str, conv) -> None:
+        """Store conv for session_id, evicting least-recently-used when full."""
+        if cls._cache_max() <= 0:
+            return
+        max_convs = cls._cache_max()
+        with cls._conv_cache_lock:
+            cls._conv_cache[session_id] = conv
+            while len(cls._conv_cache) > max_convs:
+                # dict preserves insertion order; next(iter()) = least recently used.
+                key = next(iter(cls._conv_cache))
+                victim = cls._conv_cache.pop(key)
+                try:
+                    victim.close()
+                except Exception:
+                    LOG.warning("failed to close evicted conversation", exc_info=True)
+
     def do_GET(self):
         path = self.path.split("?")[0].rstrip("/")
         if path == "/v1/models":
@@ -290,6 +347,7 @@ class Handler(BaseHTTPRequestHandler):
                 "speculative_decoding": _cfg.get("speculative_decoding"),
                 "use_ringbuffers_local_attention": _cfg.get("use_ringbuffers_local_attention"),
                 "enable_ynnpack": _cfg.get("enable_ynnpack"),
+                "conversation_cache_max": _cfg.get("conversation_cache_max"),
                 "port": _cfg.get("port"),
             })
             return
@@ -387,22 +445,34 @@ class Handler(BaseHTTPRequestHandler):
 
         current = _convert_content(messages[-1])
         prelude = [_convert_content(m) for m in messages[:-1]]
+        session_id = str(body.get("session_id") or "").strip() or None
+
+        can_reuse = session_id is not None and self._cache_max() > 0
+        reused = None
+        if can_reuse:
+            reused = self._cached_conversation(session_id)
 
         with self._lock:
-            conv = self.engine.create_conversation(
-                messages=prelude or None,
-                tools=tool_objs,
-                automatic_tool_calling=False,
-                sampler_config=sampler,
-                max_output_tokens=max_output,
-            )
+            if reused is not None:
+                conv = reused
+            else:
+                conv = self.engine.create_conversation(
+                    messages=prelude or None,
+                    tools=tool_objs,
+                    automatic_tool_calling=False,
+                    sampler_config=sampler,
+                    max_output_tokens=max_output,
+                )
+                if can_reuse:
+                    self._preserve_conversation(session_id, conv)
             try:
                 if stream:
                     self._chat_stream(conv, current, max_output, thinking)
                 else:
                     self._chat_once(conv, current, max_output, thinking)
             finally:
-                conv.close()
+                if reused is None:
+                    conv.close()
 
     def _chat_once(self, conv, current, max_output, thinking):
         resp = conv.send_message(
