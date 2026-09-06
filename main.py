@@ -440,6 +440,9 @@ async def security_middleware(request: Request, call_next):
         key = request.headers.get("x-api-key", "")
         if not hmac.compare_digest(key, API_KEY):
             return JSONResponse(status_code=401, content={"detail": "Invalid or missing API key"})
+        # Resolve API key → user_id for downstream handlers/db queries.
+        from config import get_user_id_for_key
+        request.state.user_id = get_user_id_for_key(key)
 
     # --- Rate limiting ---
     client_ip = None

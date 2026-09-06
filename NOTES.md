@@ -16,6 +16,13 @@
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 - **Sanitization rule:** this file may be published. Never write personal data, identity clues, deployment addresses (hostnames, IPs, ports), or accounts into it. Keep every narrative in English; Turkish inline tokens are allowed only as product corpus / i18n test data.
 
+## 2026-09-06 — Faz USERID-ROUTER: user_id filtrelemesi tüm router endpoint'lerinde kapatıldı
+
+- **Kapsam:** Önceki faz (v0.20) sadece şemayı + db fonksiyon imzalarını + chat.py'nin bir kısmını kapsıyordu. Bu fazda tüm endpoint'ler `_uid(request)`'e bağlandı — client'ın gönderdiği `user_id` **asla** güvenilmiyor (güvenlik).
+- **chat.py:** `_uid(request)` helper (Request import + `request.state.user_id`) — `import_chat_history`, `pull_chat_history` (`get_all_sessions(user_id)`/`get_all_history(user_id)`), `list_memories`/`delete_memory_endpoint`/`export_data` (Query `user_id` artık yok sayılıyor, `_uid` kullanılıyor), get/post `/sync/items` (`get_sync_items`/`upsert_sync_items`'te `_uid`), `/sync` batched (run_tool context `user_id` artık `_uid`), `clear_chat_history`, chat_endpoint/chat_stream'daki `chat_with_ollama*` `user_id=req.user_id` → `user_id` (yerel).
+- **Test fix:** `tests/test_history_hygiene.py` `chat_stream(req, BackgroundTasks())` → `chat_stream(req, fake_request, BackgroundTasks())` (yeni Request parametresi).
+- **Canlı doğrulama:** `?user_id=evil` query + body'de `user_id:"evil_spoof"` gönderildi → hem sessions/history/memories hem yeni mesajı **'default' ile yazıldı** (spoof yok sayıldı). `/chat/sessions`=66, `/chat/history/pull`=66. pytest **560 passed** (32s).
+
 ## 2026-09-06 — Faz MASTER-SLAVE-SETTINGS: user_id şeması + sunucu→telefon ayar pull'u (v0.20)
 
 - **Karar (kullanıcı):** "chats/messages'ta user_id yok; memories/sync_items'te var. Çöz: sohbet tablolarına user_id şeması (Recommended)" + "Nextcloud grubu da şemada" + "Kullanıcı uygulamadan sunucuya bağlanıp oturum açınca otomatik pull edilsin". Backup alındı: `backups/piSynapse-20260906-170621.tar.gz` (247M, 17:06).
