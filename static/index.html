@@ -2668,11 +2668,18 @@ async function _nativeApiRoute(method, path, body){
     return { ok:true, llm: ms.available?'yedek':'yok', model_file: ms.model_file||'' };
   }
   if(method === 'GET' && path === '/chat/sessions'){
+    if(_serverMode === 'only-server'){
+      try{ return await _NATIVE.chatSyncSessions(); }catch(e){}
+    }
     return { sessions: _nativeSessions };
   }
   if(method === 'GET' && path.startsWith('/chat/history')){
     const q = new URLSearchParams((path.split('?')[1]) || '');
     const sid = q.get('session_id') || currentSid || '';
+    if(_serverMode === 'only-server' && sid){
+      const src = await _NATIVE.chatHistory({ session_id: sid });
+      if(src && src.ok) return { session_id: sid, messages: src.messages||[] };
+    }
     const msgs = (sid && _nativeSessionHistory[sid]) ? _nativeSessionHistory[sid] : [];
     return { session_id: sid, messages: msgs };
   }
@@ -2687,6 +2694,7 @@ async function _nativeApiRoute(method, path, body){
     const q = new URLSearchParams((path.split('?')[1]) || '');
     const sid = q.get('session_id') || '';
     if(sid){
+      if(_serverMode === 'only-server'){ try{ await _NATIVE.deleteSession({ session_id: sid }); }catch(e){} }
       delete _nativeSessionHistory[sid];
       _nativeSessions = (_nativeSessions||[]).filter(s=>s.session_id!==sid);
       _nativeHistory = (_nativeHistory||[]).slice(-40);
@@ -2760,6 +2768,7 @@ function _nativeSessionPush(sid, m){
 }
 
 let _nativeSaveTimer = null;
+let _nativePushTimer = null;
 function _nativeChatSave(immediate){
   if(!_NATIVE) return;
   if(_nativeSaveTimer) clearTimeout(_nativeSaveTimer);
@@ -2775,6 +2784,14 @@ function _nativeChatSave(immediate){
       }
       const payload={sessions:_nativeSessions||[], history:flat, sessionHistory:sess};
       _NATIVE.chatHistorySave({ data: JSON.stringify(payload) }).catch(()=>{});
+      // Mirror local chats to the paired server (only-server / SYNC_ALWAYS).
+      // Debounced so a streaming burst produces one batched import.
+      if(_nativePushTimer) clearTimeout(_nativePushTimer);
+      _nativePushTimer = setTimeout(()=>{
+        _nativePushTimer = null;
+        _NATIVE.chatPush({ data: JSON.stringify({sessions:_nativeSessions||[], sessionHistory:sess}) })
+          .catch(()=>{});
+      }, 1500);
     }catch(e){}
   };
   if(immediate) doSave();
@@ -2789,6 +2806,21 @@ async function _nativeChatRestore(){
     if(r && Array.isArray(r.sessions)) _nativeSessions = r.sessions;
     if(r && r.sessionHistory && typeof r.sessionHistory === 'object') _nativeSessionHistory = r.sessionHistory;
   }catch(e){}
+  // only-server: pull the full chat state from the server so a cold phone
+  // shows the same sidebar + conversations as the server dashboard.
+  if(_NATIVE && _settingsData && _settingsData.SYNC_MODE && _settingsData.SYNC_MODE.value==='only-server'){
+    try{
+      const pr = await _NATIVE.chatPull();
+      if(pr && pr.ok){
+        if(Array.isArray(pr.sessions) && pr.sessions.length){
+          _nativeSessions = pr.sessions.map(s=>({session_id:s.session_id, title:s.name||'', updated_at:s.updated_at||s.last_active||''}));
+        }
+        if(pr.sessionHistory && typeof pr.sessionHistory==='object'){
+          _nativeSessionHistory = pr.sessionHistory;
+        }
+      }
+    }catch(e){}
+  }
 }
 
 function _nativeSystem(){
@@ -2863,6 +2895,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   try {
     const s = await api('GET','/config/settings');
     if(s) Object.assign(_settingsData, s);
+    _serverMode = (s && s.SYNC_MODE) ? s.SYNC_MODE.value : '';
     // Adopt the instance's assistant language unless the user picked one.
     if(!localStorage.getItem('ps_lang')){
       const srv = String((_settingsData.UI_LANGUAGE||{}).value||'').toLowerCase();
@@ -3986,6 +4019,7 @@ const WELCOME_CHIPS = {
 let _chipOrigin = false;
 let _syncing = false;   // guards against overlapping auto-sync runs
 let _autoSync = null;   // bound in init; called after settings save too
+let _serverMode = '';   // 'only-server' | 'only-phone' | '' (web)
 function chipSend(el){
   const inp = document.getElementById('msg-input');
   if(!inp) return;

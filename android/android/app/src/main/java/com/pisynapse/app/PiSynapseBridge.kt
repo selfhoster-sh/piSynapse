@@ -12,6 +12,7 @@ import com.getcapacitor.annotation.CapacitorPlugin
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -80,6 +81,106 @@ class PiSynapseBridge : Plugin() {
     private fun wantsServer(): Boolean = syncMode() == "only-server"
 
     private fun wantsSyncAlways(): Boolean = store.get("SYNC_ALWAYS") == "on"
+
+    /**
+     * Push the phone's local chat history to the server so offline sessions are
+     * mirrored there. Idempotent: every message is keyed by
+     * `client_key:<role>:<index>` and the server skips rows it already has.
+     */
+    @PluginMethod
+    fun chatPush(call: PluginCall) {
+        val data = call.getString("data") ?: "{}"
+        io.execute {
+            try {
+                if (!wantsServer() && !wantsSyncAlways()) {
+                    call.resolve(JSObject().put("ok", true).put("pushed", 0).put("skipped", true))
+                    return@execute
+                }
+                if (!server.configured()) throw IOException("Sunucu adresi ayarlanmamış.")
+                val payload = JSONObject(data)
+                val sessions = payload.optJSONArray("sessions") ?: JSONArray()
+                val history = payload.optJSONObject("sessionHistory") ?: JSONObject()
+                var pushed = 0
+                for (i in 0 until sessions.length()) {
+                    val sid = sessions.getJSONObject(i).optString("session_id")
+                    if (sid.isBlank()) continue
+                    val msgs = history.optJSONArray(sid) ?: continue
+                    val arr = JSONArray()
+                    for (j in 0 until msgs.length()) arr.put(msgs.getJSONObject(j))
+                    pushed += server.importMessages(sid, arr, "phone:$sid")
+                }
+                call.resolve(JSObject().put("ok", true).put("pushed", pushed))
+            } catch (e: Exception) {
+                call.resolve(JSObject().put("ok", false).put("error", e.message ?: e.toString()))
+            }
+        }
+    }
+
+    /**
+     * Pull sessions + full history from the server when it is the source of
+     * truth (only-server), so a cold phone shows the same sidebar and
+     * conversation state as the server's own dashboard.
+     */
+    @PluginMethod
+    fun chatPull(call: PluginCall) {
+        io.execute {
+            try {
+                if (!server.configured()) throw IOException("Sunucu adresi ayarlanmamış.")
+                val (sessions, history) = server.pullHistory()
+                call.resolve(JSObject()
+                    .put("ok", true)
+                    .put("sessions", sessions)
+                    .put("sessionHistory", history))
+            } catch (e: Exception) {
+                call.resolve(JSObject().put("ok", false).put("error", e.message ?: e.toString()))
+            }
+        }
+    }
+
+    /** Refresh the phone's local session list from the server. */
+    @PluginMethod
+    fun chatSyncSessions(call: PluginCall) {
+        io.execute {
+            try {
+                if (!server.configured()) throw IOException("Sunucu adresi ayarlanmamış.")
+                call.resolve(JSObject().put("ok", true).put("sessions", server.getSessions()))
+            } catch (e: Exception) {
+                call.resolve(JSObject().put("ok", false).put("error", e.message ?: e.toString()))
+            }
+        }
+    }
+
+    /** Get a single remote session's conversation. */
+    @PluginMethod
+    fun chatHistory(call: PluginCall) {
+        val sid = call.getString("session_id") ?: ""
+        io.execute {
+            try {
+                if (!server.configured()) throw IOException("Sunucu adresi ayarlanmamış.")
+                call.resolve(JSObject().put("ok", true).put("messages", server.getHistory(sid)))
+            } catch (e: Exception) {
+                call.resolve(JSObject().put("ok", false).put("error", e.message ?: e.toString()))
+            }
+        }
+    }
+
+    /** Delete a remote session when the phone clears its local copy. */
+    @PluginMethod
+    fun deleteSession(call: PluginCall) {
+        val sid = call.getString("session_id") ?: ""
+        io.execute {
+            try {
+                if (!wantsServer() && !wantsSyncAlways()) {
+                    call.resolve(JSObject().put("ok", true).put("skipped", true))
+                    return@execute
+                }
+                if (!server.configured()) throw IOException("Sunucu adresi ayarlanmamış.")
+                call.resolve(JSObject().put("ok", server.deleteSession(sid)))
+            } catch (e: Exception) {
+                call.resolve(JSObject().put("ok", false).put("error", e.message ?: e.toString()))
+            }
+        }
+    }
 
     /**
      * Two-phase two-way sync of the phone's local entities (tasks, memory):

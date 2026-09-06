@@ -16,6 +16,22 @@
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 - **Sanitization rule:** this file may be published. Never write personal data, identity clues, deployment addresses (hostnames, IPs, ports), or accounts into it. Keep every narrative in English; Turkish inline tokens are allowed only as product corpus / i18n test data.
 
+## 2026-09-06 — Faz CHAT-SYNC: sohbet geçmişi iki yönlü senkron (Android ↔ sunucu)
+
+- **Amaç:** todo'nun ikinci sırasındaki açık iş: sohbet geçmişi iki yönlü senkron (tasks+memory senkronu `393d8dc` ile bitmişti). Only-server modda soğuk telefonun sidebar'ı + konuşmaları sunucudaki panele birebir yansımalı.
+- **Sunucu tarafı (idempotent import):** `conversations` tablosuna `client_key TEXT` kolonu + MIGRATIONS'a 13. kayıt eklendi. `db.import_messages(session_id, messages, client_key)`: her mesaj `client_key:<i>` ile dedupe (SELECT-check), INSERT + `conversations_fts` (best-effort non-fatal), `last_insert_rowid()` pattern'i `save_message` ile aynı, sessions upsert, RAKE title, `_commit_with_retry`. Endpoint: `POST /chat/history/import` (`ImportHistoryRequest`). Doğrulandı: run1 `{"imported":2}`, run2 `{"imported":0}`.
+- **Kritik öğrenme — SQLite:** `ALTER TABLE ADD COLUMN ... UNIQUE` çalışmıyor (systemd migration adımı sessizce atlanıyordu) → kolon düz `TEXT`, dedupe SELECT üzerinden. Ayrıca **ayrı Python process'i `assistant.db`'yi boğuyor** (aiosqlite lock, 120s timeout) → tüm DB doğrulamaları curl ile çalışan sunucu üzerinden yapılmalı.
+- **Tek istek pull (`GET /chat/history/pull`):** mobilitelenmiş ilk deneme her session için ayrı `GET /chat/history` yapıyordu → 60+ session = 60+ istek = **30 rpm server rate limiter'a çarparak 429**. Çözüm: `db.get_all_history()` (tek sorgu, tüm conversations, session_id grubu) + `db.get_all_sessions()` → tek endpoint `{ok, sessions, session_history}`. Bu sayede soğuk restore tek HTTP round-trip. Notebook: 65 session tek istekte geldi, rate limit'ten bağımsız.
+- **Kotlin ServerStore:** `importMessages(...)` (POST /chat/history/import → `imported`), `pullHistory()` (tek istek → Pair(sessions, history)). `configured()`/X-API-Key auth aynı.
+- **Bridge yeni metodlar:** `chatPush` (sadece `wantsServer()||wantsSyncAlways()` ise sunucuya yazar; değilse no-op `skipped`), `chatSyncSessions` (sidebar tazeleme), `chatHistory` (tek session), `deleteSession` (telefon yerel silince sunucudan da siler), `chatPull` (tek istek). `IOException` import'u eklendi.
+- **JS tarafı:**
+  - `_nativeChatSave`: debounce'lu (700ms) yerel kayıttan sonra 1.5s püskürtme timer'ıyla `chatPush` — mesaj patlamasında tek batch import.
+  - `_nativeChatRestore`: önce yerel `chatHistoryLoad`, sonra `_serverMode==='only-server'` ise `chatPull` → `_nativeSessions` (name→title, last_active→updated_at) + `_nativeSessionHistory` dolduruluyor.
+  - `_serverMode` global: init'te `_settingsData.SYNC_MODE.value`'dan set edilir (`_settingsData` bir `let`, window'da değil).
+  - `_nativeApiRoute`: `GET /chat/sessions` + `GET /chat/history` only-server'da sunucudan (chatSyncSessions/chatHistory), `DELETE /chat/history` only-server'da sunucudan da siler.
+- **Doğrulama (LAN E2E, TECNO CM5):** device SERVER_URL LAN'a çevrilip gerçek API key ile: `chatPush` pushed=2; aynı payload 2. kez pushed=0 (**idempotent**); only-server app restart → `_nativeSessions` 65 + `_nativeSessionHistory` 65 key (sidebar sunucudaki gibi); `chatSyncSessions` 65 session. Test verisi sunucudan silindi; cihaz config'i piai.sudosalih.com + boş key + only-phone'a geri yüklendi (sunucu adresi sanitized).
+- **Kullanıcıya hatırlatma:** cihazda SERVER_API_KEY boş — Ayarlar → Sunucu · Bağlantı'dan anahtar girilmedikçe sunucu senkronu 401 verir (kullanıcının token şikâyetinin kendisi). Onboarding s6'ya da native SERVER_API_KEY alanı eklendi.
+
 ## 2026-09-05 — Faz BROWSER-NATIVE SPLIT: tek dosya, `_NATIVE` ortam algılaması (v0.15)
 
 - **Karar:** kullanıcı split için "Tek dosya, ortam algılamalı" yaklaşımını seçti (iki ayrı UI dosyası reddedildi). Yedek alındı: `backups/piSynapse-native-src-20260905-2125.tar.gz` (kaynak-only; venv/.git/build içermez).

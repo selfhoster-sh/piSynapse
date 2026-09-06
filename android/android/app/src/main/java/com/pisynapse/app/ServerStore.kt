@@ -78,6 +78,27 @@ class ServerStore(private val cfg: ConfigStore) {
         return exec("DELETE", "/chat/history?session_id=${java.net.URLEncoder.encode(sessionId, "UTF-8")}").optBoolean("ok", true)
     }
 
+    /** Idempotently import a phone's local conversation into the server DB. */
+    fun importMessages(sessionId: String, messages: JSONArray, clientKey: String): Int {
+        val body = JSONObject()
+            .put("session_id", sessionId)
+            .put("client_key", clientKey)
+            .put("messages", messages)
+        val r = exec("POST", "/chat/history/import", body)
+        return r.optInt("imported", 0)
+    }
+
+    /**
+     * Full snapshot in one request: every session + every message.
+     * Avoids one GET /chat/history call per session (rate-limit friendly).
+     */
+    fun pullHistory(): Pair<JSONArray, JSONObject> {
+        val r = exec("GET", "/chat/history/pull")
+        val sessions = r.optJSONArray("sessions") ?: JSONArray()
+        val history = r.optJSONObject("session_history") ?: JSONObject()
+        return sessions to history
+    }
+
     fun deleteMemoryRow(id: String): Boolean {
         return exec("DELETE", "/chat/memories?user_id=${java.net.URLEncoder.encode(userId, "UTF-8")}&id=${java.net.URLEncoder.encode(id, "UTF-8")}")
             .optBoolean("ok", true)
