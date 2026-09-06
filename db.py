@@ -147,6 +147,7 @@ MIGRATIONS: list[tuple[str, str, str]] = [
     ("tool_audit_log", "expected_group", "TEXT"),
     ("tool_audit_log", "confirmed_at", "DATETIME"),
     ("tool_audit_log", "conversation_id", "INTEGER"),
+    ("conversations", "client_key", "TEXT"),
 ]
 
 
@@ -182,7 +183,8 @@ async def init_db():
             images     TEXT,
             reasoning  TEXT,
             embedding  BLOB,
-            timestamp  DATETIME DEFAULT CURRENT_TIMESTAMP
+            timestamp  DATETIME DEFAULT CURRENT_TIMESTAMP,
+            client_key TEXT
         )
     """)
 
@@ -1087,6 +1089,33 @@ async def get_history(session_id: str, limit: int = 20, include_reasoning: bool 
     return result
 
 
+async def get_all_history() -> dict[str, list[dict]]:
+    """Return every conversation grouped by session_id, oldest first.
+
+    Used by the single-request Android chat sync pull so a phone can
+    restore its sidebar in one HTTP round-trip instead of one call per
+    session (which trips the 30 rpm rate limiter)."""
+    import json
+    db = await get_db()
+    history: dict[str, list[dict]] = {}
+    async with db.execute(
+        """SELECT session_id, id, role, content, images, timestamp, reasoning
+           FROM conversations ORDER BY session_id, id ASC"""
+    ) as cur:
+        rows = await cur.fetchall()
+    for sid, mid, role, content, images, ts, reasoning in rows:
+        item = {"id": mid, "role": role, "content": content, "timestamp": ts}
+        if images:
+            try:
+                item["images"] = json.loads(images)
+            except Exception:
+                pass
+        if reasoning:
+            item["reasoning"] = reasoning
+        history.setdefault(sid, []).append(item)
+    return history
+
+
 async def clear_history(session_id: str):
     db = await get_db()
     await db.execute("DELETE FROM conversations WHERE session_id = ?", (session_id,))
@@ -1097,6 +1126,66 @@ async def clear_history(session_id: str):
     await db.execute("DELETE FROM tasks_session_map WHERE session_id = ?", (session_id,))
     await db.execute("DELETE FROM calendar_session_map WHERE session_id = ?", (session_id,))
     await _commit_with_retry(db)
+
+
+async def import_messages(session_id: str, messages: list[dict], client_key: str) -> int:
+    """Idempotently import a batch of chat messages from a paired device.
+
+    Each message must carry a stable `client_key` (uuid + index) so re-syncs
+    never duplicate rows. Session metadata is created on demand and the
+    conversation title is regenerated from the first user message if missing.
+    """
+    db = await get_db()
+    inserted = 0
+    for i, m in enumerate(messages):
+        role = (m.get("role") or "").strip()
+        content = (m.get("content") or "").strip()
+        if role not in ("user", "assistant") or not content:
+            continue
+        key = f"{client_key}:{i}"
+        async with db.execute(
+            "SELECT 1 FROM conversations WHERE client_key = ?", (key,)
+        ) as cur:
+            if await cur.fetchone():
+                continue
+        try:
+            await db.execute(
+                "INSERT INTO conversations (session_id, role, content, client_key) VALUES (?, ?, ?, ?)",
+                (session_id, role, content, key),
+            )
+            async with db.execute("SELECT last_insert_rowid()") as cur:
+                rowid = (await cur.fetchone())[0]
+            try:
+                await db.execute(
+                    "INSERT INTO conversations_fts (rowid, content, session_id) VALUES (?, ?, ?)",
+                    (rowid, content, session_id),
+                )
+            except Exception as fts_e:
+                # FTS5 is best-effort; a failure must not eat the message row.
+                logger.warning(f"import FTS insert failed (non-fatal): {fts_e}")
+            inserted += 1
+        except Exception as e:
+            logger.warning(f"import insert failed (session={session_id}): {e}")
+            continue
+    if inserted:
+        await db.execute(
+            "INSERT INTO sessions (id) VALUES (?) "
+            "ON CONFLICT(id) DO UPDATE SET last_active = CURRENT_TIMESTAMP",
+            (session_id,),
+        )
+        # Title from first user message if the server has none.
+        async with db.execute("SELECT name FROM sessions WHERE id = ?", (session_id,)) as cur:
+            row = await cur.fetchone()
+        if not row or not row[0]:
+            title_src = next((m.get("content", "").strip() for m in messages if m.get("role") == "user"), "")
+            if title_src:
+                from title import generate_rake_title
+                await db.execute(
+                    "UPDATE sessions SET name = ? WHERE id = ?",
+                    (generate_rake_title(title_src), session_id),
+                )
+        await _commit_with_retry(db)
+    return inserted
 
 
 async def search_sessions(query: str, limit: int = 20) -> list[dict]:

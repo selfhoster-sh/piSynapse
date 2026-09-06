@@ -650,6 +650,39 @@ async def clear_chat_history(session_id: str = Query(...)):
     return {"status": "success", "message": f"'{session_id}' deleted."}
 
 
+class ImportHistoryRequest(BaseModel):
+    session_id: str
+    messages: list[dict]
+    client_key: str
+
+
+@router.post("/history/import")
+async def import_chat_history(req: ImportHistoryRequest):
+    """Idempotently import a phone's local chat history for one session.
+
+    Each message is keyed by `client_key` + index so re-syncs never create
+    duplicate rows. Used by paired devices with SYNC_ALWAYS=on to mirror
+    sessions created while offline."""
+    _validate_session_id(req.session_id)
+    from db import import_messages
+    n = await import_messages(req.session_id, req.messages, req.client_key)
+    return {"ok": True, "imported": n}
+
+
+@router.get("/history/pull")
+async def pull_chat_history():
+    """One-request snapshot of every session + message for device sync.
+
+    A single round-trip replaces N per-session history calls so a phone
+    restoring its sidebar stays well under the 30 rpm rate limiter."""
+    from db import get_all_history, get_all_sessions
+    sessions = await get_all_sessions()
+    history = await get_all_history()
+    # Only ship sessions that have at least one message.
+    sessions = [s for s in sessions if s["session_id"] in history]
+    return {"ok": True, "sessions": sessions, "session_history": history}
+
+
 # -- Memories --
 
 @router.get("/memories")
