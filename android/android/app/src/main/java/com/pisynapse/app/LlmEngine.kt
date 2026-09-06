@@ -10,6 +10,7 @@ import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.Message
 import com.google.ai.edge.litertlm.SamplerConfig
+import com.google.ai.edge.litertlm.ThinkingConfig
 import com.google.ai.edge.litertlm.ToolProvider
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.runBlocking
@@ -26,6 +27,7 @@ class LlmEngine(
     @Volatile private var loadedPath: String? = null
     @Volatile private var conversation: Conversation? = null
     @Volatile private var convKey: String? = null
+    @Volatile private var lastUsedAtMs: Long = 0L
     private val lock = Any()
 
     fun findModel(): String? {
@@ -45,13 +47,38 @@ class LlmEngine(
 
     fun status(): JSONObject {
         val p = findModel()
+        val loaded = engine?.isInitialized() == true && loadedPath == p
+        val keepAlive = keepAliveMs()
         return JSONObject()
             .put("available", p != null)
             .put("model_path", p)
             .put("model_file", p?.let { File(it).name })
             .put("configured", cfg.get("LLM_MODEL"))
-            .put("loaded", engine?.isInitialized() == true && loadedPath == p)
+            .put("loaded", loaded)
+            .put("loaded_seconds", if (loaded) (System.currentTimeMillis() - lastUsedAtMs) / 1000 else 0)
+            .put("keep_alive", cfg.get("LLM_KEEP_ALIVE"))
+            .put("keep_alive_ms", keepAlive)
             .put("ok", true)
+    }
+
+    /** Auto-release deadline: how long the native model stays resident after last use. */
+    fun keepAliveMs(): Long {
+        val raw = cfg.get("LLM_KEEP_ALIVE").trim().lowercase().replace(" ", "")
+        if (raw.isEmpty() || raw == "0" || raw == "never") return 0L
+        val v = raw.removeSuffix("ms").takeIf { raw.endsWith("ms") }?.toLongOrNull()
+            ?: raw.removeSuffix("s").takeIf { raw.endsWith("s") }?.toLongOrNull()?.times(1000)
+            ?: raw.removeSuffix("m").takeIf { raw.endsWith("m") }?.toLongOrNull()?.times(60_000)
+            ?: raw.removeSuffix("h").takeIf { raw.endsWith("h") }?.toLongOrNull()?.times(3_600_000)
+            ?: return 0L
+        return v.coerceAtLeast(1)
+    }
+
+    fun isLoaded(): Boolean = engine?.isInitialized() == true && loadedPath != null
+
+    fun lastUsedAt(): Long = lastUsedAtMs
+
+    fun markUsed() {
+        lastUsedAtMs = System.currentTimeMillis()
     }
 
     fun ensureLoaded(): Boolean {
@@ -64,6 +91,7 @@ class LlmEngine(
                 e.initialize()
                 engine = e
                 loadedPath = p
+                lastUsedAtMs = System.currentTimeMillis()
                 e.isInitialized()
             } catch (t: Throwable) {
                 releaseLocked()
@@ -78,10 +106,11 @@ class LlmEngine(
             val e = engine ?: return
             if (conversation == null) {
                 try {
-                    conversation = e.createConversation(conversationConfig("", emptyList(), sampler()))
+                    conversation = e.createConversation(conversationConfig("", emptyList(), sampler(), null))
                     convKey = null
                 } catch (t: Throwable) {}
             }
+            markUsed()
         }
     }
 
@@ -117,27 +146,47 @@ class LlmEngine(
             seed = 42
         )
 
-    private fun conversationConfig(system: String, history: List<Message>, sampler: SamplerConfig): ConversationConfig =
+    private fun conversationConfig(
+        system: String, history: List<Message>, sampler: SamplerConfig,
+        thinking: ThinkingConfig? = null,
+    ): ConversationConfig =
         ConversationConfig(
             systemInstruction = Contents.of(system),
             initialMessages = history.takeLast(16),
             tools = toolProviders,
             samplerConfig = sampler,
-            automaticToolCalling = true
+            automaticToolCalling = true,
+            thinkingConfig = thinking,
+            maxOutputToken = maxTokens()
         )
 
-    data class Generation(val text: String, val tokens: Int, val tps: Float, val promptMs: Long, val genMs: Long)
+    data class Generation(val text: String, val reasoning: String, val tokens: Int, val tps: Float, val promptMs: Long, val genMs: Long)
 
-    fun chat(system: String, sessionId: String, history: List<Pair<String, String>>, user: String, emitChunk: (String) -> Unit): Generation {
+    fun chat(
+        system: String, sessionId: String, history: List<Pair<String, String>>, user: String,
+        think: Boolean = false, reasoningEffort: String = "",
+        emitChunk: (String) -> Unit, emitReasoning: (String) -> Unit,
+    ): Generation {
         return synchronized(lock) {
             val e = engine ?: throw IllegalStateException("Model yüklü değil")
-            val key = sessionId.ifBlank { "default" }
-            val conv = getConversation(e, key, system, history)
+            val key = (sessionId.ifBlank { "default" }) + ":" + think
+            val conv = getConversation(e, key, system, history, think, reasoningEffort)
             val t0 = System.currentTimeMillis()
             val buf = StringBuilder()
+            val reasonBuf = StringBuilder()
             var shown = 0
+            var reasonShown = 0
             runBlocking {
                 conv.sendMessageAsync(user).collect { msg ->
+                    val thought = msg.channels["thought"]
+                    if (!thought.isNullOrEmpty()) {
+                        reasonBuf.append(thought)
+                        if (reasonBuf.length > reasonShown) {
+                            val delta = reasonBuf.substring(reasonShown)
+                            reasonShown = reasonBuf.length
+                            if (delta.isNotEmpty()) emitReasoning(delta)
+                        }
+                    }
                     msg.contents.contents.forEach { c ->
                         if (c is Content.Text && c.text.isNotEmpty()) {
                             buf.append(c.text)
@@ -151,13 +200,28 @@ class LlmEngine(
                 }
             }
             val genMs = System.currentTimeMillis() - t0
+            markUsed()
             val text = buf.toString().trim()
-            val tokens = (text.length / 4).coerceAtLeast(1)
-            Generation(text, tokens, tokens.toFloat() / (genMs / 1000f).coerceAtLeast(0.1f), 0L, genMs)
+            val reasoning = reasonBuf.toString().trim()
+            val tokens = ((text.length + reasoning.length) / 4).coerceAtLeast(1)
+            Generation(text, reasoning, tokens, tokens.toFloat() / (genMs / 1000f).coerceAtLeast(0.1f), 0L, genMs)
         }
     }
 
-    private fun getConversation(e: Engine, key: String, system: String, history: List<Pair<String, String>>): Conversation {
+    private fun thinkingConfig(think: Boolean, effort: String): ThinkingConfig? {
+        if (!think) return null
+        val budget = when (effort.trim().lowercase()) {
+            "minimal" -> 256
+            "low" -> 512
+            "medium" -> 1024
+            "high" -> 2048
+            "max", "xhigh" -> 4096
+            else -> 1024
+        }
+        return ThinkingConfig(enableThinking = true, thinkingTokenBudget = budget)
+    }
+
+    private fun getConversation(e: Engine, key: String, system: String, history: List<Pair<String, String>>, think: Boolean, effort: String): Conversation {
         val existing = conversation
         if (existing != null && convKey == key) return existing
         try { existing?.close() } catch (t: Throwable) {}
@@ -167,7 +231,7 @@ class LlmEngine(
                 else -> Message.user(content)
             }
         }
-        val c = e.createConversation(conversationConfig(system, msgs, sampler()))
+        val c = e.createConversation(conversationConfig(system, msgs, sampler(), thinkingConfig(think, effort)))
         conversation = c
         convKey = key
         return c
@@ -182,5 +246,6 @@ class LlmEngine(
         try { engine?.close() } catch (t: Throwable) {}
         engine = null
         loadedPath = null
+        lastUsedAtMs = 0L
     }
 }

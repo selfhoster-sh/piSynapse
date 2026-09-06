@@ -3,9 +3,41 @@ package com.pisynapse.app
 import com.google.ai.edge.litertlm.OpenApiTool
 import com.google.ai.edge.litertlm.ToolProvider
 import com.google.ai.edge.litertlm.tool
+import org.json.JSONArray
 import org.json.JSONObject
 
 class PiTools(private val runner: ToolRunner) {
+
+    companion object {
+        // Group-key parity with the server's GET /tools/groups (llm/intent.py
+        // tool_group_keys): every local tool maps to the same domain group.
+        val TOOL_GROUP: Map<String, String> = mapOf(
+            "get_datetime" to "weather",
+            "get_weather" to "weather",
+            "list_notes" to "notes",
+            "read_note" to "notes",
+            "create_note" to "notes",
+            "update_note" to "notes",
+            "delete_note" to "notes",
+            "search_notes" to "notes",
+            "save_memory" to "memory",
+            "list_tasks" to "tasks",
+            "create_task" to "tasks",
+            "complete_task" to "tasks",
+            "delete_task" to "tasks",
+            "search_tasks" to "tasks",
+            "send_email" to "email",
+            "create_calendar_event" to "calendar",
+        )
+        val GROUP_KEYS: List<String> = listOf("calendar", "email", "memory", "notes", "tasks", "weather")
+
+        fun toolGroup(name: String): String = TOOL_GROUP[name] ?: "general"
+
+        val GROUPS: JSONArray
+            get() = JSONArray().apply {
+                for (g in GROUP_KEYS) put(JSONObject().put("key", g).put("label", g))
+            }
+    }
 
     private data class Param(val type: String, val desc: String)
 
@@ -35,6 +67,9 @@ class PiTools(private val runner: ToolRunner) {
             })
         }
     }
+
+    /** Tool corpus (name → description) used by the local semantic intent router. */
+    fun toolDescriptions(): List<Pair<String, String>> = specs().map { it.name to it.desc }
 
     private fun schema(s: Spec): JSONObject {
         val properties = JSONObject()

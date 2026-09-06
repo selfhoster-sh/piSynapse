@@ -78,16 +78,31 @@ class ModelDownloader(private val ctx: Context, private val cfg: ConfigStore) {
         val target = all.firstOrNull { it.id == targetId } ?: all.firstOrNull()
             ?: return Result(null, false)
         val file = targetFile()
-        val tmp = File(ctx.filesDir, "models/.${file.name}.part")
+        val r = downloadTo(target.url, file, onProgress)
+        if (r.path != null && target.modelName.isNotEmpty() && cfg.get("LLM_MODEL") != target.modelName) {
+            cfg.set("LLM_MODEL", target.modelName)
+        }
+        return r
+    }
+
+    /** Download the mpnet embedding model (ONNX) into files/models/ for EmbeddingEngine. */
+    fun downloadEmbedding(onProgress: (Progress) -> Unit): Result {
+        val f = File(File(ctx.filesDir, "models"), EmbeddingEngine.MODEL_NAME)
+        val remote = "model_qint8_arm64.onnx"
+        val base = "https://huggingface.co/sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+        return downloadTo("$base/resolve/main/onnx/$remote?download=true", f, onProgress)
+    }
+
+    private fun downloadTo(url: String, file: File, onProgress: (Progress) -> Unit): Result {
+        val tmp = File(file.parentFile, ".${file.name}.part")
         file.parentFile?.mkdirs()
         cancelFlag.set(false)
 
         val existing = if (tmp.exists() && tmp.length() > 0) tmp.length() else 0L
-
         try {
             val start = existing
             val req = Request.Builder().apply {
-                url(target.url)
+                this.url(url)
                 if (start > 0) header("Range", "bytes=$start-")
                 header("User-Agent", "piSynapse-model-downloader/0.16")
             }.build()
@@ -133,15 +148,9 @@ class ModelDownloader(private val ctx: Context, private val cfg: ConfigStore) {
             }
 
             if (!cancelFlag.get()) {
-                targetFile().delete()
-                if (!tmp.renameTo(file)) {
-                    if (!tmp.renameTo(file)) return Result(null, false)
-                }
-                if (target.modelName.isNotEmpty() && cfg.get("LLM_MODEL") != target.modelName) {
-                    cfg.set("LLM_MODEL", target.modelName)
-                }
-                onProgress(Progress(file.length(), file.length(), "done"))
-                return Result(file.absolutePath, false)
+                tmp.renameTo(file)
+                onProgress(Progress(if (file.exists()) file.length() else 0L, if (file.exists()) file.length() else 0L, "done"))
+                return Result(if (file.exists()) file.absolutePath else null, false)
             }
         } catch (e: InterruptedIOException) {
             cancelFlag.set(false)
