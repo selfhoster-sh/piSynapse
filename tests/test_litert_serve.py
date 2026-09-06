@@ -100,3 +100,55 @@ def test_finish_reason_defaults_to_stop():
     assert _finish_reason({}) == "stop"
     assert _finish_reason({"finish_reason": "stop"}) == "stop"
     assert _finish_reason(saw_tool_calls=False) == "stop"
+
+
+# -- conversation cache (session_id reuse) --
+
+def _fake_conv(tag: str):
+    conv = types.SimpleNamespace()
+    conv.tag = tag
+    conv.closed = False
+    conv.close = lambda: setattr(conv, "closed", True)
+    return conv
+
+
+def _set_cache_max(n):
+    import litert_serve.server as srv
+    srv._cfg["conversation_cache_max"] = n
+    srv.Handler._conv_cache.clear()
+
+
+def test_cache_disabled_when_max_zero():
+    import litert_serve.server as srv
+    _set_cache_max(0)
+    assert srv.Handler._cache_max() == 0
+    assert srv.Handler._cached_conversation("s1") is None
+    conv = _fake_conv("a")
+    srv.Handler._preserve_conversation("s1", conv)
+    assert srv.Handler._conv_cache == {}
+    assert conv.closed is False
+
+
+def test_cache_preserves_and_returns_same_conversation():
+    import litert_serve.server as srv
+    _set_cache_max(4)
+    conv = _fake_conv("a")
+    srv.Handler._preserve_conversation("s1", conv)
+    got = srv.Handler._cached_conversation("s1")
+    assert got is conv
+    assert got.closed is False
+
+
+def test_cache_evicts_least_recently_used():
+    import litert_serve.server as srv
+    _set_cache_max(2)
+    a, b = _fake_conv("a"), _fake_conv("b")
+    srv.Handler._preserve_conversation("s1", a)
+    srv.Handler._preserve_conversation("s2", b)
+    # Touch s1 (MRU), push s3 -> s2 becomes LRU and is evicted.
+    assert srv.Handler._cached_conversation("s1") is a
+    srv.Handler._preserve_conversation("s3", _fake_conv("c"))
+    assert b.closed is True
+    assert srv.Handler._cached_conversation("s2") is None
+    assert srv.Handler._cached_conversation("s1") is a
+    assert srv.Handler._cached_conversation("s3") is not None
