@@ -164,6 +164,23 @@ class PiSynapseBridge : Plugin() {
         }
     }
 
+    /**
+     * Pull MASTER (server) settings into the phone (MASTER→SLAVE sync).
+     * Triggered on successful server login. Only portable/secure-safe keys are
+     * applied to the local ConfigStore by the JS side (NEXTCLOUD_*, personal).
+     */
+    @PluginMethod
+    fun pullServerSettings(call: PluginCall) {
+        io.execute {
+            try {
+                if (!server.configured()) throw IOException("Sunucu adresi ayarlanmamış.")
+                call.resolve(JSObject().put("ok", true).put("settings", server.getServerSettings()))
+            } catch (e: Exception) {
+                call.resolve(JSObject().put("ok", false).put("error", e.message ?: e.toString()))
+            }
+        }
+    }
+
     /** Delete a remote session when the phone clears its local copy. */
     @PluginMethod
     fun deleteSession(call: PluginCall) {
