@@ -130,7 +130,8 @@ def _run_chat_stream(monkeypatch, tokens, message="notlarımı listele"):
     collected = []
 
     async def runner():
-        response = await rc.chat_stream(req, BackgroundTasks())
+        fake_request = types.SimpleNamespace(state=types.SimpleNamespace(user_id="tester"))
+        response = await rc.chat_stream(req, fake_request, BackgroundTasks())
         async for sse in response.body_iterator:
             collected.append(sse)
             try:

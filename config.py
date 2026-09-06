@@ -25,6 +25,29 @@ def get(key: str, default=None):
     return getattr(_cfg, key, default)
 
 
+# ── API_KEY → user_id resolution ────────────────────────────────────────────
+# Single-user: one API_KEY → "default". Multi-user: map each key to a user_id.
+_API_KEY_USER_MAP: dict[str, str] = {}
+
+
+def get_user_id_for_key(api_key: str) -> str:
+    """Resolve an API key to a user_id.
+
+    Currently single-user: the configured API_KEY maps to "default".
+    For multi-user: populate _API_KEY_USER_MAP (e.g. from a DB table).
+    Unknown keys get "default" as fallback (backward-compatible).
+    """
+    if not api_key:
+        return "default"
+    if api_key in _API_KEY_USER_MAP:
+        return _API_KEY_USER_MAP[api_key]
+    import config as _cfg
+    configured_key = getattr(_cfg, "API_KEY", "")
+    if configured_key and api_key == configured_key:
+        return "default"
+    return "default"
+
+
 def _safe_int(key: str, default: int) -> int:
     """Parse an int env var with fallback and logging on invalid values."""
     raw = os.getenv(key)

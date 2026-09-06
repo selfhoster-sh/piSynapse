@@ -923,7 +923,7 @@ async def periodic_cleanup_loop(interval: float = CLEANUP_INTERVAL_SECONDS, slee
 
 # -- Conversations --
 
-async def save_message(session_id: str, role: str, content: str, images: list[str] | None = None, reasoning: str | None = None):
+async def save_message(session_id: str, role: str, content: str, images: list[str] | None = None, reasoning: str | None = None, user_id: str = "default"):
     import json
     images_json = json.dumps(images) if images else None
     db = await get_db()
@@ -933,7 +933,7 @@ async def save_message(session_id: str, role: str, content: str, images: list[st
     if role == "user":
         async with db.execute(
             "SELECT role, content FROM conversations "
-            "WHERE session_id = ? ORDER BY id DESC LIMIT 1", (session_id,)
+            "WHERE session_id = ? AND user_id = ? ORDER BY id DESC LIMIT 1", (session_id, user_id)
         ) as cur:
             last = await cur.fetchone()
             if last and last[0] == "user" and last[1] == content:
@@ -949,8 +949,8 @@ async def save_message(session_id: str, role: str, content: str, images: list[st
             logger.warning(f"Embedding failed for save_message (non-fatal): {e}")
 
     await db.execute(
-        "INSERT INTO conversations (session_id, role, content, images, reasoning, embedding) VALUES (?, ?, ?, ?, ?, ?)",
-        (session_id, role, content, images_json, reasoning, embedding_blob),
+        "INSERT INTO conversations (session_id, role, content, images, reasoning, embedding, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (session_id, role, content, images_json, reasoning, embedding_blob, user_id),
     )
     # Keep FTS5 index in sync
     async with db.execute("SELECT last_insert_rowid()") as cur:
@@ -960,25 +960,25 @@ async def save_message(session_id: str, role: str, content: str, images: list[st
         (rowid, content, session_id),
     )
     await db.execute(
-        """INSERT INTO sessions (id) VALUES (?)
+        """INSERT INTO sessions (id, user_id) VALUES (?, ?)
            ON CONFLICT(id) DO UPDATE SET last_active = CURRENT_TIMESTAMP""",
-        (session_id,),
+        (session_id, user_id),
     )
     if role == "user":
-        existing = await db.execute("SELECT name FROM sessions WHERE id = ?", (session_id,))
+        existing = await db.execute("SELECT name FROM sessions WHERE id = ? AND user_id = ?", (session_id, user_id))
         row = await existing.fetchone()
         if not row or not row[0]:
             from title import generate_rake_title
             name = generate_rake_title(content)
             await db.execute(
-                "UPDATE sessions SET name = ? WHERE id = ?",
-                (name, session_id),
+                "UPDATE sessions SET name = ? WHERE id = ? AND user_id = ?",
+                (name, session_id, user_id),
             )
     await _commit_with_retry(db)
     return rowid
 
 
-async def delete_last_assistant(session_id: str) -> bool:
+async def delete_last_assistant(session_id: str, user_id: str = "default") -> bool:
     """Delete the last assistant message in a session.
 
     Returns True if a row was removed, False if no assistant message existed.
@@ -988,8 +988,8 @@ async def delete_last_assistant(session_id: str) -> bool:
     db = await get_db()
     async with db.execute(
         "SELECT id FROM conversations "
-        "WHERE session_id = ? AND role = 'assistant' ORDER BY id DESC LIMIT 1",
-        (session_id,),
+        "WHERE session_id = ? AND user_id = ? AND role = 'assistant' ORDER BY id DESC LIMIT 1",
+        (session_id, user_id),
     ) as cur:
         row = await cur.fetchone()
     if not row:
@@ -1000,7 +1000,7 @@ async def delete_last_assistant(session_id: str) -> bool:
     return True
 
 
-async def delete_branch(session_id: str, anchor_id: int) -> list[int]:
+async def delete_branch(session_id: str, anchor_id: int, user_id: str = "default") -> list[int]:
     """Truncate a conversation from an anchor message onward (regenerate branch).
 
     Deletes the anchored message and everything saved after it (messages are
@@ -1014,8 +1014,8 @@ async def delete_branch(session_id: str, anchor_id: int) -> list[int]:
     """
     db = await get_db()
     async with db.execute(
-        "SELECT id FROM conversations WHERE session_id = ? AND id >= ? ORDER BY id",
-        (session_id, anchor_id),
+        "SELECT id FROM conversations WHERE session_id = ? AND user_id = ? AND id >= ? ORDER BY id",
+        (session_id, user_id, anchor_id),
     ) as cur:
         ids = [r[0] for r in await cur.fetchall()]
     if ids:
@@ -1027,22 +1027,22 @@ async def delete_branch(session_id: str, anchor_id: int) -> list[int]:
         await db.execute(f"DELETE FROM conversations_fts WHERE rowid IN ({ph})", ids)
     # Keep the session alive + surfaced even though no rows were inserted.
     await db.execute(
-        "INSERT INTO sessions (id) VALUES (?) "
+        "INSERT INTO sessions (id, user_id) VALUES (?, ?) "
         "ON CONFLICT(id) DO UPDATE SET last_active = CURRENT_TIMESTAMP",
-        (session_id,),
+        (session_id, user_id),
     )
     await _commit_with_retry(db)
     return ids
 
 
 async def get_history(session_id: str, limit: int = 20, include_reasoning: bool = False,
-                      include_audits: bool = False) -> list[dict]:
+                      include_audits: bool = False, user_id: str = "default") -> list[dict]:
     import json
     db = await get_db()
     async with db.execute(
         """SELECT id, role, content, images, timestamp, reasoning FROM conversations
-           WHERE session_id = ? ORDER BY id DESC LIMIT ?""",
-        (session_id, limit),
+           WHERE session_id = ? AND user_id = ? ORDER BY id DESC LIMIT ?""",
+        (session_id, user_id, limit),
     ) as cur:
         rows = await cur.fetchall()
     # Per-assistant-message audit list for the C-7 feedback UI. Only used by
@@ -1093,7 +1093,7 @@ async def get_history(session_id: str, limit: int = 20, include_reasoning: bool 
     return result
 
 
-async def get_all_history() -> dict[str, list[dict]]:
+async def get_all_history(user_id: str = "default") -> dict[str, list[dict]]:
     """Return every conversation grouped by session_id, oldest first.
 
     Used by the single-request Android chat sync pull so a phone can
@@ -1104,7 +1104,8 @@ async def get_all_history() -> dict[str, list[dict]]:
     history: dict[str, list[dict]] = {}
     async with db.execute(
         """SELECT session_id, id, role, content, images, timestamp, reasoning
-           FROM conversations ORDER BY session_id, id ASC"""
+           FROM conversations WHERE user_id = ? ORDER BY session_id, id ASC""",
+        (user_id,)
     ) as cur:
         rows = await cur.fetchall()
     for sid, mid, role, content, images, ts, reasoning in rows:
@@ -1120,11 +1121,11 @@ async def get_all_history() -> dict[str, list[dict]]:
     return history
 
 
-async def clear_history(session_id: str):
+async def clear_history(session_id: str, user_id: str = "default"):
     db = await get_db()
-    await db.execute("DELETE FROM conversations WHERE session_id = ?", (session_id,))
+    await db.execute("DELETE FROM conversations WHERE session_id = ? AND user_id = ?", (session_id, user_id))
     await db.execute("DELETE FROM conversations_fts WHERE session_id = ?", (session_id,))
-    await db.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+    await db.execute("DELETE FROM sessions WHERE id = ? AND user_id = ?", (session_id, user_id))
     await db.execute("DELETE FROM email_session_map WHERE session_id = ?", (session_id,))
     await db.execute("DELETE FROM notes_session_map WHERE session_id = ?", (session_id,))
     await db.execute("DELETE FROM tasks_session_map WHERE session_id = ?", (session_id,))
@@ -1132,7 +1133,7 @@ async def clear_history(session_id: str):
     await _commit_with_retry(db)
 
 
-async def import_messages(session_id: str, messages: list[dict], client_key: str) -> int:
+async def import_messages(session_id: str, messages: list[dict], client_key: str, user_id: str = "default") -> int:
     """Idempotently import a batch of chat messages from a paired device.
 
     Each message must carry a stable `client_key` (uuid + index) so re-syncs
@@ -1148,14 +1149,14 @@ async def import_messages(session_id: str, messages: list[dict], client_key: str
             continue
         key = f"{client_key}:{i}"
         async with db.execute(
-            "SELECT 1 FROM conversations WHERE client_key = ?", (key,)
+            "SELECT 1 FROM conversations WHERE client_key = ? AND user_id = ?", (key, user_id)
         ) as cur:
             if await cur.fetchone():
                 continue
         try:
             await db.execute(
-                "INSERT INTO conversations (session_id, role, content, client_key) VALUES (?, ?, ?, ?)",
-                (session_id, role, content, key),
+                "INSERT INTO conversations (session_id, role, content, client_key, user_id) VALUES (?, ?, ?, ?, ?)",
+                (session_id, role, content, key, user_id),
             )
             async with db.execute("SELECT last_insert_rowid()") as cur:
                 rowid = (await cur.fetchone())[0]
@@ -1173,26 +1174,26 @@ async def import_messages(session_id: str, messages: list[dict], client_key: str
             continue
     if inserted:
         await db.execute(
-            "INSERT INTO sessions (id) VALUES (?) "
+            "INSERT INTO sessions (id, user_id) VALUES (?, ?) "
             "ON CONFLICT(id) DO UPDATE SET last_active = CURRENT_TIMESTAMP",
-            (session_id,),
+            (session_id, user_id),
         )
         # Title from first user message if the server has none.
-        async with db.execute("SELECT name FROM sessions WHERE id = ?", (session_id,)) as cur:
+        async with db.execute("SELECT name FROM sessions WHERE id = ? AND user_id = ?", (session_id, user_id)) as cur:
             row = await cur.fetchone()
         if not row or not row[0]:
             title_src = next((m.get("content", "").strip() for m in messages if m.get("role") == "user"), "")
             if title_src:
                 from title import generate_rake_title
                 await db.execute(
-                    "UPDATE sessions SET name = ? WHERE id = ?",
-                    (generate_rake_title(title_src), session_id),
+                    "UPDATE sessions SET name = ? WHERE id = ? AND user_id = ?",
+                    (generate_rake_title(title_src), session_id, user_id),
                 )
         await _commit_with_retry(db)
     return inserted
 
 
-async def search_sessions(query: str, limit: int = 20) -> list[dict]:
+async def search_sessions(query: str, limit: int = 20, user_id: str = "default") -> list[dict]:
     """Hybrid search: FTS5 keyword + semantic embedding.
 
     FTS5 gives exact keyword matches (ranked by BM25), semantic gives meaning
@@ -1216,11 +1217,11 @@ async def search_sessions(query: str, limit: int = 20) -> list[dict]:
             SELECT f.session_id, s.name,
                    snippet(conversations_fts, 0, '<b>', '</b>', '…', 12) AS snippet
             FROM conversations_fts f
-            LEFT JOIN sessions s ON s.id = f.session_id
+            JOIN sessions s ON s.id = f.session_id AND s.user_id = ?
             WHERE conversations_fts MATCH ?
             ORDER BY rank
             LIMIT ?
-        """, (fts_query_and, limit)) as cur:
+        """, (user_id, fts_query_and, limit)) as cur:
             rows = await cur.fetchall()
         # If AND gave no results and query has multiple terms, try OR for recall
         if not rows and len(terms) > 1:
@@ -1228,11 +1229,11 @@ async def search_sessions(query: str, limit: int = 20) -> list[dict]:
                 SELECT f.session_id, s.name,
                        snippet(conversations_fts, 0, '<b>', '</b>', '…', 12) AS snippet
                 FROM conversations_fts f
-                LEFT JOIN sessions s ON s.id = f.session_id
+                JOIN sessions s ON s.id = f.session_id AND s.user_id = ?
                 WHERE conversations_fts MATCH ?
                 ORDER BY rank
                 LIMIT ?
-            """, (fts_query_or, limit)) as cur:
+            """, (user_id, fts_query_or, limit)) as cur:
                 rows = await cur.fetchall()
     except Exception:
         # Fallback: LIKE on raw table (safe_q, escape %/_)
@@ -1240,11 +1241,11 @@ async def search_sessions(query: str, limit: int = 20) -> list[dict]:
         async with db.execute("""
             SELECT DISTINCT c.session_id, s.name, c.content
             FROM conversations c
-            LEFT JOIN sessions s ON s.id = c.session_id
-            WHERE c.content LIKE ? ESCAPE '\\'
+            LEFT JOIN sessions s ON s.id = c.session_id AND s.user_id = ?
+            WHERE c.content LIKE ? ESCAPE '\\' AND c.user_id = ?
             ORDER BY c.timestamp DESC
             LIMIT ?
-        """, (f"%{safe_like}%", limit)) as cur:
+        """, (user_id, f"%{safe_like}%", user_id, limit)) as cur:
             rows = await cur.fetchall()
     seen = set()
     results = []
@@ -1575,25 +1576,27 @@ async def clear_calendar_map(session_id: str):
 
 # -- Sessions --
 
-async def update_session_name(session_id: str, name: str):
+async def update_session_name(session_id: str, name: str, user_id: str = "default"):
     db = await get_db()
     await db.execute(
-        """INSERT INTO sessions (id, name) VALUES (?, ?)
+        """INSERT INTO sessions (id, name, user_id) VALUES (?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET name = ?, last_active = CURRENT_TIMESTAMP""",
-        (session_id, name, name),
+        (session_id, name, user_id, name),
     )
     await db.commit()
 
 
-async def get_all_sessions() -> list[dict]:
+async def get_all_sessions(user_id: str = "default") -> list[dict]:
     db = await get_db()
     async with db.execute(
         """SELECT s.id, s.created_at, s.last_active, s.name,
                   COUNT(c.session_id) as msg_count
            FROM sessions s
-           LEFT JOIN conversations c ON c.session_id = s.id
+           LEFT JOIN conversations c ON c.session_id = s.id AND c.user_id = ?
+           WHERE s.user_id = ?
            GROUP BY s.id
-           ORDER BY s.last_active DESC"""
+           ORDER BY s.last_active DESC""",
+        (user_id, user_id),
     ) as cur:
         rows = await cur.fetchall()
     return [
@@ -1603,11 +1606,11 @@ async def get_all_sessions() -> list[dict]:
     ]
 
 
-async def get_session_meta(session_id: str) -> dict:
+async def get_session_meta(session_id: str, user_id: str = "default") -> dict:
     db = await get_db()
     async with db.execute(
-        "SELECT summary, summarized_until FROM sessions WHERE id = ?",
-        (session_id,),
+        "SELECT summary, summarized_until FROM sessions WHERE id = ? AND user_id = ?",
+        (session_id, user_id),
     ) as cur:
         row = await cur.fetchone()
     if row is None:
@@ -1663,12 +1666,12 @@ async def get_messages_to_summarize(
     return [{"role": r[0], "content": r[1]} for r in rows], boundary_id
 
 
-async def update_session_summary(session_id: str, summary: str, summarized_until: int):
+async def update_session_summary(session_id: str, summary: str, summarized_until: int, user_id: str = "default"):
     db = await get_db()
     await db.execute(
-        """INSERT INTO sessions (id, summary, summarized_until) VALUES (?, ?, ?)
+        """INSERT INTO sessions (id, summary, summarized_until, user_id) VALUES (?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET summary = ?, summarized_until = ?""",
-        (session_id, summary, summarized_until, summary, summarized_until),
+        (session_id, summary, summarized_until, user_id, summary, summarized_until),
     )
     await db.commit()
 

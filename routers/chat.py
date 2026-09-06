@@ -9,7 +9,7 @@ import logging
 import re
 import traceback
 
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
@@ -76,6 +76,15 @@ def _validate_session_id(session_id: str) -> str:
     return session_id
 
 
+def _uid(request: Request) -> str:
+    """Resolve the authenticated user_id set by the auth middleware.
+
+    Never trust a client-supplied user_id: the middleware binds the API key
+    to a user, overriding any spoofed value in the request body.
+    """
+    return getattr(request.state, "user_id", "default") or "default"
+
+
 # -- Request/Response Models --
 
 class ChatRequest(BaseModel):
@@ -138,9 +147,9 @@ async def _shared_query_embedding(message: str) -> bytes | None:
         return None
 
 
-async def _update_summary(session_id: str):
+async def _update_summary(session_id: str, user_id: str = "default"):
     try:
-        meta = await get_session_meta(session_id)
+        meta = await get_session_meta(session_id, user_id=user_id)
         to_summarize, new_boundary = await get_messages_to_summarize(
             session_id, get("HISTORY_LIMIT", 12), meta["summarized_until"],
             get("SUMMARY_BATCH_SIZE", 5), early_trigger=get("SUMMARY_EARLY_TRIGGER", 6),
@@ -148,12 +157,12 @@ async def _update_summary(session_id: str):
         if not to_summarize:
             return
         new_summary = await summarize_conversation(to_summarize, meta["summary"])
-        await update_session_summary(session_id, new_summary, new_boundary)
+        await update_session_summary(session_id, new_summary, new_boundary, user_id=user_id)
     except Exception as e:
         logger.error(f"Summary update failed for {session_id}: {e}")
 
 
-async def _enrich_title(session_id: str):
+async def _enrich_title(session_id: str, user_id: str = "default"):
     """Background task: replace the RAKE instant title with an LLM-generated one.
 
     Only runs when LLM_TITLE_ENRICHMENT is enabled and ONLY on the very first
@@ -170,11 +179,11 @@ async def _enrich_title(session_id: str):
         # Using COUNT(*) avoids race where get_history(limit=3) sees a transient 2
         # while total is actually 50 (limit truncates, COUNT does not).
         db = await get_db()
-        async with db.execute("SELECT COUNT(*) FROM conversations WHERE session_id = ?", (session_id,)) as cur:
+        async with db.execute("SELECT COUNT(*) FROM conversations WHERE session_id = ? AND user_id = ?", (session_id, user_id)) as cur:
             total = (await cur.fetchone())[0]
         if total != 2:
             return
-        messages = await get_history(session_id, limit=2)
+        messages = await get_history(session_id, limit=2, user_id=user_id)
         user_msg = messages[0]["content"] if messages[0]["role"] == "user" else ""
         asst_msg = messages[1]["content"] if messages[1]["role"] == "assistant" else ""
         if not user_msg or not asst_msg:
@@ -182,7 +191,7 @@ async def _enrich_title(session_id: str):
         from title import generate_llm_title
         title = await generate_llm_title(user_msg, asst_msg)
         if title:
-            await update_session_name(session_id, title)
+            await update_session_name(session_id, title, user_id=user_id)
     except Exception as e:
         logger.error(f"Title enrichment failed for {session_id}: {e}")
 
@@ -190,7 +199,8 @@ async def _enrich_title(session_id: str):
 # -- Endpoints --
 
 @router.post("/", response_model=ChatResponse)
-async def chat_endpoint(req: ChatRequest, background_tasks: BackgroundTasks):
+async def chat_endpoint(req: ChatRequest, request: Request, background_tasks: BackgroundTasks):
+    user_id = _uid(request)
     _validate_session_id(req.session_id)
     if not req.message.strip() and not req.images:
         raise HTTPException(status_code=400, detail="Message or image is required.")
@@ -202,14 +212,14 @@ async def chat_endpoint(req: ChatRequest, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=429, detail="Session rate limit exceeded. Try again later.")
 
     try:
-        await save_message(req.session_id, "user", req.message, images=req.images or None)
+        await save_message(req.session_id, "user", req.message, images=req.images or None, user_id=user_id)
 
         from llm import _classify_intent, is_contextual_followup
         query_embedding = await _shared_query_embedding(req.message)
-        history_coro = get_history(req.session_id, limit=get("HISTORY_LIMIT", 12))
+        history_coro = get_history(req.session_id, limit=get("HISTORY_LIMIT", 12), user_id=user_id)
         retrieval_coro = retrieve_relevant_history(req.session_id, req.message, query_embedding=query_embedding)
-        memories_coro = _gather_memories(req.message, req.user_id, query_embedding=query_embedding)
-        meta_coro = get_session_meta(req.session_id)
+        memories_coro = _gather_memories(req.message, user_id, query_embedding=query_embedding)
+        meta_coro = get_session_meta(req.session_id, user_id=user_id)
         intent_coro = _classify_intent(req.message, query_embedding=query_embedding)
 
         history, retrieved, memories, meta, (intent, tool_group) = await asyncio.gather(
@@ -229,7 +239,7 @@ async def chat_endpoint(req: ChatRequest, background_tasks: BackgroundTasks):
 
         result = await chat_with_ollama(
             history, memories=memories, think=req.think_mode,
-            summary=meta["summary"], user_id=req.user_id, session_id=req.session_id,
+            summary=meta["summary"], user_id=user_id, session_id=req.session_id,
             intent=intent, tool_group=tool_group, reasoning_effort=req.reasoning_effort,
         )
 
@@ -242,11 +252,11 @@ async def chat_endpoint(req: ChatRequest, background_tasks: BackgroundTasks):
 
         reply_text = _clean_assistant_reply(result["reply"])
         if reply_text:
-            await save_message(req.session_id, "assistant", reply_text, reasoning=result.get("thinking"))
+            await save_message(req.session_id, "assistant", reply_text, reasoning=result.get("thinking"), user_id=user_id)
         else:
             logger.warning("Non-stream assistant reply empty after sanitization — not saved (session %s)", req.session_id)
-        background_tasks.add_task(_update_summary, req.session_id)
-        background_tasks.add_task(_enrich_title, req.session_id)
+        background_tasks.add_task(_update_summary, req.session_id, user_id)
+        background_tasks.add_task(_enrich_title, req.session_id, user_id)
 
         return ChatResponse(
             reply=reply_text or result["reply"], session_id=req.session_id,
@@ -262,7 +272,8 @@ async def chat_endpoint(req: ChatRequest, background_tasks: BackgroundTasks):
 
 
 @router.post("/stream")
-async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
+async def chat_stream(req: ChatRequest, request: Request, background_tasks: BackgroundTasks):
+    user_id = _uid(request)
     _validate_session_id(req.session_id)
     if not req.message.strip() and not req.images:
         raise HTTPException(status_code=400, detail="Message or image is required.")
@@ -274,14 +285,14 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=429, detail="Session rate limit exceeded. Try again later.")
 
     try:
-        await save_message(req.session_id, "user", req.message, images=req.images or None)
+        await save_message(req.session_id, "user", req.message, images=req.images or None, user_id=user_id)
 
         from llm import _classify_intent, is_contextual_followup
         query_embedding = await _shared_query_embedding(req.message)
-        history_coro = get_history(req.session_id, limit=get("HISTORY_LIMIT", 12))
+        history_coro = get_history(req.session_id, limit=get("HISTORY_LIMIT", 12), user_id=user_id)
         retrieval_coro = retrieve_relevant_history(req.session_id, req.message, query_embedding=query_embedding)
-        memories_coro = _gather_memories(req.message, req.user_id, query_embedding=query_embedding)
-        meta_coro = get_session_meta(req.session_id)
+        memories_coro = _gather_memories(req.message, user_id, query_embedding=query_embedding)
+        meta_coro = get_session_meta(req.session_id, user_id=user_id)
         intent_coro = _classify_intent(req.message, query_embedding=query_embedding)
 
         history, retrieved, memories, meta, (intent, tool_group) = await asyncio.gather(
@@ -313,7 +324,7 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
         try:
             async for event in chat_with_ollama_stream(
                 history, memories=memories, think=req.think_mode,
-                summary=meta["summary"], user_id=req.user_id, session_id=req.session_id,
+                summary=meta["summary"], user_id=user_id, session_id=req.session_id,
                 intent=intent, tool_group=tool_group, reasoning_effort=req.reasoning_effort,
                 origin=(req.origin or "").strip().lower(),
             ):
@@ -331,7 +342,7 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
                                     'retrieved_count': len(retrieved_msgs),
                                     'retrieval_ms': round(ret_stats['latency_ms'])}
                     if full:
-                        msg_id = await save_message(req.session_id, "assistant", full, reasoning=event.get("reasoning") or None)
+                        msg_id = await save_message(req.session_id, "assistant", full, reasoning=event.get("reasoning") or None, user_id=user_id)
                         await link_audits_to_message(msg_id, stream_audit_ids)
                         # Anchor for per-message regenerate branching (the frontend
                         # stores this id on the bubble and truncates context from it).
@@ -365,7 +376,7 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
                 try:
                     partial = _clean_assistant_reply("".join(reply_parts))
                     if partial:
-                        msg_id = await save_message(req.session_id, "assistant", partial)
+                        msg_id = await save_message(req.session_id, "assistant", partial, user_id=user_id)
                         await link_audits_to_message(msg_id, stream_audit_ids)
                         logger.info("Saved partial assistant reply after stream interruption")
                     else:
@@ -375,8 +386,8 @@ async def chat_stream(req: ChatRequest, background_tasks: BackgroundTasks):
                     logger.error("Failed to save partial reply: %s\n%s", e, traceback.format_exc())
 
     summary_bg = BackgroundTasks()
-    summary_bg.add_task(_update_summary, req.session_id)
-    summary_bg.add_task(_enrich_title, req.session_id)
+    summary_bg.add_task(_update_summary, req.session_id, user_id)
+    summary_bg.add_task(_enrich_title, req.session_id, user_id)
 
     return StreamingResponse(
         generate(),
@@ -398,9 +409,10 @@ async def abort_generation(session_id: str):
 
 
 @router.post("/execute", response_model=ChatResponse)
-async def execute_action(req: ExecuteRequest):
+async def execute_action(req: ExecuteRequest, request: Request):
     import time
 
+    user_id = _uid(request)
     _validate_session_id(req.session_id)
     from tool_verification import run_verification
     from tools import CONFIRM_TOOLS, is_tool_success, run_tool, validate_confirm_params
@@ -411,7 +423,7 @@ async def execute_action(req: ExecuteRequest):
                 raise HTTPException(status_code=400, detail=err)
         t0 = time.perf_counter()
         try:
-            result, entity_id = await run_tool(req.tool, req.params, context={"user_id": req.user_id, "session_id": req.session_id})
+            result, entity_id = await run_tool(req.tool, req.params, context={"user_id": user_id, "session_id": req.session_id})
             success = is_tool_success(result)
         except Exception as e:
             logger.error("Execute action error: %s\n%s", e, traceback.format_exc())
@@ -423,7 +435,7 @@ async def execute_action(req: ExecuteRequest):
         # ones that must be audit-logged — the model loop already logs its
         # own tool calls, but /execute runs outside that loop.
         audit_id, verification_status = await run_verification(req.tool, req.params, result, success, entity_id=entity_id, duration_ms=duration_ms, error=None if success else result)
-        msg_id = await save_message(req.session_id, "assistant", result)
+        msg_id = await save_message(req.session_id, "assistant", result, user_id=user_id)
         if audit_id is not None:
             await link_audits_to_message(msg_id, [audit_id])
         return ChatResponse(reply=result, session_id=req.session_id, history_length=0, memories_saved=0, verification_status=verification_status)
@@ -548,35 +560,35 @@ async def post_message_feedback(req: MessageFeedbackRequest):
 # -- Sessions --
 
 @router.get("/sessions")
-async def list_sessions():
-    return {"sessions": await get_all_sessions()}
+async def list_sessions(request: Request):
+    return {"sessions": await get_all_sessions(_uid(request))}
 
 
 @router.patch("/sessions/{session_id}")
-async def rename_session(session_id: str, req: RenameRequest):
+async def rename_session(session_id: str, req: RenameRequest, request: Request):
     _validate_session_id(session_id)
     name = (req.name or "").strip()[:100] or "Unnamed"
-    await update_session_name(session_id, name)
+    await update_session_name(session_id, name, user_id=_uid(request))
     return {"ok": True}
 
 
 @router.delete("/sessions/{session_id}")
-async def delete_session(session_id: str):
+async def delete_session(session_id: str, request: Request):
     """Delete a session and all its messages, maps, and metadata."""
     _validate_session_id(session_id)
-    await clear_history(session_id)
+    await clear_history(session_id, user_id=_uid(request))
     return {"ok": True, "message": f"Session '{session_id}' deleted."}
 
 
 @router.delete("/messages/last/{session_id}")
-async def delete_last_msg(session_id: str):
+async def delete_last_msg(session_id: str, request: Request):
     """Delete the last assistant message for regenerate.
 
     Called by the frontend before re-sending the user message so the
     stale reply never appears in the model's context window.
     """
     _validate_session_id(session_id)
-    removed = await delete_last_assistant(session_id)
+    removed = await delete_last_assistant(session_id, user_id=_uid(request))
     return {"ok": True, "removed": removed}
 
 
@@ -585,7 +597,7 @@ class BranchRequest(BaseModel):
 
 
 @router.delete("/messages/branch/{session_id}")
-async def delete_branch_msg(session_id: str, req: BranchRequest):
+async def delete_branch_msg(session_id: str, req: BranchRequest, request: Request):
     """Truncate a conversation from an anchored message onward.
 
     Per-message regenerate: the clicked assistant message is the anchor; it and
@@ -593,29 +605,30 @@ async def delete_branch_msg(session_id: str, req: BranchRequest):
     (same prompt, fresh reply) — matching ChatGPT/Claude branch semantics.
     """
     _validate_session_id(session_id)
-    removed = await delete_branch(session_id, req.message_id)
+    removed = await delete_branch(session_id, req.message_id, user_id=_uid(request))
     return {"ok": True, "removed": removed}
 
 
 @router.get("/search")
-async def search_messages(q: str = Query(..., min_length=1)):
+async def search_messages(q: str = Query(..., min_length=1), request: Request = None):
     """FTS5 full-text search across all session messages."""
     from db import search_sessions
-    results = await search_sessions(q)
+    results = await search_sessions(q, user_id=_uid(request))
     return {"ok": True, "results": results}
 
 
 @router.post("/sessions")
-async def create_session(req: RenameRequest | None = None):
+async def create_session(req: RenameRequest | None = None, request: Request = None):
     """Explicitly create a new session with an optional name."""
     import uuid
+    user_id = _uid(request)
     session_id = str(uuid.uuid4())[:12]
     name = (req.name.strip()[:100] if req and req.name else "New Chat") or "New Chat"
     from db import get_db
     db = await get_db()
     await db.execute(
-        "INSERT OR IGNORE INTO sessions (id, name, created_at, last_active) VALUES (?, ?, datetime('now'), datetime('now'))",
-        (session_id, name),
+        "INSERT OR IGNORE INTO sessions (id, name, created_at, last_active, user_id) VALUES (?, ?, datetime('now'), datetime('now'), ?)",
+        (session_id, name, user_id),
     )
     await db.commit()
     return {"ok": True, "session_id": session_id, "name": name}
@@ -624,9 +637,9 @@ async def create_session(req: RenameRequest | None = None):
 # -- History --
 
 @router.get("/history")
-async def get_chat_history(session_id: str = Query(...)):
+async def get_chat_history(session_id: str = Query(...), request: Request = None):
     _validate_session_id(session_id)
-    msgs = await get_history(session_id, limit=50, include_reasoning=True, include_audits=True)
+    msgs = await get_history(session_id, limit=50, include_reasoning=True, include_audits=True, user_id=_uid(request))
     return {"session_id": session_id, "messages": msgs}
 
 
@@ -644,9 +657,9 @@ async def reload_corpus():
 
 
 @router.delete("/history")
-async def clear_chat_history(session_id: str = Query(...)):
+async def clear_chat_history(session_id: str = Query(...), request: Request = None):
     _validate_session_id(session_id)
-    await clear_history(session_id)
+    await clear_history(session_id, user_id=_uid(request))
     return {"status": "success", "message": f"'{session_id}' deleted."}
 
 
@@ -657,7 +670,7 @@ class ImportHistoryRequest(BaseModel):
 
 
 @router.post("/history/import")
-async def import_chat_history(req: ImportHistoryRequest):
+async def import_chat_history(req: ImportHistoryRequest, request: Request):
     """Idempotently import a phone's local chat history for one session.
 
     Each message is keyed by `client_key` + index so re-syncs never create
@@ -665,19 +678,20 @@ async def import_chat_history(req: ImportHistoryRequest):
     sessions created while offline."""
     _validate_session_id(req.session_id)
     from db import import_messages
-    n = await import_messages(req.session_id, req.messages, req.client_key)
+    n = await import_messages(req.session_id, req.messages, req.client_key, user_id=_uid(request))
     return {"ok": True, "imported": n}
 
 
 @router.get("/history/pull")
-async def pull_chat_history():
+async def pull_chat_history(request: Request):
     """One-request snapshot of every session + message for device sync.
 
     A single round-trip replaces N per-session history calls so a phone
     restoring its sidebar stays well under the 30 rpm rate limiter."""
+    user_id = _uid(request)
     from db import get_all_history, get_all_sessions
-    sessions = await get_all_sessions()
-    history = await get_all_history()
+    sessions = await get_all_sessions(user_id)
+    history = await get_all_history(user_id)
     # Only ship sessions that have at least one message.
     sessions = [s for s in sessions if s["session_id"] in history]
     return {"ok": True, "sessions": sessions, "session_history": history}
@@ -686,32 +700,36 @@ async def pull_chat_history():
 # -- Memories --
 
 @router.get("/memories")
-async def list_memories(user_id: str = Query("default"), limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0)):
-    all_mems = await get_all_memories(user_id)
+async def list_memories(request: Request, user_id: str = Query("default"), limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0)):
+    # Never trust a client-supplied user_id — bind to the authenticated key.
+    eff = _uid(request)
+    all_mems = await get_all_memories(eff)
     page = all_mems[offset:offset + limit]
-    return {"user_id": user_id, "count": len(all_mems), "limit": limit, "offset": offset, "memories": page}
+    return {"user_id": eff, "count": len(all_mems), "limit": limit, "offset": offset, "memories": page}
 
 
 @router.delete("/memories")
-async def delete_memory_endpoint(user_id: str = Query("default"), id: str = Query(...)):
+async def delete_memory_endpoint(request: Request, user_id: str = Query("default"), id: str = Query(...)):
+    eff = _uid(request)
     try:
         memory_id = int(id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid memory ID.")
-    await delete_memory(user_id=user_id, memory_id=memory_id)
+    await delete_memory(user_id=eff, memory_id=memory_id)
     return {"status": "success", "message": f"Memory {id} deleted."}
 
 
 # -- Export --
 
 @router.get("/export")
-async def export_data(user_id: str = Query("default")):
+async def export_data(request: Request, user_id: str = Query("default")):
     """Export all user data as JSON (memories + sessions summary)."""
+    eff = _uid(request)
     from db import get_all_memories, get_all_sessions
-    mems = await get_all_memories(user_id)
-    sessions = await get_all_sessions()
+    mems = await get_all_memories(eff)
+    sessions = await get_all_sessions(eff)
     return {
-        "user_id": user_id,
+        "user_id": eff,
         "memories": [{"id": m["id"], "content": m["content"], "category": m["category"], "importance": m["importance"]} for m in mems],
         "sessions": sessions,
         "session_count": len(sessions),
@@ -779,7 +797,7 @@ class SyncItemsRequest(BaseModel):
 
 
 @router.post("/sync", tags=["sync"])
-async def sync_commands(req: SyncRequest, background_tasks: BackgroundTasks):
+async def sync_commands(req: SyncRequest, background_tasks: BackgroundTasks, request: Request):
     """Process batched offline commands from mobile client.
 
     Each command is executed sequentially. Safe tools run immediately;
@@ -787,6 +805,7 @@ async def sync_commands(req: SyncRequest, background_tasks: BackgroundTasks):
 
     Returns results for each command in order.
     """
+    user_id = _uid(request)
     from tool_verification import run_verification
     from tools import CONFIRM_TOOLS, OFFLINE_SAFE_TOOLS, is_tool_success, run_tool
 
@@ -807,7 +826,7 @@ async def sync_commands(req: SyncRequest, background_tasks: BackgroundTasks):
         try:
             result, entity_id = await run_tool(
                 cmd.tool, cmd.params,
-                context={"user_id": "default", "session_id": cmd.session_id},
+                context={"user_id": user_id, "session_id": cmd.session_id},
             )
             success = is_tool_success(result)
             duration_ms = (time.perf_counter() - t0) * 1000
@@ -841,20 +860,22 @@ async def sync_commands(req: SyncRequest, background_tasks: BackgroundTasks):
 # back other devices' changes, including tombstones.
 
 @router.get("/sync/items", tags=["sync"])
-async def get_sync_items_local(user_id: str = Query("default"), entity_type: str | None = Query(None), since: str | None = Query(None)):
+async def get_sync_items_local(request: Request, user_id: str = Query("default"), entity_type: str | None = Query(None), since: str | None = Query(None)):
     """Return the user's sync items, optionally filtered by entity_type or an
     ISO `since` cutoff (exclusive). Includes tombstones (deleted=true)."""
+    eff = _uid(request)
     from db import get_sync_items
-    items = await get_sync_items(user_id, entity_type=entity_type, since=since)
-    return {"ok": True, "user_id": user_id, "items": items}
+    items = await get_sync_items(eff, entity_type=entity_type, since=since)
+    return {"ok": True, "user_id": eff, "items": items}
 
 
 @router.post("/sync/items", tags=["sync"])
-async def post_sync_items_local(req: SyncItemsRequest):
+async def post_sync_items_local(req: SyncItemsRequest, request: Request):
     """Upsert the user's items (last-write-wins). Items carry uuid/entity_type/data/
     updated_at/deleted; a deleted item acts as a tombstone that replicates the
     removal to other devices. Returns the applied count."""
+    eff = _uid(request)
     from db import upsert_sync_items
-    n = await upsert_sync_items(req.user_id, [it.model_dump() for it in req.items])
-    return {"ok": True, "user_id": req.user_id, "applied": n}
+    n = await upsert_sync_items(eff, [it.model_dump() for it in req.items])
+    return {"ok": True, "user_id": eff, "applied": n}
 
