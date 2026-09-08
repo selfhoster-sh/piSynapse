@@ -76,17 +76,17 @@ def test_conflict_cosine_wired_everywhere():
     assert 'getattr(config, "CONFLICT_COSINE"' not in feeder_py
 
 
-def test_ui_language_default_is_turkish_everywhere():
+def test_ui_language_default_is_english_everywhere():
     config_py = _read("config.py")
     example_env = _read("example.env")
     install_py = _read("install.py")
     messages_py = _read("messages.py")
 
     m = re.search(r'"UI_LANGUAGE":\s*\{[^}]*"default":\s*"(\w+)"', config_py)
-    assert m and m.group(1) == "tr", "schema default must be tr"
-    assert _env_literal(example_env, "UI_LANGUAGE") == "tr"
-    assert _env_literal(install_py, "UI_LANGUAGE") == "tr"
-    assert 'get("UI_LANGUAGE", "tr")' in messages_py
+    assert m and m.group(1) == "en", "schema default must be en"
+    assert _env_literal(example_env, "UI_LANGUAGE") == "en"
+    assert _env_literal(install_py, "UI_LANGUAGE") == "en"
+    assert 'get("UI_LANGUAGE", "en")' in messages_py
 
 
 def test_default_user_never_empty():

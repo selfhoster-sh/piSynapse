@@ -1136,7 +1136,7 @@ INTENT_LLM_FALLBACK=off
 CONFLICT_COSINE=0.50
 
 # --- Assistant language for backend user-facing strings (tr/en) ---
-UI_LANGUAGE=tr
+UI_LANGUAGE=en
 
 # --- Personalization ---
 ASSISTANT_USER={ASSISTANT_USER}
