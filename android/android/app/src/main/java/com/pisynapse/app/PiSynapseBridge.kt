@@ -675,6 +675,8 @@ class PiSynapseBridge : Plugin() {
                 val think = payload.optBoolean("think_mode", false)
                 val effort = payload.optString("reasoning_effort", "")
                 var contextSystem = system
+                val summaryStore = SessionSummaryStore(context)
+                val sessEntry = summaryStore.get(sessionId)
                 try {
                     val ctx = semantic.relevantContext(userText, 2, 3)
                     if (ctx.isNotEmpty()) {
@@ -684,9 +686,12 @@ class PiSynapseBridge : Plugin() {
                 } catch (e: Exception) {
                     // embedding unavailable — proceed without retrieval context
                 }
+                if (sessEntry.summary.isNotBlank()) {
+                    contextSystem = contextSystem.trim() + "\n\nSohbetin önceki bölümlerinin özeti (aşağıda tekrarlanmaz):\n" + sessEntry.summary
+                }
                 val g = llm.chat(
                     contextSystem, sessionId, history, userText,
-                    think = think, reasoningEffort = effort,
+                    think = think, reasoningEffort = effort, summaryRev = sessEntry.until.toLong(),
                     emitChunk = { chunk ->
                         text.append(chunk)
                         emit("chatEvent", JSObject().put("token", chunk))
@@ -716,6 +721,7 @@ class PiSynapseBridge : Plugin() {
                     .put("reasoning", g.reasoning)
                     .put("tokens", g.tokens)
                     .put("tps", g.tps))
+                updateRollingSummary(sessionId, history + listOf(Pair("user", userText), Pair("assistant", finalText)), summaryStore)
                 call.resolve(JSObject()
                     .put("ok", true)
                     .put("tokens", g.tokens)
@@ -729,6 +735,48 @@ class PiSynapseBridge : Plugin() {
                 emit("chatEvent", JSObject().put("error", e.message ?: e.toString()))
                 call.resolve(JSObject().put("ok", false).put("error", e.message))
             }
+        }
+    }
+
+    /**
+     * Folds aged-out messages into the per-session rolling summary (server parity
+     * with db.py get_messages_to_summarize + routers/chat.py _update_summary).
+     *
+     * Keeps the last LLM_HISTORY_LIMIT messages raw; everything older is folded
+     * into a short summary embedded in the system prompt. Runs only in only-phone
+     * mode (server mode already summarizes server-side). Bumps the store boundary
+     * on change, which changes the conversation key so the next turn recreates the
+     * conversation and picks up the new summary (accepted prefill).
+     */
+    private fun updateRollingSummary(sessionId: String, fullHistory: List<Pair<String, String>>, summaryStore: SessionSummaryStore) {
+        try {
+            if (sessionId.isBlank()) return
+            val limit = store.getInt("LLM_HISTORY_LIMIT", 40).coerceAtLeast(1)
+            val batchSize = store.getInt("SUMMARY_BATCH_SIZE", 5).coerceAtLeast(1)
+            val earlyTrigger = store.getInt("SUMMARY_EARLY_TRIGGER", 6)
+            val total = fullHistory.size
+            if (total <= limit) return
+            // boundary = exclusive end index of the raw window; pending = [until, boundary).
+            val boundary = total - limit
+            val pendingEnd = boundary - 1
+            val entry = summaryStore.get(sessionId)
+            val pendingStart = entry.until
+            if (pendingEnd < pendingStart) return
+            val pendingCount = pendingEnd - pendingStart + 1
+            val effectiveBatch = if (earlyTrigger > 0 && entry.until == 0 && pendingCount >= earlyTrigger) earlyTrigger else batchSize
+            if (pendingCount < effectiveBatch) return
+            val lines = fullHistory.subList(pendingStart, pendingEnd + 1).mapNotNull { (role, content) ->
+                val c = if (role == "assistant") llm.sanitizeConversationText(content) else content
+                if (c.isBlank()) null else "$role: $c"
+            }
+            if (lines.isEmpty()) return
+            val transcript = lines.joinToString("\n")
+            val userContent = "Existing summary:\n" + (entry.summary.ifBlank { "(none yet)" }) +
+                "\n\nNew messages:\n" + transcript + "\n\nUpdated summary:"
+            val newSummary = llm.summarize(SUMMARY_SYSTEM_PROMPT, userContent)
+            if (newSummary.isNotBlank()) summaryStore.set(sessionId, newSummary, boundary)
+        } catch (e: Exception) {
+            // rolling summary is best-effort — never break the chat for it
         }
     }
 

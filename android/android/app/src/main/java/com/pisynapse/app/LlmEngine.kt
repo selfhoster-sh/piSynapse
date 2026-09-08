@@ -8,14 +8,42 @@ import com.google.ai.edge.litertlm.Content
 import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
+import com.google.ai.edge.litertlm.ExperimentalApi
+import com.google.ai.edge.litertlm.ExperimentalFlags
 import com.google.ai.edge.litertlm.Message
 import com.google.ai.edge.litertlm.SamplerConfig
 import com.google.ai.edge.litertlm.ThinkingConfig
 import com.google.ai.edge.litertlm.ToolProvider
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import java.io.File
+
+/**
+ * Mirrors llm/chat.py SUMMARY_SYSTEM_PROMPT so the on-device rolling summary
+ * behaves exactly like piServe's: update the existing summary with the new
+ * messages, keep only facts useful for future context, drop raw tool-call
+ * artifacts, honor contradictions with newer information, reply in the
+ * conversation's language, output ONLY the updated summary.
+ */
+val SUMMARY_SYSTEM_PROMPT = (
+    "You maintain a short running summary of an ongoing conversation between a " +
+    "user and an AI assistant. Update the existing summary with the new messages " +
+    "below, keeping only information useful for future context: facts about the " +
+    "user, ongoing tasks, decisions and preferences. " +
+    "Ignore and do not include any raw tool-call syntax, malformed tags, or system " +
+    "artifacts that appear in the messages — these are bugs, not user content. " +
+    "Only include information explicitly present in the messages — do not infer or " +
+    "invent details. If new messages contradict the existing summary (e.g. the user " +
+    "changed their mind or a decision was reversed), the newer information takes " +
+    "priority — drop the outdated version rather than keeping both. " +
+    "Keep it to a short paragraph, roughly 3-5 sentences. If the existing summary is " +
+    "already long, COMPRESS it by merging redundant details and dropping outdated " +
+    "information. " +
+    "Reply in the same language as the conversation. Output ONLY the updated " +
+    "summary text, with no preamble or extra commentary."
+)
 
 class LlmEngine(
     private val ctx: Context,
@@ -29,6 +57,8 @@ class LlmEngine(
     @Volatile private var convKey: String? = null
     @Volatile private var lastUsedAtMs: Long = 0L
     private val lock = Any()
+    private val busy = AtomicBoolean(false)
+    private var mtpArmed = false
 
     fun findModel(): String? {
         val name = cfg.get("LLM_MODEL").trim()
@@ -87,6 +117,7 @@ class LlmEngine(
             if (engine?.isInitialized() == true && loadedPath == p) return true
             releaseLocked()
             return try {
+                if (!"off".equals(cfg.get("LLM_MTP"), ignoreCase = true)) armMtp()
                 val e = Engine(engineConfig(p))
                 e.initialize()
                 engine = e
@@ -114,11 +145,21 @@ class LlmEngine(
         }
     }
 
+    @OptIn(ExperimentalApi::class)
+    private fun armMtp() {
+        if (!mtpArmed) {
+            ExperimentalFlags.enableSpeculativeDecoding = true
+            mtpArmed = true
+        }
+    }
+
     private fun backend(): Backend =
         when (cfg.get("LLM_BACKEND_TYPE")) {
             "gpu" -> Backend.GPU()
             "npu" -> Backend.NPU()
-            else -> Backend.CPU()
+            else -> Backend.CPU(
+                threadCount = cfg.getInt("LLM_CPU_THREADS", 0).takeIf { it > 0 }
+            )
         }
 
     private fun engineConfig(modelPath: String): EngineConfig {
@@ -149,27 +190,79 @@ class LlmEngine(
     private fun conversationConfig(
         system: String, history: List<Message>, sampler: SamplerConfig,
         thinking: ThinkingConfig? = null,
+        tools: Boolean = true,
     ): ConversationConfig =
         ConversationConfig(
             systemInstruction = Contents.of(system),
-            initialMessages = history.takeLast(16),
-            tools = toolProviders,
+            initialMessages = history.takeLast(cfg.getInt("LLM_HISTORY_LIMIT", 40).coerceAtLeast(1)),
+            tools = if (tools) toolProviders else emptyList(),
             samplerConfig = sampler,
-            automaticToolCalling = true,
+            automaticToolCalling = tools,
             thinkingConfig = thinking,
             maxOutputToken = maxTokens()
         )
+
+    // Tool-call leak patterns (parity with llm/utils.py strip_tool_leaks): a small
+    // model may echo <|tool_call|>call:name{{...}}<tool_call|> as plain text.
+    private val toolCallRangeRe = Regex(
+        "<\\|?/?tool[|_]call\\|?>\\s*call:(\\w+)\\s*(?:\\{\\{?([^{}]*)\\}?\\})?\\s*<\\|?/?tool[|_]call\\|?>",
+        RegexOption.DOT_MATCHES_ALL,
+    )
+    private val toolCallBareRe = Regex("\\bcall:(\\w+)\\s*(?:\\{\\{?([^{}]*)(?:\\}?\\})?)?")
+    private val toolTagRe = Regex("<\\|?/?tool[|_]call\\|?>", RegexOption.IGNORE_CASE)
+
+    /** Strip leaked tool-call artifacts from assistant text before it is folded into a summary. */
+    fun sanitizeConversationText(text: String): String =
+        text
+            .replace(toolCallRangeRe, "")
+            .replace(toolCallBareRe, "")
+            .replace(toolTagRe, "")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
+    /** Rolling summary: run SUMMARY_SYSTEM_PROMPT in a throwaway conversation. */
+    fun summarize(system: String, transcript: String): String {
+        if (transcript.isBlank()) return ""
+        if (!busy.compareAndSet(false, true)) return ""
+        val text = try {
+            synchronized(lock) {
+                val e = engine ?: return ""
+                val c = e.createConversation(conversationConfig(system, emptyList(), sampler(), tools = false))
+                val buf = StringBuilder()
+                try {
+                    runBlocking {
+                        c.sendMessageAsync(transcript).collect { msg ->
+                            msg.contents.contents.forEach { cc ->
+                                if (cc is Content.Text && cc.text.isNotEmpty()) buf.append(cc.text)
+                            }
+                        }
+                    }
+                } finally {
+                    try { c.close() } catch (t: Throwable) {}
+                }
+                markUsed()
+                buf.toString().trim()
+            }
+        } finally {
+            busy.set(false)
+        }
+        return sanitizeConversationText(text)
+    }
 
     data class Generation(val text: String, val reasoning: String, val tokens: Int, val tps: Float, val promptMs: Long, val genMs: Long)
 
     fun chat(
         system: String, sessionId: String, history: List<Pair<String, String>>, user: String,
-        think: Boolean = false, reasoningEffort: String = "",
+        think: Boolean = false, reasoningEffort: String = "", summaryRev: Long = 0,
         emitChunk: (String) -> Unit, emitReasoning: (String) -> Unit,
     ): Generation {
-        return synchronized(lock) {
+        if (!busy.compareAndSet(false, true)) {
+            throw IllegalStateException("Model şu anda yanıt üretiyor, lütfen kısa bir süre sonra tekrar deneyin.")
+        }
+        return try {
+        synchronized(lock) {
             val e = engine ?: throw IllegalStateException("Model yüklü değil")
-            val key = (sessionId.ifBlank { "default" }) + ":" + think
+            val key = (sessionId.ifBlank { "default" }) + ":" + think + ":s" + summaryRev
             val conv = getConversation(e, key, system, history, think, reasoningEffort)
             val t0 = System.currentTimeMillis()
             val buf = StringBuilder()
@@ -205,6 +298,9 @@ class LlmEngine(
             val reasoning = reasonBuf.toString().trim()
             val tokens = ((text.length + reasoning.length) / 4).coerceAtLeast(1)
             Generation(text, reasoning, tokens, tokens.toFloat() / (genMs / 1000f).coerceAtLeast(0.1f), 0L, genMs)
+        }
+        } finally {
+            busy.set(false)
         }
     }
 
