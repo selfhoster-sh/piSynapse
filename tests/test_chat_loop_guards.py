@@ -13,6 +13,7 @@ import pytest
 
 import config as _cfg
 import llm.chat as llm_chat
+from llm.utils import empty_answer_fallback
 
 
 @pytest.fixture(autouse=True)
@@ -100,7 +101,7 @@ def test_dedup_after_nudge_still_empty_yields_fallback(monkeypatch, caplog):
         result, executed, _calls = _run(monkeypatch, responses)
 
     assert executed == ["list_notes"]  # never re-executed
-    assert result["reply"] == llm_chat._EMPTY_ANSWER_FALLBACK
+    assert result["reply"] == empty_answer_fallback()
     assert result["pending_action"] is None
 
 

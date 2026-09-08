@@ -15,6 +15,7 @@ import pytest
 
 import config as _cfg
 import llm.stream as llm_stream
+from llm.utils import empty_answer_fallback
 
 
 @pytest.fixture(autouse=True)
@@ -227,7 +228,7 @@ def test_dedup_after_nudge_still_empty_yields_fallback(monkeypatch, caplog):
 
     assert executed == ["list_notes"]  # never re-executed
     tokens = [ev["token"] for ev in events if "token" in ev]
-    assert llm_stream._EMPTY_ANSWER_FALLBACK in tokens
+    assert empty_answer_fallback() in tokens
     assert any(ev.get("done") for ev in events)
 
 
