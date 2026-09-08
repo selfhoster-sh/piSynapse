@@ -8,7 +8,15 @@ import llm.utils as llm_utils
 from messages import get_message
 
 
-def test_default_language_is_turkish():
+def test_default_language_is_english():
+    assert get_message("llm_empty_reply") == (
+        "Done, but I couldn't generate a summary. Could you try asking again?"
+    )
+    assert get_message("llm_unreachable").startswith("Couldn't reach")
+
+
+def test_turkish_selected_via_setting(monkeypatch):
+    monkeypatch.setattr("messages.get", lambda key, default=None: "tr")
     assert get_message("llm_empty_reply") == llm_utils.EMPTY_ANSWER_FALLBACK
     assert get_message("llm_unreachable").startswith("Motorla")
 

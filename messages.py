@@ -30,9 +30,9 @@ _MESSAGES = {
 
 
 def get_message(key: str) -> str:
-    """Return ``key`` in the instance's UI_LANGUAGE (default Turkish)."""
-    lang = str(get("UI_LANGUAGE", "tr") or "tr").strip().lower()
+    """Return ``key`` in the instance's UI_LANGUAGE (default English)."""
+    lang = str(get("UI_LANGUAGE", "en") or "en").strip().lower()
     entry = _MESSAGES.get(key)
     if not entry:
         return key
-    return entry.get(lang) or entry["tr"]
+    return entry.get(lang) or entry["en"]
