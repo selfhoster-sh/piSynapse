@@ -16,6 +16,12 @@
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 - **Sanitization rule:** this file may be published. Never write personal data, identity clues, deployment addresses (hostnames, IPs, ports), or accounts into it. Keep every narrative in English; Turkish inline tokens are allowed only as product corpus / i18n test data.
 
+## 2026-09-09 — Faz 2c correction: default language EN + multilingual priority (user directive)
+
+- **Correction (user):** the instance default language is EN, not TR. Reverted the tr-unification (schema + `example.env` + installer template back to `en`); the real default moved in `messages.py` (`get("UI_LANGUAGE", "en")`, `entry["en"]` fallback — the schema never had a module attr, so the code default is the true fallback). `test_default_language_is_turkish` → `test_default_language_is_english` plus a new explicit Turkish-selection test; the TR `EMPTY_ANSWER_FALLBACK` constant stays for backwards compatibility. Live `.env` (tr) untouched. Commits `0e18265`, `741b006`.
+- **Follow-through:** the EN default exposed two loop-guard tests pinning the frozen TR constant while the code correctly returns the live `empty_answer_fallback()` helper — tests now assert the same live helper; legacy `_EMPTY_ANSWER_FALLBACK` aliases removed from `llm/chat.py`/`llm/stream.py`. Root-caused a latent order-dependence (those tests only passed when an earlier settings test had synced `UI_LANGUAGE=tr` into the config module); now order-independent in isolation and full suite.
+- **Standing directive (user): default EN; the multilingual (tr/en) catalog stays a first-class priority.** Applies to the Faz 8 port contract and all future user-facing strings: no hardcoded single-language user strings; the catalog + live-helper pattern (`messages.get_message`) is the rule.
+
 ## 2026-09-09 — Faz 2 (server audit fixes): config single-truth
 
 - **Scope (plan Faz 2):** one canonical value for every config key across `config.py` / `example.env` / installer template / consumers. Three commits: `8ddf90d` (EMBED_MODEL), `5860f9e` (schema gaps + live reads), `b557ff1` (default unification + rerun-safe keys).
