@@ -1128,6 +1128,8 @@ AUTO_TTS_ON_VOICE={AUTO_TTS_ON_VOICE}
 
 # --- Intent ---
 INTENT_LLM_FALLBACK=off
+# Cosine threshold for the corpus-feeder conflict check (see config.py)
+CONFLICT_COSINE=0.50
 
 # --- Assistant language for backend user-facing strings (tr/en) ---
 UI_LANGUAGE=en
@@ -1281,8 +1283,8 @@ def step_env() -> None:
         "DB_PATH", "WEATHER_TIMEOUT", "NEXTCLOUD_TIMEOUT",
         "IMAP_HOST", "IMAP_PORT", "SMTP_HOST", "SMTP_PORT",
         "PROTON_IMAP_HOST", "PROTON_IMAP_PORT", "PROTON_SMTP_HOST", "PROTON_SMTP_PORT",
-        "IMAP_TIMEOUT", "SMTP_TIMEOUT", "CORS_ORIGINS", "TRUSTED_HOSTS", "MEDIA_MAX_MB",
-        "INTENT_LLM_FALLBACK",
+        "IMAP_TIMEOUT", "SMTP_TIMEOUT",         "CORS_ORIGINS", "TRUSTED_HOSTS", "MEDIA_MAX_MB",
+        "INTENT_LLM_FALLBACK", "CONFLICT_COSINE",
     }
     for k in preserved_keys:
         v = current.get(k)
