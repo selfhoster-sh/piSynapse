@@ -1,28 +1,26 @@
-"""Session title generation: first 4 words (instant) + LLM (enriched).
+"""Session title generation: first words (instant) + LLM (enriched).
 
-Layer 1 — First 4 words: instant sidebar title from the first user message.
+Layer 1 — First words: instant sidebar title from the first user message
+(up to 4 words, capped by max_words).
 Layer 2 — LLM: 2-5 word enriched title from full conversation (background).
 """
 
 import re
 
 
-def generate_title_first4(text: str) -> str:
-    """First 4 words of user message as instant title. No language list."""
+def generate_rake_title(text: str, max_words: int = 5) -> str:  # noqa: D401
+    """First words of user message as instant title. No language list."""
     clean = text.strip()
     if not clean:
         return "Yeni Sohbet"
-    # Split on whitespace, take first 4, strip trailing punctuation
+    # Split on whitespace, take up to 4 words (capped by max_words),
+    # strip trailing punctuation
     words = clean.split()
-    first4 = " ".join(words[:4])
+    first = " ".join(words[:min(4, max_words)])
     # Truncate to 40 chars max to avoid overflow, add ellipsis if needed
-    if len(first4) > 40:
-        first4 = first4[:40].rsplit(" ", 1)[0] + "…"
-    return first4
-
-# Keep alias for backward compat (db.py still imports this name)
-def generate_rake_title(text: str, max_words: int = 5) -> str:  # noqa: D401
-    return generate_title_first4(text)
+    if len(first) > 40:
+        first = first[:40].rsplit(" ", 1)[0] + "…"
+    return first
 
 
 # ═══════════════════════════════════════════════════════════════

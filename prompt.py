@@ -240,12 +240,6 @@ async def get_email_context(session_id: str) -> list[dict]:
     return await get_email_map(session_id)
 
 
-async def clear_email_context(session_id: str):
-    """Drop the persisted email listing for a session."""
-    from db import clear_email_map
-    await clear_email_map(session_id)
-
-
 # -- Notes Context --
 # Same pattern as email: model sees numbered lists, we map to real Nextcloud IDs.
 
@@ -261,12 +255,6 @@ async def get_notes_context(session_id: str) -> list[dict]:
     """Retrieve the persisted note listing for a session."""
     from db import get_notes_map
     return await get_notes_map(session_id)
-
-
-async def clear_notes_context(session_id: str):
-    """Drop the persisted note listing for a session."""
-    from db import clear_notes_map
-    await clear_notes_map(session_id)
 
 
 # -- Tasks Context --
@@ -286,12 +274,6 @@ async def get_tasks_context(session_id: str) -> list[dict]:
     return await get_tasks_map(session_id)
 
 
-async def clear_tasks_context(session_id: str):
-    """Drop the persisted task listing for a session."""
-    from db import clear_tasks_map
-    await clear_tasks_map(session_id)
-
-
 # -- Calendar Context --
 # Same pattern as email/notes/tasks: model sees numbered lists, we map to real UIDs.
 
@@ -307,9 +289,3 @@ async def get_calendar_context(session_id: str) -> list[dict]:
     """Retrieve the persisted calendar listing for a session."""
     from db import get_calendar_map
     return await get_calendar_map(session_id)
-
-
-async def clear_calendar_context(session_id: str):
-    """Drop the persisted calendar listing for a session."""
-    from db import clear_calendar_map
-    await clear_calendar_map(session_id)
