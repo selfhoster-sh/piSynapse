@@ -166,7 +166,7 @@ CONFLICT_COSINE = _safe_float("CONFLICT_COSINE", 0.50)
 # Data retention (days). 0 = disabled (keep forever).
 CONVERSATION_RETENTION_DAYS = _safe_int("CONVERSATION_RETENTION_DAYS", 0)
 MEMORY_RETENTION_DAYS = _safe_int("MEMORY_RETENTION_DAYS", 0)
-EMBED_MODEL = os.getenv("EMBED_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+EMBED_MODEL = os.getenv("EMBED_MODEL", "sentence-transformers/paraphrase-multilingual-mpnet-base-v2")
 
 # -- Weather --
 DEFAULT_CITY = os.getenv("DEFAULT_CITY", "")

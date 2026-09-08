@@ -116,6 +116,42 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database ready (WAL mode active)")
 
+    # Embedding dimension drift guard (Faz 2): stored vectors written by a
+    # different model than the configured one silently zero out cosine scores.
+    # Best-effort, never blocks startup.
+    try:
+        from config import EMBED_MODEL as _embed_model
+        from db import get_db as _dim_get_db
+        _dim_db = await _dim_get_db()
+        _dim_row = await (
+            await _dim_db.execute(
+                "SELECT embedding FROM conversations "
+                "WHERE embedding IS NOT NULL LIMIT 1"
+            )
+        ).fetchone()
+        if _dim_row is None:
+            _dim_row = await (
+                await _dim_db.execute(
+                    "SELECT embedding FROM memories "
+                    "WHERE embedding IS NOT NULL LIMIT 1"
+                )
+            ).fetchone()
+        if _dim_row is not None and _dim_row[0]:
+            _stored_dim = len(bytes(_dim_row[0])) // 4
+            _lname = str(_embed_model).lower()
+            _expected = (
+                384 if "minilm" in _lname else (768 if "mpnet" in _lname else None)
+            )
+            if _expected is not None and _stored_dim != _expected:
+                logger.warning(
+                    "Embedding dimension drift: stored vectors are %d-dim but "
+                    "EMBED_MODEL '%s' produces %d-dim. Run reembed_all.py, "
+                    "otherwise retrieval/memory similarity silently returns 0.",
+                    _stored_dim, _embed_model, _expected,
+                )
+    except Exception as _dim_e:
+        logger.warning(f"Embedding dimension check skipped: {_dim_e}")
+
     # Compress old tool-audit detail rows into daily summaries (idempotent).
     # One-shot sweep on startup (clears any backlog), then a daily background task.
     from db import periodic_cleanup_loop, periodic_rollup_loop, purge_intent_audit, rollup_tool_audit
