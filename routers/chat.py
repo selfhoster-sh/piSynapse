@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from config import get
 from db import (
+    _commit_with_retry,
     clear_history,
     delete_branch,
     delete_last_assistant,
@@ -631,7 +632,7 @@ async def create_session(req: RenameRequest | None = None, request: Request = No
         "INSERT OR IGNORE INTO sessions (id, name, created_at, last_active, user_id) VALUES (?, ?, datetime('now'), datetime('now'), ?)",
         (session_id, name, user_id),
     )
-    await db.commit()
+    await _commit_with_retry(db)
     return {"ok": True, "session_id": session_id, "name": name}
 
 

@@ -170,7 +170,7 @@ async def _apply_migrations(db: aiosqlite.Connection):
                 logger.warning(f"Migration {table}.{column} failed: {e}")
                 break
         await db.execute(f"PRAGMA user_version = {i + 1}")
-    await db.commit()
+    await _commit_with_retry(db)
 
 
 async def init_db():
@@ -397,7 +397,7 @@ async def init_db():
 
     await cleanup_expired_data()
 
-    await db.commit()
+    await _commit_with_retry(db)
 
     # Sidecar -wal/-shm now exist after the first write; lock them down too.
     await _secure_db_files()
@@ -566,7 +566,7 @@ async def log_intent_audit(message: str, chosen_group: str | None,
             "VALUES (?, ?, ?, ?, ?)",
             (message[:500], chosen_group, best_sim, margin, source),
         )
-        await db.commit()
+        await _commit_with_retry(db)
     except Exception as e:
         logger.warning(f"Intent audit write failed (source={source}): {e}")
 
@@ -590,7 +590,7 @@ async def set_tool_correction(audit_id: int, expected_tool: str | None,
             "corrected_at = CURRENT_TIMESTAMP, confirmed_at = NULL WHERE id = ?",
             (expected_tool, expected_group, audit_id),
         )
-        await db.commit()
+        await _commit_with_retry(db)
         return cur.rowcount > 0
     except Exception as e:
         logger.warning(f"Tool correction update failed for audit_id={audit_id}: {e}")
@@ -627,7 +627,7 @@ async def set_tool_confirmation(audit_id: int) -> bool:
             "WHERE id = ?",
             (audit_id,),
         )
-        await db.commit()
+        await _commit_with_retry(db)
         return cur.rowcount > 0
     except Exception as e:
         logger.warning(f"Tool confirmation update failed for audit_id={audit_id}: {e}")
@@ -699,7 +699,7 @@ async def purge_intent_audit(days: int = 30) -> int:
             "DELETE FROM intent_audit_log WHERE created_at < datetime('now', ?)",
             (f"-{days} days",),
         )
-        await db.commit()
+        await _commit_with_retry(db)
         return cur.rowcount
     except Exception as e:
         logger.warning(f"Intent audit purge failed: {e}")
@@ -846,7 +846,7 @@ async def rollup_tool_audit(days: int = 14) -> int:
                              AND substr(created_at, 1, 10) = ?""",
                         (cutoff, day),
                     )
-                    await db.commit()
+                    await _commit_with_retry(db)
                     days_summarized += 1
                     break
                 except sqlite3.OperationalError as e:
@@ -948,17 +948,21 @@ async def save_message(session_id: str, role: str, content: str, images: list[st
         except Exception as e:
             logger.warning(f"Embedding failed for save_message (non-fatal): {e}")
 
-    await db.execute(
+    cur = await db.execute(
         "INSERT INTO conversations (session_id, role, content, images, reasoning, embedding, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
         (session_id, role, content, images_json, reasoning, embedding_blob, user_id),
     )
-    # Keep FTS5 index in sync
-    async with db.execute("SELECT last_insert_rowid()") as cur:
-        rowid = (await cur.fetchone())[0]
-    await db.execute(
-        "INSERT INTO conversations_fts (rowid, content, session_id) VALUES (?, ?, ?)",
-        (rowid, content, session_id),
-    )
+    # Keep FTS5 index in sync (cursor.lastrowid: SELECT last_insert_rowid()
+    # on the shared connection can return another task's row under concurrency).
+    rowid = cur.lastrowid
+    try:
+        await db.execute(
+            "INSERT INTO conversations_fts (rowid, content, session_id) VALUES (?, ?, ?)",
+            (rowid, content, session_id),
+        )
+    except Exception as fts_e:
+        # FTS5 is best-effort; a failure must not eat the message row.
+        logger.warning(f"save_message FTS insert failed (non-fatal): {fts_e}")
     await db.execute(
         """INSERT INTO sessions (id, user_id) VALUES (?, ?)
            ON CONFLICT(id) DO UPDATE SET last_active = CURRENT_TIMESTAMP
@@ -1160,12 +1164,11 @@ async def import_messages(session_id: str, messages: list[dict], client_key: str
             if await cur.fetchone():
                 continue
         try:
-            await db.execute(
+            cur = await db.execute(
                 "INSERT INTO conversations (session_id, role, content, client_key, user_id) VALUES (?, ?, ?, ?, ?)",
                 (session_id, role, content, key, user_id),
             )
-            async with db.execute("SELECT last_insert_rowid()") as cur:
-                rowid = (await cur.fetchone())[0]
+            rowid = cur.lastrowid
             try:
                 await db.execute(
                     "INSERT INTO conversations_fts (rowid, content, session_id) VALUES (?, ?, ?)",
@@ -1490,7 +1493,7 @@ async def upsert_sync_items(user_id: str, items: list[dict]) -> int:
             n += 1
 
     await _apply()
-    await db.commit()
+    await _commit_with_retry(db)
     return n
 
 
@@ -1586,10 +1589,11 @@ async def update_session_name(session_id: str, name: str, user_id: str = "defaul
     db = await get_db()
     await db.execute(
         """INSERT INTO sessions (id, name, user_id) VALUES (?, ?, ?)
-           ON CONFLICT(id) DO UPDATE SET name = ?, last_active = CURRENT_TIMESTAMP""",
-        (session_id, name, user_id, name),
+           ON CONFLICT(id) DO UPDATE SET name = excluded.name, last_active = CURRENT_TIMESTAMP
+           WHERE sessions.user_id = excluded.user_id""",
+        (session_id, name, user_id),
     )
-    await db.commit()
+    await _commit_with_retry(db)
 
 
 async def get_all_sessions(user_id: str = "default") -> list[dict]:
@@ -1677,11 +1681,12 @@ async def update_session_summary(session_id: str, summary: str, summarized_until
     db = await get_db()
     await db.execute(
         """INSERT INTO sessions (id, summary, summarized_until, user_id) VALUES (?, ?, ?, ?)
-           ON CONFLICT(id) DO UPDATE SET summary = excluded.summary, summarized_until = excluded.summarized_until
+           ON CONFLICT(id) DO UPDATE SET summary = excluded.summary, summarized_until = excluded.summarized_until,
+           last_active = CURRENT_TIMESTAMP
            WHERE sessions.user_id = excluded.user_id""",
         (session_id, summary, summarized_until, user_id),
     )
-    await db.commit()
+    await _commit_with_retry(db)
 
 
 # -- Long-term Memories --
@@ -1715,14 +1720,14 @@ async def save_memory(content: str, category: str = "general",
                        access_count = access_count + 1 WHERE id = ?""",
                     (mem_id,),
                 )
-                await db.commit()
+                await _commit_with_retry(db)
                 return "Memory updated (similar content exists).", mem_id
 
     cur = await db.execute(
         "INSERT INTO memories (user_id, content, category, importance, embedding) VALUES (?, ?, ?, ?, ?)",
         (user_id, content, category, importance, new_embedding),
     )
-    await db.commit()
+    await _commit_with_retry(db)
     rowid = cur.lastrowid
     return "Memory saved.", rowid
 
