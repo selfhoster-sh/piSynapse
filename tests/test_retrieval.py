@@ -49,7 +49,7 @@ def test_retrieve_keeps_most_relevant_in_chronological_order(monkeypatch):
     query_vec = _vec(1, 0, 0, 0)
     vecs = [_vec(0, 1, 0, 0), _vec(1, 0, 0, 0), _vec(0, 0, 1, 0), _vec(0.6, 0.8, 0, 0)]
 
-    async def fake_fetch(session_id, recent_window=8):
+    async def fake_fetch(session_id, recent_window=8, user_id="default"):
         return candidates
 
     async def fake_embed(texts):
@@ -75,7 +75,7 @@ def test_retrieve_threshold_filters_low_similarity(monkeypatch):
     query_vec = _vec(1, 0)
     vecs = [_vec(0, 1), _vec(1, 0)]
 
-    async def fake_fetch(session_id, recent_window=8):
+    async def fake_fetch(session_id, recent_window=8, user_id="default"):
         return candidates
 
     async def fake_embed(texts):
@@ -91,7 +91,7 @@ def test_retrieve_threshold_filters_low_similarity(monkeypatch):
 
 
 def test_retrieve_falls_back_when_embedding_fails(monkeypatch):
-    async def fake_fetch(session_id, recent_window=8):
+    async def fake_fetch(session_id, recent_window=8, user_id="default"):
         return [{"role": "user", "content": "c1", "timestamp": "2026-08-01 10:00"}]
 
     async def raiser(texts):
@@ -106,7 +106,7 @@ def test_retrieve_falls_back_when_embedding_fails(monkeypatch):
 
 
 def test_retrieve_empty_query_skips_candidates(monkeypatch):
-    async def boom(session_id, recent_window=8):
+    async def boom(session_id, recent_window=8, user_id="default"):
         raise AssertionError("must not hit DB for empty query")
 
     monkeypatch.setattr(retrieval, "_fetch_candidates", boom)
@@ -121,7 +121,7 @@ def test_retrieve_timeout_falls_back_when_budget_exceeded(monkeypatch):
         await asyncio.sleep(5)
         return []
 
-    async def fake_fetch(session_id, recent_window=8):
+    async def fake_fetch(session_id, recent_window=8, user_id="default"):
         return [{"role": "user", "content": "c1", "timestamp": "2026-08-01 10:00"}]
 
     monkeypatch.setattr(retrieval, "_fetch_candidates", fake_fetch)
@@ -142,7 +142,7 @@ def test_retrieve_reuses_precomputed_query_embedding(monkeypatch):
 
     embedded: list[list[str]] = []
 
-    async def fake_fetch(session_id, recent_window=8):
+    async def fake_fetch(session_id, recent_window=8, user_id="default"):
         return candidates
 
     async def fake_embed(texts):
