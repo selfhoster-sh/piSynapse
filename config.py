@@ -153,7 +153,7 @@ SUMMARY_EARLY_TRIGGER = _safe_int("SUMMARY_EARLY_TRIGGER", 6)
 INTENT_LLM_FALLBACK = os.getenv("INTENT_LLM_FALLBACK", "off")
 
 # -- Memory --
-DEFAULT_USER = os.getenv("ASSISTANT_USER", "default")
+DEFAULT_USER = os.getenv("ASSISTANT_USER", "default") or "default"
 MEMORY_SIMILARITY_THRESHOLD = _safe_float("MEMORY_SIMILARITY_THRESHOLD", 0.68)
 # Cosine threshold for the corpus-feeder "conflict" check: when a confirmed/
 # corrected trigger's nearest example of a DIFFERENT group scores at or above
@@ -306,7 +306,7 @@ SETTINGS_SCHEMA: dict = {
         {"value": "ollama", "label": {"tr": "Ollama (yerel)", "en": "Ollama (local)"}},
     ]},
     # Read live by messages.get_message() — deliberately NOT restart-required.
-    "UI_LANGUAGE":        {"type": "select", "default": "en", "label": {"tr": "Asistan Dili (sistem mesajları)", "en": "Assistant Language (system messages)"}, "options": [
+    "UI_LANGUAGE":        {"type": "select", "default": "tr", "label": {"tr": "Asistan Dili (sistem mesajları)", "en": "Assistant Language (system messages)"}, "options": [
         {"value": "tr", "label": {"tr": "Türkçe",   "en": "Turkish"}},
         {"value": "en", "label": {"tr": "İngilizce", "en": "English"}},
     ]},

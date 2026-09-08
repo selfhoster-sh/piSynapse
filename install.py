@@ -1118,6 +1118,10 @@ TRUSTED_HOSTS={TRUSTED_HOSTS}
 # Trust X-Forwarded-For for client IPs when behind a reverse proxy (1/true/yes/on)
 TRUST_X_FORWARDED_FOR=
 MEDIA_MAX_MB=100
+# Admin token for the LiteRT server (piserve) admin calls (optional)
+PISERVE_ADMIN_TOKEN=
+# Audit CSV export directory (default: <dirname of DB_PATH>/audit_exports)
+AUDIT_EXPORT_DIR=
 
 # --- STT ---
 STT_ENGINE={STT_ENGINE}
@@ -1132,7 +1136,7 @@ INTENT_LLM_FALLBACK=off
 CONFLICT_COSINE=0.50
 
 # --- Assistant language for backend user-facing strings (tr/en) ---
-UI_LANGUAGE=en
+UI_LANGUAGE=tr
 
 # --- Personalization ---
 ASSISTANT_USER={ASSISTANT_USER}
@@ -1285,6 +1289,7 @@ def step_env() -> None:
         "PROTON_IMAP_HOST", "PROTON_IMAP_PORT", "PROTON_SMTP_HOST", "PROTON_SMTP_PORT",
         "IMAP_TIMEOUT", "SMTP_TIMEOUT",         "CORS_ORIGINS", "TRUSTED_HOSTS", "MEDIA_MAX_MB",
         "INTENT_LLM_FALLBACK", "CONFLICT_COSINE",
+        "PISERVE_ADMIN_TOKEN", "AUDIT_EXPORT_DIR",
     }
     for k in preserved_keys:
         v = current.get(k)

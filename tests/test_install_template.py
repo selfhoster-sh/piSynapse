@@ -74,3 +74,52 @@ def test_conflict_cosine_wired_everywhere():
     # Live read through config.get, not a frozen getattr default.
     assert 'config.get("CONFLICT_COSINE", 0.50)' in feeder_py
     assert 'getattr(config, "CONFLICT_COSINE"' not in feeder_py
+
+
+def test_ui_language_default_is_turkish_everywhere():
+    config_py = _read("config.py")
+    example_env = _read("example.env")
+    install_py = _read("install.py")
+    messages_py = _read("messages.py")
+
+    m = re.search(r'"UI_LANGUAGE":\s*\{[^}]*"default":\s*"(\w+)"', config_py)
+    assert m and m.group(1) == "tr", "schema default must be tr"
+    assert _env_literal(example_env, "UI_LANGUAGE") == "tr"
+    assert _env_literal(install_py, "UI_LANGUAGE") == "tr"
+    assert 'get("UI_LANGUAGE", "tr")' in messages_py
+
+
+def test_default_user_never_empty():
+    config_py = _read("config.py")
+    assert 'os.getenv("ASSISTANT_USER", "default") or "default"' in config_py
+
+
+def test_media_max_mb_parse_is_guarded():
+    chat_py = _read("routers/chat.py")
+    assert "except (TypeError, ValueError):\n        max_mb = 100" in chat_py
+
+
+def test_preserved_live_keys_survive_rerun():
+    example_env = _read("example.env")
+    install_py = _read("install.py")
+
+    for key in ("PISERVE_ADMIN_TOKEN", "AUDIT_EXPORT_DIR"):
+        for content, name in ((example_env, "example.env"), (install_py, "install.py")):
+            m = re.search(rf"^{key}=(.*)$", content, re.M)
+            assert m, f"{key}= line not found in {name}"
+            assert m.group(1).strip() == "", f"{key} must default empty in {name}"
+        assert f'"{key}"' in install_py  # preserved_keys
+
+
+def test_litert_max_tokens_matches_config_default():
+    install_py = _read("install.py")
+    config_py = _read("config.py")
+
+    m_cfg = re.search(r"DEFAULT_LLM_NUM_CTX\s*=\s*(\d+)", config_py)
+    assert m_cfg, "config.DEFAULT_LLM_NUM_CTX not found"
+    m_inst = re.search(r'"max_num_tokens":\s*(\d+)', install_py)
+    assert m_inst, "install.py litert max_num_tokens not found"
+    assert m_inst.group(1) == m_cfg.group(1), (
+        f"litert max_num_tokens drift: install.py={m_inst.group(1)} "
+        f"config.DEFAULT_LLM_NUM_CTX={m_cfg.group(1)}"
+    )
