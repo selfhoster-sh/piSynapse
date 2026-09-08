@@ -45,9 +45,9 @@ class TestRakeTitle:
 
     def test_max_words_limit(self):
         result = generate_rake_title("Python aiosqlite veritabanı bağlantısı kilitlenme hatası çözümü", max_words=3)
-        # max_words ignored — always 4
-        assert result == "Python aiosqlite veritabanı bağlantısı"
-        assert len(result.split()) == 4
+        # max_words caps the default 4-word take
+        assert result == "Python aiosqlite veritabanı"
+        assert len(result.split()) == 3
 
     def test_empty_input(self):
         result = generate_rake_title("")

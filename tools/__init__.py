@@ -1,6 +1,5 @@
 """Tool definitions + dispatcher. Defines schemas and routes LLM tool calls."""
 from .definitions import (
-    CONFIRM_REQUIRED,
     CONFIRM_TOOLS,
     OFFLINE_SAFE_TOOLS,
     TOOL_GROUPS,
@@ -21,7 +20,6 @@ __all__ = [
     "TOOL_GROUPS",
     "CONFIRM_TOOLS",
     "OFFLINE_SAFE_TOOLS",
-    "CONFIRM_REQUIRED",
     "get_tools_for_group",
     "get_combined_tools",
     "validate_confirm_params",
