@@ -7,6 +7,9 @@ uses [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Security
+- Per-user isolation: summary boundary/updates, session upserts, semantic search supplement, retrieval candidates, and history/FTS clearing are now scoped by `user_id`, so a colliding `session_id` can no longer leak or clobber another user's data.
+
+### Security
 - Backup archives under `backups/` are now created/readable as mode 600 (they embed secrets); existing archives re-chmodded.
 
 ### Fixed

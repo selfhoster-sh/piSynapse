@@ -16,6 +16,15 @@
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 - **Sanitization rule:** this file may be published. Never write personal data, identity clues, deployment addresses (hostnames, IPs, ports), or accounts into it. Keep every narrative in English; Turkish inline tokens are allowed only as product corpus / i18n test data.
 
+## 2026-09-09 — Faz 1 (server audit fixes): per-user isolation
+
+- **Scope (plan Faz 1):** `user_id` guards on summary/session/search/clear paths + retrieval threading + cross-user tests. Two commits: `9fc3ffb` (db guards), `8e9be9d` (retrieval + tests).
+- **Changes:** `get_messages_to_summarize(user_id)` filters both queries; all `sessions` upserts guarded via `ON CONFLICT...WHERE sessions.user_id = excluded.user_id` (semantics verified in scratch sqlite first: same-user updates, cross-user silently skipped); `search_sessions` semantic supplement filters `c.user_id` and joins on `s.user_id`; `clear_history` FTS delete is now rowid-scoped to the user's rows and runs BEFORE the conversations delete (old code wiped the other user's FTS rows on `session_id` collision); `_fetch_candidates`/`retrieve_relevant_history` take `user_id`, both chat endpoints pass the request user through (with `_update_summary`).
+- **New tests:** `tests/test_user_isolation.py` (6 tests, real sqlite tmp DB): summarize boundary isolation, summary no-clobber, session-touch preservation, retrieval fetch isolation, clear_history FTS isolation (MATCH-verified), semantic-search isolation.
+- **Findings while verifying (external-content FTS5 quirks):** `DELETE...IN-subquery` against an index-empty table raises "malformed"; bare `SELECT rowid` on an external-content table enumerates *content* rowids, not index entries — MATCH is the only honest index probe; reading `rowid` from the FTS table inside a write statement corrupts the index. Test seeds mirror `save_message` (FTS rows written alongside conversation rows).
+- **Residuals (accepted):** `*_session_map` tables have no `user_id` column (schema change deferred to a later phase); `create_session` keeps `INSERT OR IGNORE` (fresh uuid12 per session — collision negligible); intent-layer `_last_executed_tool_group` stays session-scoped (intent signatures carry no user_id; the planned "resume seed user_id" change was dropped as a no-op without read-side filtering).
+- **Test:** full suite **569 passed** (563 baseline + 6 new).
+
 ## 2026-09-09 — Faz 0 (server audit fixes): dead code + hygiene + doc truth
 
 - **Context (user):** comprehensive server audit first (4 parallel review agents; 106 findings saved in `docs/server-audit-2026-09-09.md`), then a phased fix plan (`docs/fix-plan-2026-09-09.md`, 9 phases Faz 0–8, each closing with its own regression tests). Standing orders for the fix run: verify every step with tests, commit per step, log into the notes files per their rules. Android tree left untouched (earlier session's uncommitted work).
