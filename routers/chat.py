@@ -153,6 +153,7 @@ async def _update_summary(session_id: str, user_id: str = "default"):
         to_summarize, new_boundary = await get_messages_to_summarize(
             session_id, get("HISTORY_LIMIT", 12), meta["summarized_until"],
             get("SUMMARY_BATCH_SIZE", 5), early_trigger=get("SUMMARY_EARLY_TRIGGER", 6),
+            user_id=user_id,
         )
         if not to_summarize:
             return
@@ -217,7 +218,7 @@ async def chat_endpoint(req: ChatRequest, request: Request, background_tasks: Ba
         from llm import _classify_intent, is_contextual_followup
         query_embedding = await _shared_query_embedding(req.message)
         history_coro = get_history(req.session_id, limit=get("HISTORY_LIMIT", 12), user_id=user_id)
-        retrieval_coro = retrieve_relevant_history(req.session_id, req.message, query_embedding=query_embedding)
+        retrieval_coro = retrieve_relevant_history(req.session_id, req.message, query_embedding=query_embedding, user_id=user_id)
         memories_coro = _gather_memories(req.message, user_id, query_embedding=query_embedding)
         meta_coro = get_session_meta(req.session_id, user_id=user_id)
         intent_coro = _classify_intent(req.message, query_embedding=query_embedding)
@@ -290,7 +291,7 @@ async def chat_stream(req: ChatRequest, request: Request, background_tasks: Back
         from llm import _classify_intent, is_contextual_followup
         query_embedding = await _shared_query_embedding(req.message)
         history_coro = get_history(req.session_id, limit=get("HISTORY_LIMIT", 12), user_id=user_id)
-        retrieval_coro = retrieve_relevant_history(req.session_id, req.message, query_embedding=query_embedding)
+        retrieval_coro = retrieve_relevant_history(req.session_id, req.message, query_embedding=query_embedding, user_id=user_id)
         memories_coro = _gather_memories(req.message, user_id, query_embedding=query_embedding)
         meta_coro = get_session_meta(req.session_id, user_id=user_id)
         intent_coro = _classify_intent(req.message, query_embedding=query_embedding)

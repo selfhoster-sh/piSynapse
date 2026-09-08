@@ -38,7 +38,7 @@ def merge_history(history: list[dict], retrieved: list[dict], recent_window: int
     return retrieved + recent
 
 
-async def _fetch_candidates(session_id: str, recent_window: int = RECENT_WINDOW) -> list[dict]:
+async def _fetch_candidates(session_id: str, recent_window: int = RECENT_WINDOW, user_id: str = "default") -> list[dict]:
     """Older messages just before the verbatim window, chronological order."""
     limit = max(0, get("HISTORY_LIMIT", 12) - recent_window)
     if limit == 0:
@@ -47,8 +47,8 @@ async def _fetch_candidates(session_id: str, recent_window: int = RECENT_WINDOW)
     db = await get_db()
     async with db.execute(
         """SELECT role, content, timestamp FROM conversations
-           WHERE session_id = ? ORDER BY id DESC LIMIT ? OFFSET ?""",
-        (session_id, limit, recent_window),
+           WHERE session_id = ? AND user_id = ? ORDER BY id DESC LIMIT ? OFFSET ?""",
+        (session_id, user_id, limit, recent_window),
     ) as cur:
         rows = await cur.fetchall()
     return [
@@ -66,6 +66,7 @@ async def retrieve_relevant_history(
     threshold: float = SIM_THRESHOLD,
     time_budget_ms: int = TIME_BUDGET_MS,
     query_embedding: bytes | None = None,
+    user_id: str = "default",
 ) -> tuple[list[dict], dict]:
     """Return (relevant older messages in chronological order, stats).
 
@@ -88,7 +89,7 @@ async def retrieve_relevant_history(
         return picked, stats
 
     async def _run() -> list[dict]:
-        candidates = await _fetch_candidates(session_id, recent_window)
+        candidates = await _fetch_candidates(session_id, recent_window, user_id)
         stats["candidates"] = len(candidates)
         if not candidates:
             return []
