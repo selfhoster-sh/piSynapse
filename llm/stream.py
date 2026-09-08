@@ -36,9 +36,6 @@ from .utils import (
     user_requested_action,
 )
 from .utils import (
-    EMPTY_ANSWER_FALLBACK as _EMPTY_ANSWER_FALLBACK,  # noqa: F401 -- legacy alias, referenced by tests
-)
-from .utils import (
     FINALIZE_NUDGE as _FINALIZE_NUDGE,
 )
 from .utils import (
