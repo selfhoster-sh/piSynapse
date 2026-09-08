@@ -405,7 +405,7 @@ def _check_conflict(
     from embedding import embed as embed_one
 
     if conflict_threshold is None:
-        conflict_threshold = float(getattr(config, "CONFLICT_COSINE", 0.50))
+        conflict_threshold = float(config.get("CONFLICT_COSINE", 0.50))
 
     vec = np.frombuffer(embed_one(text), dtype="float32")
 

@@ -299,6 +299,7 @@ SETTINGS_SCHEMA: dict = {
     "CONVERSATION_RETENTION_DAYS": {"type": "int", "default": "0", "label": {"tr": "Sohbet Saklama (Gün, 0=kapalı)", "en": "Chat Retention (days, 0=off)"}, "min": 0, "max": 3650, "step": 1},
     "MEMORY_RETENTION_DAYS":       {"type": "int", "default": "0", "label": {"tr": "Bellek Saklama (Gün, 0=kapalı)", "en": "Memory Retention (days, 0=off)"}, "min": 0, "max": 3650, "step": 1},
     "SUMMARY_BATCH_SIZE": {"type": "int",   "default": "5",    "label": {"tr": "Özetleme Batch Boyutu",       "en": "Summary Batch Size"},     "min": 2, "max": 20, "step": 1},
+    "SUMMARY_EARLY_TRIGGER": {"type": "int", "default": "6",   "label": {"tr": "Erken Özet Tetikleyici",      "en": "Early Summary Trigger"},    "min": 1, "max": 20, "step": 1},
     "LLM_BACKEND":        {"type": "select", "default": "litert", "label": {"tr": "LLM Motoru",                 "en": "LLM Engine"},
     "options": [
         {"value": "litert", "label": {"tr": "LiteRT (yerel, hızlı)", "en": "LiteRT (local, fast)"}},
@@ -338,6 +339,7 @@ SETTINGS_SCHEMA: dict = {
     "STT_ENGINE":          {"type": "select", "default": "whisper", "label": {"tr": "Ses Motoru (STT)", "en": "Speech Engine (STT)"}, "options": [
         {"value": "gemma4",  "label": {"tr": "Gemma4 Native (duygu: metin içeriğinden)",  "en": "Gemma4 Native (emotion from text content)"}},
         {"value": "whisper", "label": {"tr": "Whisper (hızlı, tam transkribe)",    "en": "Whisper (fast, full transcription)"}},
+        {"value": "browser", "label": {"tr": "Tarayıcı (Web Speech API)",          "en": "Browser (Web Speech API)"}},
     ]},
     "AUTO_SEND_ON_VOICE":  {"type": "select", "default": "off", "label": {"tr": "Sesle Giri\u015fte Otomatik G\u00f6nder", "en": "Auto-Send on Voice Input"}, "options": [
         {"value": "off",  "label": {"tr": "Kapal\u0131", "en": "Off"}},
@@ -387,6 +389,7 @@ _NUMERIC_KEYS = {
     "IMAP_TIMEOUT": (int, 20), "SMTP_TIMEOUT": (int, 20),
     "PROTON_IMAP_PORT": (int, 1143), "PROTON_SMTP_PORT": (int, 1025),
     "MEMORY_SIMILARITY_THRESHOLD": (float, 0.68),
+    "CONFLICT_COSINE": (float, 0.50),
     "CONVERSATION_RETENTION_DAYS": (int, 0),
     "MEMORY_RETENTION_DAYS": (int, 0),
     "MEDIA_MAX_MB": (int, 100),
