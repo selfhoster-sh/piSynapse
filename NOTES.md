@@ -16,6 +16,16 @@
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 - **Sanitization rule:** this file may be published. Never write personal data, identity clues, deployment addresses (hostnames, IPs, ports), or accounts into it. Keep every narrative in English; Turkish inline tokens are allowed only as product corpus / i18n test data.
 
+## 2026-09-09 — Faz 2 (server audit fixes): config single-truth
+
+- **Scope (plan Faz 2):** one canonical value for every config key across `config.py` / `example.env` / installer template / consumers. Three commits: `8ddf90d` (EMBED_MODEL), `5860f9e` (schema gaps + live reads), `b557ff1` (default unification + rerun-safe keys).
+- **Faz 2a:** canonical embedding model is mpnet-base-v2 (768-dim), matching live env, `example.env` and stored vectors — `config.py` default MiniLM→mpnet, installer template MiniLM→mpnet, `embedding.py` no longer defines its own default (imports `config.EMBED_MODEL`; the old fallback silently zeroed cosine scores on drift). `main.py` lifespan warns (never blocks) on stored-dim vs configured-model mismatch, pointing at `reembed_all.py`.
+- **Faz 2b:** `SETTINGS_SCHEMA` gains `SUMMARY_EARLY_TRIGGER` and the STT `browser` option (installer offered it, API validation rejected it; no server behavior code needed — in browser mode the UI uses Web Speech directly and never calls server transcribe). `CONFLICT_COSINE` read live via `config.get`, registered in `_NUMERIC_KEYS`, added to `example.env` + installer template + `preserved_keys`.
+- **Faz 2c:** `UI_LANGUAGE` default unified to `tr` (schema + `example.env` + template; `messages.py` and its pinning test were already tr; live env untouched). `DEFAULT_USER` can no longer be empty. `/chat/upload` `MEDIA_MAX_MB` parse guarded (garbage → 100, not 500). `PISERVE_ADMIN_TOKEN` + `AUDIT_EXPORT_DIR` added to template + `preserved_keys` + `example.env`.
+- **New tests:** `tests/test_install_template.py` (9 tests) parses the three files as text — the installer must stay stdlib-only, so no imports — enforcing template ≡ example ≡ config default, plus litert `max_num_tokens` ≡ `config.DEFAULT_LLM_NUM_CTX`.
+- **Conscious deferrals:** HOST/PORT env plumbing moved to Faz 6/7 (coupled with the localhost-default security decision); live `litert_serve/config.json` 6144 drift untouched (runtime behavior); `install.py` keeps the `max_num_tokens` literal (stdlib-only constraint) with the sync comment + enforcing test.
+- **Test:** full suite **578 passed** (569 + 9 new).
+
 ## 2026-09-09 — Faz 1 (server audit fixes): per-user isolation
 
 - **Scope (plan Faz 1):** `user_id` guards on summary/session/search/clear paths + retrieval threading + cross-user tests. Two commits: `9fc3ffb` (db guards), `8e9be9d` (retrieval + tests).
