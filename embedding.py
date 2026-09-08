@@ -1,19 +1,17 @@
 """Text embeddings via FastEmbed (ONNX). Used by intent classifier and memory search."""
 import asyncio
 import logging
-import os
 import threading
 import warnings
 
 import numpy as np
 from fastembed import TextEmbedding
 
-logger = logging.getLogger("piSynapse")
+# Single source of truth lives in config.py (Faz 2); this module must not
+# define its own default (a drifted default silently poisons cosine scores).
+from config import EMBED_MODEL as MODEL_NAME
 
-MODEL_NAME = os.getenv(
-    "EMBED_MODEL",
-    "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
-)
+logger = logging.getLogger("piSynapse")
 
 _model: TextEmbedding | None = None
 _model_lock = threading.Lock()

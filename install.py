@@ -1052,7 +1052,7 @@ LLM_REASONING_EFFORT=medium
 LLM_MAX_OUTPUT_TOKENS=4096
 
 # --- Embedding ---
-EMBED_MODEL=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+EMBED_MODEL=sentence-transformers/paraphrase-multilingual-mpnet-base-v2
 
 # --- Memory ---
 MEMORY_SIMILARITY_THRESHOLD=0.68
