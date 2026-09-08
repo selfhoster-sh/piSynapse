@@ -12,7 +12,7 @@ uses [Semantic Versioning](https://semver.org/).
 ### Fixed
 - Single source of truth for config: `EMBED_MODEL` canonicalized to mpnet-base-v2 everywhere (mismatched defaults silently zeroed similarity scores); new startup warning on embedding dimension drift.
 - Settings schema: added `SUMMARY_EARLY_TRIGGER` and the STT `browser` option; `CONFLICT_COSINE` now read live and preserved across installer reruns (with `PISERVE_ADMIN_TOKEN`, `AUDIT_EXPORT_DIR`).
-- `UI_LANGUAGE` default unified to Turkish across schema, template, and example env; `DEFAULT_USER` can no longer be empty; malformed `MEDIA_MAX_MB` falls back to 100 instead of 500.
+- `UI_LANGUAGE` default unified to English across schema, template, and example env (live `.env` untouched); loop-guard tests assert the live localized fallback instead of a frozen string; `DEFAULT_USER` can no longer be empty; malformed `MEDIA_MAX_MB` falls back to 100 instead of 500.
 
 ### Security
 - Backup archives under `backups/` are now created/readable as mode 600 (they embed secrets); existing archives re-chmodded.
