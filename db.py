@@ -961,7 +961,8 @@ async def save_message(session_id: str, role: str, content: str, images: list[st
     )
     await db.execute(
         """INSERT INTO sessions (id, user_id) VALUES (?, ?)
-           ON CONFLICT(id) DO UPDATE SET last_active = CURRENT_TIMESTAMP""",
+           ON CONFLICT(id) DO UPDATE SET last_active = CURRENT_TIMESTAMP
+           WHERE sessions.user_id = excluded.user_id""",
         (session_id, user_id),
     )
     if role == "user":
@@ -1123,8 +1124,13 @@ async def get_all_history(user_id: str = "default") -> dict[str, list[dict]]:
 
 async def clear_history(session_id: str, user_id: str = "default"):
     db = await get_db()
+    # FTS first: the rowid subquery needs the conversation rows still present.
+    await db.execute(
+        "DELETE FROM conversations_fts WHERE rowid IN "
+        "(SELECT id FROM conversations WHERE session_id = ? AND user_id = ?)",
+        (session_id, user_id),
+    )
     await db.execute("DELETE FROM conversations WHERE session_id = ? AND user_id = ?", (session_id, user_id))
-    await db.execute("DELETE FROM conversations_fts WHERE session_id = ?", (session_id,))
     await db.execute("DELETE FROM sessions WHERE id = ? AND user_id = ?", (session_id, user_id))
     await db.execute("DELETE FROM email_session_map WHERE session_id = ?", (session_id,))
     await db.execute("DELETE FROM notes_session_map WHERE session_id = ?", (session_id,))
@@ -1264,10 +1270,10 @@ async def search_sessions(query: str, limit: int = 20, user_id: str = "default")
             query_emb = await embed_async(safe_q)
             async with db.execute("""
                 SELECT c.session_id, s.name, c.content, c.embedding
-                FROM conversations c LEFT JOIN sessions s ON s.id = c.session_id
-                WHERE c.embedding IS NOT NULL
+                FROM conversations c LEFT JOIN sessions s ON s.id = c.session_id AND s.user_id = c.user_id
+                WHERE c.embedding IS NOT NULL AND c.user_id = ?
                 ORDER BY c.timestamp DESC LIMIT 200
-            """) as cur:
+            """, (user_id,)) as cur:
                 cand_rows = await cur.fetchall()
             scored: list[tuple[float, str, str, str]] = []
             for sess_id, name, content, blob in cand_rows:
@@ -1626,6 +1632,7 @@ async def get_messages_to_summarize(
     summarized_until: int,
     batch_size: int,
     early_trigger: int = 0,
+    user_id: str = "default",
 ) -> tuple[list[dict], int]:
     """Return the next batch of aged-out messages not yet folded into the summary.
 
@@ -1634,8 +1641,8 @@ async def get_messages_to_summarize(
     """
     db = await get_db()
     async with db.execute(
-        "SELECT id FROM conversations WHERE session_id = ? ORDER BY id ASC",
-        (session_id,),
+        "SELECT id FROM conversations WHERE session_id = ? AND user_id = ? ORDER BY id ASC",
+        (session_id, user_id),
     ) as cur:
         ids = [r[0] for r in await cur.fetchall()]
 
@@ -1657,9 +1664,9 @@ async def get_messages_to_summarize(
 
     async with db.execute(
         """SELECT role, content FROM conversations
-           WHERE session_id = ? AND id > ? AND id <= ?
+           WHERE session_id = ? AND user_id = ? AND id > ? AND id <= ?
            ORDER BY id ASC""",
-        (session_id, summarized_until, boundary_id),
+        (session_id, user_id, summarized_until, boundary_id),
     ) as cur:
         rows = await cur.fetchall()
 
@@ -1670,8 +1677,9 @@ async def update_session_summary(session_id: str, summary: str, summarized_until
     db = await get_db()
     await db.execute(
         """INSERT INTO sessions (id, summary, summarized_until, user_id) VALUES (?, ?, ?, ?)
-           ON CONFLICT(id) DO UPDATE SET summary = ?, summarized_until = ?""",
-        (session_id, summary, summarized_until, user_id, summary, summarized_until),
+           ON CONFLICT(id) DO UPDATE SET summary = excluded.summary, summarized_until = excluded.summarized_until
+           WHERE sessions.user_id = excluded.user_id""",
+        (session_id, summary, summarized_until, user_id),
     )
     await db.commit()
 
