@@ -747,7 +747,10 @@ async def upload_image(file: UploadFile = File(...)):
     import base64
 
     from config import get as cfg
-    max_mb = int(cfg("MEDIA_MAX_MB", 100))
+    try:
+        max_mb = int(cfg("MEDIA_MAX_MB", 100))
+    except (TypeError, ValueError):
+        max_mb = 100
     max_bytes = max_mb * 1024 * 1024
     chunks: list[bytes] = []
     total = 0
