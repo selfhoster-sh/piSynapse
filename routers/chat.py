@@ -649,7 +649,8 @@ async def reload_corpus():
 
     Normally the cache revalidates automatically via the additions file mtime on
     the next classification; this endpoint makes the refresh immediate and
-    deterministic (e.g. after corpus_feeder.py --commit). No service restart.
+    deterministic (e.g. after corpus_feeder.py --dry-run, or a --reset rebuild).
+    No service restart.
     """
     from llm.intent import reset_tool_embed_cache
     reset_tool_embed_cache()

@@ -59,7 +59,7 @@ When you disable all external integrations, **zero data leaves your device**. No
 | **API** | FastAPI (async Python) |
 | **LLM Serving** | **piServe** — OpenAI-compatible LiteRT server (`litert_serve/`); Ollama as the alternative backend |
 | **Tool Calling** | LLM-native function calling (JSON schema) |
-| **Intent Classification** | Lightweight LLM call (5 tokens) + embedding similarity |
+| **Intent Classification** | Lightweight LLM call (≤20 tokens; evidence prompt ≤120) + embedding similarity |
 | **Storage** | SQLite + aiosqlite + FTS5 (`unicode61`) |
 | **Search** | Hybrid FTS5 (BM25) + semantic (FastEmbed, cosine) |
 | **Embeddings** | FastEmbed (local ONNX) |
@@ -122,7 +122,10 @@ piSynapse/
 │   └── dispatcher.py
 ├── models/              # ONNX embedding models (auto-downloaded)
 ├── static/
-│   ├── index.html       # Full SPA (no build step)
+│   ├── index.html       # Boot loader: native app → app.html, browser → web.html
+│   ├── web.html         # MASTER view (server dashboard)
+│   ├── app.html         # SLAVE view (phone app shell)
+│   ├── ui.js / ui.css   # Shared SPA code + styles (no build step)
 │   ├── sw.js            # Service worker for PWA
 │   ├── manifest.json    # PWA manifest
 │   ├── piSynapse_Icon.svg
@@ -132,6 +135,7 @@ piSynapse/
     ├── chat.py          # Chat, session, memory, execute endpoints
     ├── media.py         # Transcription and TTS endpoints
     ├── config.py        # Settings API with file locking
+    ├── tools.py         # Tool taxonomy endpoint (/tools/groups)
     └── widgets.py       # Weather/calendar sidebar widgets
 ```
 
@@ -186,6 +190,11 @@ pip install -r requirements.txt
 #      Then set: MAIL_PROVIDER=gmail, GMAIL_USER, GMAIL_APP_PASSWORD
 #
 #    Option C — No email (leave MAIL_PROVIDER unset all values empty):
+
+# 3b. Generate the API key (REQUIRED — an empty API_KEY means the API
+#     answers 503 fail-closed):
+python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+#     Paste the printed value into .env as API_KEY=<value>
 
 # 4. Edit configuration
 nano .env

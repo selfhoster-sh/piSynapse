@@ -1398,8 +1398,8 @@ def print_summary() -> None:
     if os.path.exists("/etc/systemd/system/pisynapse.service"):
         print(f"  {'piSynapse':12s}: systemd (active)")
     if api_key:
-        print(f"  {'API Key':12s}: saved to .env")
-        print("    View it anytime with:  cat .env | grep API_KEY")
+        print(f"  {'API Key':12s}: saved to .env (mode 0600, never logged)")
+        print("    Keep .env private; re-run the installer to rotate the key.")
 
     print("\n  Start piSynapse:")
     print(f"    {activate}")
