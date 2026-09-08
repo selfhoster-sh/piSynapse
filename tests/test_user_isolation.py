@@ -150,3 +150,46 @@ def test_search_sessions_semantic_is_per_user(iso_db, monkeypatch):
     sids = {r["session_id"] for r in results}
     assert "sa" in sids
     assert "sb" not in sids
+
+
+def test_save_message_returns_true_rowid(iso_db):
+    async def _go():
+        db = await dbmod.get_db()
+        id1 = await dbmod.save_message("sx", "user", "first", user_id="alice")
+        id2 = await dbmod.save_message("sx", "user", "second", user_id="alice")
+        rows = await (
+            await db.execute("SELECT id, content FROM conversations ORDER BY id")
+        ).fetchall()
+        return id1, id2, rows
+
+    id1, id2, rows = asyncio.run(_go())
+    assert (id1, id2) == (rows[0][0], rows[1][0])
+    assert [r[1] for r in rows] == ["first", "second"]
+
+
+def test_update_session_name_guarded_cross_user(iso_db):
+    asyncio.run(dbmod.update_session_name("sx", "Alice Title", user_id="alice"))
+    asyncio.run(dbmod.update_session_name("sx", "EVIL", user_id="bob"))
+
+    async def _name():
+        db = await dbmod.get_db()
+        cur = await db.execute("SELECT name FROM sessions WHERE id = ?", ("sx",))
+        return (await cur.fetchone())[0]
+
+    assert asyncio.run(_name()) == "Alice Title"
+
+
+def test_update_session_summary_bumps_last_active(iso_db):
+    asyncio.run(dbmod.update_session_summary("sx", "sum", 3, user_id="alice"))
+
+    async def _row():
+        db = await dbmod.get_db()
+        cur = await db.execute(
+            "SELECT summary, summarized_until, last_active FROM sessions WHERE id = ?",
+            ("sx",),
+        )
+        return await cur.fetchone()
+
+    summary, until, last_active = asyncio.run(_row())
+    assert (summary, until) == ("sum", 3)
+    assert last_active, "last_active must be set on summary write"
