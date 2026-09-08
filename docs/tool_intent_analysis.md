@@ -6,7 +6,7 @@
 ## 1. ARCHITECTURE OVERVIEW
 
 ### 1.1 Tool System (tools/definitions.py + dispatcher.py)
-- **27 tools** across 6 groups: weather(2), email(4), calendar(4), tasks(6), notes(6), memory(1) + get_datetime(1)
+- **23 tools** across 6 groups: weather(2), email(5), calendar(6), tasks(6), notes(7), memory(2) — group counts overlap (e.g. get_datetime is in every group); unique total is 23 (`tools/definitions.py`, `tests/test_tools.py` pins this)
 - **TOOL_GROUPS** (line 389-396): maps intent group → tool names; `get_datetime` in all groups
 - **Schema-driven**: Ollama native function-calling JSON schema; small models get filtered tools (~200-400 tokens vs ~2000)
 - **Chip flow guards**: `origin=="chip"` forces CLARIFY_REQUIRED for create/send tools (no detail)
@@ -39,7 +39,7 @@
 
 | Tool | Backend | Key Behaviors | Gaps / Risks |
 |------|---------|---------------|--------------|
-| **get_weather** | OpenWeatherMap (weather.py) | City optional (DEFAULT_CITY); retry 2x | No forecast, no alerts; single-call |
+| **get_weather** | Open-Meteo + Nominatim (weather.py) | City optional (DEFAULT_CITY); retry 2x | No forecast, no alerts; single-call |
 | **get_datetime** | Local | Instant, no params | — |
 | **Calendar (4)** | Nextcloud CalDAV (calendar_ops.py) | All-day via VALUE=DATE; list caches 5min; _match_event: UID exact > summary substring; ambiguous→never auto-pick | No recurring events (RRULE); no attendees; update_event complex duration logic; no time-zone handling |
 | **Email (4)** | IMAP/SMTP (mail.py: Gmail + ProtonBridge) | list→cache map; search: IMAP TEXT/SUBJECT/FROM OR; send: fresh SMTP per retry | No multi-folder (only INBOX); no threading/conversation view; no attachments; ProtonBridge req local Bridge; search IMAP OR not full-text |
