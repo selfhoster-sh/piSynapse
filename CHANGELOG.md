@@ -4,6 +4,19 @@ All notable changes to piSynapse will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Security
+- Backup archives under `backups/` are now created/readable as mode 600 (they embed secrets); existing archives re-chmodded.
+
+### Fixed
+- `generate_rake_title(max_words=...)` is now honored as a cap on the 4-word take (was silently ignored).
+- Docs: tool count 27→23 with the real group breakdown; weather backend corrected to Open-Meteo+Nominatim; router tree lists `routers/tools.py` and the UI split; intent token budget corrected; manual setup documents the mandatory API_KEY generation step; `/reload-corpus` docstring references real feeder flags.
+- Installer no longer suggests viewing the API key via shell history (`cat .env | grep API_KEY`).
+
+### Removed
+- Dead code: `prompt.clear_{email,notes,tasks,calendar}_context` wrappers, `tools.CONFIRM_REQUIRED` re-export, `title.generate_title_first4` alias, `main._SessionRateLimiter` no-op subclass; 0-byte ghost DBs `pisynapse.db` / `piSynapse.db` deleted.
+
 ## [1.8.0] - 2026-08-30
 
 ### Added — 2026-08-30 review cycle
