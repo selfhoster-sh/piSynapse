@@ -245,6 +245,8 @@ def ask_yesno(prompt: str, default: bool = True) -> bool:
 
 def menu(title: str, options: list[tuple[str, str]], default: int = 1) -> int:
     """Numbered choice menu. options = [(label, description)]. Returns 1-based index."""
+    if BATCH_MODE:
+        return default
     print(f"\n  {title}")
     for i, (label, desc) in enumerate(options, 1):
         line = f"    {i}) {label}"
@@ -635,7 +637,7 @@ def _install_litertlm(uv_bin: str | None) -> str | None:
         venv_python = venv_bin("python3")
         with open(shim_path, "w") as f:
             f.write(f'#!{venv_python}\nfrom litert_lm.cli import main; main()\n')
-        os.chmod(shim_path, 0o755)
+        os.chmod(shim_path, 0o750)
         ok(f"Created shim at {shim_path}")
         return shim_path
 
@@ -857,6 +859,59 @@ WantedBy=multi-user.target
         return False
 
 
+def _check_resources(model_id: str) -> None:
+    """Warn (never block) on insufficient disk/RAM before GB-sized downloads."""
+    need_gb = 4.5 if "e4b" in model_id else 3.5  # model + embedding/whisper/voice headroom
+    try:
+        free_gb = shutil.disk_usage(".").free / (1024 ** 3)
+        if free_gb < need_gb + 2:
+            warn(f"Low disk space: {free_gb:.1f} GB free, downloads need ~{need_gb:.0f} GB + headroom — expect failures.")
+    except Exception:
+        pass
+    try:
+        mem_gb = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / (1024 ** 3)
+    except Exception:
+        mem_gb = 0
+    if mem_gb and "e4b" in model_id and mem_gb < 12:
+        warn(f"Only {mem_gb:.1f} GB RAM — e4b wants 16 GB+; expect slowness or OOM.")
+    elif mem_gb and mem_gb < 6:
+        warn(f"Only {mem_gb:.1f} GB RAM — 8 GB recommended even for e2b.")
+
+
+def _predownload_ml_models() -> None:
+    """Pre-download embedding (~470MB) + Whisper tiny (~75MB) into the venv.
+
+    Optional (ask, default yes); any failure only warns — first use lazily
+    downloads anyway, and offline first chats degrade gracefully.
+    """
+    if not ask_yesno("Pre-download embedding + speech models now (~550 MB)?", True):
+        info("Skipping — they download lazily on first use.")
+        return
+    py = venv_bin("python3")
+    try:
+        r = subprocess.run(
+            [py, "-c", "from embedding import embed; print('embedding dim:', len(embed('warmup')) // 4)"],
+            capture_output=True, text=True, timeout=1200,
+        )
+    except subprocess.TimeoutExpired:
+        r = None
+    if r is None or r.returncode != 0:
+        warn("Embedding pre-download failed (lazy download on first use still works).")
+    else:
+        ok("Embedding model ready")
+    try:
+        r = subprocess.run(
+            [py, "-c", "from routers.media import _get_whisper; print('whisper backend:', _get_whisper()[1])"],
+            capture_output=True, text=True, timeout=1200,
+        )
+    except subprocess.TimeoutExpired:
+        r = None
+    if r is None or r.returncode != 0:
+        warn("Whisper pre-download failed (lazy download on first use still works).")
+    else:
+        ok("Whisper model ready")
+
+
 def step_llm_backend() -> None:
     header("4 / 7  LLM backend")
 
@@ -882,6 +937,7 @@ def step_llm_backend() -> None:
         model_id = _OLLAMA_MODELS[model_idx - 1]
     STATE["model"] = model_id
     ok(f"Selected {backend} / {model_id}")
+    _check_resources(model_id)
 
     # ── LiteRT path ───────────────────────────────────────────────────────
     if backend == "litert":
@@ -901,12 +957,18 @@ def step_llm_backend() -> None:
             info(f"Downloading {model_id} from HuggingFace ({size_hint})...")
             info(f"  repo: {hf_repo}")
             print()
-            r = _run([
-                litert_bin, "import",
-                f"--from-huggingface-repo={hf_repo}",
-                hf_file, import_id,
-            ])
-            if r.returncode != 0:
+            imported = False
+            for attempt in (1, 2):
+                r = _run([
+                    litert_bin, "import",
+                    f"--from-huggingface-repo={hf_repo}",
+                    hf_file, import_id,
+                ])
+                if r.returncode == 0 and _litert_model_imported(import_id, litert_bin):
+                    imported = True
+                    break
+                warn(f"Import attempt {attempt}/2 failed — retrying...")
+            if not imported:
                 warn("Import failed — retry later with:")
                 warn(f"  {litert_bin} import --from-huggingface-repo={hf_repo} {hf_file} {import_id}")
             elif not _litert_model_imported(import_id, litert_bin):
@@ -929,21 +991,34 @@ def step_llm_backend() -> None:
                 info("Download from: https://ollama.com/download")
                 info("Then run this installer again.")
                 sys.exit(1)
-            r = subprocess.run(["curl", "-fsSL", "https://ollama.com/install.sh"], capture_output=True, text=True)
-            if r.returncode == 0:
-                subprocess.run(["sh"], input=r.stdout, text=True)
+            # Never pipe a remote script to sh unseen (K7): save it first so
+            # the operator can inspect it, then run the saved file on approval.
+            script_path = os.path.abspath("ollama-install.sh")
+            r = subprocess.run(["curl", "-fsSL", "-o", script_path, "https://ollama.com/install.sh"], capture_output=True, text=True)
+            if r.returncode != 0:
+                warn("Automatic install failed — install manually: https://ollama.com")
+            elif BATCH_MODE:
+                warn(f"Saved installer to {script_path} — review it, then run: sh {script_path} (batch mode never executes remote scripts unseen)")
+            elif ask_yesno(f"Saved installer to {script_path} — review it, then run it now?", default=True):
+                subprocess.run(["sh", script_path])
                 ok("Ollama installed")
             else:
-                warn("Automatic install failed — install manually: https://ollama.com")
+                info(f"Skipped — run later with: sh {script_path}")
         else:
             ok("Ollama already installed")
 
         info(f"Pulling {model_id}...")
-        r = _run(["ollama", "pull", model_id])
-        if r.returncode == 0:
+        pulled = False
+        for attempt in (1, 2):
+            r = _run(["ollama", "pull", model_id])
+            if r.returncode == 0:
+                pulled = True
+                break
+            warn(f"Pull attempt {attempt}/2 failed — retrying...")
+        if pulled:
             ok(f"{model_id} ready")
         else:
-            warn(f"Pull failed — try: ollama pull {model_id}")
+            warn(f"Pull failed twice — try: ollama pull {model_id}")
 
         # Make sure Ollama server is running.
         if not _ollama_is_running():
@@ -957,6 +1032,8 @@ def step_llm_backend() -> None:
                 ok("Ollama server is ready")
                 break
             time.sleep(2)
+
+    _predownload_ml_models()
 
 
 def _ollama_is_running() -> bool:
@@ -988,12 +1065,22 @@ def _download_piper_voice(name: str, hf_path: str) -> bool:
     ok_flag = True
     for ext, label in [(".onnx", "model"), (".onnx.json", "config")]:
         dest = os.path.join(piper_dir, f"{name}{ext}")
-        if os.path.exists(dest):
+        if os.path.exists(dest) and os.path.getsize(dest) > 0:
             continue
+        tmp = dest + ".tmp"
         url = f"{base_url}/{hf_path}{ext}"
         info(f"  Downloading {name} {label}...")
-        r = subprocess.run(["curl", "-fSL", "-o", dest, url], capture_output=True)
-        if r.returncode != 0:
+        r = subprocess.run(["curl", "-fSL", "-o", tmp, url], capture_output=True)
+        # A partial/interrupted download must never pass as complete: only an
+        # atomically replaced, non-empty file counts (A-K2).
+        if r.returncode == 0 and os.path.exists(tmp) and os.path.getsize(tmp) > 0:
+            os.replace(tmp, dest)
+        else:
+            try:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+            except OSError:
+                pass
             warn(f"  Failed: {name}{ext}")
             ok_flag = False
     return ok_flag
@@ -1176,6 +1263,16 @@ def _fill_template(template: str, values: dict) -> str:
     return re.sub(r"\{([A-Z0-9_]+)\}", _repl, template)
 
 
+def _ensure_data_dirs() -> None:
+    """Create runtime data dirs with owner-only mode (no lazy permission surprises)."""
+    for d in ("models", "corpus_data", "audit_exports", "backups"):
+        try:
+            os.makedirs(d, mode=0o700, exist_ok=True)
+            os.chmod(d, 0o700)
+        except OSError as e:
+            warn(f"Could not prepare directory {d}: {e}")
+
+
 def step_env() -> None:
     header("6 / 7  Environment configuration")
 
@@ -1253,9 +1350,27 @@ def step_env() -> None:
     ])
     tts_engine = "piper" if tts_idx == 1 else "browser"
     tts_voice = STATE.get("tts_voice", current.get("TTS_VOICE", "en_US-lessac-medium"))
+    if tts_engine == "browser":
+        # Browser speech needs no local model file — a lingering voice name
+        # would fake readiness while the first TTS call 503s.
+        if tts_voice:
+            info("TTS engine is 'browser': ignoring local Piper voice setting.")
+        tts_voice = ""
+    elif not STATE.get("tts_enabled", True):
+        voice_path = os.path.join("models", "piper", f"{tts_voice}.onnx")
+        if tts_voice and not os.path.exists(voice_path):
+            warn(f"Piper voice '{tts_voice}' was never downloaded — the first TTS call will fail. Re-run the installer or download it manually.")
 
     auto_send = ask("Auto-send after voice transcription? (on/off)", current.get("AUTO_SEND_ON_VOICE", "off"))
     auto_tts = ask("Auto-speak response when input was voice? (on/off)", current.get("AUTO_TTS_ON_VOICE", "off"))
+
+    # Backend sanity: with --skip-llm the litert binary may be missing while
+    # litert stays selected — that fails only later at server startup.
+    if STATE.get("backend", "litert") == "litert" and not (shutil.which("litert-lm") or _find_litert_bin()):
+        warn("LiteRT backend selected but litert-lm not found — the server will fail at startup. "
+             "Install it (uv tool install litert-lm) or re-run without --skip-llm.")
+
+    _ensure_data_dirs()
 
     values = {
         # --skip-llm ile gelindiyse STATE boş olur: makul defaults kullan.
@@ -1294,9 +1409,11 @@ def step_env() -> None:
         "DB_PATH", "WEATHER_TIMEOUT", "NEXTCLOUD_TIMEOUT",
         "IMAP_HOST", "IMAP_PORT", "SMTP_HOST", "SMTP_PORT",
         "PROTON_IMAP_HOST", "PROTON_IMAP_PORT", "PROTON_SMTP_HOST", "PROTON_SMTP_PORT",
-        "IMAP_TIMEOUT", "SMTP_TIMEOUT",         "CORS_ORIGINS", "TRUSTED_HOSTS", "MEDIA_MAX_MB",
+        "IMAP_TIMEOUT", "SMTP_TIMEOUT", "CORS_ORIGINS", "MEDIA_MAX_MB",
         "INTENT_LLM_FALLBACK", "CONFLICT_COSINE",
         "PISERVE_ADMIN_TOKEN", "AUDIT_EXPORT_DIR",
+        # NOTE: TRUSTED_HOSTS is deliberately NOT preserved — step_env always
+        # asks it, so the given answer (even an intentional emptying) wins.
     }
     for k in preserved_keys:
         v = current.get(k)
