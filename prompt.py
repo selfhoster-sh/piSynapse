@@ -17,8 +17,8 @@ LANGUAGE_RULE = (
 )
 
 
-def build_system_prompt() -> str:
-    default_city = config.DEFAULT_CITY
+def build_system_prompt(user_city: str | None = None) -> str:
+    default_city = user_city if user_city is not None else config.DEFAULT_CITY
     city_line = (
         f"\nDefault city for weather: {default_city}. "
         "Use this city when the user asks about weather without specifying one."
@@ -59,11 +59,11 @@ Always use the "Current date and time" value below — never guess or assume.
 CRITICAL — Item References (Emails, Notes, Tasks, Events): Never show raw IDs to the user and never ask the user for them. Every item is referenced ONLY by its list number (1., 2., ...) from the latest list/search output — pass that same number to read_email, read_note, update_note, delete_note, complete_task, delete_task, update_calendar_event or delete_calendar_event. If you don't have the listing anymore (e.g. it was in a previous turn that is no longer visible), call the matching search/list tool first. For example, if the user asks "what did the Netdata email say?" and you don't have the email list anymore, call search_emails(query="Netdata") immediately — don't ask the user for an ID."""
 
 
-def get_system_prompt() -> str:
+def get_system_prompt(user_city: str | None = None) -> str:
     """Return the current system prompt. Called per-request so runtime
     changes (e.g. DEFAULT_CITY) are reflected immediately.
     """
-    return build_system_prompt()
+    return build_system_prompt(user_city=user_city)
 
 
 # -- Group-specific system prompts (for small models with filtered tools) --
@@ -125,11 +125,11 @@ _GROUP_TOOLS: dict[str, tuple[str, str]] = {
 }
 
 
-def get_tool_system_prompt(group: str) -> str:
+def get_tool_system_prompt(group: str, user_city: str | None = None) -> str:
     """Return a system prompt listing only the tools for a specific group.
     Used when tool_group is active (small models with filtered tool schemas).
     """
-    default_city = config.DEFAULT_CITY
+    default_city = user_city if user_city is not None else config.DEFAULT_CITY
     city_line = (
         f"\nDefault city for weather: {default_city}. "
         "Use this city when the user asks about weather without specifying one."

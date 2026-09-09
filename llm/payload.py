@@ -111,15 +111,23 @@ async def _build_full_messages(
 ) -> list[dict]:
     from prompt import build_context, get_email_context, get_system_prompt, get_tool_system_prompt
 
+    from db import effective_setting
+    from messages import set_request_language
+
+    # Per-user preferences, resolved once per request (single source:
+    # user row -> live global -> code default).
+    user_city = await effective_setting(user_id, "DEFAULT_CITY", "")
+    set_request_language(await effective_setting(user_id, "UI_LANGUAGE", "en"))
+
     ctx = build_context(
         memories=memories or None,
         summary=summary,
         email_context=await get_email_context(email_session_id, user_id or "default") or None,
     )
     if tool_group:
-        system = get_tool_system_prompt(tool_group) + ctx
+        system = get_tool_system_prompt(tool_group, user_city=user_city) + ctx
     else:
-        system = get_system_prompt() + ctx
+        system = get_system_prompt(user_city=user_city) + ctx
 
     return [{"role": "system", "content": system}] + base_msgs
 
