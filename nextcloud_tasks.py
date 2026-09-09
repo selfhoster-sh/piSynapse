@@ -27,23 +27,27 @@ _todos_cache_ts: float = 0
 _client_lock = threading.Lock()
 
 
+def _build_dav_client(url: str, username: str, password: str, timeout: int):
+    import caldav
+    caldav_url = f"{url.rstrip('/')}/remote.php/dav/"
+    return caldav.DAVClient(url=caldav_url, username=username, password=password, timeout=timeout)
+
+
 def _get_dav_client():
-    """Return cached CalDAV client."""
+    """Return cached CalDAV client (or ephemeral per-user one)."""
     global _client
     from config import NEXTCLOUD_PASSWORD, NEXTCLOUD_TIMEOUT, NEXTCLOUD_URL, NEXTCLOUD_USER
+    from utils import NC_CREDS
+
+    creds = NC_CREDS.get()
+    if creds and creds.get("url") and creds.get("password"):
+        return _build_dav_client(creds["url"], creds.get("user", ""), creds["password"], NEXTCLOUD_TIMEOUT)
     if not NEXTCLOUD_URL or not NEXTCLOUD_PASSWORD:
         return None
     if _client is None:
         with _client_lock:
             if _client is None:
-                import caldav
-                caldav_url = f"{NEXTCLOUD_URL.rstrip('/')}/remote.php/dav/"
-                _client = caldav.DAVClient(
-                    url=caldav_url,
-                    username=NEXTCLOUD_USER,
-                    password=NEXTCLOUD_PASSWORD,
-                    timeout=NEXTCLOUD_TIMEOUT,
-                )
+                _client = _build_dav_client(NEXTCLOUD_URL, NEXTCLOUD_USER, NEXTCLOUD_PASSWORD, NEXTCLOUD_TIMEOUT)
     return _client
 
 

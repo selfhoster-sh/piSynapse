@@ -169,6 +169,57 @@ async def revoke_own_key(key_id: str, request: Request):
     return {"ok": True}
 
 
+class CredentialRequest(BaseModel):
+    provider: str = Field(min_length=1, max_length=20)
+    account: str = Field(min_length=1, max_length=500)
+    secret: str = Field(min_length=1, max_length=500)
+    url: str | None = Field(default=None, max_length=500)
+
+
+@router.post("/me/credentials")
+async def save_own_credential(req: CredentialRequest, request: Request):
+    """Save a per-user service credential (mail/Nextcloud), encrypted at rest.
+
+    Secrets are Fernet-encrypted before storage and never returned by any
+    endpoint. Overwrites the previous credential for the same provider.
+    """
+    from db import save_credential
+
+    provider = req.provider.strip().lower()
+    payload: dict[str, str] = {"account": req.account.strip(), "secret": req.secret}
+    if provider == "nextcloud":
+        if not req.url or not req.url.strip():
+            raise HTTPException(status_code=400, detail="Nextcloud needs a server URL")
+        payload = {"url": req.url.strip(), "user": req.account.strip(), "password": req.secret}
+    elif provider == "gmail":
+        payload = {"address": req.account.strip(), "app_password": req.secret}
+    elif provider == "proton":
+        payload = {"address": req.account.strip(), "bridge_password": req.secret}
+    else:
+        raise HTTPException(status_code=400, detail="Unknown provider (gmail, proton, nextcloud)")
+    if not await save_credential(_authed_user_id(request), provider, payload):
+        raise HTTPException(status_code=400, detail="Invalid credential values")
+    return {"ok": True, "provider": provider}
+
+
+@router.get("/me/credentials")
+async def list_own_credentials(request: Request):
+    """List saved credential providers with public labels (no secrets)."""
+    from db import list_credentials
+
+    return {"credentials": await list_credentials(_authed_user_id(request))}
+
+
+@router.delete("/me/credentials/{provider}")
+async def delete_own_credential(provider: str, request: Request):
+    """Remove a saved credential."""
+    from db import delete_credential
+
+    if not await delete_credential(_authed_user_id(request), provider.strip().lower()):
+        raise HTTPException(status_code=404, detail="Credential not found")
+    return {"ok": True}
+
+
 @router.post("/key/rotate")
 async def rotate_own_key(request: Request):
     """Replace the caller's API key. Returns the new key exactly once."""

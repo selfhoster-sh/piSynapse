@@ -83,7 +83,7 @@ def test_mail_gate_denies_non_admin(mail_gate_db, monkeypatch):
     monkeypatch.setattr(mailmod, "_mail_clients", {})
     user, _key = asyncio.run(mail_gate_db.create_user("pleb"))
     result, _ = asyncio.run(_run_mail_tool("list_emails", {}, user_id=user["id"]))
-    assert result == "ERROR: Email is available to the server admin only."
+    assert result == "ERROR: Email is not configured for your account. Add it in Settings."
 
 
 def test_mail_gate_denies_anonymous(mail_gate_db):

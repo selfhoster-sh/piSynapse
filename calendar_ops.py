@@ -42,6 +42,22 @@ def _invalidate_today_cache() -> None:
 def _get_nextcloud_client():
     global _dav_client
     from config import NEXTCLOUD_PASSWORD, NEXTCLOUD_TIMEOUT, NEXTCLOUD_URL, NEXTCLOUD_USER
+    from utils import NC_CREDS
+
+    creds = NC_CREDS.get()
+    if creds and creds.get("url") and creds.get("password"):
+        import caldav
+        caldav_url = f"{creds['url'].rstrip('/')}/remote.php/dav/"
+        try:
+            return caldav.DAVClient(
+                url=caldav_url,
+                username=creds.get("user", ""),
+                password=creds["password"],
+                timeout=NEXTCLOUD_TIMEOUT,
+            )
+        except Exception as e:
+            logger.error("Failed to create per-user CalDAV client: %s", e)
+            raise
     if not NEXTCLOUD_URL or not NEXTCLOUD_PASSWORD:
         return None
     if _dav_client is not None:

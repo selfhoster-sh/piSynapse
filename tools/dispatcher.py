@@ -151,6 +151,12 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> tupl
     user_text = (context.get("_user_text") or "").strip()
     chip_origin = (context.get("_origin") == "chip")
     logger.info("Tool call: %s params=%s", name, _mask_params_for_log(params))
+    # Per-user Nextcloud credentials for this call (None = shared account).
+    # Set explicitly on every entry so no stale value ever leaks across calls.
+    from db import get_credential
+    from utils import NC_CREDS
+
+    NC_CREDS.set(await get_credential(context.get("user_id"), "nextcloud"))
 
     if name == "get_datetime":
         return f"Current: {datetime.now().strftime('%d %B %Y, %A, %H:%M')}", None
@@ -469,25 +475,26 @@ async def _run_tasks_tool(name: str, params: dict, session_id: str = "", user_te
 
 
 async def _run_mail_tool(name: str, params: dict, session_id: str = "", user_text: str = "", chip_origin: bool = False, user_id: str | None = None) -> tuple[str, str | int | None]:
-    """Dispatch email tool calls to the active mail client."""
-    from mail import get_active_mail_client
+    """Dispatch email tool calls to the caller's mailbox.
+
+    Resolution order: the caller's own saved credentials → the legacy shared
+    mailbox (admins; backward compatible) → clear error. Unresolvable caller
+    ids fall through to the shared mailbox (legacy single-user flows label
+    callers with opaque ids). Anonymous (None) callers are refused.
+    """
+    from mail import get_active_mail_client, get_mail_client_for_user
     from prompt import cache_email_context
 
-    # The configured mailbox is shared (single MAIL_PROVIDER account), so it
-    # is admin-only until per-user mail accounts land (docs/mail-accounts-*).
-    # A resolved non-admin caller is refused; unresolvable ids fall through
-    # for backward compatibility (legacy single-user flows label callers with
-    # opaque ids, and HTTP middleware already guarantees production callers
-    # are real users). Anonymous (None) callers are refused — fail closed.
-    if user_id is None:
-        return "ERROR: Email is available to the server admin only.", None
-    from db import get_user
+    mc = await get_mail_client_for_user(user_id)
+    if mc is None:
+        if user_id is None:
+            return "ERROR: Email is available to the server admin only.", None
+        from db import get_user
 
-    caller = await get_user(user_id)
-    if caller is not None and not caller.get("is_admin"):
-        return "ERROR: Email is available to the server admin only.", None
-
-    mc = get_active_mail_client()
+        caller = await get_user(user_id)
+        if caller is not None and not caller.get("is_admin"):
+            return "ERROR: Email is not configured for your account. Add it in Settings.", None
+        mc = get_active_mail_client()
     if not mc:
         return "ERROR: Mail connection failed. Check .env configuration.", None
 
