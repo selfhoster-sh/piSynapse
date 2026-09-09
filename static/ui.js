@@ -31,6 +31,8 @@ const STRINGS = {
     settings:'Ayarlar', settingsTitle:'Ayarlar', settingsSaved:'Ayarlar kaydedildi',
      settingsRestart:'Bazı ayarlar sunucu yeniden başlatıldığında tam etkili olur.',
     settingsCancel:'İptal', settingsSave:'Kaydet', settingsSearch:'Ayarlarda ara…', settingsDirty:'Kaydedilmemiş değişiklikler', settingsNoResult:'Aramana uyan ayar yok.',
+    navAppearance:'Görünüm', navAccount:'Hesap', navAssistant:'Asistan', navModel:'Model', navChat:'Sohbet', navVoice:'Ses', navServer:'Sunucu', navAdmin:'Yönetici',
+    modeLabel:'Tema', modeDark:'Koyu', modeLight:'Açık', modeAmoled:'AMOLED', accentLabel:'Vurgu rengi',
     adminReview:'İnceleme Kuyruğu', adminReviewDesc:'Kullanıcı geri bildirimlerinden gelen çelişkili yönlendirme önerileri. Onaylanan corpus\u2019a girer, reddedilen bir daha otomatik eklenmez.',
     adminReviewEmpty:'Bekleyen öneri yok.', adminApprove:'Onayla', adminReject:'Reddet',
     adminUsers:'Kullanıcılar', adminApproved:'Onaylı', adminPending:'Onay bekliyor', adminRole:'Yönetici', adminDelete:'Sil', adminDeleteConfirm:'Bu hesabı ve tüm verilerini silmek istediğine emin misin?',
@@ -120,6 +122,8 @@ const STRINGS = {
     settings:'Settings', settingsTitle:'Settings', settingsSaved:'Settings saved',
     settingsRestart:'Some settings take full effect only after server restart.',
     settingsCancel:'Cancel', settingsSave:'Save', settingsSearch:'Search settings…', settingsDirty:'Unsaved changes', settingsNoResult:'No settings match your search.',
+    navAppearance:'Appearance', navAccount:'Account', navAssistant:'Assistant', navModel:'Model', navChat:'Chat', navVoice:'Voice', navServer:'Server', navAdmin:'Admin',
+    modeLabel:'Theme', modeDark:'Dark', modeLight:'Light', modeAmoled:'AMOLED', accentLabel:'Accent color',
     adminReview:'Review Queue', adminReviewDesc:'Contested routing suggestions from user feedback. Approved ones enter the corpus, rejected ones are never auto-added.',
     adminReviewEmpty:'No pending suggestions.', adminApprove:'Approve', adminReject:'Reject',
     adminUsers:'Users', adminApproved:'Approved', adminPending:'Pending approval', adminRole:'Admin', adminDelete:'Delete', adminDeleteConfirm:'Delete this account and all its data?',
@@ -186,6 +190,11 @@ const STRINGS = {
 
 let lang  = localStorage.getItem('ps_lang') || ((navigator.language||'').toLowerCase().startsWith('tr') ? 'tr' : 'en');
 let theme = localStorage.getItem('ps_theme') || 'orange';
+// Display mode: dark (default), light, or amoled. Migrates the legacy
+// ps_amoled toggle once; afterwards ps_mode is the single source.
+let mode = localStorage.getItem('ps_mode') ||
+  (localStorage.getItem('ps_amoled') === '1' ? 'amoled' : 'dark');
+if(mode !== 'dark' && mode !== 'light' && mode !== 'amoled') mode = 'dark';
 let glass = localStorage.getItem('ps_glass') === '1';
 let minimal = localStorage.getItem('ps_minimal') === '1';
 let amoled = localStorage.getItem('ps_amoled') === '1';
@@ -570,9 +579,20 @@ function applyMinimal(on){
 }
 
 function applyAmoled(on){
-  amoled = on;
-  document.body.classList.toggle('amoled', on);
-  localStorage.setItem('ps_amoled', on ? '1' : '0');
+  // Legacy alias: the segmented mode control owns this now.
+  applyMode(on ? 'amoled' : 'dark');
+}
+
+function applyMode(m){
+  mode = (m === 'light' || m === 'amoled') ? m : 'dark';
+  document.body.classList.toggle('theme-light', mode === 'light');
+  document.body.classList.toggle('amoled', mode === 'amoled');
+  amoled = mode === 'amoled';
+  localStorage.setItem('ps_mode', mode);
+  localStorage.setItem('ps_amoled', amoled ? '1' : '0');
+  document.querySelectorAll('.seg-btn[data-mode]').forEach(el => {
+    el.classList.toggle('active', el.dataset.mode === mode);
+  });
 }
 
 function applyFont(f){
@@ -608,6 +628,7 @@ function applyLang(l){
   if(lblAdv) lblAdv.textContent = _sectionLabel('Advanced');
   document.getElementById('settings-cancel-btn').textContent = t('settingsCancel');
   document.getElementById('settings-save-btn').textContent = t('settingsSave');
+  if(document.getElementById('settings-layout')){ try{ _buildSettingsNav(); }catch(e){} }
   document.getElementById('settings-restart-notice').textContent = t('settingsRestart');
   const themeLabel = document.getElementById('lbl-theme-select');
   if(themeLabel) themeLabel.textContent = t('themeLabel');
@@ -1662,7 +1683,7 @@ let lastInputWasVoice = false;
 
 document.addEventListener('DOMContentLoaded', async ()=>{
   if(window._beacon) window._beacon({t:'init', step:'start'});
-  applyTheme(theme); applyGlass(glass); applyMinimal(minimal); applyAmoled(amoled); applyFont(fontMode); applyLang(lang); enhanceAllSelects(); setupInput(); setupMobileKeyboard(); setupHoldToRecord();
+  applyTheme(theme); applyMode(mode); applyGlass(glass); applyMinimal(minimal); applyFont(fontMode); applyLang(lang); enhanceAllSelects(); setupInput(); setupMobileKeyboard(); setupHoldToRecord();
   if(window._beacon) window._beacon({t:'init', step:'prep-done'});
   // Check if API key is needed
   try {
@@ -3124,6 +3145,8 @@ const SECTION_LABELS = {
 const SETTING_CHIP_ORDER = ['Appearance','General','Model','Generation','Chat','Voice','Personal','Advanced'];
 
 function bindSettingsChips(){
+  // Superseded by the sidebar rail when the paged layout exists.
+  if(document.getElementById('settings-layout')) return;
   // UI settings live OUTSIDE the fetch-driven form (they are always visible);
   // chips simply link to every section, hidden entirely when little to jump to.
   const wrap=document.getElementById('settings-chips');
@@ -3280,6 +3303,14 @@ async function openSettings(){
   // WITHOUT waiting for the backend, so they survive offline / fetch errors.
   document.querySelector('#settings-appearance').innerHTML = `
     <div class="appearance-group">
+      <label id="lbl-mode-select"></label>
+      <div class="seg-row" id="mode-seg">
+        <button type="button" class="seg-btn" data-mode="dark" onclick="applyMode('dark')">${esc(t('modeDark'))}</button>
+        <button type="button" class="seg-btn" data-mode="light" onclick="applyMode('light')">${esc(t('modeLight'))}</button>
+        <button type="button" class="seg-btn" data-mode="amoled" onclick="applyMode('amoled')">${esc(t('modeAmoled'))}</button>
+      </div>
+    </div>
+    <div class="appearance-group">
       <label id="lbl-theme-select"></label>
       <div class="theme-grid" id="theme-grid"></div>
     </div>
@@ -3310,28 +3341,17 @@ async function openSettings(){
       <div class="minimal-desc" id="minimal-desc"></div>
     </div>
     <div class="appearance-group">
-      <label id="lbl-amoled-label"></label>
-      <div class="switch-wrap">
-        <label class="switch">
-          <input type="checkbox" id="amoled-toggle" onchange="applyAmoled(this.checked)">
-          <span class="track"></span>
-        </label>
-      </div>
-      <div class="minimal-desc" id="amoled-desc"></div>
-    </div>
-    <div class="appearance-group">
       <label id="lbl-font-label"></label>
       <select class="lang-select" id="font-select" onchange="applyFont(this.value)">
         <option value="dmsans">DM Sans</option>
         <option value="system">Sistem</option>
       </select>
     </div>`;
-  document.getElementById('lbl-theme-select').textContent = t('themeLabel');
-  document.getElementById('lbl-lang-select').textContent = t('langLabel');
-  if(document.getElementById('lbl-amoled-label')) document.getElementById('lbl-amoled-label').textContent = t('amoledLabel');
-  if(document.getElementById('amoled-desc')) document.getElementById('amoled-desc').textContent = t('amoledDesc');
-  const amoledToggle = document.getElementById('amoled-toggle');
-  if(amoledToggle){ amoledToggle.checked = amoled; }
+  document.getElementById('lbl-mode-select').textContent = t('modeLabel');
+  document.querySelectorAll('#mode-seg .seg-btn').forEach(el => {
+    el.classList.toggle('active', el.dataset.mode === mode);
+  });
+  document.getElementById('lbl-theme-select').textContent = t('accentLabel');
   if(document.getElementById('lbl-font-label')) document.getElementById('lbl-font-label').textContent = t('fontLabel');
   const fontSelect = document.getElementById('font-select');
   if(fontSelect){ fontSelect.value = fontMode; }
@@ -3370,15 +3390,15 @@ async function openSettings(){
     let html = '';
     const usedKeys = new Set();
 
-    const renderGroup = (title, keys, advanced) => {
+    const renderGroup = (title, keys, advanced, page) => {
       const sectionKeys = keys.filter(k => keySet.has(k) && !HIDDEN_KEYS.has(k) &&
         (advanced ? ADVANCED_KEYS.has(k) : !ADVANCED_KEYS.has(k)));
       if (!sectionKeys.length) return '';
       const items = sectionKeys.map(k => { usedKeys.add(k); return _renderSetting(k, _settingsData[k], advanced); }).join('');
       if (advanced) {
-        return `<div class="settings-section" data-sec="Advanced"><div class="settings-section-title adv-toggle" id="adv-toggle" onclick="toggleAdvanced()"><span class="adv-chev">▸</span><span id="lbl-advanced">${_sectionLabel('Advanced')}</span></div><div class="settings-section-inner adv-inner" id="advanced-inner" style="display:none">${items}</div></div>`;
+        return `<div class="settings-section settings-page" data-sec="Advanced" data-page="${page || ''}"><div class="settings-section-title adv-toggle" id="adv-toggle" onclick="toggleAdvanced()"><span class="adv-chev">▸</span><span id="lbl-advanced">${_sectionLabel('Advanced')}</span></div><div class="settings-section-inner adv-inner" id="advanced-inner" style="display:none">${items}</div></div>`;
       }
-      return `<div class="settings-section" data-sec="${title}"><div class="settings-section-title">${_sectionLabel(title)}</div><div class="settings-section-inner">${items}</div></div>`;
+      return `<div class="settings-section settings-page" data-sec="${title}" data-page="${page || ''}"><div class="settings-section-title">${_sectionLabel(title)}</div><div class="settings-section-inner">${items}</div></div>`;
     };
 
     // SPLIT: native (this build) returns groups prefixed "Telefon ·" / "Sunucu ·".
@@ -3429,22 +3449,29 @@ async function openSettings(){
       if (tabsEl) tabsEl.hidden = !serverKeys.length;
       setTabActive('phone');
     } else {
-      // Legacy web server schema (single pane, no tabs)
+      // Paged web settings: one page per nav entry (sidebar), not a scroll wall.
       tabsEl.hidden = true;
       document.getElementById('settings-pane-server').hidden = true;
       document.getElementById('settings-pane-phone').hidden = false;
+      const pageOf = (label)=> label === 'Personal' ? 'assistant'
+        : label === 'Chat' ? 'chat' : label === 'Voice' ? 'voice' : 'model';
       for (const [sectionLabel, keys] of Object.entries(SETTINGS_GROUPS)) {
-        html += renderGroup(sectionLabel, keys, false);
+        if(sectionLabel === 'General') continue; // language lives in Appearance
+        html += renderGroup(sectionLabel, keys, false, pageOf(sectionLabel));
       }
-      html += renderGroup('Advanced', Object.keys(_settingsData), true);
+      html += renderGroup('Advanced', Object.keys(_settingsData), true, 'model');
       const remaining = Object.keys(_settingsData).filter(k => !usedKeys.has(k) && !HIDDEN_KEYS.has(k) && !ADVANCED_KEYS.has(k));
       if (remaining.length) {
         const items = remaining.map(k => _renderSetting(k, _settingsData[k], false)).join('');
-        html += `<div class="settings-section"><div class="settings-section-title">${_sectionLabel('Other')}</div><div class="settings-section-inner">${items}</div></div>`;
+        html += `<div class="settings-section settings-page" data-sec="${_sectionLabel('Other')}" data-page="model"><div class="settings-section-title">${_sectionLabel('Other')}</div><div class="settings-section-inner">${items}</div></div>`;
       }
+      html += accountSectionHtml();
       html += serverSectionHtml();
+      if(window._isAdmin !== false) html += adminSectionHtml();
       form.innerHTML = html;
       enhanceAllSelects(form);
+      _ensureSettingsLayout();
+      _buildSettingsNav();
     }
     bindSettingsChips();
     _wireSettingsChrome();
@@ -3475,16 +3502,25 @@ function toggleSettingInfo(key){
 }
 
 function serverSectionHtml(){
-  const key = localStorage.getItem('ps_api_key') || '';
   const origin = window.location.origin.startsWith('http') ? window.location.origin : '';
   return `
-    <div class="settings-section" data-sec="Sunucu">
+    <div class="settings-section settings-page" data-sec="Sunucu" data-page="server">
       <div class="settings-section-title">${_sectionLabel('Sunucu')}</div>
       <div class="settings-section-inner">
         <div class="setting-item">
           <div class="setting-label"><span>${esc(t('obConnectedServer').replace('%s', origin))}</span></div>
           <div class="setting-desc">${esc(t('tourSpeed'))}</div>
         </div>
+      </div>
+    </div>`;
+}
+
+function accountSectionHtml(){
+  const key = localStorage.getItem('ps_api_key') || '';
+  return `
+    <div class="settings-section settings-page" data-sec="Hesap" data-page="account">
+      <div class="settings-section-title">${esc(t('navAccount'))}</div>
+      <div class="settings-section-inner">
         <div class="setting-item">
           <div class="setting-label"><span>${esc(t('setApiKeyLabel'))}</span></div>
           <div class="setting-desc">${esc(t('setApiKeyDesc'))}</div>
@@ -3496,6 +3532,15 @@ function serverSectionHtml(){
           <div class="setting-desc" id="si-status" style="font-size:12px;color:var(--text3)"></div>
           <button class="ob-btn ghost" style="font-size:12px;padding:7px 12px" onclick="logoutUser()">${esc(t('logout'))}</button>
         </div>
+      </div>
+    </div>`;
+}
+
+function adminSectionHtml(){
+  return `
+    <div class="settings-section settings-page" data-sec="Admin" data-page="admin">
+      <div class="settings-section-title">${esc(t('navAdmin'))}</div>
+      <div class="settings-section-inner">
         <div id="admin-review-box" style="display:none">
           <div class="setting-item">
             <div class="setting-label"><span>${esc(t('adminUsers'))}</span></div>
@@ -3515,8 +3560,12 @@ function serverSectionHtml(){
 async function loadAdminPanel(){
   const box = document.getElementById('admin-review-box');
   if(!box) return;
+  const stripAdminPage = ()=>{
+    document.querySelectorAll('.settings-section[data-page="admin"]').forEach(el => el.remove());
+    _buildSettingsNav();
+  };
   let me = null;
-  try{ const d = await api('GET', '/users/me'); me = d && d.user; }catch(e){ return; }
+  try{ const d = await api('GET', '/users/me'); me = d && d.user; }catch(e){ stripAdminPage(); return; }
   if(me && me.name){
     // Authoritative name: keys pasted directly into settings (or stored
     // before the username cache existed) leave ps_user_name empty → '—'.
@@ -3530,7 +3579,11 @@ async function loadAdminPanel(){
     const st = document.getElementById('si-status');
     if(st) st.textContent = me.is_admin ? t('adminRole') : (me.is_approved ? t('adminApproved') : t('adminPending'));
   }
-  if(!me || !me.is_admin) return; // non-admins never see this box
+  if(!me || !me.is_admin){
+    // Non-admins get no admin page at all (not even an empty shell).
+    stripAdminPage();
+    return;
+  }
   box.style.display = '';
   try{
     const u = await api('GET', '/users');
@@ -3621,9 +3674,78 @@ function _markSettingsClean(){
   if(note){ note.hidden = !dirty; if(dirty) note.textContent = t('settingsDirty'); }
 }
 
+// ── Paged settings layout (web): sidebar nav + one visible page ─────────────
+const SETTINGS_PAGE_DEFS = [
+  ['appearance', 'navAppearance'], ['account', 'navAccount'],
+  ['assistant', 'navAssistant'], ['model', 'navModel'],
+  ['chat', 'navChat'], ['voice', 'navVoice'],
+  ['server', 'navServer'], ['admin', 'navAdmin'],
+];
+
+function _ensureSettingsLayout(){
+  // Wrap the phone pane (appearance + form) in nav + scrolling main. Web-only;
+  // native keeps its tabbed stacked layout. Idempotent per modal lifetime.
+  if(_NATIVE || document.getElementById('settings-layout')) return;
+  const body = document.querySelector('.settings-body');
+  const pane = document.getElementById('settings-pane-phone');
+  if(!body || !pane) return;
+  const chips = document.getElementById('settings-chips');
+  if(chips) chips.style.display = 'none';
+  const layout = document.createElement('div');
+  layout.className = 'settings-layout'; layout.id = 'settings-layout';
+  const nav = document.createElement('nav');
+  nav.id = 'settings-nav'; nav.className = 'settings-nav';
+  const main = document.createElement('div');
+  main.className = 'settings-main'; main.id = 'settings-main';
+  body.insertBefore(layout, pane);
+  layout.appendChild(nav);
+  layout.appendChild(main);
+  main.appendChild(pane);
+  const ap = document.getElementById('settings-appearance');
+  if(ap){ ap.dataset.page = 'appearance'; ap.classList.add('settings-page'); }
+}
+
+function _pageHasContent(id){
+  if(id === 'appearance') return !!document.getElementById('settings-appearance');
+  return !!document.querySelector(`#settings-form .settings-section[data-page="${id}"]`);
+}
+
+function _buildSettingsNav(){
+  const nav = document.getElementById('settings-nav');
+  if(!nav) return; // native: no rail
+  nav.innerHTML = '';
+  const available = SETTINGS_PAGE_DEFS.filter(([id]) => _pageHasContent(id));
+  window._settingsPages = available.map(([id]) => id);
+  available.forEach(([id, labelKey]) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'set-nav-btn'; b.dataset.page = id;
+    b.textContent = t(labelKey);
+    b.onclick = () => _showSettingsPage(id);
+    nav.appendChild(b);
+  });
+  if(!available.some(([id]) => id === window._settingsPage)) window._settingsPage = null;
+  _showSettingsPage(window._settingsPage || (available[0] && available[0][0]));
+}
+
+function _showSettingsPage(id){
+  if(!id) return;
+  window._settingsPage = id;
+  document.querySelectorAll('#settings-main .settings-page, #settings-appearance.settings-page').forEach(el => {
+    el.classList.toggle('active', el.dataset.page === id);
+  });
+  document.querySelectorAll('#settings-nav .set-nav-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.page === id);
+  });
+  const main = document.getElementById('settings-main');
+  if(main) main.scrollTop = 0;
+}
+
 function filterSettings(q){
   q = (q || '').trim().toLocaleLowerCase();
   let visible = 0;
+  // Search mode stacks every page (rail hidden by CSS) so matches surface
+  // wherever they live; clearing restores the active page.
+  try{ document.body.classList.toggle('searching', !!q); }catch(e){}
   document.querySelectorAll('#settings-form .setting-item, #settings-pane-server .setting-item').forEach(el=>{
     const hit = !q || (el.textContent || '').toLocaleLowerCase().includes(q);
     el.style.display = hit ? '' : 'none';
@@ -3647,8 +3769,7 @@ function filterSettings(q){
   } else if(empty){ empty.style.display = 'none'; }
 }
 
-function _wireSettingsChrome(){
-  // Search box (placeholder i18n, live filter). Wired once — openSettings
+function _wireSettingsChrome(){  // Search box (placeholder i18n, live filter). Wired once — openSettings
   // re-renders the form body but never this shell.
   const search = document.getElementById('settings-search');
   if(search && !search.dataset.wired){

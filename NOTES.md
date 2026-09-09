@@ -40,6 +40,13 @@
 - **Note:** server half takes effect on the pending restart.
 - **Test:** full-file users/audit green; `node --check` clean.
 
+## 2026-09-09 — Settings v2: sidebar layout + real themes (pre-2.0)
+
+- **Layout (from scratch):** two-pane (nav rail + one visible page) replaces the scroll wall on web; pages Account/Appearance/Assistant/Model/Chat/Voice/Server/Admin built from the live schema (role-adaptive, admin page stripped for non-admins); search stacks all pages; native keeps tabs. Modal widened 520→760px; mobile collapses to top rail.
+- **Themes, properly:** Dark/Light/AMOLED segmented mode (full day palette for light; legacy amoled toggle migrated once) + 6 accent swatches, all instant via CSS vars. AMOLED toggle row removed.
+- **Regroup:** General folded into Appearance (it was only language); leftovers into Model; server split into Account/Server/Admin sections.
+- **Test:** full suite **755 passed**; ruff clean; `node --check` clean; i18n keys verified both dicts.
+
 ## 2026-09-09 — Sector-standard settings + clean URLs (pre-2.0)
 
 - **Settings:** live search filter (+empty state), dirty tracking (save disabled until change + unsaved note), role-aware save (non-admins PUT personal keys — their Save 403'd before), all with tr/en keys. Shells (web+app) gain search row + dirty note; CSS for disabled/empty states.
