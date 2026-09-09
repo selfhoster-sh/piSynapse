@@ -145,3 +145,16 @@ def test_lockfile_pins_all_direct_requirements():
             locked[name.strip().lower()] = ver.strip()
     missing = [d for d in direct if d not in locked or not locked[d]]
     assert not missing, f"unpinned direct requirements: {missing}"
+
+
+def test_rate_limit_keys_present_everywhere():
+    example_env = _read("example.env")
+    install_py = _read("install.py")
+    config_py = _read("config.py")
+
+    for key, default in (("RATE_LIMIT_RPM", "30"), ("RATE_LIMIT_SESSION_RPM", "20"),
+                         ("RATE_LIMIT_PUBLIC_RPM", "120")):
+        assert _env_literal(example_env, key) == default
+        assert _env_literal(install_py, key) == default
+        assert f'"{key}"' in install_py  # preserved_keys
+        assert key in config_py  # module constant + _NUMERIC_KEYS

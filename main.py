@@ -24,6 +24,9 @@ from config import (
     LLM_BACKEND,
     LLM_MODEL,
     MEDIA_MAX_MB,
+    RATE_LIMIT_PUBLIC_RPM,
+    RATE_LIMIT_RPM,
+    RATE_LIMIT_SESSION_RPM,
     TRUST_X_FORWARDED_FOR,
     TRUSTED_HOSTS,
 )
@@ -87,15 +90,15 @@ class _RateLimiter:
             del self._buckets[ip]
         self._last_cleanup = now
 
-_rate_limiter = _RateLimiter(rpm=30)
+_rate_limiter = _RateLimiter(rpm=RATE_LIMIT_RPM)
 
 
-_session_limiter = _RateLimiter(rpm=20)
+_session_limiter = _RateLimiter(rpm=RATE_LIMIT_SESSION_RPM)
 
 
 # Exempt paths (health/static) get their own lenient bucket: still bounded
 # against L7 floods, far above any legitimate poller.
-_public_limiter = _RateLimiter(rpm=120)
+_public_limiter = _RateLimiter(rpm=RATE_LIMIT_PUBLIC_RPM)
 
 
 # Set when lifespan startup cannot initialize the database. The app keeps
@@ -562,9 +565,8 @@ async def security_middleware(request: Request, call_next):
         request.state.is_admin = bool(user.get("is_admin"))
 
     # --- Rate limiting ---
-    # Authenticated routes use the strict bucket; exempt paths (health/static)
-    # use a separate lenient bucket so unauthenticated floods still cap out.
-    limiter = _rate_limiter if (not is_exempt or is_debug) else _public_limiter
+    # Authenticated routes bucket by user (multi-user): NAT-shared IPs must
+    # not share quota. Exempt paths use the separate lenient IP bucket.
     if TRUST_X_FORWARDED_FOR:
         client_ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
     else:
@@ -572,7 +574,14 @@ async def security_middleware(request: Request, call_next):
         client_ip = request.client.host if request.client else "unknown"
     if not client_ip:
         client_ip = "unknown"
-    allowed, remaining = limiter.allow(client_ip)
+    if not is_exempt or is_debug:
+        limiter = _rate_limiter
+        who = getattr(request.state, "user_id", None)
+        bucket = f"user:{who}" if who else f"ip:{client_ip}"
+    else:
+        limiter = _public_limiter
+        bucket = f"ip:{client_ip}"
+    allowed, remaining = limiter.allow(bucket)
     if not allowed:
         return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded. Try again later."},
                            headers={"Retry-After": "60", "X-RateLimit-Limit": str(limiter.rpm), "X-RateLimit-Remaining": "0"})
@@ -604,8 +613,8 @@ async def security_middleware(request: Request, call_next):
             return JSONResponse(status_code=413, content={"detail": f"Request body too large (max {limit_str})"})
 
     response = await call_next(request)
-    if client_ip:
-        rem = limiter.remaining(client_ip)
+    if bucket:
+        rem = limiter.remaining(bucket)
         response.headers["X-RateLimit-Limit"] = str(limiter.rpm)
         response.headers["X-RateLimit-Remaining"] = str(rem)
     return response

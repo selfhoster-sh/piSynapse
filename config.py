@@ -148,6 +148,11 @@ CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o
 # hostname) to restrict further — see README.md.
 TRUSTED_HOSTS = {h.strip() for h in os.getenv("TRUSTED_HOSTS", "").split(",") if h.strip()}
 MEDIA_MAX_MB = _safe_int("MEDIA_MAX_MB", 100)
+
+# -- Rate limits (requests/min per bucket; raise on bigger hardware) --
+RATE_LIMIT_RPM = _safe_int("RATE_LIMIT_RPM", 30)
+RATE_LIMIT_SESSION_RPM = _safe_int("RATE_LIMIT_SESSION_RPM", 20)
+RATE_LIMIT_PUBLIC_RPM = _safe_int("RATE_LIMIT_PUBLIC_RPM", 120)
 # Only trust X-Forwarded-For when running behind a trusted reverse proxy.
 # Enabled by default: LAN users must not be able to spoof their IP to bypass rate limits.
 TRUST_X_FORWARDED_FOR = os.getenv("TRUST_X_FORWARDED_FOR", "").strip().lower() in ("1", "true", "yes", "on")
@@ -400,6 +405,9 @@ _NUMERIC_KEYS = {
     "CONVERSATION_RETENTION_DAYS": (int, 0),
     "MEMORY_RETENTION_DAYS": (int, 0),
     "MEDIA_MAX_MB": (int, 100),
+    "RATE_LIMIT_RPM": (int, 30),
+    "RATE_LIMIT_SESSION_RPM": (int, 20),
+    "RATE_LIMIT_PUBLIC_RPM": (int, 120),
 }
 
 
