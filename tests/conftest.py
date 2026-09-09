@@ -4,6 +4,8 @@ import asyncio
 import os
 import sys
 
+import pytest
+
 # Ensure the project root is on sys.path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -12,6 +14,23 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 # machine-specific .env. setdefault keeps a key present regardless so tests
 # never depend on the local .env. Respect an explicitly exported API_KEY.
 os.environ.setdefault("API_KEY", "test-key")
+
+
+@pytest.fixture(autouse=True)
+def _isolated_db(tmp_path, monkeypatch):
+    """Every test gets a fresh initialized DB (test-DB isolation rule).
+
+    No test may depend on the ambient live assistant.db: CI checkouts have
+    no such file, so any default-DB access fails with 'no such table'.
+    Tests needing specific rows layer their own fixtures on top of this one.
+    """
+    import db as dbmod
+
+    monkeypatch.setattr(dbmod, "DB_PATH", str(tmp_path / "t.db"))
+    asyncio.run(dbmod.close_db())
+    asyncio.run(dbmod.init_db())
+    yield
+    asyncio.run(dbmod.close_db())
 
 
 def pytest_sessionfinish(session, exitstatus):
