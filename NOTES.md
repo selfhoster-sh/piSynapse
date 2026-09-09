@@ -16,6 +16,12 @@
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 - **Sanitization rule:** this file may be published. Never write personal data, identity clues, deployment addresses (hostnames, IPs, ports), or accounts into it. Keep every narrative in English; Turkish inline tokens are allowed only as product corpus / i18n test data.
 
+## 2026-09-09 — İş 4: remote-access decision + voice root cause (user discussion)
+
+- **Root cause (verified in code):** browser mic requires a secure context — `static/ui.js:866` (`isSecureContext` gate with `micHttps` toast), `:871` getUserMedia, `:1024` Web Speech fallback. Plain-HTTP LAN/VPS blocks the mic by browser design; the native app (`https://localhost` origin) is unaffected. Same root as the LAN-API exposure worry → same fix (HTTPS everywhere).
+- **Decision (user):** user's own setup (domain via VPS) stays as-is; for other users a 3-tier model documented in `docs/remote-access.md` (same-WiFi HTTP with voice limits → Tailscale HTTPS recommended → own domain + WG reverse proxy with nginx SSE settings), linked from README; README RAKE mention fixed to instant+LLM. Key operational detail recorded: `TRUSTED_HOSTS` must include the tailnet/public hostname or requests 403.
+- **Test:** full suite **651 passed** (stable since the installer render tests).
+
 ## 2026-09-09 — RAKE rename + user tasks 1–3 (per user decisions)
 
 - **RAKE rename (user: "adı rake olarak kalmasın"):** `generate_rake_title` → `generate_instant_title` across code + tests (24 sites, commit `605d33c`); the real RAKE algorithm died in `0dcb93a`, only the misleading name survived. Historical docs untouched. Full suite 648.
