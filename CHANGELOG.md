@@ -4,9 +4,17 @@ All notable changes to piSynapse will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [2.0.0] - 2026-09-09
 
 ### Added
+- Browser sessions: `POST /users/session` (password login → HttpOnly session cookie, zero key material returned), `POST /users/logout`, 30-day sliding expiry, password change revokes other sessions; middleware accepts cookie or API key (explicit header wins); `SESSION_COOKIE_SECURE` flag for HTTPS setups.
+- Collective learning: feedback writes are owner-scoped; `textnorm` signature normalization (contact PII → placeholders, idempotent); `feedback_votes` quorum tallies with reputation weighting; contradiction freeze into admin review; `users.is_approved` gate with admin approve/unapprove; `pattern_approvals` + admin review queue endpoints; global Proton/Gmail model documented (one Bridge, many paid accounts).
+- Per-user services: Fernet-encrypted `user_credentials` store (`MAIL_CREDS_KEY`), own-only credential endpoints; mail resolves personal → shared (admin) → clear error; Nextcloud factories prefer per-call credentials via context.
+- Guided onboarding v2 (web): gateway (sign in / register), key ceremony (copy/download-gated continue), city/mail/Nextcloud steps with skip paths and consequence notes, tour with tool groups + technical details; login path skips to app; overlay gains password login; logout revokes server-side.
+- Settings v2: sidebar layout with role-adaptive pages, Dark/Light/AMOLED themes, live search, dirty tracking, role-aware save, read-only mode for non-admins, admin user management (approve/revoke/delete) + review queue UI.
+- Clean URLs: app served from `/static/` (history state, refresh-safe); regression tests prove no directory listing.
+- Reserved display names (`admin` etc. → 409); legacy `.env` key resolves on `/users/me` pre-bootstrap.
+- Installer: no personal questions anymore (name/city/mail/Nextcloud live in browser onboarding); generates `MAIL_CREDS_KEY`; `SESSION_COOKIE_SECURE` default off; sandbox-verified fresh installs.
 - Multi-user identity: `users` table, `POST /users/register` (first user becomes admin, `REGISTRATION_OPEN` toggle), key rotation, `/users/me`, admin user listing. API keys stored hashed, returned once; auth resolves per-key with admin state.
 - Professional accounts: bcrypt password login with per-device keys (list/revoke), password set/change, admin user deletion with full data wipe, runtime registration toggle in settings, role-split settings visibility (admins full, others personal-only).
 - Multi-user isolation hardening: per-user rate-limit buckets (with env-tunable rpm); `user_id` scoping on session maps, audit log, resume anchoring and the litert cache key; session invisibility enforced both directions; registration toggle, rpm and audit keys added to template/preserve lists.
