@@ -12,14 +12,6 @@ import pytest
 
 import db as dbmod
 import embedding
-from db import (
-    clear_history,
-    get_messages_to_summarize,
-    get_session_meta,
-    save_message,
-    search_sessions,
-    update_session_summary,
-)
 from retrieval import _fetch_candidates
 
 

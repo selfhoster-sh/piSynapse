@@ -203,7 +203,7 @@ async def _enrich_title(session_id: str, user_id: str = "default"):
         asst_msg = next((m["content"] for m in history if m["role"] == "assistant"), "")
         if not user_msg or not asst_msg:
             return
-        from title import generate_llm_title, generate_instant_title
+        from title import generate_instant_title, generate_llm_title
         async with db.execute(
             "SELECT name FROM sessions WHERE id = ? AND user_id = ?", (session_id, user_id)
         ) as cur:
@@ -708,7 +708,8 @@ async def import_chat_history(req: ImportHistoryRequest, request: Request):
 
     Each message is keyed by `client_key` + index so re-syncs never create
     duplicate rows. Used by paired devices with SYNC_ALWAYS=on to mirror
-    sessions created while offline."""
+    sessions created while offline.
+    """
     _validate_session_id(req.session_id)
     from db import import_messages
     n = await import_messages(req.session_id, req.messages, req.client_key, user_id=_uid(request))
@@ -720,7 +721,8 @@ async def pull_chat_history(request: Request):
     """One-request snapshot of every session + message for device sync.
 
     A single round-trip replaces N per-session history calls so a phone
-    restoring its sidebar stays well under the 30 rpm rate limiter."""
+    restoring its sidebar stays well under the 30 rpm rate limiter.
+    """
     user_id = _uid(request)
     from db import get_all_history, get_all_sessions
     sessions = await get_all_sessions(user_id)
@@ -931,7 +933,8 @@ async def sync_commands(req: SyncRequest, background_tasks: BackgroundTasks, req
 @router.get("/sync/items", tags=["sync"])
 async def get_sync_items_local(request: Request, entity_type: str | None = Query(None), since: str | None = Query(None)):
     """Return the user's sync items, optionally filtered by entity_type or an
-    ISO `since` cutoff (exclusive). Includes tombstones (deleted=true)."""
+    ISO `since` cutoff (exclusive). Includes tombstones (deleted=true).
+    """
     eff = _uid(request)
     from db import get_sync_items
     items = await get_sync_items(eff, entity_type=entity_type, since=since)
@@ -942,7 +945,8 @@ async def get_sync_items_local(request: Request, entity_type: str | None = Query
 async def post_sync_items_local(req: SyncItemsRequest, request: Request):
     """Upsert the user's items (last-write-wins). Items carry uuid/entity_type/data/
     updated_at/deleted; a deleted item acts as a tombstone that replicates the
-    removal to other devices. Returns the applied count."""
+    removal to other devices. Returns the applied count.
+    """
     eff = _uid(request)
     from db import upsert_sync_items
     n = await upsert_sync_items(eff, [it.model_dump() for it in req.items])

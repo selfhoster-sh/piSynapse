@@ -124,9 +124,10 @@ class TestIntentFallback:
 
 class TestListSanitizesDescriptions:
     def test_list_strips_markup_from_descriptions(self):
+        from datetime import datetime
         from types import SimpleNamespace
         from unittest.mock import MagicMock, patch
-        from datetime import datetime
+
         from calendar_ops import list_events
 
         def _vevent(summary, desc):

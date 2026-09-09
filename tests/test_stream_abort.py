@@ -125,7 +125,6 @@ def test_abort_mid_round_stops_remaining_tools():
         _DONE_LINE,
     ]]
 
-    orig_run = llm_stream.run_tool
     executed = []
 
     async def fake_run_tool_abort(name, params, context=None):

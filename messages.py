@@ -8,9 +8,9 @@ Model-facing prompts are intentionally NOT localized — small models follow
 English instructions best and users never see them (see llm/utils.py).
 """
 
-from config import get
-
 import contextvars
+
+from config import get
 
 # Per-request language override (multi-user): the chat pipeline resolves the
 # caller's effective UI_LANGUAGE once per request and pins it here, so sync

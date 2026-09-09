@@ -15,7 +15,6 @@ from config import (
 from tool_verification import run_verification
 from tools import (
     CONFIRM_TOOLS,
-    TOOL_NAMES,
     get_tools_for_group,
     is_tool_success,
     parse_tool_args,
@@ -23,21 +22,26 @@ from tools import (
     validate_confirm_params,
 )
 
-from .payload import _build_full_messages, _build_payload, _normalize_messages_for_backend, litert_cache_key, trim_messages_for_context
+from .payload import (
+    _build_full_messages,
+    _build_payload,
+    _normalize_messages_for_backend,
+    litert_cache_key,
+    trim_messages_for_context,
+)
 from .utils import (
-    CONTINUATION_NOTE,
     _TOOL_ASK_HINT,
+    CONTINUATION_NOTE,
     _bare_tool_name,
     _check_tool_leak,
-    _chip_clarify_question,
     _escalation_tools,
     _get_client,
     _wants_tools_hint,
+    chip_clarify_response,
     clean_reasoning,
     is_lookup_tool,
     is_mutation_tool,
     parse_leaked_tool_call,
-    chip_clarify_response,
     should_arm_tool_hint,
     strip_tool_leaks,
     user_requested_action,

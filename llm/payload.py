@@ -109,10 +109,9 @@ async def _build_full_messages(
     tool_group: str | None = None,
     user_id: str | None = None,
 ) -> list[dict]:
-    from prompt import build_context, get_email_context, get_system_prompt, get_tool_system_prompt
-
     from db import effective_setting
     from messages import set_request_language
+    from prompt import build_context, get_email_context, get_system_prompt, get_tool_system_prompt
 
     # Per-user preferences, resolved once per request (single source:
     # user row -> live global -> code default).
