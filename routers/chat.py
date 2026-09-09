@@ -173,13 +173,13 @@ async def _update_summary(session_id: str, user_id: str = "default"):
 
 
 async def _enrich_title(session_id: str, user_id: str = "default"):
-    """Background task: replace the RAKE instant title with an LLM-generated one.
+    """Background task: replace the instant title with an LLM-generated one.
 
     Runs at the first opportunity (up to 4 messages, covering a fast second
     turn that lands before this background task) and only while the current
-    name is still the RAKE title — an already enriched or user-renamed session
+    name is still the instant title — an already enriched or user-renamed session
     is never overwritten. Reads the FIRST user + assistant messages from DB,
-    calls the LLM, updates the session name. Failure is silent — the RAKE
+    calls the LLM, updates the session name. Failure is silent — the instant
     title stays as fallback.
     """
     try:
@@ -197,16 +197,16 @@ async def _enrich_title(session_id: str, user_id: str = "default"):
         asst_msg = next((m["content"] for m in history if m["role"] == "assistant"), "")
         if not user_msg or not asst_msg:
             return
-        from title import generate_llm_title, generate_rake_title
+        from title import generate_llm_title, generate_instant_title
         async with db.execute(
             "SELECT name FROM sessions WHERE id = ? AND user_id = ?", (session_id, user_id)
         ) as cur:
             row = await cur.fetchone()
         current_name = row[0] if row else ""
         # Enrichable = no name yet, the create_session placeholder, or the
-        # RAKE instant title. Anything else was enriched or user-renamed.
+        # Instant title. Anything else was enriched or user-renamed.
         if current_name and current_name not in ("New Chat", "Yeni Sohbet") \
-                and current_name != generate_rake_title(user_msg):
+                and current_name != generate_instant_title(user_msg):
             return  # already enriched or renamed — never overwrite
         title = await generate_llm_title(user_msg, asst_msg)
         if title:

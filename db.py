@@ -1220,8 +1220,8 @@ async def save_message(session_id: str, role: str, content: str, images: list[st
             existing = await db.execute("SELECT name FROM sessions WHERE id = ? AND user_id = ?", (session_id, user_id))
             row = await existing.fetchone()
             if not row or not row[0]:
-                from title import generate_rake_title
-                name = generate_rake_title(content)
+                from title import generate_instant_title
+                name = generate_instant_title(content)
                 await db.execute(
                     "UPDATE sessions SET name = ? WHERE id = ? AND user_id = ?",
                     (name, session_id, user_id),
@@ -1479,10 +1479,10 @@ async def import_messages(session_id: str, messages: list[dict], client_key: str
             if not row or not row[0]:
                 title_src = next((m.get("content", "").strip() for m in messages if m.get("role") == "user"), "")
                 if title_src:
-                    from title import generate_rake_title
+                    from title import generate_instant_title
                     await db.execute(
                         "UPDATE sessions SET name = ? WHERE id = ? AND user_id = ?",
-                        (generate_rake_title(title_src), session_id, user_id),
+                        (generate_instant_title(title_src), session_id, user_id),
                     )
             await _commit_with_retry(db)
     return inserted
