@@ -16,6 +16,15 @@
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 - **Sanitization rule:** this file may be published. Never write personal data, identity clues, deployment addresses (hostnames, IPs, ports), or accounts into it. Keep every narrative in English; Turkish inline tokens are allowed only as product corpus / i18n test data.
 
+## 2026-09-09 — Faz 6 (server audit fixes): security hardening
+
+- **Scope (plan Faz 6):** trust, secrets, uploads, ops hygiene. Four commits: `2e07b09` (trust), `40d8f3a` (secrets), `cb7c7b1` (upload), `7925bed` (ops).
+- **Faz 6a:** `TRUSTED_HOSTS=*` rejected+ignored (fail-closed); `CORS_ORIGINS=*` fails fast at startup (live `.env` verified explicit — no prod impact); exempt paths get a separate 120rpm bucket. Two tests had pinned the old fail-open wildcard — updated to the new contract.
+- **Faz 6b:** `?k=` query auth removed (header/body only); `/debug` redacts + debug-level only; `GET /config/settings` masks secret-bearing keys (PATCH already ignored them — no functional change).
+- **Faz 6c:** `/chat/upload` gates content-type + magic bytes (JPEG/PNG/GIF/WebP/BMP/ISO-BMFF) pre-buffer; audio temp suffix allowlisted at both sites. The old oversized test now sends real JPEG magic so it exercises the size path. Residual: concurrent-RAM bound left to the middleware cap (documented).
+- **Faz 6d:** `ENV_PATH`/`DB_PATH` defaults repo-anchored (no more CWD split-brain); `*.db*` permission sweep; installer log rotation at spawn; `requirements-lock.txt` + pin-enforcing test (`pip-audit` documented as the networked gate).
+- **Test:** full suite **637 passed**.
+
 ## 2026-09-09 — Faz 5 (server audit fixes): chat pipeline parity
 
 - **Scope (plan Faz 5):** stream/non-stream parity, payload robustness, abort, tool hygiene. Six commits: `1ea6891` (mail), `3b5afba` (parity), `61f1a1b` (payload), `cd3f4ea` (abort), `4059ce3` + `f91f5f0` (hygiene).

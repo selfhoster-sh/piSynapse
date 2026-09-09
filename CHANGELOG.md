@@ -9,6 +9,7 @@ uses [Semantic Versioning](https://semver.org/).
 ### Security
 - Per-user isolation: summary boundary/updates, session upserts, semantic search supplement, retrieval candidates, and history/FTS clearing are now scoped by `user_id`, so a colliding `session_id` can no longer leak or clobber another user's data.
 - Sidebar titles no longer carry emails/URLs verbatim (masked as `[e-posta]`/`[link]`); migration DDL identifiers are quoted and metacharacters rejected.
+- Trust hardening: `TRUSTED_HOSTS=*` no longer disables Host checking; `CORS_ORIGINS=*` fails fast; health/static paths share a lenient rate-limit bucket instead of none; legacy `?k=` URL auth removed; `/debug` bodies redacted and debug-level only; settings GET masks secrets; uploads gated by type+magic with audio suffix allowlist; DB files permission-swept every startup.
 
 ### Fixed
 - Single source of truth for config: `EMBED_MODEL` canonicalized to mpnet-base-v2 everywhere (mismatched defaults silently zeroed similarity scores); new startup warning on embedding dimension drift.
