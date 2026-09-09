@@ -68,3 +68,38 @@ def test_ensure_data_dirs_owner_only(monkeypatch, tmp_path):
 def test_check_resources_never_raises():
     inst._check_resources("gemma4:e2b")
     inst._check_resources("gemma4:e4b")
+
+
+def test_piserve_unit_points_at_repo_and_hardens():
+    from pathlib import Path
+
+    unit = inst._render_piserve_unit(
+        "salih", "/home/salih", "/usr/bin/python3",
+        Path("/home/salih/piSynapse/litert_serve/server.py"),
+    )
+    assert "ExecStart=/usr/bin/python3 /home/salih/piSynapse/litert_serve/server.py" in unit
+    assert "WorkingDirectory=/home/salih/piSynapse/litert_serve" in unit
+    assert "UMask=0077" in unit
+    assert "EnvironmentFile=-/home/salih/piSynapse/.env" in unit
+    assert "litert.service" not in unit
+    assert "/home/salih/litert_serve" not in unit  # orphan path never served
+
+
+def test_pisynapse_unit_orders_after_piserve():
+    unit = inst._render_pisynapse_unit(
+        "salih", "/home/salih/piSynapse",
+        "/home/salih/piSynapse/venv/bin/uvicorn", wants_litert=True,
+    )
+    assert "After=network-online.target piserve.service" in unit
+    assert "WorkingDirectory=/home/salih/piSynapse" in unit
+    assert "UMask=0077" in unit
+    # Dead legacy name must never appear as a dependency.
+    assert " litert.service" not in unit
+
+
+def test_pisynapse_unit_without_litert_has_no_piserve_dep():
+    unit = inst._render_pisynapse_unit(
+        "salih", "/home/salih/piSynapse",
+        "/home/salih/piSynapse/venv/bin/uvicorn", wants_litert=False,
+    )
+    assert "piserve.service" not in unit
