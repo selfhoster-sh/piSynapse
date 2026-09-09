@@ -32,7 +32,7 @@ const STRINGS = {
      settingsRestart:'Bazı ayarlar sunucu yeniden başlatıldığında tam etkili olur.',
     settingsCancel:'İptal', settingsSave:'Kaydet', settingsSearch:'Ayarlarda ara…', settingsDirty:'Kaydedilmemiş değişiklikler', settingsNoResult:'Aramana uyan ayar yok.',
     navAppearance:'Görünüm', navAccount:'Hesap', navAssistant:'Asistan', navModel:'Model', navChat:'Sohbet', navVoice:'Ses', navServer:'Sunucu', navAdmin:'Yönetici', readonlyNote:'Bu ekrandaki sunucu ayarları salt görüntülenir — değişiklikleri yalnızca yöneticiler yapabilir.',
-    modeLabel:'Tema', modeDark:'Koyu', modeLight:'Açık', modeAmoled:'AMOLED', accentLabel:'Vurgu rengi', liquidLabel:'Sıvı cam (deneysel)', liquidDesc:'Gerçek kırılma efekti — yalnızca masaüstünde, cam modu açıkken. Pilde ve telefonda kapat.',
+    modeLabel:'Tema', modeDark:'Koyu', modeLight:'Açık', modeAmoled:'AMOLED', accentLabel:'Vurgu rengi',
     adminReview:'İnceleme Kuyruğu', adminReviewDesc:'Kullanıcı geri bildirimlerinden gelen çelişkili yönlendirme önerileri. Onaylanan corpus\u2019a girer, reddedilen bir daha otomatik eklenmez.',
     adminReviewEmpty:'Bekleyen öneri yok.', adminApprove:'Onayla', adminReject:'Reddet',
     adminUsers:'Kullanıcılar', adminApproved:'Onaylı', adminPending:'Onay bekliyor', adminRole:'Yönetici', adminDelete:'Sil', adminDeleteConfirm:'Bu hesabı ve tüm verilerini silmek istediğine emin misin?',
@@ -123,7 +123,7 @@ const STRINGS = {
     settingsRestart:'Some settings take full effect only after server restart.',
     settingsCancel:'Cancel', settingsSave:'Save', settingsSearch:'Search settings…', settingsDirty:'Unsaved changes', settingsNoResult:'No settings match your search.',
     navAppearance:'Appearance', navAccount:'Account', navAssistant:'Assistant', navModel:'Model', navChat:'Chat', navVoice:'Voice', navServer:'Server', navAdmin:'Admin', readonlyNote:'Server settings here are read-only — only admins can change them.',
-    modeLabel:'Theme', modeDark:'Dark', modeLight:'Light', modeAmoled:'AMOLED', accentLabel:'Accent color', liquidLabel:'Liquid glass (experimental)', liquidDesc:'True refraction — desktop only, needs glass mode. Turn off on battery and phones.',
+    modeLabel:'Theme', modeDark:'Dark', modeLight:'Light', modeAmoled:'AMOLED', accentLabel:'Accent color',
     adminReview:'Review Queue', adminReviewDesc:'Contested routing suggestions from user feedback. Approved ones enter the corpus, rejected ones are never auto-added.',
     adminReviewEmpty:'No pending suggestions.', adminApprove:'Approve', adminReject:'Reject',
     adminUsers:'Users', adminApproved:'Approved', adminPending:'Pending approval', adminRole:'Admin', adminDelete:'Delete', adminDeleteConfirm:'Delete this account and all its data?',
@@ -196,7 +196,6 @@ let mode = localStorage.getItem('ps_mode') ||
   (localStorage.getItem('ps_amoled') === '1' ? 'amoled' : 'dark');
 if(mode !== 'dark' && mode !== 'light' && mode !== 'amoled') mode = 'dark';
 let glass = localStorage.getItem('ps_glass') === '1';
-let liquid = localStorage.getItem('ps_liquid') === '1';
 let minimal = localStorage.getItem('ps_minimal') === '1';
 let amoled = localStorage.getItem('ps_amoled') === '1';
 let fontMode = localStorage.getItem('ps_font') || 'dmsans';
@@ -582,7 +581,6 @@ function applyGlass(on){
   glass = on;
   document.body.classList.toggle('glass-mode', on);
   localStorage.setItem('ps_glass', on ? '1' : '0');
-  if(!on && liquid) applyLiquid(false); // liquid needs the glass surfaces
 }
 
 function applyMinimal(on){
@@ -607,18 +605,6 @@ function applyMode(m){
   document.querySelectorAll('.seg-btn[data-mode]').forEach(el => {
     el.classList.toggle('active', el.dataset.mode === mode);
   });
-}
-
-function applyLiquid(on){
-  // Experimental desktop-only refraction. Requires a fine pointer (real
-  // mouse-class GPU headroom) and implies glass visuals; phones stay frosted.
-  const ok = on && window.matchMedia && window.matchMedia('(pointer:fine)').matches;
-  liquid = !!ok;
-  document.body.classList.toggle('liquid-glass', liquid);
-  localStorage.setItem('ps_liquid', liquid ? '1' : '0');
-  if(liquid && !glass) applyGlass(true);
-  const tgl = document.getElementById('liquid-toggle');
-  if(tgl) tgl.checked = liquid;
 }
 
 function applyFont(f){
@@ -1709,7 +1695,7 @@ let lastInputWasVoice = false;
 
 document.addEventListener('DOMContentLoaded', async ()=>{
   if(window._beacon) window._beacon({t:'init', step:'start'});
-  applyTheme(theme); applyMode(mode); applyGlass(glass); applyLiquid(liquid && glass); applyMinimal(minimal); applyFont(fontMode); applyLang(lang); enhanceAllSelects(); setupInput(); setupMobileKeyboard(); setupHoldToRecord();
+  applyTheme(theme); applyMode(mode); applyGlass(glass); applyMinimal(minimal); applyFont(fontMode); applyLang(lang); enhanceAllSelects(); setupInput(); setupMobileKeyboard(); setupHoldToRecord();
   if(window._beacon) window._beacon({t:'init', step:'prep-done'});
   // Check if API key is needed
   try {
@@ -3376,16 +3362,6 @@ async function openSettings(){
       </div>
     </div>
     <div class="appearance-group">
-      <label id="lbl-liquid-label"></label>
-      <div class="switch-wrap">
-        <label class="switch">
-          <input type="checkbox" id="liquid-toggle" onchange="applyLiquid(this.checked)">
-          <span class="track"></span>
-        </label>
-      </div>
-      <div class="minimal-desc" id="liquid-desc"></div>
-    </div>
-    <div class="appearance-group">
       <label id="lbl-minimal-label"></label>
       <div class="switch-wrap">
         <label class="switch">
@@ -3414,12 +3390,6 @@ async function openSettings(){
   if(glassLabel) glassLabel.textContent = t('glassLabel');
   const glassToggle = document.getElementById('glass-toggle');
   if(glassToggle){ glassToggle.checked = glass; }
-  const liquidLabel = document.getElementById('lbl-liquid-label');
-  if(liquidLabel) liquidLabel.textContent = t('liquidLabel');
-  const liquidDesc = document.getElementById('liquid-desc');
-  if(liquidDesc) liquidDesc.textContent = t('liquidDesc');
-  const liquidToggle = document.getElementById('liquid-toggle');
-  if(liquidToggle){ liquidToggle.checked = liquid; }
   const minimalLabelEl = document.getElementById('lbl-minimal-label');
   if(minimalLabelEl) minimalLabelEl.textContent = t('minimalLabel');
   const minimalDescEl = document.getElementById('minimal-desc');
