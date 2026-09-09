@@ -24,6 +24,11 @@
 - `static/web.html` vs `static/app.html` differ by ONE line (a server-status span); both load the same vendor + `ui.js`. The MASTER/SLAVE split now lives in the `_NATIVE` runtime flag, not in the files. `index.html` is just the detecting loader.
 - Future cleanup: single shell is possible, but native loads `app.html` directly (capacitor config, frozen port track) — do not touch until that side moves.
 
+## 2026-09-10 — v2.0.0 live (user restarted 00:36, all healthy)
+
+- Live server now runs current main (first time since İş 2): multi-user, sessions, onboarding v2, collective learning, per-user services all active. `/health` healthy (db/llm/nextcloud ok).
+- Pending (tomorrow): smoke-test fresh onboarding in a clean browser → user wipe + fresh start (backup ready) → fresh screenshots → pilot users → Telegram/Matrix bot spike.
+
 ## 2026-09-09 — v2.0.0 release
 
 - **Cut from:** 204 commits since v1.8.0 (server audit fixes, multi-user, collective learning, sessions, onboarding v2, per-user services, settings v2, security pass). Suite 755, ruff clean.
