@@ -44,7 +44,7 @@ def _run(monkeypatch, responses):
     calls = []
 
     async def fake_llm_request(msgs, *, use_think=False, use_tools=True,
-                               tool_list=None, reasoning_effort=None):
+                               tool_list=None, reasoning_effort=None, session_cache_key=None):
         calls.append(use_tools)
         return responses[len([c for c in calls]) - 1]
 

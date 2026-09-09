@@ -26,18 +26,19 @@ def intent_db(tmp_path, monkeypatch):
 
 
 def _seed_tool_execution(session_id: str, tool_name: str, user_text: str,
-                         verification_status: str | None = None):
+                         verification_status: str | None = None,
+                         user_id: str = "default"):
     """Insert a user->assistant turn linked to a successful tool audit row."""
 
     async def _go():
         db = await dbmod.get_db()
         await db.execute(
-            "INSERT INTO conversations (session_id, role, content) VALUES (?, 'user', ?)",
-            (session_id, user_text),
+            "INSERT INTO conversations (session_id, role, content, user_id) VALUES (?, 'user', ?, ?)",
+            (session_id, user_text, user_id),
         )
         await db.execute(
-            "INSERT INTO conversations (session_id, role, content) VALUES (?, 'assistant', ?)",
-            (session_id, "İşte sonuçlar"),
+            "INSERT INTO conversations (session_id, role, content, user_id) VALUES (?, 'assistant', ?, ?)",
+            (session_id, "İşte sonuçlar", user_id),
         )
         await db.commit()
         cur = await db.execute(
@@ -47,9 +48,9 @@ def _seed_tool_execution(session_id: str, tool_name: str, user_text: str,
         )
         asst_id = (await cur.fetchall())[0][0]
         await db.execute(
-            "INSERT INTO tool_audit_log (tool_name, conversation_id, success, is_summary, verification_status) "
-            "VALUES (?, ?, 1, 0, ?)",
-            (tool_name, asst_id, verification_status),
+            "INSERT INTO tool_audit_log (tool_name, conversation_id, success, is_summary, verification_status, user_id) "
+            "VALUES (?, ?, 1, 0, ?, ?)",
+            (tool_name, asst_id, verification_status, user_id),
         )
         await db.commit()
 
@@ -272,3 +273,13 @@ def test_llm_resolve_off_when_fallback_disabled(monkeypatch):
     assert asyncio.run(li_mod.llm_resolve_with_evidence(
         "devam edelim", [{"role": "user", "content": "e-posta"}])) == ("question", None)
     assert not called
+
+
+def test_resume_context_is_per_user(intent_db):
+    _seed_tool_execution("sx", "send_email", "mailleri özetle", user_id="alice")
+    # Bob sees no anchor in alice's session: no cross-user resume.
+    assert asyncio.run(li_mod.resolve_resume_context(
+        "devam edelim son yaptığımız işe", [], session_id="sx", user_id="bob")) is None
+    # Alice anchors normally on her own tool execution.
+    assert asyncio.run(li_mod.resolve_resume_context(
+        "devam edelim son yaptığımız işe", [], session_id="sx", user_id="alice")) == "email"

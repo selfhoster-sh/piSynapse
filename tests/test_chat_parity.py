@@ -20,7 +20,8 @@ def _run_parity(monkeypatch, responses, message, intent="question", tool_group=N
     calls = []
 
     async def fake_llm_request(msgs, *, use_think=False, use_tools=True,
-                               tool_list=None, reasoning_effort=None):
+                               tool_list=None, reasoning_effort=None,
+                               session_cache_key=None):
         sent.append(list(msgs))
         calls.append((use_tools, len(tool_list) if tool_list else 0))
         return responses[len(calls) - 1]
