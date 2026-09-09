@@ -510,6 +510,13 @@ async def init_db():
     # columns that may not exist yet on old DBs. All idempotent; scans are
     # cheap at realistic sizes (a version gate was considered and rejected:
     # it risks silently skipping repairs after partial runs, saving <1s).
+    # Audit ownership first (it joins live owner values), then NULL-norm.
+    await db.execute(
+        "UPDATE tool_audit_log SET user_id = "
+        "(SELECT c.user_id FROM conversations c WHERE c.id = tool_audit_log.conversation_id) "
+        "WHERE conversation_id IS NOT NULL AND user_id IS NULL "
+        "AND (SELECT c.user_id FROM conversations c WHERE c.id = tool_audit_log.conversation_id) IS NOT NULL"
+    )
     for _owner_tbl, _owner_col in (("conversations", "user_id"), ("sessions", "user_id"),
                                    ("memories", "user_id"), ("tool_audit_log", "user_id")):
         await db.execute(f"UPDATE {_owner_tbl} SET {_owner_col} = 'default' WHERE {_owner_col} IS NULL")
