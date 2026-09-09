@@ -40,6 +40,13 @@
 - **Note:** server half takes effect on the pending restart.
 - **Test:** full-file users/audit green; `node --check` clean.
 
+## 2026-09-09 — Sector-standard settings + clean URLs (pre-2.0)
+
+- **Settings:** live search filter (+empty state), dirty tracking (save disabled until change + unsaved note), role-aware save (non-admins PUT personal keys — their Save 403'd before), all with tr/en keys. Shells (web+app) gain search row + dirty note; CSS for disabled/empty states.
+- **URLs:** loader used `location.replace` → users saw `/static/web.html`. Boot now `history.replaceState`s to `/static/` (non-native only; refresh-safe via the loader; native untouched, relative assets intact).
+- **Listing:** verified no directory listing (subdirs 404; traversal normalizes to unknown routes). Locked with `tests/test_static_serving.py` (4 tests).
+- **Test:** full suite **755 passed** (751 + 4); ruff clean; `node --check` clean.
+
 ## 2026-09-09 — Security pass + speed note (user requests)
 
 - **Audit (verified, not claimed):** SQL 100% parameterized (`?` everywhere; f-string parts are constants/placeholder-runs/ints; LIKE escapes wildcards; FTS MATCH bound with LIKE fallback); XSS via `esc()` on all dynamic HTML incl. the new admin UI, `renderMd`→local-vendor DOMPurify, link protocol allowlist, no eval/Function/document.write; image previews are local dataURLs; subprocess only in install.py with fixed argv (no shell, no user input).

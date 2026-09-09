@@ -784,6 +784,11 @@ body.glass-mode.settings-open .modal-backdrop{background:rgba(5,5,9,.85)}
 .settings-save{padding:10px 24px;background:var(--accent);border:none;border-radius:10px;
   color:#141419;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .2s}@media (hover:hover){
 .settings-save:hover:not(:focus){background:var(--accent-h);transform:translateY(-1px)}}
+.settings-save:disabled{opacity:.45;cursor:default;transform:none}
+.settings-search-row{padding:0 16px 8px}
+.settings-search-row .setting-input{width:100%}
+.settings-dirty{font-size:12px;color:var(--accent);margin-right:auto}
+.settings-empty{padding:18px;text-align:center;color:var(--text3);font-size:13px}
 
 /* ── Overlay & Toast ───────────────────────────────────────────────────────── */
 #overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);

@@ -171,6 +171,7 @@
       <button type="button" class="set-tab" data-tab="server" id="tab-server"></button>
     </div>
     <div class="settings-chips" id="settings-chips"></div>
+    <div class="settings-search-row"><input id="settings-search" class="setting-input" maxlength="60" autocomplete="off"></div>
     <div class="settings-body">
       <div class="settings-restart-notice" id="settings-restart-notice"></div>
       <div id="settings-pane-phone">
@@ -181,6 +182,7 @@
     </div>
     <div class="settings-actions">
       <button class="modal-cancel" onclick="closeSettings()" id="settings-cancel-btn"></button>
+      <span id="settings-dirty-note" class="settings-dirty" hidden></span>
       <button class="settings-save" onclick="saveSettings()" id="settings-save-btn"></button>
     </div>
   </div>
