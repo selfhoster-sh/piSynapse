@@ -7,9 +7,16 @@ import logging
 import random
 import re
 import time
+from contextvars import ContextVar
 from functools import wraps
 
 logger = logging.getLogger("piSynapse")
+
+# Request-scoped Nextcloud credentials (collective services). The dispatcher
+# sets this per tool call from the caller's encrypted store; NC factories
+# prefer it over the shared .env account. Task-contained by asyncio context
+# semantics; every run_tool entry sets it explicitly (creds or None).
+NC_CREDS: ContextVar[dict | None] = ContextVar("nc_creds", default=None)
 
 
 def _is_retryable(exc: BaseException) -> bool:

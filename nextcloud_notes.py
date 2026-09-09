@@ -26,11 +26,12 @@ class NotFoundError(Exception):
 class NextcloudNotesClient:
     """Nextcloud Notes REST API client."""
 
-    def __init__(self):
+    def __init__(self, creds: dict | None = None):
         from config import NEXTCLOUD_PASSWORD, NEXTCLOUD_TIMEOUT, NEXTCLOUD_URL, NEXTCLOUD_USER
-        self._base = NEXTCLOUD_URL.rstrip("/")
-        self._user = NEXTCLOUD_USER
-        self._password = NEXTCLOUD_PASSWORD
+        creds = creds or {}
+        self._base = (creds.get("url") or NEXTCLOUD_URL).rstrip("/")
+        self._user = creds.get("user") or NEXTCLOUD_USER
+        self._password = creds.get("password") or NEXTCLOUD_PASSWORD
         self._timeout = NEXTCLOUD_TIMEOUT
         self._list_cache: list[dict] | None = None
         self._list_cache_ts: float = 0
@@ -180,9 +181,14 @@ class NextcloudNotesClient:
 
 
 def _get_client() -> NextcloudNotesClient | None:
-    """Return singleton client, create if needed."""
+    """Return singleton client, create if needed (or ephemeral per-user one)."""
     global _notes_client
     from config import NEXTCLOUD_PASSWORD, NEXTCLOUD_URL
+    from utils import NC_CREDS
+
+    creds = NC_CREDS.get()
+    if creds:
+        return NextcloudNotesClient(creds=creds)
     if not NEXTCLOUD_URL or not NEXTCLOUD_PASSWORD:
         return None
     if _notes_client is None:

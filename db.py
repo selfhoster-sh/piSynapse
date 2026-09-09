@@ -439,6 +439,16 @@ async def init_db():
         )
     """)
 
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS user_credentials (
+            user_id    TEXT NOT NULL,
+            provider   TEXT NOT NULL,
+            enc_blob   TEXT NOT NULL,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, provider)
+        )
+    """)
+
     await db.execute("CREATE INDEX IF NOT EXISTS idx_conversations_session ON conversations(session_id, timestamp)")
     await db.execute("CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id, importance DESC)")
     await db.execute("CREATE INDEX IF NOT EXISTS idx_tool_audit_created ON tool_audit_log(created_at)")
@@ -1131,6 +1141,92 @@ async def user_reputation(user_id: str) -> float:
         return sum(1 for s, g in mine if decided[s] == g) / len(mine)
     except Exception:
         return 1.0
+
+
+# ── Per-user encrypted credentials (mail/nextcloud) ──────────────────────────
+async def save_credential(user_id: str, provider: str, payload: dict) -> bool:
+    """Validate + encrypt + upsert a credential. Never raises, never logs secrets."""
+    try:
+        from credstore import PROVIDER_FIELDS, VALID_PROVIDERS, encrypt_payload
+
+        if provider not in VALID_PROVIDERS:
+            return False
+        need = PROVIDER_FIELDS[provider]
+        if any(not str(payload.get(k) or "").strip() for k in need):
+            return False
+        clean = {k: str(payload[k]).strip()[:500] for k in need}
+        blob = encrypt_payload(clean)
+        db = await get_db()
+        async with _write_lock():
+            await db.execute(
+                """INSERT INTO user_credentials (user_id, provider, enc_blob)
+                   VALUES (?, ?, ?)
+                   ON CONFLICT(user_id, provider) DO UPDATE SET
+                     enc_blob = excluded.enc_blob, updated_at = CURRENT_TIMESTAMP""",
+                (user_id, provider, blob),
+            )
+            await _commit_with_retry(db)
+        return True
+    except Exception:
+        return False
+
+
+async def get_credential(user_id: str | None, provider: str) -> dict | None:
+    """Decrypt a credential, or None (missing/unreadable). Never raises."""
+    if not user_id:
+        return None
+    try:
+        from credstore import decrypt_payload
+
+        db = await get_db()
+        cur = await db.execute(
+            "SELECT enc_blob FROM user_credentials WHERE user_id = ? AND provider = ?",
+            (user_id, provider),
+        )
+        row = await cur.fetchone()
+        if not row:
+            return None
+        return decrypt_payload(row[0])
+    except Exception:
+        return None
+
+
+async def list_credentials(user_id: str) -> list[dict]:
+    """Providers saved by a user with their public account label (no secrets)."""
+    try:
+        from credstore import PROVIDER_FIELDS, decrypt_payload
+
+        db = await get_db()
+        cur = await db.execute(
+            "SELECT provider, enc_blob, updated_at FROM user_credentials WHERE user_id = ? ORDER BY provider",
+            (user_id,),
+        )
+        out = []
+        for provider, blob, updated in await cur.fetchall():
+            account = ""
+            data = decrypt_payload(blob)
+            if data:
+                fields = PROVIDER_FIELDS.get(provider, ())
+                account = str(data.get(fields[0], "")) if fields else ""
+            out.append({"provider": provider, "account": account, "updated_at": updated})
+        return out
+    except Exception:
+        return []
+
+
+async def delete_credential(user_id: str, provider: str) -> bool:
+    """Remove a credential. Never raises."""
+    try:
+        db = await get_db()
+        async with _write_lock():
+            cur = await db.execute(
+                "DELETE FROM user_credentials WHERE user_id = ? AND provider = ?",
+                (user_id, provider),
+            )
+            await _commit_with_retry(db)
+            return cur.rowcount > 0
+    except Exception:
+        return False
 
 
 async def count_user_votes_today(user_id: str) -> int:
@@ -2684,6 +2780,7 @@ async def delete_user(user_id: str) -> bool:
         await db.execute("DELETE FROM user_api_keys WHERE user_id = ?", (user_id,))
         await db.execute("DELETE FROM user_sessions WHERE user_id = ?", (user_id,))
         await db.execute("DELETE FROM feedback_votes WHERE user_id = ?", (user_id,))
+        await db.execute("DELETE FROM user_credentials WHERE user_id = ?", (user_id,))
         await db.execute("DELETE FROM users WHERE id = ?", (user_id,))
         await _commit_with_retry(db)
     invalidate_user_cache(user_id)

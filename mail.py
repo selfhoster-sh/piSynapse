@@ -151,7 +151,7 @@ class MailClient(ABC):
 
 class GmailClient(MailClient):
 
-    def __init__(self):
+    def __init__(self, creds: dict | None = None):
         from config import (
             GMAIL_APP_PASSWORD,
             GMAIL_USER,
@@ -162,8 +162,9 @@ class GmailClient(MailClient):
             SMTP_PORT,
             SMTP_TIMEOUT,
         )
-        self._user = GMAIL_USER
-        self._password = GMAIL_APP_PASSWORD
+        creds = creds or {}
+        self._user = creds.get("address") or GMAIL_USER
+        self._password = creds.get("app_password") or GMAIL_APP_PASSWORD
         self._imap_host = IMAP_HOST
         self._imap_port = IMAP_PORT
         self._smtp_host = SMTP_HOST
@@ -196,7 +197,7 @@ class GmailClient(MailClient):
 
 class ProtonMailClient(MailClient):
 
-    def __init__(self):
+    def __init__(self, creds: dict | None = None):
         from config import (
             IMAP_TIMEOUT,
             PROTON_IMAP_HOST,
@@ -207,8 +208,9 @@ class ProtonMailClient(MailClient):
             PROTON_USER,
             SMTP_TIMEOUT,
         )
-        self._user = PROTON_USER
-        self._password = PROTON_PASSWORD
+        creds = creds or {}
+        self._user = creds.get("address") or PROTON_USER
+        self._password = creds.get("bridge_password") or PROTON_PASSWORD
         self._imap_host = PROTON_IMAP_HOST
         self._imap_port = PROTON_IMAP_PORT
         self._smtp_host = PROTON_SMTP_HOST
@@ -345,4 +347,22 @@ def get_active_mail_client() -> MailClient | None:
     # Default: Gmail
     if GMAIL_USER and GMAIL_APP_PASSWORD:
         return _get_or_create("gmail", GmailClient)
+    return None
+
+
+async def get_mail_client_for_user(user_id: str | None) -> MailClient | None:
+    """Build a per-user client from their encrypted credentials (no cache —
+    objects are cheap; connections open per call anyway). Gmail preferred
+    when both are saved. Returns None when the user saved nothing.
+    """
+    if not user_id:
+        return None
+    from db import get_credential
+
+    gmail = await get_credential(user_id, "gmail")
+    if gmail and gmail.get("address") and gmail.get("app_password"):
+        return GmailClient(creds=gmail)
+    proton = await get_credential(user_id, "proton")
+    if proton and proton.get("address") and proton.get("bridge_password"):
+        return ProtonMailClient(creds=proton)
     return None
