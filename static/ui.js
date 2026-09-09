@@ -30,7 +30,7 @@ const STRINGS = {
     you:'Sen', topNew:'Yeni', feelsLike:'Hissedilen',
     settings:'Ayarlar', settingsTitle:'Ayarlar', settingsSaved:'Ayarlar kaydedildi',
      settingsRestart:'Bazı ayarlar sunucu yeniden başlatıldığında tam etkili olur.',
-    settingsCancel:'İptal', settingsSave:'Kaydet',
+    settingsCancel:'İptal', settingsSave:'Kaydet', settingsSearch:'Ayarlarda ara…', settingsDirty:'Kaydedilmemiş değişiklikler', settingsNoResult:'Aramana uyan ayar yok.',
     adminReview:'İnceleme Kuyruğu', adminReviewDesc:'Kullanıcı geri bildirimlerinden gelen çelişkili yönlendirme önerileri. Onaylanan corpus\u2019a girer, reddedilen bir daha otomatik eklenmez.',
     adminReviewEmpty:'Bekleyen öneri yok.', adminApprove:'Onayla', adminReject:'Reddet',
     adminUsers:'Kullanıcılar', adminApproved:'Onaylı', adminPending:'Onay bekliyor', adminRole:'Yönetici', adminDelete:'Sil', adminDeleteConfirm:'Bu hesabı ve tüm verilerini silmek istediğine emin misin?',
@@ -119,7 +119,7 @@ const STRINGS = {
     you:'You', topNew:'New', feelsLike:'Feels like',
     settings:'Settings', settingsTitle:'Settings', settingsSaved:'Settings saved',
     settingsRestart:'Some settings take full effect only after server restart.',
-    settingsCancel:'Cancel', settingsSave:'Save',
+    settingsCancel:'Cancel', settingsSave:'Save', settingsSearch:'Search settings…', settingsDirty:'Unsaved changes', settingsNoResult:'No settings match your search.',
     adminReview:'Review Queue', adminReviewDesc:'Contested routing suggestions from user feedback. Approved ones enter the corpus, rejected ones are never auto-added.',
     adminReviewEmpty:'No pending suggestions.', adminApprove:'Approve', adminReject:'Reject',
     adminUsers:'Users', adminApproved:'Approved', adminPending:'Pending approval', adminRole:'Admin', adminDelete:'Delete', adminDeleteConfirm:'Delete this account and all its data?',
@@ -1728,6 +1728,12 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   }
   await loadSessions(); showWelcome(); startTicker(); startHealthPoll();
   refreshServerStatus();
+  // Cosmetic URL: the loader lands us on /static/web.html (native needs the
+  // separate file), but users should see + bookmark the clean directory URL.
+  // Refresh-safe: /static/ re-runs the loader, which forwards again.
+  if(!_NATIVE && window.location.protocol.indexOf('http') === 0){
+    try{ history.replaceState(null, '', './'); }catch(e){}
+  }
   if(window._beacon) window._beacon({t:'init', step:'all-done'});
 });
 
@@ -3441,10 +3447,12 @@ async function openSettings(){
       enhanceAllSelects(form);
     }
     bindSettingsChips();
+    _wireSettingsChrome();
     loadAdminPanel(); // no-op for non-admins and when the box is absent
   } catch {
     form.innerHTML = `<div style="text-align:center;padding:12px;color:var(--danger)">${t('connErr')}</div>`;
     bindSettingsChips();
+    _wireSettingsChrome();
   }
 }
 
@@ -3588,6 +3596,83 @@ async function decidePattern(i, approve){
 }
 
 function closeSettings(){ document.getElementById('settings-modal').classList.remove('open'); document.body.classList.remove('settings-open'); }
+
+// ── Settings UX: search filter, dirty tracking, role-aware save ─────────────
+function _collectSettingValues(){
+  const values = {};
+  for (const key of Object.keys(_settingsData)) {
+    const el = document.getElementById('si-' + key);
+    if (el) values[key] = el.type === 'checkbox' ? (el.dataset.val || (el.checked ? 'on' : 'off')) : el.value;
+  }
+  return values;
+}
+
+let _settingsClean = '';
+function _snapshotSettings(){
+  _settingsClean = JSON.stringify(_collectSettingValues());
+  _markSettingsClean();
+}
+function _markSettingsClean(){
+  const btn = document.getElementById('settings-save-btn');
+  const note = document.getElementById('settings-dirty-note');
+  let dirty = false;
+  try{ dirty = JSON.stringify(_collectSettingValues()) !== _settingsClean; }catch(e){}
+  if(btn) btn.disabled = !dirty;
+  if(note){ note.hidden = !dirty; if(dirty) note.textContent = t('settingsDirty'); }
+}
+
+function filterSettings(q){
+  q = (q || '').trim().toLocaleLowerCase();
+  let visible = 0;
+  document.querySelectorAll('#settings-form .setting-item, #settings-pane-server .setting-item').forEach(el=>{
+    const hit = !q || (el.textContent || '').toLocaleLowerCase().includes(q);
+    el.style.display = hit ? '' : 'none';
+    if(hit) visible++;
+  });
+  document.querySelectorAll('#settings-form .settings-section, #settings-pane-server .settings-section').forEach(sec=>{
+    const any = [...sec.querySelectorAll('.setting-item')].some(el=>el.style.display !== 'none');
+    sec.style.display = any ? '' : 'none';
+  });
+  let empty = document.getElementById('settings-empty');
+  const showEmpty = !!q && ![...document.querySelectorAll('#settings-form .setting-item, #settings-pane-server .setting-item')]
+    .some(el=>el.style.display !== 'none');
+  if(showEmpty){
+    if(!empty){
+      empty = document.createElement('div');
+      empty.id = 'settings-empty'; empty.className = 'settings-empty';
+      document.getElementById('settings-form').appendChild(empty);
+    }
+    empty.textContent = t('settingsNoResult');
+    empty.style.display = '';
+  } else if(empty){ empty.style.display = 'none'; }
+}
+
+function _wireSettingsChrome(){
+  // Search box (placeholder i18n, live filter). Wired once — openSettings
+  // re-renders the form body but never this shell.
+  const search = document.getElementById('settings-search');
+  if(search && !search.dataset.wired){
+    search.dataset.wired = '1';
+    search.placeholder = t('settingsSearch');
+    search.addEventListener('input', ()=>filterSettings(search.value));
+  } else if(search){ search.placeholder = t('settingsSearch'); search.value = ''; filterSettings(''); }
+  // Dirty tracking: one delegated listener for the modal lifetime.
+  const modal = document.getElementById('settings-modal');
+  if(modal && !modal.dataset.dirtyWired){
+    modal.dataset.dirtyWired = '1';
+    modal.addEventListener('input', _markSettingsClean);
+    modal.addEventListener('change', _markSettingsClean);
+  }
+  _snapshotSettings();
+  // Role probe for save routing (fire-and-forget; defaults to admin view).
+  // Non-admins receive the personal subset and must PUT, never PATCH.
+  try{
+    api('GET', '/users/me').then(
+      d=>{ window._isAdmin = !!(d && d.user && d.user.is_admin); },
+      ()=>{ window._isAdmin = true; },
+    );
+  }catch(e){ window._isAdmin = true; }
+}
 document.addEventListener('keydown', (e)=>{
   if(e.key==='Escape'){
     const cm=document.getElementById('confirm-modal');
@@ -3598,19 +3683,21 @@ document.addEventListener('keydown', (e)=>{
 });
 
 async function saveSettings(){
-  const values = {};
-  for (const key of Object.keys(_settingsData)) {
-    const el = document.getElementById('si-' + key);
-    if (el) values[key] = el.type === 'checkbox' ? (el.dataset.val || (el.checked ? 'on' : 'off')) : el.value;
-  }
+  const values = _collectSettingValues();
   if(!_NATIVE){
     const keyEl = document.getElementById('si-ps_api_key');
     if(keyEl) setApiKey(keyEl.value.trim());
   }
 
   try {
-    const result = await api('PATCH', '/config/settings', { values });
+    // Role-aware save (sector standard: users only ever see what sticks).
+    // Non-admins hold personal keys only — PATCH would 403, so they PUT.
+    const personal = !_NATIVE && window._isAdmin === false;
+    const result = personal
+      ? await api('PUT', '/config/my-settings', { values })
+      : await api('PATCH', '/config/settings', { values });
     toast(t('settingsSaved'));
+    _snapshotSettings();
     if (result.restart_required && result.restart_required.length > 0) {
       document.getElementById('settings-restart-notice').style.display = 'block';
     }
