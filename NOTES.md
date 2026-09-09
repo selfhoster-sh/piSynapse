@@ -16,6 +16,12 @@
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 - **Sanitization rule:** this file may be published. Never write personal data, identity clues, deployment addresses (hostnames, IPs, ports), or accounts into it. Keep every narrative in English; Turkish inline tokens are allowed only as product corpus / i18n test data.
 
+## 2026-09-09 — README overhaul (user: explain the project + differentiation)
+
+- **New "What makes it different" section** (commit `9eae4c9`): local brains incl. phone companion, verified tools (23, ID-based), persisting memory, small-model engineering, privacy-as-construction, honest single-user scope. Every claim verified against the tree before writing (tool count, groups, backends, endpoints, UI split).
+- **Truth fixes in the same pass:** themes 5→6 (`THEMES` has six), RAKE→instant wording (roadmap + features), manual Ollama install no longer pipes unseen scripts (matches installer K7 fix), litert `config.json` line now says installer-generated (verified `_write_piserve_config`), STT browser added, Development section (venv/pytest/ruff per CI + conventions: one-commit rule, messages catalog, docs index).
+- **Test:** full suite **651 passed** (docs-only change, no code touched).
+
 ## 2026-09-09 — İş 4: remote-access decision + voice root cause (user discussion)
 
 - **Root cause (verified in code):** browser mic requires a secure context — `static/ui.js:866` (`isSecureContext` gate with `micHttps` toast), `:871` getUserMedia, `:1024` Web Speech fallback. Plain-HTTP LAN/VPS blocks the mic by browser design; the native app (`https://localhost` origin) is unaffected. Same root as the LAN-API exposure worry → same fix (HTTPS everywhere).
