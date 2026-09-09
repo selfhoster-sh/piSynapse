@@ -40,6 +40,16 @@
 - **Note:** server half takes effect on the pending restart.
 - **Test:** full-file users/audit green; `node --check` clean.
 
+## 2026-09-09 — Session auth + onboarding v2 + per-user services (user spec)
+
+- **Decision (user delegated):** session-cookie auth (JWT rejected as overweight); mail/Nextcloud vertical included now.
+- **Auth:** `user_sessions` (opaque SHA-256 tokens, 30d sliding, lazy-expired cleanup); `POST /users/session` (cookie, zero key material), `POST /users/logout` (idempotent), register auto-login; password change revokes other sessions; middleware dual-auth with **header-wins** ordering (explicit beats ambient); `SESSION_COOKIE_SECURE` (HTTPS-only flag). `tests/test_sessions.py` (7) + chain tests (2).
+- **Credentials:** `credstore.py` (Fernet, `MAIL_CREDS_KEY` auto-gen) + `user_credentials`; own-only CRUD endpoints (no secret ever returned); mail factory per-user (Gmail preferred) with legacy shared fallback; dispatcher resolves personal → shared(admin) → clear error; Nextcloud via `NC_CREDS` contextvar override (factories prefer it, ephemeral). Wipe covers sessions/votes/creds.
+- **Onboarding (web):** gateway (2 choices) → register(name+pass+confirm) → key ceremony (copy/download-gated) → city(manual/skip) → mail(skip-note) → nextcloud(skip-note) → tour (6 groups + curious details). Login path skips to app; wrong creds toast, never blank. Overlay gains password login; logout revokes server-side. Single display name; s3 saves via personal PUT. 40+ i18n keys, parity verified.
+- **Installer:** no personal questions (name/city/mail/NC preserved-if-present, never asked); generates MAIL_CREDS_KEY; SESSION_COOKIE_SECURE default off. Sandbox fresh-install verified (exit 0, 600, keys generated, personals empty).
+- **Test:** full suite **750 passed**; ruff clean. Backup `backups/piSynapse-20260909-presession-auth.tar.gz` (967M) + DB copy (integrity ok) taken pre-work.
+- **Deferred to user:** server restart (activates everything); live user wipe + fresh start (backup ready).
+
 ## 2026-09-09 — Collective learning Phase 4: approval + admin queue (done)
 
 - **Approval flag:** `users.is_approved` (migration 22 + grandfather backfill via version-gated `_DATA_BACKFILLS`); new registrations unapproved except first-admin; admins always count; `POST /users/{id}/approve|unapprove` (admin). Quorum/reputation/feeder count approved-or-admin voters only. Legacy-upgrade rewind 6→7.

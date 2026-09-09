@@ -63,6 +63,15 @@ const STRINGS = {
     loginHaveKey:'Anahtarım var',
     loginInvalidKey:'Anahtar geçersiz', loginRegClosed:'Kayıtlar kapalı — yöneticinizden davet isteyin.',
     loginWelcome:'Hoş geldin, %s', signedInAs:'Giriş yapılan kullanıcı', logout:'Çıkış yap',
+    gateT:'Başlayalım', gateS:'Devam etmek için giriş yap veya yeni bir hesap oluştur. İkisi de bir dakikadan az sürer.', gateLogin:'Giriş yap', gateRegister:'Kayıt ol',
+    regT:'Hesap oluştur', regS:'Bu isim seni tanımlar — asistan sana bununla hitap eder.', regPass:'Parola', regPassPh:'En az 8 karakter', regPass2:'Parola (tekrar)', regPassMismatch:'Parolalar eşleşmiyor.', regPassShort:'Parola en az 8 karakter olmalı.',
+    loginT:'Giriş yap', loginPass:'Parola', loginBtn:'Giriş yap', loginBad:'Kullanıcı adı veya parola hatalı.',
+    keyT:'Anahtarın hazır', keyS:'Bu anahtar; telefon uygulaması ve diğer cihazların bu sunucuya bağlanmasını sağlar.', keyWarn:'Bu ekranı kapatınca bir daha gösterilmeyecek. Kaybedersen hesabından yenisini üretebilirsin.', keyCopy:'Kopyala', keyCopied:'Kopyalandı ✓', keyDownload:'.txt olarak indir', keyConfirm:'Anahtarımı kaydettim, devam et',
+    cityT:'Şehrin', cityS:'Hava durumu bu şehre göre gösterilir.', skipBtn:'Atla', citySkipNote:'Atlarsan hava durumu widget’ı gösterilmez; sonradan Ayarlar’dan ekleyebilirsin.', citySave:'Kaydet ve devam et',
+    mailT:'E-posta', mailS:'Asistanın e-postalarını okuyup gönderebilmesi için hesabını bağla.', mailProvider:'Sağlayıcı', mailAddress:'E-posta adresi', mailSecret:'Uygulama / bridge şifresi', mailPassHintGmail:'Gmail → Google Hesabı › Güvenlik › Uygulama şifreleri’nden üretilir.', mailPassHintProton:'Proton → Bridge uygulamasının verdiği bridge şifresi.', mailSkipNote:'Atlarsan e-posta araçları hata verir; sonradan Ayarlar’dan ekleyebilirsin.', needFields:'Devam etmek için alanları doldur veya Atla’ya bas.',
+    ncT:'Nextcloud', ncS:'Notların, görevlerin ve takvimin için Nextcloud hesabını bağla.', ncUrl:'Sunucu adresi', ncUser:'Kullanıcı adı', ncPass:'Parola', ncSkipNote:'Atlarsan not, görev ve takvim araçları hatalı çalışır; sonradan Ayarlar’dan ekleyebilirsin.',
+    tourT:'Neler yapabilirim?', tourS:'Altı araç grubu emrinde:', tgWeather:'Hava durumu: şehir sor, tahmin al.', tgCalendar:'Takvim: etkinlik ekle, listele, sil.', tgTasks:'Görevler: yapılacakları tut, tamamla.', tgNotes:'Notlar: hızlı not al, bul, düzenle.', tgEmail:'E-posta: oku, ara, gönder (hesabını bağladıysan).', tgMemory:'Hafıza: “unutma ki …” dediklerin kalıcı olur.', curiousT:'Meraklısına: nasıl çalışıyor?', curious1:'Soruların Pi’ndeki küçük modelde yanıtlanır; dışarı veri gitmez.', curious2:'Model, isteğine göre doğru aracı seçer ve sonucu sana anlatır.', curious3:'👍/👎 geri bildirimlerin anonim desenlere dönüşür ve yönlendirmeyi herkes için iyileştirir.',
+    ovPassLogin:'Parolayla giriş yap', ovBackKey:'Anahtarla girişe dön',
     searchPlaceholder:'Ara…', search:'Ara',
     compact:'Dar',
     thinkTitle:'Think modu',
@@ -143,6 +152,15 @@ const STRINGS = {
     loginHaveKey:'I have a key',
     loginInvalidKey:'Invalid key', loginRegClosed:'Registration is closed — ask your admin for access.',
     loginWelcome:'Welcome, %s', signedInAs:'Signed in as', logout:'Log out',
+    gateT:'Let’s start', gateS:'Sign in or create an account to continue. Either takes under a minute.', gateLogin:'Sign in', gateRegister:'Register',
+    regT:'Create account', regS:'This name identifies you — the assistant addresses you with it.', regPass:'Password', regPassPh:'At least 8 characters', regPass2:'Password (again)', regPassMismatch:'Passwords do not match.', regPassShort:'Password must be at least 8 characters.',
+    loginT:'Sign in', loginPass:'Password', loginBtn:'Sign in', loginBad:'Invalid username or password.',
+    keyT:'Your key is ready', keyS:'This key connects the phone app and other devices to this server.', keyWarn:'It will never be shown again once you leave this screen. If you lose it, you can generate a new one from your account.', keyCopy:'Copy', keyCopied:'Copied ✓', keyDownload:'Download as .txt', keyConfirm:'I saved my key, continue',
+    cityT:'Your city', cityS:'Weather is shown for this city.', skipBtn:'Skip', citySkipNote:'If you skip, the weather widget stays hidden; you can add it later in Settings.', citySave:'Save and continue',
+    mailT:'Email', mailS:'Connect your account so the assistant can read and send email.', mailProvider:'Provider', mailAddress:'Email address', mailSecret:'App / bridge password', mailPassHintGmail:'Gmail → generated under Google Account › Security › App passwords.', mailPassHintProton:'Proton → the bridge password from the Bridge app.', mailSkipNote:'If you skip, email tools will report an error; you can add it later in Settings.', needFields:'Fill the fields or press Skip to continue.',
+    ncT:'Nextcloud', ncS:'Connect Nextcloud for your notes, tasks and calendar.', ncUrl:'Server URL', ncUser:'Username', ncPass:'Password', ncSkipNote:'If you skip, notes, tasks and calendar tools will malfunction; you can add it later in Settings.',
+    tourT:'What can I do?', tourS:'Six tool groups at your command:', tgWeather:'Weather: ask a city, get a forecast.', tgCalendar:'Calendar: add, list, delete events.', tgTasks:'Tasks: keep todos, complete them.', tgNotes:'Notes: jot down, find, edit.', tgEmail:'Email: read, search, send (if you connected it).', tgMemory:'Memory: “remember that …” sticks permanently.', curiousT:'Curious: how does it work?', curious1:'Your questions are answered by a small model on your Pi; no data leaves.', curious2:'The model picks the right tool for each request and explains the result.', curious3:'Your 👍/👎 feedback becomes anonymous patterns that improve routing for everyone.',
+    ovPassLogin:'Sign in with password', ovBackKey:'Back to key sign-in',
     searchPlaceholder:'Search…', search:'Search',
     compact:'Compact',
     thinkTitle:'Think mode',
@@ -3594,7 +3612,20 @@ async function saveSettings(){
 // ── Onboarding (first-run setup wizard) ─────────────────────────────────────────
 // Native: welcome → permissions → personal → server → model status → tour.
 // Browser: permissions (native-only) and model status (native-only) are skipped.
-const OB_STEPS = _NATIVE ? ['s1','s2','s3','s6','s4','s5'] : ['s1','s3','s6','s5'];
+const OB_STEPS = _NATIVE ? ['s1','s2','s3','s6','s4','s5'] : ['s1','gate'];
+// Web account paths (chosen on the gate step; rebuilt on every visit so
+// Back+re-pick never duplicates): register walks the full flow, login ends
+// right after authentication.
+const WEB_STEPS_REGISTER = ['s1','gate','regform','keyceremony','city','mail','nc','tour'];
+const WEB_STEPS_LOGIN = ['s1','gate','loginform'];
+function pickWebPath(path){
+  if(_NATIVE) return;
+  _ob.path = path;
+  OB_STEPS.length = 0;
+  OB_STEPS.push(...(path === 'login' ? WEB_STEPS_LOGIN : WEB_STEPS_REGISTER));
+  _ob.step = 2;
+  renderOnboarding();
+}
 let _ob = { step: 0, perms: { calendar:false, microphone:false, location:false }, modelUrl: '' };
 
 function obIcon(name){
@@ -3637,33 +3668,73 @@ async function obFetchUsers(method, path, body, key){
   return fetch(API + path, opts);
 }
 
-async function obRegister(){
-  // From the onboarding server step (browser): name+empty key → register,
-  // existing key → validate. Fills the key field on success.
-  const nameEl = document.getElementById('ob-sname');
-  const keyEl = document.getElementById('ob-skey');
-  const name = (nameEl?.value || '').trim();
-  let key = (keyEl?.value || '').trim();
-  if(key){
-    const me = await obValidateKey(key);
-    if(me){ toast(t('loginWelcome').replace('%s', me)); }
-    return !!me;
-  }
-  if(!name){ toast(t('loginNamePh'), true); nameEl?.focus(); return false; }
+async function obLoginSubmit(){
+  const name = document.getElementById('ob-lname')?.value.trim();
+  const password = document.getElementById('ob-lpass')?.value || '';
+  if(!name){ toast(t('loginNamePh'), true); return; }
+  if(!password){ toast(t('loginBad'), true); return; }
   try{
-    const r = await obFetchUsers('POST', '/users/register', {name});
-    if(r.status === 403){ toast(t('loginRegClosed'), true); return false; }
-    if(r.status === 409){ toast(t('loginNameTaken'), true); return false; }
-    if(!r.ok) throw new Error('HTTP ' + r.status);
+    const r = await obFetchUsers('POST', '/users/session', {name, password});
+    if(!r.ok){ toast(t('loginBad'), true); return; } // wrong credentials: stay, never blank
     const d = await r.json();
-    if(keyEl) keyEl.value = d.api_key || '';
-    setApiKey(d.api_key || '');
     setUsername(d.user?.name || name);
-    // The account name doubles as the display name (single-name model).
-    try{ await api('PUT','/config/my-settings',{values:{ASSISTANT_USER: d.user?.name || name}}); }catch(e){}
-    toast(t('loginWelcome').replace('%s', d.user?.name || name));
-    return true;
-  }catch(e){ toast(t('loginInvalidKey'), true); return false; }
+    finishOnboarding();
+    loadSessions();
+  }catch(e){ toast(t('loginBad'), true); }
+}
+
+function obSkipStep(){
+  _ob.step++;
+  if(_ob.step < OB_STEPS.length){ renderOnboarding(); } else { finishOnboarding(); }
+}
+
+function obMailHint(){
+  const p = document.getElementById('ob-mail-provider')?.value || 'gmail';
+  const el = document.getElementById('ob-mail-hint');
+  if(el) el.textContent = p === 'proton' ? t('mailPassHintProton') : t('mailPassHintGmail');
+}
+
+function obCopyKey(){
+  const key = _ob.pendingKey || '';
+  if(!key) return;
+  const done = ()=>{ _ob.keySaved = true; toast(t('keyCopied')); obKeyGate(); };
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(key).then(done).catch(()=>obFallbackCopy(key, done));
+  } else {
+    obFallbackCopy(key, done);
+  }
+}
+
+function obFallbackCopy(key, done){
+  const ta = document.createElement('textarea');
+  ta.value = key; document.body.appendChild(ta); ta.select();
+  try{ document.execCommand('copy'); done(); }catch(e){ toast(t('connErr'), true); }
+  document.body.removeChild(ta);
+}
+
+function obDownloadKey(){
+  const key = _ob.pendingKey || '';
+  if(!key) return;
+  const txt = key + '\n\n' + t('keyWarn') + '\n';
+  const blob = new Blob([txt], {type: 'text/plain'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'piSynapse-api-key.txt';
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  _ob.keySaved = true; obKeyGate();
+}
+
+function obKeyGate(){
+  const btn = document.getElementById('ob-key-confirm');
+  if(btn) btn.disabled = !_ob.keySaved;
+}
+
+function obKeyConfirmed(){
+  if(!_ob.keySaved || !_ob.pendingKey) return;
+  _ob.pendingKey = ''; // memory-only by design; never persisted in the browser
+  _ob.step++;
+  if(_ob.step < OB_STEPS.length){ renderOnboarding(); } else { finishOnboarding(); }
 }
 
 async function obValidateKey(key){
@@ -3694,13 +3765,45 @@ function ensureLoginOverlay(){
       <div class="ob-icon">${obIcon('server')}</div>
       <div class="ob-title">${esc(t('loginTitle'))}</div>
       <div class="ob-sub">${esc(t('loginSub'))}</div>
-      <div class="ob-field"><label for="lo-name">${esc(t('loginName'))}</label><input class="ob-input" id="lo-name" maxlength="40" placeholder="${esc(t('loginNamePh'))}"></div>
-      <div class="ob-field"><label for="lo-key">${esc(t('obS6Key'))}</label><input class="ob-input" id="lo-key" type="password" maxlength="200" autocomplete="off" placeholder="${esc(t('obS6KeyPh'))}"></div>
-      <button class="ob-btn" style="width:100%" onclick="loginRegister()">${esc(t('loginRegister'))}</button>
-      <button class="ob-btn ghost" style="width:100%;margin-top:8px" onclick="loginWithKey()">${esc(t('loginHaveKey'))}</button>
+      <div id="lo-keyview">
+        <div class="ob-field"><label for="lo-name">${esc(t('loginName'))}</label><input class="ob-input" id="lo-name" maxlength="40" placeholder="${esc(t('loginNamePh'))}"></div>
+        <div class="ob-field"><label for="lo-key">${esc(t('obS6Key'))}</label><input class="ob-input" id="lo-key" type="password" maxlength="200" autocomplete="off" placeholder="${esc(t('obS6KeyPh'))}"></div>
+        <button class="ob-btn" style="width:100%" onclick="loginRegister()">${esc(t('loginRegister'))}</button>
+        <button class="ob-btn ghost" style="width:100%;margin-top:8px" onclick="loginWithKey()">${esc(t('loginHaveKey'))}</button>
+        <button class="ob-btn ghost" style="width:100%;margin-top:8px" onclick="loginView('pass')">${esc(t('ovPassLogin'))}</button>
+      </div>
+      <div id="lo-passview" style="display:none">
+        <div class="ob-field"><label for="lo-pname">${esc(t('loginName'))}</label><input class="ob-input" id="lo-pname" maxlength="40" placeholder="${esc(t('loginNamePh'))}"></div>
+        <div class="ob-field"><label for="lo-ppass">${esc(t('loginPass'))}</label><input class="ob-input" id="lo-ppass" type="password" maxlength="200" autocomplete="current-password"></div>
+        <button class="ob-btn" style="width:100%" onclick="loginWithPassword()">${esc(t('loginBtn'))}</button>
+        <button class="ob-btn ghost" style="width:100%;margin-top:8px" onclick="loginView('key')">${esc(t('ovBackKey'))}</button>
+      </div>
     </div>`;
   document.body.appendChild(ov);
   return ov;
+}
+
+function loginView(which){
+  const k = document.getElementById('lo-keyview');
+  const p = document.getElementById('lo-passview');
+  if(!k || !p) return;
+  k.style.display = which === 'pass' ? 'none' : '';
+  p.style.display = which === 'pass' ? '' : 'none';
+}
+
+async function loginWithPassword(){
+  const name = document.getElementById('lo-pname')?.value.trim();
+  const password = document.getElementById('lo-ppass')?.value || '';
+  if(!name || !password){ toast(t('loginBad'), true); return; }
+  try{
+    const r = await obFetchUsers('POST', '/users/session', {name, password});
+    if(!r.ok){ toast(t('loginBad'), true); return; }
+    const d = await r.json();
+    setUsername(d.user?.name || name);
+    toast(t('loginWelcome').replace('%s', d.user?.name || name));
+    hideLogin();
+    try{ loadSessions(); }catch(e){}
+  }catch(e){ toast(t('loginBad'), true); }
 }
 
 function showLogin(){
@@ -3740,6 +3843,7 @@ async function loginWithKey(){
 }
 
 function logoutUser(){
+  try{ fetch(API + '/users/logout', {method: 'POST'}); }catch(e){}
   setApiKey('');
   setUsername('');
   try{ closeSettings(); }catch(e){}
@@ -3765,16 +3869,52 @@ async function obNextAction(){
         if(key) setApiKey(key);
         // User just logged in to a server: pull its portable settings to the phone.
         if(url || key){ try{ await _serverSettingsPull(); }catch(e){} }
-      } else {
-        // Web entry is explicit: a key signs in, anything else stays put.
-        // Keyless advance used to land users in a broken 401-looping app.
-        const key = document.getElementById('ob-skey')?.value.trim() || '';
-        if(!key){ toast(t('loginNeedKey'), true); return; }
-        // Don't advance on a bad key — the user would land keyless in a
-        // prompt-loop. obValidateKey toasts and stores on success.
-        const nm = await obValidateKey(key);
-        if(!nm) return;
       }
+      // (Web no longer uses the s6 server step — gateway + key ceremony own it.)
+    }
+    if(action === 'register'){
+      // Web account creation: name+password twice-checked, then the key
+      // ceremony. The browser keeps NO key — auth rides the session cookie.
+      const name = document.getElementById('ob-rname')?.value.trim();
+      const p1 = document.getElementById('ob-rpass')?.value || '';
+      const p2 = document.getElementById('ob-rpass2')?.value || '';
+      if(!name){ toast(t('loginNamePh'), true); return; }
+      if(p1.length < 8){ toast(t('regPassShort'), true); return; }
+      if(p1 !== p2){ toast(t('regPassMismatch'), true); return; }
+      try{
+        const r = await obFetchUsers('POST', '/users/register', {name, password: p1});
+        if(r.status === 403){ toast(t('loginRegClosed'), true); return; }
+        if(r.status === 409){ toast(t('loginNameTaken'), true); return; }
+        if(!r.ok) throw new Error('HTTP ' + r.status);
+        const d = await r.json();
+        _ob.pendingKey = d.api_key || '';
+        _ob.keySaved = false;
+        _ob.displayName = d.user?.name || name;
+        setUsername(_ob.displayName);
+        try{ await api('PUT','/config/my-settings',{values:{ASSISTANT_USER: _ob.displayName}}); }catch(e){}
+      }catch(e){ toast(t('loginInvalidKey'), true); return; }
+    }
+    if(action === 'city'){
+      const city = document.getElementById('ob-city2')?.value.trim();
+      if(city){
+        try{ await api('PUT','/config/my-settings',{values:{DEFAULT_CITY: city}}); }catch(e){}
+      }
+    }
+    if(action === 'mail'){
+      const provider = document.getElementById('ob-mail-provider')?.value || 'gmail';
+      const account = document.getElementById('ob-mail-address')?.value.trim();
+      const secret = document.getElementById('ob-mail-secret')?.value || '';
+      if(!account || !secret){ toast(t('needFields'), true); return; }
+      try{ await api('POST','/users/me/credentials',{provider, account, secret}); }
+      catch(e){ toast(t('connErr'), true); return; }
+    }
+    if(action === 'nc'){
+      const url = document.getElementById('ob-nc-url')?.value.trim();
+      const account = document.getElementById('ob-nc-user')?.value.trim();
+      const secret = document.getElementById('ob-nc-pass')?.value || '';
+      if(!url || !account || !secret){ toast(t('needFields'), true); return; }
+      try{ await api('POST','/users/me/credentials',{provider:'nextcloud', account, secret, url}); }
+      catch(e){ toast(t('connErr'), true); return; }
     }
     if(action === 'save'){
       // persist personal info — one display name shared with the account step.
@@ -4067,23 +4207,108 @@ function renderOnboarding(){
         <div class="ob-field"><label for="ob-suser">${esc(t('obS6User'))}</label><input class="ob-input" id="ob-suser" maxlength="200" autocomplete="off" placeholder="${esc(t('obS6UserPh'))}" value="${esc(window.config?.server_user || '')}"></div>
         <div class="ob-field"><label for="ob-skey">${esc(t('obS6Key'))}</label><input class="ob-input" id="ob-skey" type="password" maxlength="200" autocomplete="off" placeholder="${esc(t('obS6KeyPh'))}" value="${esc((window._settingsData&&window._settingsData.SERVER_API_KEY)?(window._settingsData.SERVER_API_KEY.value||''):'')}"></div>
         <div class="ob-hint">${esc(t('obS6Hint'))}</div>`;
-    } else {
-      // Web: this page IS the server — no address to type. Two explicit
-      // choices: register a new account, or sign in with an existing key.
-      const savedKey = localStorage.getItem('ps_api_key') || '';
-      const origin = window.location.origin.startsWith('http') ? window.location.origin : '';
-      body.innerHTML = `
-        <div class="ob-icon">${obIcon('server')}</div>
-        <div class="ob-title">${esc(t('obS6T'))}</div>
-        <div class="ob-sub">${esc(t('obS6S'))}</div>
-        <div class="ob-hint">${esc(t('obConnectedServer').replace('%s', origin))}</div>
-        <div class="ob-field"><label for="ob-sname">${esc(t('loginName'))}</label><input class="ob-input" id="ob-sname" maxlength="40" placeholder="${esc(t('loginNamePh'))}" value="${esc(_ob.displayName || '')}"></div>
-        <button class="ob-btn" style="width:100%" onclick="obRegister()">${esc(t('loginRegister'))}</button>
-        <div class="ob-field" style="margin-top:14px"><label for="ob-skey">${esc(t('obS6Key'))}</label><input class="ob-input" id="ob-skey" type="password" maxlength="200" autocomplete="off" placeholder="${esc(t('obS6KeyPh'))}" value="${esc(savedKey)}"></div>
-        <div class="ob-hint">${esc(t('obS6Hint'))}</div>`;
     }
     next.dataset.action = 'server';
     next.textContent = t('obS1B');
+  } else if(step === 'gate'){
+    body.innerHTML = `
+      <div class="ob-icon">${obIcon('user')}</div>
+      <div class="ob-title">${esc(t('gateT'))}</div>
+      <div class="ob-sub">${esc(t('gateS'))}</div>
+      <button class="ob-btn" style="width:100%" onclick="pickWebPath('login')">${esc(t('gateLogin'))}</button>
+      <button class="ob-btn ghost" style="width:100%;margin-top:8px" onclick="pickWebPath('register')">${esc(t('gateRegister'))}</button>`;
+    next.dataset.action = '';
+    next.textContent = t('obS1B');
+    next.style.display = 'none';
+  } else if(step === 'regform'){
+    body.innerHTML = `
+      <div class="ob-icon">${obIcon('user')}</div>
+      <div class="ob-title">${esc(t('regT'))}</div>
+      <div class="ob-sub">${esc(t('regS'))}</div>
+      <div class="ob-field"><label for="ob-rname">${esc(t('loginName'))}</label><input class="ob-input" id="ob-rname" maxlength="40" placeholder="${esc(t('loginNamePh'))}" value="${esc(_ob.displayName || '')}"></div>
+      <div class="ob-field"><label for="ob-rpass">${esc(t('regPass'))}</label><input class="ob-input" id="ob-rpass" type="password" maxlength="200" autocomplete="new-password" placeholder="${esc(t('regPassPh'))}"></div>
+      <div class="ob-field"><label for="ob-rpass2">${esc(t('regPass2'))}</label><input class="ob-input" id="ob-rpass2" type="password" maxlength="200" autocomplete="new-password" placeholder="${esc(t('regPassPh'))}"></div>`;
+    next.dataset.action = 'register';
+    next.textContent = t('obS1B');
+    next.style.display = '';
+  } else if(step === 'loginform'){
+    body.innerHTML = `
+      <div class="ob-icon">${obIcon('user')}</div>
+      <div class="ob-title">${esc(t('loginT'))}</div>
+      <div class="ob-sub">${esc(t('gateS'))}</div>
+      <div class="ob-field"><label for="ob-lname">${esc(t('loginName'))}</label><input class="ob-input" id="ob-lname" maxlength="40" placeholder="${esc(t('loginNamePh'))}"></div>
+      <div class="ob-field"><label for="ob-lpass">${esc(t('loginPass'))}</label><input class="ob-input" id="ob-lpass" type="password" maxlength="200" autocomplete="current-password" placeholder="${esc(t('regPassPh'))}"></div>
+      <button class="ob-btn" style="width:100%" onclick="obLoginSubmit()">${esc(t('loginBtn'))}</button>`;
+    next.dataset.action = '';
+    next.textContent = t('obS1B');
+    next.style.display = 'none';
+  } else if(step === 'keyceremony'){
+    const k = _ob.pendingKey || '';
+    body.innerHTML = `
+      <div class="ob-icon">${obIcon('server')}</div>
+      <div class="ob-title">${esc(t('keyT'))}</div>
+      <div class="ob-sub">${esc(t('keyS'))}</div>
+      <div class="ob-field"><input class="ob-input" id="ob-apikey" readonly value="${esc(k)}" onclick="this.select()" style="font-family:monospace;font-size:13px"></div>
+      <div style="display:flex;gap:8px">
+        <button class="ob-btn ghost" style="flex:1" onclick="obCopyKey()">${esc(t('keyCopy'))}</button>
+        <button class="ob-btn ghost" style="flex:1" onclick="obDownloadKey()">${esc(t('keyDownload'))}</button>
+      </div>
+      <div class="ob-hint">${esc(t('keyWarn'))}</div>
+      <button class="ob-btn" id="ob-key-confirm" style="width:100%;margin-top:8px" onclick="obKeyConfirmed()" ${_ob.keySaved ? '' : 'disabled'}>${esc(t('keyConfirm'))}</button>`;
+    next.dataset.action = '';
+    next.textContent = t('obS1B');
+    next.style.display = 'none';
+  } else if(step === 'city'){
+    body.innerHTML = `
+      <div class="ob-icon">${obIcon('user')}</div>
+      <div class="ob-title">${esc(t('cityT'))}</div>
+      <div class="ob-sub">${esc(t('cityS'))}</div>
+      <div class="ob-field"><label for="ob-city2">${esc(t('obCity'))}</label><input class="ob-input" id="ob-city2" maxlength="40" placeholder="${esc(t('obCityPh'))}"></div>
+      <div class="ob-hint">${esc(t('citySkipNote'))}</div>
+      <button class="ob-btn ghost" style="width:100%;margin-top:4px" onclick="obSkipStep()">${esc(t('skipBtn'))}</button>`;
+    next.dataset.action = 'city';
+    next.textContent = t('citySave');
+    next.style.display = '';
+  } else if(step === 'mail'){
+    body.innerHTML = `
+      <div class="ob-icon">${obIcon('server')}</div>
+      <div class="ob-title">${esc(t('mailT'))}</div>
+      <div class="ob-sub">${esc(t('mailS'))}</div>
+      <div class="ob-field"><label for="ob-mail-provider">${esc(t('mailProvider'))}</label><select class="ob-input" id="ob-mail-provider" onchange="obMailHint()"><option value="gmail">Gmail</option><option value="proton">ProtonMail</option></select></div>
+      <div class="ob-field"><label for="ob-mail-address">${esc(t('mailAddress'))}</label><input class="ob-input" id="ob-mail-address" maxlength="200" autocomplete="email"></div>
+      <div class="ob-field"><label for="ob-mail-secret">${esc(t('mailSecret'))}</label><input class="ob-input" id="ob-mail-secret" type="password" maxlength="500" autocomplete="off"></div>
+      <div class="ob-hint" id="ob-mail-hint">${esc(t('mailPassHintGmail'))}</div>
+      <div class="ob-hint">${esc(t('mailSkipNote'))}</div>
+      <button class="ob-btn ghost" style="width:100%;margin-top:4px" onclick="obSkipStep()">${esc(t('skipBtn'))}</button>`;
+    next.dataset.action = 'mail';
+    next.textContent = t('citySave');
+    next.style.display = '';
+  } else if(step === 'nc'){
+    body.innerHTML = `
+      <div class="ob-icon">${obIcon('server')}</div>
+      <div class="ob-title">${esc(t('ncT'))}</div>
+      <div class="ob-sub">${esc(t('ncS'))}</div>
+      <div class="ob-field"><label for="ob-nc-url">${esc(t('ncUrl'))}</label><input class="ob-input" id="ob-nc-url" maxlength="500" placeholder="https://"></div>
+      <div class="ob-field"><label for="ob-nc-user">${esc(t('ncUser'))}</label><input class="ob-input" id="ob-nc-user" maxlength="200"></div>
+      <div class="ob-field"><label for="ob-nc-pass">${esc(t('ncPass'))}</label><input class="ob-input" id="ob-nc-pass" type="password" maxlength="500" autocomplete="off"></div>
+      <div class="ob-hint">${esc(t('ncSkipNote'))}</div>
+      <button class="ob-btn ghost" style="width:100%;margin-top:4px" onclick="obSkipStep()">${esc(t('skipBtn'))}</button>`;
+    next.dataset.action = 'nc';
+    next.textContent = t('citySave');
+    next.style.display = '';
+  } else if(step === 'tour'){
+    const groups = ['weather','calendar','tasks','notes','email','memory'];
+    body.innerHTML = `
+      <div class="ob-icon">${obIcon('tour')}</div>
+      <div class="ob-title">${esc(t('tourT'))}</div>
+      <div class="ob-sub">${esc(t('tourS'))}</div>
+      ${groups.map(g=>`<div class="ob-row"><div style="display:flex;align-items:center;gap:12px"><span style="color:var(--accent);font-weight:700">•</span><div><div class="ob-row-txt">${esc(groupLabel(g))}</div><div class="ob-row-sub">${esc(t('tg'+g[0].toUpperCase()+g.slice(1)))}</div></div></div></div>`).join('')}
+      <details style="margin-top:12px"><summary style="cursor:pointer;color:var(--accent);font-size:13px">${esc(t('curiousT'))}</summary>
+        <div class="ob-row-sub" style="margin-top:8px">${esc(t('curious1'))}<br><br>${esc(t('curious2'))}<br><br>${esc(t('curious3'))}</div>
+      </details>`;
+    next.dataset.action = '';
+    next.textContent = t('obDone');
+    next.style.display = '';
   } else if(step === 's4'){
     body.innerHTML = `
       <div class="ob-icon">${obIcon('chip')}</div>
