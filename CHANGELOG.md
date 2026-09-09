@@ -6,6 +6,9 @@ uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Multi-user identity: `users` table, `POST /users/register` (first user becomes admin, `REGISTRATION_OPEN` toggle), key rotation, `/users/me`, admin user listing. API keys stored hashed, returned once; auth resolves per-key with admin state.
+
 ### Security
 - Per-user isolation: summary boundary/updates, session upserts, semantic search supplement, retrieval candidates, and history/FTS clearing are now scoped by `user_id`, so a colliding `session_id` can no longer leak or clobber another user's data.
 - Sidebar titles no longer carry emails/URLs verbatim (masked as `[e-posta]`/`[link]`); migration DDL identifiers are quoted and metacharacters rejected.
