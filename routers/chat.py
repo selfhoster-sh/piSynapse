@@ -346,9 +346,16 @@ async def chat_stream(req: ChatRequest, request: Request, background_tasks: Back
                 summary=meta["summary"], user_id=user_id, session_id=req.session_id,
                 intent=intent, tool_group=tool_group, reasoning_effort=req.reasoning_effort,
                 origin=(req.origin or "").strip().lower(),
+                abort_event=abort_event,
             ):
                 if abort_event.is_set():
                     logger.info("Stream aborted for session %s", req.session_id)
+                    break
+                if event.get("aborted"):
+                    # Terminal abort from the stream itself (tools stopped):
+                    # forward it, do NOT save as a full reply — the finally
+                    # block below persists whatever partial text exists.
+                    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                     break
                 if "token" in event:
                     reply_parts.append(event["token"])
