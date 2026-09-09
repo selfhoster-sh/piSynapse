@@ -182,8 +182,15 @@ def reload_engine() -> dict:
         # Wait for in-flight requests to drain
         LOG.info("reload: waiting for in-flight requests to drain...")
         _reload_event.clear()
+        _drain_deadline = time.monotonic() + 30
         with _active_lock:
             while _active_requests > 0:
+                if time.monotonic() > _drain_deadline:
+                    LOG.warning(
+                        "reload: drain timed out with %d in-flight request(s); proceeding",
+                        _active_requests,
+                    )
+                    break
                 _active_lock.release()
                 time.sleep(0.1)
                 _active_lock.acquire()

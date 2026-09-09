@@ -193,7 +193,11 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> tupl
             elif name == "list_calendar_events":
                 from calendar_ops import list_events
                 days = _safe_int(params.get("days_ahead", 7), 7, "days_ahead", min_value=1)
-                raw, events = await asyncio.to_thread(list_events, days)
+                # Data-fetch budget (3x the connection timeout): a hung
+                # CalDAV server must fail the turn, not the whole request.
+                raw, events = await asyncio.wait_for(
+                    asyncio.to_thread(list_events, days), timeout=30
+                )
                 if not raw.startswith("ERROR") and session_id:
                     await cache_calendar_context(session_id, events)
                 return raw, None
@@ -232,7 +236,10 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> tupl
                 dur = _safe_int(params.get("duration_minutes", 60), 60, "duration_minutes", min_value=1)
                 day_start = params.get("day_start", "09:00")
                 day_end = params.get("day_end", "18:00")
-                raw, _ = await asyncio.to_thread(find_free_slots, date_str, dur, day_start, day_end)
+                raw, _ = await asyncio.wait_for(
+                    asyncio.to_thread(find_free_slots, date_str, dur, day_start, day_end),
+                    timeout=30,
+                )
                 return raw, None
         except ValueError as e:
             return f"ERROR: {e}", None

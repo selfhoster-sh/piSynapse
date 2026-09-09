@@ -20,15 +20,12 @@ async def widget_weather():
     if not city:
         return {"ok": False, "error": "DEFAULT_CITY is not set", "city": "", "summary": ""}
     try:
-        from weather import _weather_data
+        from weather import _weather_data, format_weather_summary
         data = await _weather_data(city)
         if data is None:
             return {"ok": False, "error": "City not found or forecast unavailable",
                     "city": city, "summary": ""}
-        summary = (f"{data['city']}: {data['temp_c']}°C, {data['condition']}, "
-                   f"feels like {data['feels_c']}°C"
-                   if data["feels_c"] is not None
-                   else f"{data['city']}: {data['temp_c']}°C, {data['condition']}")
+        summary = format_weather_summary(data)
         return {"ok": True, "city": data["city"], "temp_c": data["temp_c"],
                 "feels_c": data["feels_c"], "condition": data["condition"],
                 "wmo_code": data["wmo_code"], "kind": data["kind"], "summary": summary}

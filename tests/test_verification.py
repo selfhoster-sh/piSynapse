@@ -371,5 +371,22 @@ def test_run_verification_backend_error_swallowed(monkeypatch):
     monkeypatch.setattr(tv, "log_tool_call", fake_log)
     with patch("nextcloud_tasks.list_tasks", new=AsyncMock(side_effect=RuntimeError("nextcloud down"))):
         asyncio.run(tv.run_verification("create_task", {"summary": "X"}, "OK", True, entity_id="t1"))
-    # Backend failure -> verification_failed, propagated as a status, no raise.
-    assert captured.get("verification_status") == "verification_failed"
+    # Backend failure -> visible verification_error status, no raise.
+    assert captured.get("verification_status") == "verification_error"
+
+
+class TestVerificationErrorSignal:
+    async def test_confirm_exception_surfaces_verification_error(self):
+        with patch("tool_verification._confirm_by_id", side_effect=OSError("backend down")):
+            status = await _verify("create_task", {"summary": "x"}, "OK", True, "uid-1")
+        assert status == "verification_error"
+
+    async def test_hook_exception_surfaces_verification_error(self):
+        from tool_verification import run_verification
+
+        with patch("tool_verification.log_tool_call", side_effect=OSError("db down")):
+            audit_id, status = await run_verification(
+                "create_task", {}, "OK", True, entity_id="uid-1"
+            )
+        assert audit_id is None
+        assert status == "verification_error"
