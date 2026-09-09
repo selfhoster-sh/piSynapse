@@ -1,7 +1,8 @@
 # Multi-User Plan — M1–M4 (2026-09-09)
 
-Status: M1 and M2 implemented (see NOTES.md entries for deviations,
-residuals and test evidence). M3–M4 pending.
+Status: M1–M4 implemented (see NOTES.md entries for deviations,
+residuals and test evidence). Remaining: phone-app login UI (separate
+track after the port decision).
 
 Decisions (user): open registration with an admin toggle (standard);
 existing `default` data belongs to the admin (bootstrap onto the `default`
