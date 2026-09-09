@@ -62,7 +62,8 @@ def test_rate_limiter_remaining():
 # -- Session CRUD (new endpoints) --
 
 def test_create_and_delete_session(monkeypatch):
-    monkeypatch.setattr(mainmod, "TRUSTED_HOSTS", {"*"})
+    # Wildcard no longer disables Host checking: allow the TestClient host.
+    monkeypatch.setattr(mainmod, "TRUSTED_HOSTS", {"testserver"})
     from fastapi.testclient import TestClient
 
     from main import app
