@@ -16,6 +16,15 @@
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 - **Sanitization rule:** this file may be published. Never write personal data, identity clues, deployment addresses (hostnames, IPs, ports), or accounts into it. Keep every narrative in English; Turkish inline tokens are allowed only as product corpus / i18n test data.
 
+## 2026-09-09 — Faz 4 (server audit fixes): summary subsystem
+
+- **Scope (plan Faz 4):** bounded folds, delete repair, race-free writes. Three commits: `48c3395` (cap), `65e5763` (repair+cascade), `aaf1afc` (conditional write).
+- **Faz 4a:** `get_messages_to_summarize` folds at most `FOLD_MAX_MESSAGES` (30), oldest-first, each truncated to `FOLD_MAX_CHARS_PER_MESSAGE` (500); boundary advances by exactly the folded span so backlogs drain progressively; empty spans advance instead of retrying. New `tests/test_summary_bounds.py`.
+- **Faz 4b:** new `_repair_summary_boundaries(db)` (clamp `summarized_until` to surviving MAX(id); clear summary+until when empty) wired into branch/last/clear/retention; feedback + tool-audit cascades on all delete paths (subquery form for clear, id-list for branch/last, orphan pattern for retention). Documented residual: stale facts in a surviving summary dilute through later folds (no re-summarization on sync delete paths). Retention prune extracted to a locked `_retention_prune_conversations` helper.
+- **Faz 4c:** `update_session_summary(expected_until=...)` conditional write (rowcount-verified in scratch sqlite: fresh=1/applied, stale=0/skipped); `_update_summary` passes the just-read boundary and logs skipped writes (pending refolds next turn — deferred, never lost). Lock-free by design (no per-session lock objects: loop-bound, test-hostile).
+- **FTS quirk map, completed:** malformed fires only when NONE of the delete targets are indexed; partial overlap is clean; bare `SELECT rowid` enumerates content rows; FTS-`rowid` reads inside a write corrupt the index; even the documented `'delete'` protocol fails on empty index. Init-db dedupe guards its FTS leg; live paths stay strict.
+- **Test:** full suite **602 passed** (592 + 10 new bounds tests).
+
 ## 2026-09-09 — Faz 3 (server audit fixes): write integrity
 
 - **Scope (plan Faz 3):** race-free, atomic, bounded writes. Four commits: `f05fc11` (lastrowid/FTS/retry), `bb1270c` (serialization), `adfa7b2` (UNIQUE/indexes/WAL/DDL guards), `3e10937` (title/RAKE).

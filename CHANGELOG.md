@@ -15,6 +15,7 @@ uses [Semantic Versioning](https://semver.org/).
 - Settings schema: added `SUMMARY_EARLY_TRIGGER` and the STT `browser` option; `CONFLICT_COSINE` now read live and preserved across installer reruns (with `PISERVE_ADMIN_TOKEN`, `AUDIT_EXPORT_DIR`).
 - `UI_LANGUAGE` default unified to English across schema, template, and example env (live `.env` untouched); loop-guard tests assert the live localized fallback instead of a frozen string; `DEFAULT_USER` can no longer be empty; malformed `MEDIA_MAX_MB` falls back to 100 instead of 500.
 - Write integrity: cursor-`lastrowid` instead of shared-connection `last_insert_rowid()`; FTS inserts best-effort; lock-busy commits retried; grouped writes serialized per event loop; import `client_key` uniqueness enforced with legacy dedupe; title enrichment retries fast second turns without overwriting.
+- Rolling summary: folds are now bounded (30 messages oldest-first, 500 chars each) with progressive boundary; delete/retention paths repair dangling boundaries and cascade feedback/audits; concurrent folds cannot regress the summary (conditional write, loser refolds next turn).
 
 ### Security
 - Backup archives under `backups/` are now created/readable as mode 600 (they embed secrets); existing archives re-chmodded.
