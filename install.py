@@ -1220,6 +1220,12 @@ TTS_ENGINE={TTS_ENGINE}
 # --- Security ---
 ENV_PATH=.env
 API_KEY={API_KEY}
+# Per-user credential encryption key (Fernet). Losing it orphans saved
+# mail/Nextcloud passwords (they become unreadable, never leaked).
+MAIL_CREDS_KEY={MAIL_CREDS_KEY}
+# Session cookie Secure flag: enable ONLY behind HTTPS (1/true/yes/on).
+# Plain-HTTP LAN installs must leave it off or browsers get locked out.
+SESSION_COOKIE_SECURE=off
 # Open user registration ("on"/"off"); admin toggles it post-install.
 REGISTRATION_OPEN=on
 CORS_ORIGINS=
@@ -1308,9 +1314,19 @@ def step_env() -> None:
         api_key = secrets.token_urlsafe(32)
         info("Generated API key (saved to .env)")
 
-    # Personalization
-    assistant_user = ask("Your name (shown as the sender label; empty = 'You')", current.get("ASSISTANT_USER", ""))
-    default_city = ask("Default city for weather", current.get("DEFAULT_CITY", ""))
+    # Per-user credential encryption key (reuse existing if present).
+    creds_key = current.get("MAIL_CREDS_KEY", "")
+    if not creds_key:
+        try:
+            from cryptography.fernet import Fernet
+            creds_key = Fernet.generate_key().decode("utf-8")
+        except Exception:
+            creds_key = secrets.token_urlsafe(32)
+        info("Generated credential-encryption key (saved to .env)")
+
+    # Personal setup (name, city, mail, Nextcloud) moved to the browser
+    # onboarding — the installer no longer asks for or stores user data.
+    info("Note: name, city, mail and Nextcloud are set up per-user in the browser after first launch.")
 
     # Security: allowed Host header values (empty = auto-allow local names/IPs).
     trusted_hosts = ask(
@@ -1318,44 +1334,17 @@ def step_env() -> None:
         current.get("TRUSTED_HOSTS", ""),
     )
 
-    # ── Email ────────────────────────────────────────────────────────────
-    email_idx = menu("Email integration:", [
-        ("Gmail", "Read/send via Gmail App Password"),
-        ("ProtonMail", "Read/send via ProtonBridge (must run locally)"),
-        ("Skip — no email", "Recommended to start"),
-    ])
+    # ── Email / Nextcloud: per-user since multi-user (browser onboarding
+    # collects them into the encrypted store). The installer preserves any
+    # pre-existing shared values but never asks for them anymore.
+    mail_provider = current.get("MAIL_PROVIDER", "")
     gmail_user = current.get("GMAIL_USER", "")
     gmail_pass = current.get("GMAIL_APP_PASSWORD", "")
     proton_user = current.get("PROTON_USER", "")
     proton_pass = current.get("PROTON_PASSWORD", "")
-
-    if email_idx == 1:
-        mail_provider = "gmail"
-        info("Gmail needs an App Password. Generate one at:")
-        info("  https://myaccount.google.com/apppasswords")
-        gmail_user = ask("Gmail address", gmail_user)
-        raw = ask_secret("Gmail App Password (16 chars, no spaces)")
-        if raw:
-            gmail_pass = raw.replace(" ", "").replace("-", "")
-    elif email_idx == 2:
-        mail_provider = "proton"
-        info("ProtonMail needs ProtonBridge running locally.")
-        info("Install from: https://proton.me/mail/bridge")
-        proton_user = ask("ProtonMail address", proton_user)
-        raw = ask_secret("ProtonBridge password")
-        if raw:
-            proton_pass = raw
-    else:
-        mail_provider = ""
-
-    # ── Nextcloud ────────────────────────────────────────────────────────
     nc_url = current.get("NEXTCLOUD_URL", "")
     nc_user = current.get("NEXTCLOUD_USER", "")
     nc_pass = current.get("NEXTCLOUD_PASSWORD", "")
-    if not nc_url and ask_yesno("Set up Nextcloud (calendar/notes/tasks)?", default=False):
-        nc_url = ask("Nextcloud URL (e.g. https://cloud.example.com)")
-        nc_user = ask("Nextcloud username")
-        nc_pass = ask_secret("Nextcloud app password")
 
     # ── Voice ────────────────────────────────────────────────────────────
     stt_idx = menu("Speech-to-text engine:", [
@@ -1399,10 +1388,11 @@ def step_env() -> None:
         # LiteRT model IDs use dashes (gemma4-e2b); Ollama uses colons (gemma4:e2b).
         "LLM_MODEL":          STATE.get("model", "gemma4:e2b").replace(":", "-") if STATE.get("backend", "litert") == "litert" else STATE.get("model", "gemma4:e2b"),
         "LITERT_PORT":        str(LITERT_PORT),
-        "DEFAULT_CITY":       default_city,
-        "ASSISTANT_USER":     assistant_user,
+        "DEFAULT_CITY":       current.get("DEFAULT_CITY", ""),
+        "ASSISTANT_USER":     current.get("ASSISTANT_USER", ""),
         "TRUSTED_HOSTS":      trusted_hosts,
         "API_KEY":            api_key,
+        "MAIL_CREDS_KEY":     creds_key,
         "MAIL_PROVIDER":      mail_provider,
         "GMAIL_USER":         gmail_user,
         "GMAIL_APP_PASSWORD": gmail_pass,
@@ -1433,6 +1423,7 @@ def step_env() -> None:
         "IMAP_TIMEOUT", "SMTP_TIMEOUT", "CORS_ORIGINS", "MEDIA_MAX_MB",
         "INTENT_LLM_FALLBACK", "CONFLICT_COSINE",
         "PISERVE_ADMIN_TOKEN", "AUDIT_EXPORT_DIR", "REGISTRATION_OPEN",
+        "MAIL_CREDS_KEY", "SESSION_COOKIE_SECURE",
         "RATE_LIMIT_RPM", "RATE_LIMIT_SESSION_RPM", "RATE_LIMIT_PUBLIC_RPM",
         # NOTE: TRUSTED_HOSTS is deliberately NOT preserved — step_env always
         # asks it, so the given answer (even an intentional emptying) wins.

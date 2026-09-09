@@ -158,3 +158,22 @@ def test_rate_limit_keys_present_everywhere():
         assert _env_literal(install_py, key) == default
         assert f'"{key}"' in install_py  # preserved_keys
         assert key in config_py  # module constant + _NUMERIC_KEYS
+
+
+def test_session_and_creds_keys_present_everywhere():
+    example_env = _read("example.env")
+    install_py = _read("install.py")
+    config_py = _read("config.py")
+
+    # SESSION_COOKIE_SECURE defaults off in both (plain-HTTP LAN must work).
+    assert _env_literal(example_env, "SESSION_COOKIE_SECURE") == "off"
+    assert _env_literal(install_py, "SESSION_COOKIE_SECURE") == "off"
+    # MAIL_CREDS_KEY is generated: placeholder in the installer template,
+    # empty default in example.env.
+    m = re.search(r"^MAIL_CREDS_KEY=(.*)$", example_env, re.M)
+    assert m, "MAIL_CREDS_KEY= line not found in example.env"
+    assert m.group(1).strip() == "", "MAIL_CREDS_KEY must default empty in example.env"
+    assert "{MAIL_CREDS_KEY}" in install_py
+    for key in ("SESSION_COOKIE_SECURE", "MAIL_CREDS_KEY"):
+        assert f'"{key}"' in install_py  # preserved_keys (regen must not wipe)
+        assert key in config_py  # module constant
