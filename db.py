@@ -796,6 +796,7 @@ async def log_tool_call(
     duration_ms: float | None = None,
     error: str | None = None,
     verification_status: str | None = None,
+    user_id: str | None = None,
 ) -> int | None:
     """Append a row to the tool audit log.
 
@@ -814,9 +815,10 @@ async def log_tool_call(
         db = await get_db()
         cur = await _write_with_retry(
             db,
-            "INSERT INTO tool_audit_log (tool_name, params, success, duration_ms, error, verification_status) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (tool_name, _audit_params_json(params), 1 if success else 0, duration_ms, error, verification_status),
+            "INSERT INTO tool_audit_log (tool_name, params, success, duration_ms, error, verification_status, user_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (tool_name, _audit_params_json(params), 1 if success else 0, duration_ms, error, verification_status,
+             user_id or "default"),
         )
         return cur.lastrowid
     except Exception as e:

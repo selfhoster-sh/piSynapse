@@ -753,7 +753,7 @@ async def _llm_classify_call(system: str, user: str, max_tokens: int = 20) -> st
 # Shared utility tools (get_datetime lives in every group) are never evidence.
 
 
-async def _last_executed_tool_group(session_id: str) -> str | None:
+async def _last_executed_tool_group(session_id: str, user_id: str = "default") -> str | None:
     """Determine the group of the last successfully executed tool in a session.
 
     "Successfully executed" means *either* the tool is outside the backend
@@ -771,12 +771,12 @@ async def _last_executed_tool_group(session_id: str) -> str | None:
         async with db.execute(
             """SELECT a.tool_name FROM tool_audit_log a
                JOIN conversations m ON m.id = a.conversation_id
-               WHERE m.session_id = ? AND a.conversation_id IS NOT NULL
+               WHERE m.session_id = ? AND m.user_id = ? AND a.conversation_id IS NOT NULL
                  AND a.is_summary = 0 AND a.success = 1
                  AND (a.verification_status IS NULL
                       OR a.verification_status IN ('verified', 'verified_by_fallback'))
                ORDER BY a.id DESC LIMIT 1""",
-            (session_id,),
+            (session_id, user_id),
         ) as cur:
             row = await cur.fetchone()
         if not row:
@@ -793,7 +793,8 @@ async def _last_executed_tool_group(session_id: str) -> str | None:
 
 
 async def resolve_resume_context(message: str, history: list[dict],
-                                 session_id: str | None = None) -> str | None:
+                                 session_id: str | None = None,
+                                 user_id: str = "default") -> str | None:
     """Layer 0: deterministically route an anaphoric follow-up, no model call.
 
     Returns the group the follow-up refers to, or None when there is no
@@ -802,7 +803,7 @@ async def resolve_resume_context(message: str, history: list[dict],
     if not _is_context_dependent(message):
         return None
     if session_id:
-        group = await _last_executed_tool_group(session_id)
+        group = await _last_executed_tool_group(session_id, user_id)
         if group:
             return group
     for group, markers in _GROUP_CTX_MARKERS.items():

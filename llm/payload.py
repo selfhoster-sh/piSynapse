@@ -28,6 +28,16 @@ def _reasoning_effort(think: bool, requested: str | None = None) -> str:
     return effort
 
 
+def litert_cache_key(user_id: str | None, session_id: str) -> str:
+    """User-scoped conversation key for the litert server-side cache.
+
+    Always sent on litert payloads (the server ignores it while
+    conversation_cache_max is 0); when caching is enabled, two users sharing
+    a session_id can never share a live conversation.
+    """
+    return f"{user_id or 'default'}:{session_id or ''}"
+
+
 def _build_payload(
     messages: list[dict],
     *,
@@ -37,6 +47,7 @@ def _build_payload(
     tool_list: list[dict] | None = None,
     backend: str | None = None,
     reasoning_effort: str | None = None,
+    session_cache_key: str | None = None,
 ) -> dict:
     # Read live values so UI setting changes apply without a restart.
     from config import DEFAULT_LLM_MAX_OUTPUT_TOKENS, DEFAULT_LLM_NUM_CTX, get
@@ -64,6 +75,8 @@ def _build_payload(
         }
         if use_tools:
             payload["tools"] = tool_list if tool_list is not None else TOOLS
+        if session_cache_key:
+            payload["session_id"] = session_cache_key
         return payload
 
     payload = {

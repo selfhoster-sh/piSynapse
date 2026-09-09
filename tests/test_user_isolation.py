@@ -251,3 +251,16 @@ def test_map_backfill_reassigns_legacy_rows(iso_db):
         return (await cur.fetchone())[0]
 
     assert asyncio.run(_owner()) == "alice"
+
+
+def test_audit_rows_carry_owner(iso_db):
+    async def _go():
+        await dbmod.log_tool_call("list_notes", {}, True, user_id="alice")
+        await dbmod.log_tool_call("list_notes", {}, True, user_id="bob")
+        db = await dbmod.get_db()
+        cur = await db.execute(
+            "SELECT user_id, COUNT(*) FROM tool_audit_log GROUP BY user_id ORDER BY user_id"
+        )
+        return await cur.fetchall()
+
+    assert asyncio.run(_go()) == [("alice", 1), ("bob", 1)]

@@ -66,6 +66,7 @@ async def run_verification(
     entity_id: str | int | None = None,
     duration_ms: float | None = None,
     error: str | None = None,
+    user_id: str | None = None,
 ) -> tuple[int | None, str | None]:
     """Verify a completed tool call and record it in the audit log.
 
@@ -102,6 +103,7 @@ async def run_verification(
             duration_ms=duration_ms,
             error=error,
             verification_status=verification_status,
+            user_id=user_id,
         )
         return audit_id, verification_status
     except Exception as e:

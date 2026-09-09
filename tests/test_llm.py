@@ -326,8 +326,9 @@ def test_verification_module_pass_through(monkeypatch):
 
     calls = []
 
-    async def fake_log(tool_name, params, success, duration_ms=None, error=None, verification_status=None):
-        calls.append((tool_name, params, success, verification_status))
+    async def fake_log(tool_name, params, success, duration_ms=None, error=None, verification_status=None,
+                       user_id=None):
+        calls.append((tool_name, params, success, verification_status, user_id))
 
     monkeypatch.setattr(tool_verification, "log_tool_call", fake_log)
 
@@ -335,7 +336,7 @@ def test_verification_module_pass_through(monkeypatch):
     asyncio.run(tool_verification.run_verification("list_notes", {}, "ERROR: tool failed", False, duration_ms=5.0, error="ERROR: tool failed"))
 
     assert len(calls) == 2
-    assert calls[0] == ("get_datetime", {}, True, None)
+    assert calls[0] == ("get_datetime", {}, True, None, None)
     assert calls[1][0] == "list_notes"
     assert calls[1][2] is False
     assert calls[1][3] is None
@@ -429,7 +430,7 @@ def test_chat_plain_text_cannot_fire_tool(monkeypatch, caplog):
         calls.append(name)
         return "OK", None
 
-    async def fake_llm_request(msgs, *, use_think=False, use_tools=True, tool_list=None, reasoning_effort=None):
+    async def fake_llm_request(msgs, *, use_think=False, use_tools=True, tool_list=None, reasoning_effort=None, session_cache_key=None):
         content = '<|tool_call|>send_email {"to": "a@b.c"}'
         return ({"choices": [{"message": {"content": content}}]}, {"content": content}, None)
 
@@ -456,7 +457,7 @@ def test_chat_think_retry_preserves_reasoning_effort(monkeypatch):
 
     seen = {}
 
-    async def fake_llm_request(msgs, *, use_think=False, use_tools=True, tool_list=None, reasoning_effort=None):
+    async def fake_llm_request(msgs, *, use_think=False, use_tools=True, tool_list=None, reasoning_effort=None, session_cache_key=None):
         seen["use_think"] = use_think
         seen["effort"] = reasoning_effort
         content = '<|tool_call|>send_email {"to": "a@b.c"}'
@@ -793,3 +794,24 @@ def test_format_weather_summary_both_branches():
     assert format_weather_summary(
         {"city": "Ankara", "temp_c": 20, "condition": "açık", "feels_c": None}
     ) == "Ankara: 20°C, açık"
+
+
+def test_litert_payload_carries_namespaced_session_key():
+    from llm.payload import _build_payload, litert_cache_key
+
+    assert litert_cache_key("alice", "s1") == "alice:s1"
+    assert litert_cache_key(None, "s1") == "default:s1"
+    payload = _build_payload(
+        [{"role": "user", "content": "hi"}], backend="litert",
+        session_cache_key=litert_cache_key("alice", "s1"),
+    )
+    assert payload["session_id"] == "alice:s1"
+    # Ollama path never carries the litert-only key.
+    payload = _build_payload(
+        [{"role": "user", "content": "hi"}], backend="ollama",
+        session_cache_key=litert_cache_key("alice", "s1"),
+    )
+    assert "session_id" not in payload
+    # Absent key: wire-compatible with the old payloads.
+    payload = _build_payload([{"role": "user", "content": "hi"}], backend="litert")
+    assert "session_id" not in payload

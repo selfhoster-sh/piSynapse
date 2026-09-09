@@ -22,7 +22,7 @@ from tools import (
     validate_confirm_params,
 )
 
-from .payload import _build_full_messages, _build_payload, _normalize_messages_for_backend, trim_messages_for_context
+from .payload import _build_full_messages, _build_payload, _normalize_messages_for_backend, litert_cache_key, trim_messages_for_context
 from .utils import (
     _THINKING_STRIP_RE,
     _TOOL_ASK_HINT,
@@ -58,13 +58,14 @@ async def _llm_request(
     msgs: list[dict], *, use_think: bool = False, use_tools: bool = True,
     tool_list: list[dict] | None = None,
     reasoning_effort: str | None = None,
+    session_cache_key: str | None = None,
 ) -> tuple[dict | None, dict | None, str | None]:
     client = _get_client()
     backend = get("LLM_BACKEND", "litert")
     normalized = _normalize_messages_for_backend(msgs, backend=backend)
 
     if backend == "litert":
-        payload = _build_payload(normalized, stream=False, think=use_think, use_tools=use_tools, tool_list=tool_list, backend="litert", reasoning_effort=reasoning_effort)
+        payload = _build_payload(normalized, stream=False, think=use_think, use_tools=use_tools, tool_list=tool_list, backend="litert", reasoning_effort=reasoning_effort, session_cache_key=session_cache_key)
         try:
             resp = await client.post(f"{LITERT_BASE_URL}/v1/chat/completions", json=payload)
             resp.raise_for_status()
@@ -192,6 +193,7 @@ async def chat_with_ollama(
         "_origin": (origin or "").strip().lower(),
         "_user_text": next((m.get("content", "") for m in reversed(messages) if m.get("role") == "user"), ""),
     }
+    cache_key = litert_cache_key(context["user_id"], session_id)
     current_msgs: list[dict] = []
     memories_saved = 0
     thinking = ""
@@ -249,6 +251,7 @@ async def chat_with_ollama(
         resp_json, message, err = await _llm_request(
             iter_msgs, use_think=think, use_tools=use_tools,
             tool_list=filtered_tools, reasoning_effort=reasoning_effort,
+            session_cache_key=cache_key,
         )
         if err:
             logger.error(f"Ollama request failed: {err}")
@@ -276,7 +279,7 @@ async def chat_with_ollama(
             think_msgs = _normalize_messages_for_backend(think_msgs + current_msgs, backend=get("LLM_BACKEND", "litert"))
             resp2, msg2, err2 = await _llm_request(
                 think_msgs, use_think=True, use_tools=use_tools, tool_list=filtered_tools,
-                reasoning_effort=reasoning_effort,
+                reasoning_effort=reasoning_effort, session_cache_key=cache_key,
             )
             if not err2 and msg2:
                 tc2 = msg2.get("tool_calls") or []
@@ -383,7 +386,7 @@ async def chat_with_ollama(
                     entity_id = None
                     success = False
                 duration_ms = (time.perf_counter() - t0) * 1000
-                await run_verification(tn, args, result, success, entity_id=entity_id, duration_ms=duration_ms, error=None if success else result)
+                await run_verification(tn, args, result, success, entity_id=entity_id, duration_ms=duration_ms, error=None if success else result, user_id=context.get("user_id"))
                 if tn == "save_memory" and is_tool_success(result):
                     memories_saved += 1
                 tool_msg = {"role": "tool", "tool_name": tn, "content": result}

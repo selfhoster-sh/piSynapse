@@ -23,7 +23,7 @@ from tools import (
     validate_confirm_params,
 )
 
-from .payload import _build_full_messages, _build_payload, _normalize_messages_for_backend, trim_messages_for_context
+from .payload import _build_full_messages, _build_payload, _normalize_messages_for_backend, litert_cache_key, trim_messages_for_context
 from .utils import (
     CONTINUATION_NOTE,
     _TOOL_ASK_HINT,
@@ -164,7 +164,8 @@ def _shrink_tool_responses(current_msgs: list[dict]) -> None:
 
 
 def _build_round_request(backend: str, full_msgs: list[dict], current_msgs: list[dict],
-                         use_tools: bool, filtered_tools, think: bool, reasoning_effort: str):
+                         use_tools: bool, filtered_tools, think: bool, reasoning_effort: str,
+                         session_cache_key: str | None = None):
     """Construct the streaming request payload + endpoint URL for one round.
 
     Extracted so the per-iteration loop can wrap construction in a hard
@@ -184,6 +185,7 @@ def _build_round_request(backend: str, full_msgs: list[dict], current_msgs: list
             ),
             stream=True, think=think, use_tools=use_tools, tool_list=filtered_tools,
             backend="litert", reasoning_effort=reasoning_effort,
+            session_cache_key=session_cache_key,
         )
         url = f"{LITERT_BASE_URL}/v1/chat/completions"
     else:
@@ -233,6 +235,7 @@ async def chat_with_ollama_stream(
     memories_saved = 0
     client = _get_client()
     backend = get("LLM_BACKEND", "litert")
+    cache_key = litert_cache_key(context.get("user_id"), session_id)
 
     from tools import get_combined_tools
     intent_no_tools = intent == "question" and tool_group is None
@@ -289,7 +292,7 @@ async def chat_with_ollama_stream(
         try:
             payload, url = _build_round_request(
                 backend, full_msgs, current_msgs, use_tools, filtered_tools,
-                think, reasoning_effort)
+                think, reasoning_effort, session_cache_key=cache_key)
         except Exception:
             logger.exception("Round %d request construction failed", iteration)
             yield {"error": "Internal error while preparing the model request."}
@@ -481,6 +484,7 @@ async def chat_with_ollama_stream(
                         _normalize_messages_for_backend(retry_msgs, backend="litert"),
                         stream=False, think=True, use_tools=True, tool_list=filtered_tools,
                         backend="litert", reasoning_effort=reasoning_effort,
+                        session_cache_key=cache_key,
                     )
                     retry_url = f"{LITERT_BASE_URL}/v1/chat/completions"
                 else:
@@ -624,7 +628,7 @@ async def chat_with_ollama_stream(
                     entity_id = None
                     success = False
                 duration_ms = (time.perf_counter() - t0) * 1000
-                audit_id, verification_status = await run_verification(tn, args, result, success, entity_id=entity_id, duration_ms=duration_ms, error=None if success else result)
+                audit_id, verification_status = await run_verification(tn, args, result, success, entity_id=entity_id, duration_ms=duration_ms, error=None if success else result, user_id=context.get("user_id"))
                 yield {"tool": {"name": tn, "phase": "end", "ok": success, "audit_id": audit_id, "verification_status": verification_status, "clarify": result.startswith("CLARIFY_REQUIRED"), "noop": result.startswith("NOOP")}}
                 if tn == "save_memory" and is_tool_success(result):
                     memories_saved += 1

@@ -249,7 +249,7 @@ async def chat_endpoint(req: ChatRequest, request: Request, background_tasks: Ba
 
         if intent == "question" and tool_group is None and is_contextual_followup(req.message):
             from llm import llm_resolve_with_evidence, resolve_resume_context
-            resolved = await resolve_resume_context(req.message, history, session_id=req.session_id)
+            resolved = await resolve_resume_context(req.message, history, session_id=req.session_id, user_id=user_id)
             if resolved:
                 intent, tool_group = "action", resolved
                 logger.info(f"Resume resolver -> {resolved} (session history): {req.message!r}")
@@ -322,7 +322,7 @@ async def chat_stream(req: ChatRequest, request: Request, background_tasks: Back
 
         if intent == "question" and tool_group is None and is_contextual_followup(req.message):
             from llm import llm_resolve_with_evidence, resolve_resume_context
-            resolved = await resolve_resume_context(req.message, history, session_id=req.session_id)
+            resolved = await resolve_resume_context(req.message, history, session_id=req.session_id, user_id=user_id)
             if resolved:
                 intent, tool_group = "action", resolved
                 logger.info(f"Resume resolver -> {resolved} (session history): {req.message!r}")
@@ -460,7 +460,7 @@ async def execute_action(req: ExecuteRequest, request: Request):
         # Manual executions (confirmed destructive actions) are exactly the
         # ones that must be audit-logged — the model loop already logs its
         # own tool calls, but /execute runs outside that loop.
-        audit_id, verification_status = await run_verification(req.tool, req.params, result, success, entity_id=entity_id, duration_ms=duration_ms, error=None if success else result)
+        audit_id, verification_status = await run_verification(req.tool, req.params, result, success, entity_id=entity_id, duration_ms=duration_ms, error=None if success else result, user_id=user_id)
         msg_id = await save_message(req.session_id, "assistant", result, user_id=user_id)
         if audit_id is not None:
             await link_audits_to_message(msg_id, [audit_id])
@@ -894,7 +894,7 @@ async def sync_commands(req: SyncRequest, background_tasks: BackgroundTasks, req
             success = is_tool_success(result)
             duration_ms = (time.perf_counter() - t0) * 1000
             is_noop = isinstance(result, str) and result.startswith("NOOP")
-            audit_id, verification_status = await run_verification(cmd.tool, cmd.params, result, success, entity_id=entity_id, duration_ms=duration_ms)
+            audit_id, verification_status = await run_verification(cmd.tool, cmd.params, result, success, entity_id=entity_id, duration_ms=duration_ms, user_id=user_id)
             results.append({
                 "index": i,
                 "status": "noop" if is_noop else ("ok" if success else "error"),
