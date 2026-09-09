@@ -1891,16 +1891,35 @@ async def get_messages_to_summarize(
     return out, take_end
 
 
-async def update_session_summary(session_id: str, summary: str, summarized_until: int, user_id: str = "default"):
+async def update_session_summary(session_id: str, summary: str, summarized_until: int, user_id: str = "default",
+                                 expected_until: int | None = None) -> bool:
+    """Store a folded summary; returns True when applied.
+
+    ``expected_until`` enables a conditional write for the background fold
+    race: two concurrent ``_update_summary`` tasks read the same boundary,
+    the loser must not clobber the winner's wider summary. When given, the
+    write applies only if the stored boundary still equals it (rowcount 0 =
+    skipped). ``None`` keeps the unconditional legacy behavior.
+    """
     db = await get_db()
-    await db.execute(
-        """INSERT INTO sessions (id, summary, summarized_until, user_id) VALUES (?, ?, ?, ?)
-           ON CONFLICT(id) DO UPDATE SET summary = excluded.summary, summarized_until = excluded.summarized_until,
-           last_active = CURRENT_TIMESTAMP
-           WHERE sessions.user_id = excluded.user_id""",
-        (session_id, summary, summarized_until, user_id),
-    )
+    if expected_until is None:
+        cur = await db.execute(
+            """INSERT INTO sessions (id, summary, summarized_until, user_id) VALUES (?, ?, ?, ?)
+               ON CONFLICT(id) DO UPDATE SET summary = excluded.summary, summarized_until = excluded.summarized_until,
+               last_active = CURRENT_TIMESTAMP
+               WHERE sessions.user_id = excluded.user_id""",
+            (session_id, summary, summarized_until, user_id),
+        )
+    else:
+        cur = await db.execute(
+            """INSERT INTO sessions (id, summary, summarized_until, user_id) VALUES (?, ?, ?, ?)
+               ON CONFLICT(id) DO UPDATE SET summary = excluded.summary, summarized_until = excluded.summarized_until,
+               last_active = CURRENT_TIMESTAMP
+               WHERE sessions.user_id = excluded.user_id AND sessions.summarized_until = ?""",
+            (session_id, summary, summarized_until, user_id, expected_until),
+        )
     await _commit_with_retry(db)
+    return cur.rowcount > 0
 
 
 # -- Long-term Memories --

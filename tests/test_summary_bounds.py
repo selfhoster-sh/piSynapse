@@ -204,3 +204,55 @@ def test_retention_repair(sum_db, monkeypatch):
     meta = asyncio.run(dbmod.get_session_meta("sx", user_id="alice"))
     assert meta["summary"] == "sum"
     assert meta["summarized_until"] == fresh_max
+
+
+def test_conditional_summary_write(sum_db):
+    asyncio.run(dbmod.update_session_summary("sx", "a", 10, user_id="alice"))
+    stale = asyncio.run(
+        dbmod.update_session_summary("sx", "b", 15, user_id="alice", expected_until=0)
+    )
+    assert stale is False
+    fresh = asyncio.run(
+        dbmod.update_session_summary("sx", "c", 15, user_id="alice", expected_until=10)
+    )
+    assert fresh is True
+    meta = asyncio.run(dbmod.get_session_meta("sx", user_id="alice"))
+    assert meta == {"summary": "c", "summarized_until": 15}
+
+
+def test_concurrent_summary_writes_do_not_regress(sum_db, monkeypatch):
+    import config as config_module
+    import routers.chat as rc
+
+    monkeypatch.setattr(config_module, "HISTORY_LIMIT", 12)
+    monkeypatch.setattr(config_module, "SUMMARY_BATCH_SIZE", 5)
+    monkeypatch.setattr(config_module, "SUMMARY_EARLY_TRIGGER", 6)
+    _seed("sx", "alice", 20)
+    ids = _msg_ids()
+
+    calls = []
+
+    async def fake_summarize(messages, previous):
+        await asyncio.sleep(0.05)  # force the two folds to overlap
+        calls.append(len(messages))
+        return f"sum-{len(messages)}"
+
+    monkeypatch.setattr(rc, "summarize_conversation", fake_summarize)
+
+    async def _go():
+        await asyncio.gather(
+            rc._update_summary("sx", user_id="alice"),
+            rc._update_summary("sx", user_id="alice"),
+        )
+
+    asyncio.run(_go())
+    # Both folds saw the same 8 pending rows; exactly one write wins.
+    assert sorted(calls) == [8, 8]
+    meta = asyncio.run(dbmod.get_session_meta("sx", user_id="alice"))
+    assert meta == {"summary": "sum-8", "summarized_until": ids[7]}
+
+    # A follow-up fold converges instead of refolding or regressing.
+    asyncio.run(rc._update_summary("sx", user_id="alice"))
+    assert sorted(calls) == [8, 8]
+    meta2 = asyncio.run(dbmod.get_session_meta("sx", user_id="alice"))
+    assert meta2 == meta
