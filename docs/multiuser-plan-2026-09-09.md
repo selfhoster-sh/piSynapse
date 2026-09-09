@@ -1,8 +1,8 @@
-# Multi-User Plan — M1–M4 (2026-09-09)
+# Multi-User Plan — M1–M5 (2026-09-09)
 
-Status: M1–M4 implemented (see NOTES.md entries for deviations,
+Status: M1–M5 implemented (see NOTES.md entries for deviations,
 residuals and test evidence). Remaining: phone-app login UI (separate
-track after the port decision).
+track after the port decision); settings-page admin awareness (UI).
 
 Decisions (user): open registration with an admin toggle (standard);
 existing `default` data belongs to the admin (bootstrap onto the `default`

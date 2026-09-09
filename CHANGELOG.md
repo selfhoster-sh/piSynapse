@@ -8,6 +8,7 @@ uses [Semantic Versioning](https://semver.org/).
 
 ### Added
 - Multi-user identity: `users` table, `POST /users/register` (first user becomes admin, `REGISTRATION_OPEN` toggle), key rotation, `/users/me`, admin user listing. API keys stored hashed, returned once; auth resolves per-key with admin state.
+- Professional accounts: bcrypt password login with per-device keys (list/revoke), password set/change, admin user deletion with full data wipe, runtime registration toggle in settings, role-split settings visibility (admins full, others personal-only).
 - Multi-user isolation hardening: per-user rate-limit buckets (with env-tunable rpm); `user_id` scoping on session maps, audit log, resume anchoring and the litert cache key; session invisibility enforced both directions; registration toggle, rpm and audit keys added to template/preserve lists.
 - Multi-user personal settings: `user_settings` store with user→global→default precedence; `GET/PUT /config/my-settings` for personal keys; system `PATCH /config/settings` is admin-only now; per-request city/language personalization in prompts; one-time `.env`→admin migration.
 - Browser sign-in: onboarding register-or-key step with validation, standalone login overlay (boot gate, logout, 401 rerouting), settings user row.
