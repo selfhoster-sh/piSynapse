@@ -19,6 +19,21 @@
 - **Multi-user invisibility rule:** one user's sessions, settings, mail and keys are invisible to every other user. Every user-scoped query needs its owner guard, every guard needs a both-directions test.
 - **Pre-push check:** before push, grep new docs/journal lines for secrets, passwords, IPs and credentials the same way code gets py_compile + pytest.
 
+## 2026-09-09 — Login entry repair (fresh-browser confusion)
+
+- **Root causes (user report: prompt()-in, then register/key-entry dead):**
+  (1) `/users/me` 401'd the valid server-owner .env key whenever no users row
+  existed — the one key the user knows failed validation. Now returns a
+  synthetic owner record mirroring `ensure_default_admin` (test: legacy key,
+  empty users → 200 admin).
+  (2) Boot `prompt()` hijacked fresh users before onboarding → half-logged-in
+  state. `prompt()` is now native-only; web entry belongs to the wizard
+  (fresh) or the overlay (onboarded); sidebar re-entry routes to the overlay.
+  (3) Register 409 (name taken) toasted "invalid key" — now a distinct
+  loginNameTaken message (tr/en).
+- **Note:** server half takes effect on the pending restart.
+- **Test:** full-file users/audit green; `node --check` clean.
+
 ## 2026-09-09 — Collective learning Phase 4: approval + admin queue (done)
 
 - **Approval flag:** `users.is_approved` (migration 22 + grandfather backfill via version-gated `_DATA_BACKFILLS`); new registrations unapproved except first-admin; admins always count; `POST /users/{id}/approve|unapprove` (admin). Quorum/reputation/feeder count approved-or-admin voters only. Legacy-upgrade rewind 6→7.

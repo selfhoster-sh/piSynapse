@@ -59,7 +59,7 @@ const STRINGS = {
     ttsErr:'Sesli çıkış başarısız oldu',
     apiKeyPrompt:'API anahtarını girin (sunucu .env dosyasındaki API_KEY değeri):',
     loginTitle:'Giriş yap', loginSub:'Devam etmek için kaydolun veya anahtarınızla giriş yapın.',
-    loginName:'Görünen ad', loginNamePh:'örn. Salih', loginRegister:'Kaydol',
+    loginName:'Görünen ad', loginNamePh:'örn. Salih', loginRegister:'Kaydol', loginNameTaken:'Bu isim alınmış — başka bir isim dene veya anahtarınla giriş yap',
     loginHaveKey:'Anahtarım var',
     loginInvalidKey:'Anahtar geçersiz', loginRegClosed:'Kayıtlar kapalı — yöneticinizden davet isteyin.',
     loginWelcome:'Hoş geldin, %s', signedInAs:'Giriş yapılan kullanıcı', logout:'Çıkış yap',
@@ -139,7 +139,7 @@ const STRINGS = {
     ttsErr:'Text-to-speech failed',
     apiKeyPrompt:'Enter API key (the API_KEY value from the server .env file):',
     loginTitle:'Log in', loginSub:'Register or sign in with your key to continue.',
-    loginName:'Display name', loginNamePh:'e.g. Alex', loginRegister:'Register',
+    loginName:'Display name', loginNamePh:'e.g. Alex', loginRegister:'Register', loginNameTaken:'Name taken — try another or sign in with your key',
     loginHaveKey:'I have a key',
     loginInvalidKey:'Invalid key', loginRegClosed:'Registration is closed — ask your admin for access.',
     loginWelcome:'Welcome, %s', signedInAs:'Signed in as', logout:'Log out',
@@ -1617,7 +1617,10 @@ async function api(method, path, body){
       showLogin();
       throw new Error('HTTP 401');
     }
-    if(!key && !window._authPrompted){
+    if(!key && !window._authPrompted && _NATIVE){
+      // Native-only last resort: the web flows own their entry (onboarding
+      // wizard when fresh, login overlay when onboarded) — a browser prompt()
+      // on top of those is how users end up half-logged-in and confused.
       window._authPrompted = true;
       const newKey = prompt(t('apiKeyPrompt'));
       if(newKey){
@@ -1787,6 +1790,7 @@ function renderAuthNeeded(){
 }
 
 function reenterKey(){
+  if(!_NATIVE){ showLogin(); return; } // web owns entry via the overlay
   const k=prompt(t('apiKeyPrompt'));
   if(k){ setApiKey(k); loadSessions(); }
 }
@@ -3656,6 +3660,7 @@ async function obRegister(){
   try{
     const r = await obFetchUsers('POST', '/users/register', {name});
     if(r.status === 403){ toast(t('loginRegClosed'), true); return false; }
+    if(r.status === 409){ toast(t('loginNameTaken'), true); return false; }
     if(!r.ok) throw new Error('HTTP ' + r.status);
     const d = await r.json();
     if(keyEl) keyEl.value = d.api_key || '';
@@ -3722,6 +3727,7 @@ async function loginRegister(){
   try{
     const r = await obFetchUsers('POST', '/users/register', {name});
     if(r.status === 403){ toast(t('loginRegClosed'), true); return; }
+    if(r.status === 409){ toast(t('loginNameTaken'), true); return; }
     if(!r.ok) throw new Error('HTTP ' + r.status);
     const d = await r.json();
     setApiKey(d.api_key || '');

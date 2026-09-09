@@ -133,10 +133,18 @@ async def rotate_own_key(request: Request):
 @router.get("/me")
 async def read_own_user(request: Request):
     """Return the caller's user record (never includes key material)."""
-    from db import get_user
+    from db import DEFAULT_USER_ID, get_user
 
-    user = await get_user(_authed_user_id(request))
+    uid = _authed_user_id(request)
+    user = await get_user(uid)
     if user is None:
+        # Legacy single-user key with no users row yet (pre-bootstrap): the
+        # server owner looking at their own instance. Mirrors what
+        # ensure_default_admin would create — without it, the owner's only
+        # known key fails validation in the login UI.
+        if uid == DEFAULT_USER_ID:
+            return {"user": {"id": DEFAULT_USER_ID, "name": "admin", "is_admin": True,
+                             "is_approved": True, "has_password": False, "created_at": None}}
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
     return {"user": user}
 
