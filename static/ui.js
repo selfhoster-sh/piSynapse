@@ -41,12 +41,12 @@ const STRINGS = {
     fontLabel:'Yazı Tipi',
     obBadge:'Kurulum', obS1T:'Hoş geldin 👋', obS1S:'piSynapse tamamen telefonda çalışır — sohbetlerin ve hafızan cihazda kalır.', obS1B:'Başla',
     obS2T:'İzinler', obS2S:'Deneyimi zenginleştirmek için birkaç izin isteyeceğiz (dilersen atla).', obPermCal:'Takvim', obPermCalS:'Etkinlik oluştur/güncelle', obPermMic:'Mikrofon', obPermMicS:'Sesli komut ve dikte', obPermLoc:'Konum', obPermLocS:'Hava durumu için şehir tespiti', obGrant:'İzin ver', obGranted:'Verildi', obSkipPerm:'İzinleri atla',
-    obS3T:'Kişisel bilgiler', obS3S:'Asistanı sana göre özelleştirelim. İstersen boş bırak.', obName:'Adın', obNamePh:'örn. Salih', obCity:'Şehir', obCityPh:'örn. İstanbul', obAsync:'Asistan adı', obAsyncPh:'örn. Selim', optional:'opsiyonel', obCityDetecting:'Konumdan şehir algılanıyor…',
+    obS3T:'Tanışalım', obS3S:'Asistan sana isminle hitap eder, şehrini hava durumu gibi işlerde kullanır. İkisi de sonradan Ayarlardan değişir.', obName:'Adın', obNamePh:'örn. Salih', obCity:'Şehir', obCityPh:'örn. İstanbul', obAsync:'Asistan adı', obAsyncPh:'örn. Selim', optional:'opsiyonel', obCityDetecting:'Konumdan şehir algılanıyor…',
     obS4T:'Model durumu', obS4S:'Yanıtlan üreten yerel model kontrol ediliyor…', obModelOk:'Model yüklü ve hazır ✓', obModelNone:'Yerel model bulunamadı. Ayarlar → Zeka üzerinden bir .litertlm dosyası seç veya ekle.', obModelLoading:'Model yükleniyor…', obModelHint:'Model çok yıllık bir dosyadır (2.5GB+); ilk yükleme birkaç dakika sürebilir.',
     obModelDown:'Modeli indir', obModelDownCustom:'Kendi adresinden indir', obModelDownUrl:'Bu adresten indir', obModelDownStart:'İndirme başlatılıyor…', obModelPct:'İndiriliyor… %s', obModelDownDone:'İndirme tamamlandı, model hazırlanıyor…', obModelDownFail:'İndirme başarısız oldu', obModelCancel:'İptal',
     obEmbedding:'Hafıza modeli (embedding) indiriliyor… %s', obEmbeddingOk:'Hafıza modeli hazır ✓', obEmbeddingPending:'Hafıza modeli indiriliyor…', obEmbeddingFail:'Hafıza modeli indirilemedi — Ayarlar → Zeka\'dan tekrar deneyin.',
-    obS6T:'Sunucu', obS6S:'Bu cihazı bir piSynapse sunucusuna bağla (isteğe bağlı). Boş bırakıp atlayabilir, sonradan Ayarlar → Sunucu üzerinden düzenleyebilirsin.', obS6Url:'Sunucu adresi', obS6UrlPh:'örn. https://pisynapse.local', obS6Key:'API anahtarı', obS6KeyPh:'Sunucunun API_KEY bilgisi', obS6User:'Sunucu kullanıcı', obS6UserPh:'Sunucudaki kullanıcı kimliği', obS6Hint:'API anahtarı sunucunun .env dosyasındaki API_KEY değeridir. Tarayıcıda sunucu adresi zaten açtığın adresle doldurulur.',
-    obS5T:'Kısa tanıtım', obS5S:'Birkaç ipucu:', obTip1:'Kenar çubuğu: sohbet geçmişi ve hafıza', obTip2:'Yeni sohbeti üstteki + ile aç', obTip3:'Think modu düşünme seviyesini ayarlar', obTip4:'Ayarlar: tema, dil, font, AMOLED, model', obDone:'Kullanmaya başla',
+    obS6T:'Hesabın', obS6S:'Bu sayfanın adresi zaten sunucunun adresi — bir şey yazmana gerek yok. Yeni bir hesap aç ya da mevcut anahtarınla giriş yap.', obS6Url:'Sunucu adresi', obS6UrlPh:'örn. https://pisynapse.local', obS6Key:'API anahtarı', obS6KeyPh:'Sana verilen anahtar', obS6User:'Sunucu kullanıcı', obS6UserPh:'Sunucudaki kullanıcı kimliği', obS6Hint:'Anahtarını mı unuttun? Sunucu sahibi .env dosyasındaki API_KEY ile girebilir; yeni kullanıcılar yukarıdan kaydolur.', obConnectedServer:'Bağlı sunucu: %s', loginNeedKey:'Devam etmek için kaydol veya anahtarınla giriş yap.',
+    obS5T:'Kısa tanıtım', obS5S:'İlk gün için dört şey:', obTip1:'Her şey Pi’nde: sohbetlerin, hafızan ve takvimin bu sunucuda saklanır, dışarı çıkmaz.', obTip2:'Üstteki + ile yeni sohbet aç; kenar çubuğundan eski konuşmalara ve hafızaya dön.', obTip3:'Doğrudan söyle: “yarın 10.00’a toplantı ekle”, “İstanbul’da hava nasıl” — doğru aracı asistan seçer.', obTip4:'Yanlış yapan cevaplarda 👍/👎 kullan — geri bildirimin asistanı herkes için iyileştirir.', obDone:'Kullanmaya başla',
     advanced:'Gelişmiş Ayarlar',
     setServerUrl:'Sunucu adresi', setServerUrlDesc:'Bu sayfanın erişildiği konum. Farklı bir piSynapse sunucusu kullanıyorsan burayı düzenle.', setServerUrlPh:'örn. https://pisynapse.local',
     setApiKeyLabel:'API anahtarı', setApiKeyDesc:'Sunucunun .env dosyasındaki API_KEY değeri ile eşleşmelidir.', setApiKeyPh:'Sunucudaki API_KEY değerinizi girin', setSrvHint:'Bu adres, tarayıcıda açtığın sayfanın kaynağı olarak kullanılır.',
@@ -121,12 +121,12 @@ const STRINGS = {
     fontLabel:'Font',
     obBadge:'Setup', obS1T:'Welcome 👋', obS1S:'piSynapse runs entirely on your phone — chats and memory stay on-device.', obS1B:'Get started',
     obS2T:'Permissions', obS2S:'We will ask for a few permissions to enrich the experience (you can skip).', obPermCal:'Calendar', obPermCalS:'Create/update events', obPermMic:'Microphone', obPermMicS:'Voice commands & dictation', obPermLoc:'Location', obPermLocS:'City detection for weather', obGrant:'Grant', obGranted:'Granted', obSkipPerm:'Skip permissions',
-    obS3T:'Personal info', obS3S:'Let us tailor your assistant. You can leave these empty.', obName:'Your name', obNamePh:'e.g. Salih', obCity:'City', obCityPh:'e.g. Istanbul', obAsync:'Assistant name', obAsyncPh:'e.g. Selim', optional:'optional', obCityDetecting:'Detecting city from location…',
+    obS3T:'Introduce yourself', obS3S:'The assistant addresses you by name and uses your city for things like weather. Both can change later in Settings.', obName:'Your name', obNamePh:'e.g. Salih', obCity:'City', obCityPh:'e.g. Istanbul', obAsync:'Assistant name', obAsyncPh:'e.g. Selim', optional:'optional', obCityDetecting:'Detecting city from location…',
     obS4T:'Model status', obS4S:'Checking the local model that powers replies…', obModelOk:'Model is loaded and ready ✓', obModelNone:'No local model found. Pick or add a .litertlm file under Settings → Intelligence.', obModelLoading:'Model is loading…', obModelHint:'The model is a large file (2.5GB+); first load may take a couple minutes.',
     obModelDown:'Download model', obModelDownCustom:'Download from custom URL', obModelDownUrl:'Download from this URL', obModelDownStart:'Starting download…', obModelPct:'Downloading… %s', obModelDownDone:'Download complete, preparing model…', obModelDownFail:'Download failed', obModelCancel:'Cancel',
     obEmbedding:'Downloading the memory (embedding) model… %s', obEmbeddingOk:'Memory model ready ✓', obEmbeddingPending:'Downloading the memory model…', obEmbeddingFail:'Memory model failed to download — retry from Settings → Intelligence.',
-    obS6T:'Server', obS6S:'Connect this device to a piSynapse server (optional). Leave empty to skip; you can edit it later from Settings → Server.', obS6Url:'Server URL', obS6UrlPh:'e.g. https://pisynapse.local', obS6Key:'API key', obS6KeyPh:'Your server API_KEY', obS6User:'Server user', obS6UserPh:'Your user ID on the server', obS6Hint:'The API key is the API_KEY value in your server\'s .env file. In browser mode the server URL is pre-filled with the address you opened.',
-    obS5T:'Quick tour', obS5S:'A few tips:', obTip1:'Sidebar: chat history and memory', obTip2:'Start a new chat with the + above', obTip3:'Think mode controls the reasoning level', obTip4:'Settings: theme, language, font, AMOLED, model', obDone:'Start using',
+    obS6T:'Your account', obS6S:'This page address already is the server address — nothing to type. Create a new account or sign in with your existing key.', obS6Url:'Server URL', obS6UrlPh:'e.g. https://pisynapse.local', obS6Key:'API key', obS6KeyPh:'The key given to you', obS6User:'Server user', obS6UserPh:'Your user ID on the server', obS6Hint:'Lost your key? The server owner can use the API_KEY from .env; new users register above.', obConnectedServer:'Connected server: %s', loginNeedKey:'Register or sign in with your key to continue.',
+    obS5T:'Quick tour', obS5S:'Four things for day one:', obTip1:'Everything stays on your Pi: chats, memory and calendar live on this server, nowhere else.', obTip2:'Open a new chat with the + above; return to old conversations and memory from the sidebar.', obTip3:'Just say it: “add a meeting tomorrow at 10:00”, “how is the weather in Istanbul” — the assistant picks the right tool.', obTip4:'Use 👍/👎 on wrong answers — your feedback improves the assistant for everyone.', obDone:'Start using',
     advanced:'Advanced Settings',
     setServerUrl:'Server URL', setServerUrlDesc:'Where this page is served from. Edit if you use a different piSynapse server.', setServerUrlPh:'e.g. https://pisynapse.local',
     setApiKeyLabel:'API key', setApiKeyDesc:'Must match the API_KEY value in your server\'s .env file.', setApiKeyPh:'Enter your server API_KEY', setSrvHint:'This address is used as the origin of the page you opened in the browser.',
@@ -1264,25 +1264,25 @@ const _NATIVE = (()=>{ try{ if('PiSynapse' in window) return window.PiSynapse; i
 if(!_NATIVE){
   STRINGS.tr.welcomeSub = 'Kendi sunucun. Senin verilerin.\nTüm veriler Pi\'nde kalır.';
   STRINGS.tr.obS1S = 'piSynapse kendi sunucunda çalışır — sohbetlerin, hafızan ve takvimin Pi\'nde kalır.';
-  STRINGS.tr.obTip4 = 'Ayarlar: tema, dil, font';
+  STRINGS.tr.obTip4 = 'Yanlış yapan cevaplarda 👍/👎 kullan — geri bildirimin asistanı herkes için iyileştirir.';
   STRINGS.en.welcomeSub = 'Own server. Your data.\nEverything stays on your Pi.';
   STRINGS.en.obS1S = 'piSynapse runs on your own server — chats, memory and calendar stay on your Pi.';
-  STRINGS.en.obTip4 = 'Settings: theme, language, font';
+  STRINGS.en.obTip4 = 'Use 👍/👎 on wrong answers — your feedback improves the assistant for everyone.';
   const _s6 = STRINGS.tr.obS6S;
   if(typeof _s6 === 'string' && _s6.indexOf('Bu cihazı') === 0){
-    STRINGS.tr.obS6S = 'Bu sunucuya bağlan (oturum aç). Boş bırakıp atlayabilirsin; sonradan Ayarlar · Sunucu üzerinden düzenleyebilirsin.';
+    STRINGS.tr.obS6S = 'Bu sayfanın adresi zaten sunucunun adresi — bir şey yazmana gerek yok. Yeni bir hesap aç ya da mevcut anahtarınla giriş yap.';
   }
   const _s6e = STRINGS.en.obS6S;
   if(typeof _s6e === 'string' && _s6e.toLowerCase().indexOf('connect this device') === 0){
-    STRINGS.en.obS6S = 'Connect to this server (log in). You can skip and edit it later from Settings · Server.';
+    STRINGS.en.obS6S = 'This page address already is the server address — nothing to type. Create a new account or sign in with your existing key.';
   }
   const _s6h = STRINGS.tr.obS6Hint;
   if(typeof _s6h === 'string' && _s6h.indexOf('Tarayıcıda') === 0){
-    STRINGS.tr.obS6Hint = 'API anahtarı sunucunun .env dosyasındaki API_KEY değeridir. Sunucu adresi açtığın adresle zaten doldurulur.';
+    STRINGS.tr.obS6Hint = 'Anahtarını mı unuttun? Sunucu sahibi .env dosyasındaki API_KEY ile girebilir; yeni kullanıcılar yukarıdan kaydolur.';
   }
   const _s6he = STRINGS.en.obS6Hint;
   if(typeof _s6he === 'string' && _s6he.indexOf('In browser mode') === 0){
-    STRINGS.en.obS6Hint = 'The API key is the API_KEY value in your server\'s .env file. The server URL is pre-filled with the address you opened.';
+    STRINGS.en.obS6Hint = 'Lost your key? The server owner can use the API_KEY from .env; new users register above.';
   }
 }
 let _nativeHistory = [];
@@ -3447,16 +3447,14 @@ function toggleSettingInfo(key){
 }
 
 function serverSectionHtml(){
-  const url = localStorage.getItem('ps_server_url') || (window.location.origin.startsWith('http') ? window.location.origin : '');
   const key = localStorage.getItem('ps_api_key') || '';
+  const origin = window.location.origin.startsWith('http') ? window.location.origin : '';
   return `
     <div class="settings-section" data-sec="Sunucu">
       <div class="settings-section-title">${_sectionLabel('Sunucu')}</div>
       <div class="settings-section-inner">
         <div class="setting-item">
-          <div class="setting-label"><span>${esc(t('setServerUrl'))}</span></div>
-          <div class="setting-desc">${esc(t('setServerUrlDesc'))}</div>
-          <input type="text" class="setting-input" style="padding:8px 10px" id="si-ps_server_url" maxlength="200" value="${esc(url)}">
+          <div class="setting-label"><span>${esc(t('obConnectedServer').replace('%s', origin))}</span></div>
         </div>
         <div class="setting-item">
           <div class="setting-label"><span>${esc(t('setApiKeyLabel'))}</span></div>
@@ -3565,11 +3563,6 @@ async function saveSettings(){
     if (el) values[key] = el.type === 'checkbox' ? (el.dataset.val || (el.checked ? 'on' : 'off')) : el.value;
   }
   if(!_NATIVE){
-    const urlEl = document.getElementById('si-ps_server_url');
-    if(urlEl){
-      const v = urlEl.value.trim();
-      if(v) localStorage.setItem('ps_server_url', v);
-    }
     const keyEl = document.getElementById('si-ps_api_key');
     if(keyEl) setApiKey(keyEl.value.trim());
   }
@@ -3666,6 +3659,8 @@ async function obRegister(){
     if(keyEl) keyEl.value = d.api_key || '';
     setApiKey(d.api_key || '');
     setUsername(d.user?.name || name);
+    // The account name doubles as the display name (single-name model).
+    try{ await api('PUT','/config/my-settings',{values:{ASSISTANT_USER: d.user?.name || name}}); }catch(e){}
     toast(t('loginWelcome').replace('%s', d.user?.name || name));
     return true;
   }catch(e){ toast(t('loginInvalidKey'), true); return false; }
@@ -3732,6 +3727,7 @@ async function loginRegister(){
     const d = await r.json();
     setApiKey(d.api_key || '');
     setUsername(d.user?.name || name);
+    try{ await api('PUT','/config/my-settings',{values:{ASSISTANT_USER: d.user?.name || name}}); }catch(e){}
     toast(t('loginWelcome').replace('%s', d.user?.name || name));
     hideLogin();
   }catch(e){ toast(t('loginInvalidKey'), true); }
@@ -3770,27 +3766,31 @@ async function obNextAction(){
         // User just logged in to a server: pull its portable settings to the phone.
         if(url || key){ try{ await _serverSettingsPull(); }catch(e){} }
       } else {
-        if(url) localStorage.setItem('ps_server_url', url);
-        if(key){
-          // Don't advance on a bad key — the user would land keyless in a
-          // prompt-loop. obValidateKey toasts and stores on success.
-          const nm = await obValidateKey(key);
-          if(!nm) return;
-        } else {
-          setApiKey('');
-          setUsername('');
-        }
+        // Web entry is explicit: a key signs in, anything else stays put.
+        // Keyless advance used to land users in a broken 401-looping app.
+        const key = document.getElementById('ob-skey')?.value.trim() || '';
+        if(!key){ toast(t('loginNeedKey'), true); return; }
+        // Don't advance on a bad key — the user would land keyless in a
+        // prompt-loop. obValidateKey toasts and stores on success.
+        const nm = await obValidateKey(key);
+        if(!nm) return;
       }
     }
     if(action === 'save'){
-      // persist personal info
+      // persist personal info — one display name shared with the account step.
+      // Personal PUT works for everyone (PATCH is admin-only since multi-user
+      // and silently 403s for regular users); PATCH stays as legacy fallback.
       const name = document.getElementById('ob-aname')?.value.trim();
       const city = document.getElementById('ob-city')?.value.trim();
+      _ob.displayName = name || '';
       const values = {};
       if(name) values.ASSISTANT_USER = name;
       if(city) values.DEFAULT_CITY = city;
       if(Object.keys(values).length){
-        try{ await api('PATCH','/config/settings',{values}); if(window.config) config = await api('GET','/config'); }catch(e){}
+        try{ await api('PUT','/config/my-settings',{values}); }
+        catch(e){
+          try{ await api('PATCH','/config/settings',{values}); if(window.config) config = await api('GET','/config'); }catch(e2){}
+        }
       }
     }
     _ob.step++;
@@ -4049,7 +4049,7 @@ function renderOnboarding(){
       <div class="ob-icon">${obIcon('user')}</div>
       <div class="ob-title">${esc(t('obS3T'))}</div>
       <div class="ob-sub">${esc(t('obS3S'))}</div>
-      <div class="ob-field"><label for="ob-aname">${esc(t('obAsync'))}</label><input class="ob-input" id="ob-aname" maxlength="40" placeholder="${esc(t('obAsyncPh'))}" value="${esc(window.config?.assistant_user||'')}"></div>
+      <div class="ob-field"><label for="ob-aname">${esc(t('loginName'))}</label><input class="ob-input" id="ob-aname" maxlength="40" placeholder="${esc(t('loginNamePh'))}" value="${esc(window.config?.assistant_user||'')}"></div>
       <div class="ob-field"><label for="ob-city">${esc(t('obCity'))} <em style="font-style:normal;font-size:11px;color:var(--text3)">(${esc(t('optional'))})</em></label><input class="ob-input" id="ob-city" maxlength="40" placeholder="${esc(t('obCityPh'))}" value="${esc(curCity)}"></div>
       ${_NATIVE && _ob.perms.location && !curCity ? `<div class="ob-hint" id="ob-city-detect">${esc(t('obCityDetecting'))}</div>` : ''}`;
     if(_NATIVE && _ob.perms.location && !curCity){
@@ -4068,16 +4068,18 @@ function renderOnboarding(){
         <div class="ob-field"><label for="ob-skey">${esc(t('obS6Key'))}</label><input class="ob-input" id="ob-skey" type="password" maxlength="200" autocomplete="off" placeholder="${esc(t('obS6KeyPh'))}" value="${esc((window._settingsData&&window._settingsData.SERVER_API_KEY)?(window._settingsData.SERVER_API_KEY.value||''):'')}"></div>
         <div class="ob-hint">${esc(t('obS6Hint'))}</div>`;
     } else {
-      const savedUrl = localStorage.getItem('ps_server_url') || (window.location.origin.startsWith('http') ? window.location.origin : '');
+      // Web: this page IS the server — no address to type. Two explicit
+      // choices: register a new account, or sign in with an existing key.
       const savedKey = localStorage.getItem('ps_api_key') || '';
+      const origin = window.location.origin.startsWith('http') ? window.location.origin : '';
       body.innerHTML = `
         <div class="ob-icon">${obIcon('server')}</div>
         <div class="ob-title">${esc(t('obS6T'))}</div>
         <div class="ob-sub">${esc(t('obS6S'))}</div>
-        <div class="ob-field"><label for="ob-surl">${esc(t('obS6Url'))}</label><input class="ob-input" id="ob-surl" maxlength="200" placeholder="${esc(t('obS6UrlPh'))}" value="${esc(savedUrl)}"></div>
-        <div class="ob-field"><label for="ob-sname">${esc(t('loginName'))}</label><input class="ob-input" id="ob-sname" maxlength="40" placeholder="${esc(t('loginNamePh'))}"></div>
-        <div class="ob-field"><label for="ob-skey">${esc(t('obS6Key'))}</label><input class="ob-input" id="ob-skey" type="password" maxlength="200" autocomplete="off" placeholder="${esc(t('obS6KeyPh'))}" value="${esc(savedKey)}"></div>
+        <div class="ob-hint">${esc(t('obConnectedServer').replace('%s', origin))}</div>
+        <div class="ob-field"><label for="ob-sname">${esc(t('loginName'))}</label><input class="ob-input" id="ob-sname" maxlength="40" placeholder="${esc(t('loginNamePh'))}" value="${esc(_ob.displayName || '')}"></div>
         <button class="ob-btn" style="width:100%" onclick="obRegister()">${esc(t('loginRegister'))}</button>
+        <div class="ob-field" style="margin-top:14px"><label for="ob-skey">${esc(t('obS6Key'))}</label><input class="ob-input" id="ob-skey" type="password" maxlength="200" autocomplete="off" placeholder="${esc(t('obS6KeyPh'))}" value="${esc(savedKey)}"></div>
         <div class="ob-hint">${esc(t('obS6Hint'))}</div>`;
     }
     next.dataset.action = 'server';
