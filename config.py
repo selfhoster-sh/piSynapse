@@ -377,8 +377,12 @@ SETTINGS_SCHEMA: dict = {
         {"value": "on",   "label": {"tr": "A\u00e7\u0131k (sesli giri\u015fse sesli yan\u0131t ver)", "en": "On (speak response if voice input)"}},
     ]},
     "LLM_TITLE_ENRICHMENT": {"type": "select", "default": "on", "label": {"tr": "Akıllı Başlık Oluşturma", "en": "Smart Title Generation"}, "options": [
-        {"value": "on",   "label": {"tr": "Açık (RAKE + arka planda LLM başlık)", "en": "On (RAKE instant + background LLM title)"}},
-        {"value": "off",  "label": {"tr": "Kapalı (sadece RAKE başlık)", "en": "Off (RAKE title only)"}},
+        {"value": "on",   "label": {"tr": "Açık (anlık + arka planda LLM başlık)", "en": "On (instant + background LLM title)"}},
+        {"value": "off",  "label": {"tr": "Kapalı (sadece anlık başlık)", "en": "Off (instant title only)"}},
+    ]},
+    "REGISTRATION_OPEN": {"type": "select", "default": "on", "label": {"tr": "Yeni Kayıtlar", "en": "Open Registration"}, "options": [
+        {"value": "on",   "label": {"tr": "Açık (herkes kaydolabilir)", "en": "On (anyone can register)"}},
+        {"value": "off",  "label": {"tr": "Kapalı (yalnızca davetliler)", "en": "Off (invite-only)"}},
     ]},
     "INTENT_LLM_FALLBACK": {"type": "select", "default": "off", "label": {"tr": "Niyet Tespiti LLM Kullan\u0131m\u0131", "en": "Intent LLM Fallback"}, "options": [
         {"value": "off",  "label": {"tr": "Kapal\u0131 (h\u0131zl\u0131, embedding+keywords yeterli)", "en": "Off (fast, embedding+keywords)"}},
@@ -454,6 +458,7 @@ def sync_config():
         ("AUTO_TTS_ON_VOICE", "AUTO_TTS_ON_VOICE"),
         ("INTENT_LLM_FALLBACK", "INTENT_LLM_FALLBACK"),
         ("LLM_TITLE_ENRICHMENT", "LLM_TITLE_ENRICHMENT"),
+        ("REGISTRATION_OPEN", "REGISTRATION_OPEN"),
         ("UI_LANGUAGE", "UI_LANGUAGE"),
         ("DEFAULT_CITY", "DEFAULT_CITY"),
         ("DEFAULT_USER", "ASSISTANT_USER"),

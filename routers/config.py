@@ -79,19 +79,42 @@ async def get_config():
 
 
 @router.get("/settings")
-async def get_settings():
+async def get_settings(request: Request = None):
+    """System settings (admins) or personal subset (regular users).
+
+    Non-admin callers receive only PERSONAL_KEYS with their effective
+    values — backend/model settings stay invisible to them. A missing
+    request (direct in-process calls) returns the full view.
+    """
+    from config import PERSONAL_KEYS
+
+    is_admin = True
+    uid: str | None = None
+    if request is not None:
+        is_admin = bool(getattr(request.state, "is_admin", False))
+        uid = getattr(request.state, "user_id", None) or None
+    personal: dict[str, str] = {}
+    if not is_admin and uid:
+        from db import get_user_settings
+
+        personal = await get_user_settings(uid)
     result = {}
     for key, schema in SETTINGS_SCHEMA.items():
-        raw = os.getenv(key, schema["default"])
-        # Secret-bearing keys are never returned in plaintext: any API-key
-        # holder could otherwise read them straight off this endpoint and
-        # pivot (e.g. NEXTCLOUD_PASSWORD). The UI shows a placeholder; the
-        # values themselves are managed via installer/.env (PATCH ignores
-        # PROTECTED_SETTINGS anyway).
-        if any(h in key for h in ("PASSWORD", "SECRET", "TOKEN", "API_KEY")):
-            value = "********" if raw else ""
+        if not is_admin and key not in PERSONAL_KEYS:
+            continue
+        if not is_admin and key in personal:
+            value = personal[key]
         else:
-            value = raw
+            raw = os.getenv(key, schema["default"])
+            # Secret-bearing keys are never returned in plaintext: any API-key
+            # holder could otherwise read them straight off this endpoint and
+            # pivot (e.g. NEXTCLOUD_PASSWORD). The UI shows a placeholder; the
+            # values themselves are managed via installer/.env (PATCH ignores
+            # PROTECTED_SETTINGS anyway).
+            if any(h in key for h in ("PASSWORD", "SECRET", "TOKEN", "API_KEY")):
+                value = "********" if raw else ""
+            else:
+                value = raw
         entry = {"value": value, "type": schema["type"], "label": schema.get("label", {})}
         if key == "LLM_MODEL":
             entry["options"] = await get_llm_model_options()
