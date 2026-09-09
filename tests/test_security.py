@@ -298,3 +298,37 @@ def test_debug_body_redacted():
     assert out["count"] == 3
     assert out["nested"] == {"token": "[REDACTED]", "ok": True}
     assert out["items"] == ["a", "b"]
+
+
+def test_rate_limit_buckets_are_per_user(tmp_path, monkeypatch):
+    import asyncio as _asyncio
+
+    import db as dbmod
+
+    monkeypatch.setattr(dbmod, "DB_PATH", str(tmp_path / "rl.db"))
+    _asyncio.run(dbmod.close_db())
+    _asyncio.run(dbmod.init_db())
+    dbmod.invalidate_user_cache()
+    monkeypatch.setenv("API_KEY", "")
+    ua, ka = _asyncio.run(dbmod.create_user("a"))
+    ub, kb = _asyncio.run(dbmod.create_user("b"))
+    monkeypatch.setattr(mainmod, "_rate_limiter", mainmod._RateLimiter(rpm=2))
+    from fastapi import FastAPI
+
+    app = FastAPI()
+    app.middleware("http")(mainmod.security_middleware)
+
+    @app.post("/api/thing")
+    async def thing():
+        return {"ok": True}
+
+    from fastapi.testclient import TestClient
+
+    c = TestClient(app, base_url="http://localhost")
+    ha, hb = {"x-api-key": ka}, {"x-api-key": kb}
+    assert c.post("/api/thing", headers=ha).status_code == 200
+    assert c.post("/api/thing", headers=ha).status_code == 200
+    assert c.post("/api/thing", headers=ha).status_code == 429
+    # Other user unaffected: independent quota, not a shared NAT bucket.
+    assert c.post("/api/thing", headers=hb).status_code == 200
+    _asyncio.run(dbmod.close_db())

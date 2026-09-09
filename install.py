@@ -1229,6 +1229,10 @@ TRUSTED_HOSTS={TRUSTED_HOSTS}
 # Trust X-Forwarded-For for client IPs when behind a reverse proxy (1/true/yes/on)
 TRUST_X_FORWARDED_FOR=
 MEDIA_MAX_MB=100
+# Rate limits, requests/min (raise on bigger hardware)
+RATE_LIMIT_RPM=30
+RATE_LIMIT_SESSION_RPM=20
+RATE_LIMIT_PUBLIC_RPM=120
 # Admin token for the LiteRT server (piserve) admin calls (optional)
 PISERVE_ADMIN_TOKEN=
 # Audit CSV export directory (default: <dirname of DB_PATH>/audit_exports)
@@ -1429,6 +1433,7 @@ def step_env() -> None:
         "IMAP_TIMEOUT", "SMTP_TIMEOUT", "CORS_ORIGINS", "MEDIA_MAX_MB",
         "INTENT_LLM_FALLBACK", "CONFLICT_COSINE",
         "PISERVE_ADMIN_TOKEN", "AUDIT_EXPORT_DIR", "REGISTRATION_OPEN",
+        "RATE_LIMIT_RPM", "RATE_LIMIT_SESSION_RPM", "RATE_LIMIT_PUBLIC_RPM",
         # NOTE: TRUSTED_HOSTS is deliberately NOT preserved — step_env always
         # asks it, so the given answer (even an intentional emptying) wins.
     }
