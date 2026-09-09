@@ -159,3 +159,28 @@ async def list_all_users(request: Request):
 
     _require_admin(request)
     return {"users": await list_users(), "count": await count_users()}
+
+
+@router.delete("/{user_id}")
+async def delete_one_user(user_id: str, request: Request):
+    """Delete a user and all of their data (admin only).
+
+    Refuses self-deletion and deleting the last admin — the instance must
+    always keep exactly one way in.
+    """
+    from db import count_users, delete_user, get_user
+
+    me = _require_admin(request)
+    if user_id == me:
+        raise HTTPException(status_code=400, detail="You cannot delete your own account")
+    target = await get_user(user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if target.get("is_admin"):
+        from db import list_users
+
+        admins = [u for u in await list_users() if u.get("is_admin")]
+        if len(admins) <= 1:
+            raise HTTPException(status_code=409, detail="Cannot delete the last admin")
+    await delete_user(user_id)
+    return {"ok": True, "deleted": user_id}

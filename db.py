@@ -2226,6 +2226,50 @@ async def revoke_device_key(user_id: str, key_id: str) -> bool:
     return True
 
 
+async def delete_user(user_id: str) -> bool:
+    """Delete a user and ALL of their data (privacy-complete wipe).
+
+    Removes conversations (+FTS rows), sessions, memories, session maps,
+    tool audits, feedback on their messages, sync items, personal settings,
+    device keys and the user row itself — in one locked transaction.
+    Returns False when the user does not exist.
+    """
+    db = await get_db()
+    async with _write_lock():
+        cur = await db.execute("SELECT 1 FROM users WHERE id = ?", (user_id,))
+        if await cur.fetchone() is None:
+            return False
+        try:
+            await db.execute(
+                "DELETE FROM conversations_fts WHERE rowid IN "
+                "(SELECT id FROM conversations WHERE user_id = ?)",
+                (user_id,),
+            )
+        except Exception as fts_e:
+            # Same external-content quirk as the dedupe path: missing index
+            # entries mean nothing to orphan.
+            logger.warning(f"FTS cleanup skipped during user delete (non-fatal): {fts_e}")
+        await db.execute("DELETE FROM conversations WHERE user_id = ?", (user_id,))
+        await db.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+        await db.execute("DELETE FROM memories WHERE user_id = ?", (user_id,))
+        for _map_tbl in ("email_session_map", "notes_session_map", "tasks_session_map",
+                         "calendar_session_map"):
+            await db.execute(
+                f"DELETE FROM {_map_tbl} WHERE user_id = ?", (user_id,)
+            )
+        await db.execute("DELETE FROM tool_audit_log WHERE user_id = ?", (user_id,))
+        await db.execute(
+            "DELETE FROM message_feedback WHERE message_id NOT IN (SELECT id FROM conversations)"
+        )
+        await db.execute("DELETE FROM sync_items WHERE user_id = ?", (user_id,))
+        await db.execute("DELETE FROM user_settings WHERE user_id = ?", (user_id,))
+        await db.execute("DELETE FROM user_api_keys WHERE user_id = ?", (user_id,))
+        await db.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        await _commit_with_retry(db)
+    invalidate_user_cache(user_id)
+    return True
+
+
 async def ensure_default_admin() -> dict | None:
     """Bootstrap the admin onto the pre-existing 'default' identity.
 
