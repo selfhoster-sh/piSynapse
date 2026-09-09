@@ -181,11 +181,28 @@ def trim_messages_for_context(
         extra.append(m)
         used += cost
     extra.reverse()
-    while extra and extra[0].get("role") == "tool":
-        extra.pop(0)
-    # Also drop trailing orphan assistant with tool_calls but no following tool results
-    while extra and extra[-1].get("role") == "assistant" and extra[-1].get("tool_calls"):
-        extra.pop()
+    # Atomic triple pass: an assistant+tool_calls keeps only the tool results
+    # that immediately follow it; orphan results (assistant call cut away) and
+    # trailing assistant calls without results are dropped so the backend
+    # never sees a split triple.
+    kept: list[dict] = []
+    i = 0
+    while i < len(extra):
+        m = extra[i]
+        if m.get("role") == "assistant" and m.get("tool_calls"):
+            kept.append(m)
+            i += 1
+            while i < len(extra) and extra[i].get("role") == "tool":
+                kept.append(extra[i])
+                i += 1
+        elif m.get("role") == "tool":
+            i += 1  # orphan result without its assistant call
+        else:
+            kept.append(m)
+            i += 1
+    while kept and kept[-1].get("role") == "assistant" and kept[-1].get("tool_calls"):
+        kept.pop()
+    extra = kept
     logger.debug(
         "Context trim: %d -> %d history msgs (ctx=%d, fixed=%d, reserve=%d)",
         len(older), len(extra), context_window, fixed, reserve,
@@ -234,6 +251,14 @@ def _normalize_messages_for_backend(messages: list[dict], backend: str = "ollama
             new_msg["tool_calls"] = normalized_tcs
         if "tool_call_id" in msg:
             new_msg["tool_call_id"] = msg["tool_call_id"]
+        # Tool-result attribution: the bridge sets tool_name on tool results;
+        # LiteRT also accepts the OpenAI `name` field. Dropping both left
+        # multi-turn tool results indistinguishable (audit Y12).
+        if "tool_name" in msg:
+            new_msg["tool_name"] = msg["tool_name"]
+            new_msg.setdefault("name", msg["tool_name"])
+        elif "name" in msg:
+            new_msg["name"] = msg["name"]
 
         result.append(new_msg)
 

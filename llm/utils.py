@@ -185,6 +185,17 @@ def parse_leaked_tool_call(text: str) -> dict | None:
                 val = val[1:-1]
         elif val.isdigit():
             val = int(val)
+        elif val == "true":
+            val = True
+        elif val == "false":
+            val = False
+        elif val == "null":
+            val = None
+        else:
+            try:
+                val = float(val)
+            except ValueError:
+                pass
         args[key] = val
     return {
         "id": f"leaked_{name}",
