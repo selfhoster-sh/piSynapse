@@ -12,6 +12,9 @@ from datetime import date
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from auth import current_user as _authed_user_id
+from auth import require_admin as _require_admin
+
 router = APIRouter(prefix="/users", tags=["users"])
 
 
@@ -30,20 +33,6 @@ class LoginRequest(BaseModel):
 class PasswordRequest(BaseModel):
     current: str | None = Field(default=None, max_length=200)
     new: str = Field(min_length=8, max_length=200)
-
-
-def _authed_user_id(request: Request) -> str:
-    uid = getattr(request.state, "user_id", None) or ""
-    if not uid:
-        raise HTTPException(status_code=401, detail="Invalid or missing API key")
-    return uid
-
-
-def _require_admin(request: Request) -> str:
-    uid = _authed_user_id(request)
-    if not bool(getattr(request.state, "is_admin", False)):
-        raise HTTPException(status_code=403, detail="Admin only")
-    return uid
 
 
 @router.post("/register", status_code=201)
