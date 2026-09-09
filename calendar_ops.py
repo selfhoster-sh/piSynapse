@@ -7,7 +7,7 @@ import threading
 import time
 from datetime import date, datetime, timedelta
 
-from utils import retry
+from utils import retry, sanitize_external_text
 
 logger = logging.getLogger("piSynapse")
 
@@ -269,7 +269,7 @@ def list_events(days_ahead: int = 7) -> tuple[str, list[dict]]:
             line = f"   {i}. {ts} | {s}"
             desc = getattr(d, "description", None)
             if desc and hasattr(desc, "value") and desc.value and desc.value != s:
-                line += f"\n      {desc.value[:100]}"
+                line += f"\n      {sanitize_external_text(desc.value)[:100]}"
             lines.append(line)
             items.append({"uid": uid, "summary": s, "start": ts})
         return "Events:\n" + "\n".join(lines), items

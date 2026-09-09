@@ -3,6 +3,7 @@
 
 import asyncio
 import logging
+import re
 from datetime import datetime
 
 from .definitions import _as_bool, _safe_int
@@ -90,6 +91,40 @@ async def _resolve_position(session_id: str, ref, context_fn, id_field: str):
 
 _SENSITIVE_PARAM_KEYS = ("password", "token", "secret", "credential", "authorization", "api_key")
 
+# iCalendar recurrence allowlist: FREQ + common modifiers only. The model
+# supplies the value part (calendar_ops prepends "RRULE:"); anything else —
+# newlines (line injection), unknown properties — is rejected.
+_RRULE_RE = re.compile(
+    r"^FREQ=(DAILY|WEEKLY|MONTHLY|YEARLY)"
+    r"(;(COUNT|UNTIL|INTERVAL|BYDAY|BYMONTH|BYMONTHDAY|BYSETPOS)=\w[\w,+-]*)*$"
+)
+
+# Pragmatic address check (RFC-full would reject valid internationalized
+# forms the model may emit): one @, non-empty local/domain, a dot in domain.
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _validate_rrule(rrule: str | None) -> str | None:
+    """Return an error string for a rejected recurrence rule, else None."""
+    if rrule is None:
+        return None
+    if "\n" in rrule or "\r" in rrule:
+        return "ERROR: invalid recurrence rule (line break rejected)."
+    if not _RRULE_RE.match(rrule.strip()):
+        return "ERROR: invalid recurrence rule. Use FREQ=DAILY|WEEKLY|MONTHLY|YEARLY with optional COUNT/UNTIL/INTERVAL/BYDAY/BYMONTH/BYMONTHDAY/BYSETPOS."
+    return None
+
+
+def _invalid_addresses(*values: str) -> list[str]:
+    """Split comma-separated address fields, return the malformed ones."""
+    bad = []
+    for v in values:
+        for addr in (v or "").split(","):
+            addr = addr.strip()
+            if addr and not _EMAIL_RE.match(addr):
+                bad.append(addr)
+    return bad
+
 
 def _mask_params_for_log(params: dict) -> str:
     """Redact credentials before writing tool params to INFO logs.
@@ -142,6 +177,9 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> tupl
                             "Do not call create_calendar_event again until they answer. "
                             f'The user\'s original message: "{user_text}"'), None
                 dur = _safe_int(params.get("duration_minutes", 60), 60, "duration_minutes", min_value=1)
+                rrule_err = _validate_rrule(params.get("rrule") or None)
+                if rrule_err:
+                    return rrule_err, None
                 result, uid = await asyncio.to_thread(
                     create_event,
                     summary,
@@ -476,6 +514,10 @@ async def _run_mail_tool(name: str, params: dict, session_id: str = "", user_tex
                         "(in their language) for exactly those parts. "
                         "Do not call send_email again until they answer. "
                         f'The user\'s original message: "{user_text}"'), None
+            bad = _invalid_addresses(to, params.get("cc", ""), params.get("bcc", ""))
+            if bad:
+                return (f"ERROR: invalid email address(es): {', '.join(bad)}. "
+                        "Ask the user to confirm the correct addresses."), None
             ok = await mc.send_message(account_id, to, subj, body, params.get("cc", ""), params.get("bcc", ""))
             detail = f"To: {to}"
             if params.get("cc"):

@@ -676,3 +676,56 @@ class TestChipOrigin:
                                     context={"session_id": "s1"})
         ct.assert_awaited_once()
         assert result[0] == "created"
+
+
+class TestRecurrenceAndAddressValidation:
+    async def test_rrule_valid_passes_through(self):
+        with patch("calendar_ops.create_event", return_value=("Created.", "u1")) as ce:
+            result = await run_tool(
+                "create_calendar_event",
+                {"summary": "Standup", "start_time": "2026-08-17T10:00:00",
+                 "rrule": "FREQ=WEEKLY;BYDAY=MO"},
+            )
+        assert result[0] == "Created."
+        assert ce.call_args.kwargs["rrule"] == "FREQ=WEEKLY;BYDAY=MO"
+
+    async def test_rrule_line_break_rejected(self):
+        with patch("calendar_ops.create_event") as ce:
+            result = await run_tool(
+                "create_calendar_event",
+                {"summary": "Standup", "start_time": "2026-08-17T10:00:00",
+                 "rrule": "FREQ=DAILY\r\nSUMMARY:evil"},
+            )
+        assert "invalid recurrence" in result[0].lower()
+        ce.assert_not_called()
+
+    async def test_rrule_unknown_property_rejected(self):
+        with patch("calendar_ops.create_event") as ce:
+            result = await run_tool(
+                "create_calendar_event",
+                {"summary": "Standup", "start_time": "2026-08-17T10:00:00",
+                 "rrule": "FREQ=DAILY;X-EVIL=1"},
+            )
+        assert "invalid recurrence" in result[0].lower()
+        ce.assert_not_called()
+
+    async def test_send_email_rejects_bad_address(self):
+        mc = _mail_client()
+        with patch("mail.get_active_mail_client", return_value=mc):
+            result = await run_tool(
+                "send_email",
+                {"to": "not-an-address", "subject": "Hi", "body": "yo"},
+            )
+        assert "invalid email address" in result[0].lower()
+        mc.send_message.assert_not_awaited()
+
+    async def test_send_email_accepts_multiple_valid_addresses(self):
+        mc = _mail_client()
+        with patch("mail.get_active_mail_client", return_value=mc):
+            result = await run_tool(
+                "send_email",
+                {"to": "a@x.com", "cc": "b@x.com, c@y.org",
+                 "subject": "Hi", "body": "yo"},
+            )
+        assert result[0].startswith("Email sent!")
+        mc.send_message.assert_awaited_once()

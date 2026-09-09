@@ -8,7 +8,7 @@ import logging
 import threading
 from typing import Any
 
-from utils import retry
+from utils import retry, sanitize_external_text
 
 logger = logging.getLogger("piSynapse")
 
@@ -234,7 +234,7 @@ async def list_notes() -> tuple[str, list[dict]]:
             if meta:
                 lines.append(f"      {' | '.join(meta)}")
             if content:
-                lines.append(f"      Preview: {content[:80].replace(chr(10), ' ')}")
+                lines.append(f"      Preview: {sanitize_external_text(content)[:80].replace(chr(10), ' ')}")
             lines.append("")
         return "\n".join(lines), notes
     except Exception as e:
