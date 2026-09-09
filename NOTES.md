@@ -16,6 +16,13 @@
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 - **Sanitization rule:** this file may be published. Never write personal data, identity clues, deployment addresses (hostnames, IPs, ports), or accounts into it. Keep every narrative in English; Turkish inline tokens are allowed only as product corpus / i18n test data.
 
+## 2026-09-09 — Faz 8 (port contract frozen) + session closeout
+
+- **Faz 8:** `docs/port-contract.md` freezes post-fix behavior for the Kotlin port: session/user_id scope, fold formula + caps + conditional write + repair, parity loop, trim/normalize rules, intent layers + resume anchoring, memory/retrieval budgets, canonical mpnet model, SSE shapes (incl. aborted terminal), LANGUAGE_RULE verbatim, summary injection text, inference seam (`conversation_cache_max`), and the acceptance test list.
+- **Session totals (user delegated overnight, no confirmation asks):** Faz 0–8 complete, 30 commits, full suite **563 → 648 passed** (+85 tests), zero failures. Working tree holds only the restored frozen Android files (untouched since recovery).
+- **Still awaiting the user (NOT done):** (1) secret rotation — Gmail app-password, Nextcloud password, API key; (2) systemd regen + orphan `/home/salih/litert_serve` removal — needs backup + explicit approval; (3) backup encryption decision (gpg/age?); (4) LAN lockdown — port to 127.0.0.1 + ufw. Details in fix-plan "Kullanıcı aksiyonları".
+- **Suggested next:** pick up the port (A: Kotlin faithful port vs B: embedded Python — decision still open) against `docs/port-contract.md`.
+
 ## 2026-09-09 — Incident: uncommitted Android tree wiped by `reset --hard`, recovered from laptop
 
 - **What happened:** during the Faz 3 commit-message repair, a `git reset --hard` (part of recovering from an ill-advised `filter-branch`) silently discarded the pre-existing uncommitted Android work (`PiSynapseBridge.kt` session fold hardening, `static/ui.js` language anchor/listener fix/prompt tail). The loss went unnoticed through Faz 4–6 (server scope never touches those files).
