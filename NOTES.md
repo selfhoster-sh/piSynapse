@@ -19,6 +19,14 @@
 - **Multi-user invisibility rule:** one user's sessions, settings, mail and keys are invisible to every other user. Every user-scoped query needs its owner guard, every guard needs a both-directions test.
 - **Pre-push check:** before push, grep new docs/journal lines for secrets, passwords, IPs and credentials the same way code gets py_compile + pytest.
 
+## 2026-09-09 — CI failure: tests depended on the ambient live DB (fixed)
+
+- **Symptom:** CI (`python -m pytest -q` on a fresh checkout) failed 43 tests with `no such table: users/email_session_map` + auth 401s, while the Pi suite was green.
+- **Root cause:** tests without their own DB fixtures used the default `DB_PATH`, which resolved to the live dev `assistant.db` on the Pi (tables present) but to a fresh empty file on CI. The mail-gate `get_user` call and the middleware user lookup turned the missing tables into hard failures.
+- **Fix:** autouse `_isolated_db` fixture in `tests/conftest.py` — every test gets a fresh `init_db`'d tmp DB; live file never touched. Suite cost +15s (36s → 51s).
+- **Proof:** full suite 705 passed locally AND in a pristine worktree without `assistant.db`/`.env` (true CI simulation).
+- **Lesson (extends the isolation rule):** green-on-Pi is not proof — any test passing via ambient files is a latent CI failure.
+
 ## 2026-09-09 — History rewrite: zero-trace secret cleanup (user decision)
 
 - **Decision (user):** full history rewrite instead of rotation-only, on the grounds of (near-)zero external clones.
