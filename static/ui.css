@@ -59,6 +59,18 @@ body.amoled{
   --border:#14141c; --user-bg:#040406; --shadow-sm:0 1px 3px rgba(0,0,0,.5);
   --shadow-md:0 4px 12px rgba(0,0,0,.55); --shadow-lg:0 12px 40px rgba(0,0,0,.7);
 }
+/* Light mode: full day palette. Accent themes only recolor accents/glows,
+   so they compose with all three modes. */
+body.theme-light{
+  --bg:#edf0f5; --surface:#ffffff; --surface2:#e7eaf1; --surface3:#d9dde8;
+  --border:#d3d7e3; --text:#1b1d24; --text1:#0e1015; --text2:#4d5266; --text3:#6b7089;
+  --text4:#8b90a5; --user-bg:#e2e5ed; --danger:#c73333; --success:#178a45; --warning:#a15c07;
+  --chip-work:#2b6fd4; --chip-habit:#7a4fe0; --chip-general:#5c5c72;
+  --btn-primary:#1b1d24; --row-hover:#dde1ea;
+  --shadow-sm:0 1px 3px rgba(30,35,60,.10);
+  --shadow-md:0 4px 12px rgba(30,35,60,.12);
+  --shadow-lg:0 12px 40px rgba(30,35,60,.18);
+}
 html,body{height:100%;height:100svh;overflow:hidden;padding:0;margin:0}
 body{font-family:'DM Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
   background:var(--bg);color:var(--text);display:flex;font-size:16px;line-height:1.6;
@@ -691,7 +703,7 @@ body:not(.glass-mode) #input-area::before{content:'';position:absolute;left:0;ri
   align-items:center;justify-content:center;padding:20px}
 #settings-modal.open{display:flex}
 .settings-box{position:relative;background:var(--surface);border:1px solid var(--border);
-  border-radius:20px;max-width:520px;width:100%;max-height:85vh;display:flex;
+  border-radius:20px;max-width:760px;width:100%;max-height:85vh;display:flex;
   flex-direction:column;overflow:hidden;box-shadow:var(--shadow-lg);animation:modalIn .12s ease-out}
 .settings-title{flex-shrink:0;font-size:18px;font-weight:700;color:var(--text);
   display:flex;align-items:center;gap:10px;padding:22px 24px 14px;border-bottom:1px solid var(--border)}
@@ -789,6 +801,27 @@ body.glass-mode.settings-open .modal-backdrop{background:rgba(5,5,9,.85)}
 .settings-search-row .setting-input{width:100%}
 .settings-dirty{font-size:12px;color:var(--accent);margin-right:auto}
 .settings-empty{padding:18px;text-align:center;color:var(--text3);font-size:13px}
+/* Two-pane settings: nav rail + one visible page (sector standard).
+   Search mode stacks every page and hides the rail. */
+.settings-layout{display:flex;min-height:0;flex:1;overflow:hidden}
+.settings-body{overflow:hidden}
+.settings-nav{width:196px;flex-shrink:0;overflow-y:auto;padding:4px 0 12px 2px;display:flex;flex-direction:column;gap:2px}
+.set-nav-btn{border:none;background:transparent;color:var(--text2);font:inherit;font-size:13.5px;font-weight:600;text-align:left;padding:9px 12px;border-radius:9px;cursor:pointer;white-space:nowrap}
+.set-nav-btn:hover{background:var(--surface2);color:var(--text)}
+.set-nav-btn.active{background:var(--accent-d);color:var(--text)}
+.settings-main{flex:1;min-width:0;overflow-y:auto;padding:0 6px 16px 14px}
+.settings-page{display:none}
+.settings-page.active{display:block}
+.seg-row{display:flex;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:3px;gap:3px}
+.seg-btn{flex:1;border:none;background:transparent;color:var(--text2);font:inherit;font-size:13px;font-weight:600;padding:7px 4px;border-radius:7px;cursor:pointer}
+.seg-btn.active{background:var(--surface3);color:var(--text)}
+body.searching .settings-nav{display:none}
+body.searching .settings-page{display:block}
+@media (max-width:680px){
+  .settings-layout{flex-direction:column}
+  .settings-nav{width:100%;flex-direction:row;overflow-x:auto;padding:0 0 8px}
+  .settings-main{padding:0 2px 16px}
+}
 
 /* ── Overlay & Toast ───────────────────────────────────────────────────────── */
 #overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);
