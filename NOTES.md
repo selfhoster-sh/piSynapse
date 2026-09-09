@@ -16,6 +16,14 @@
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 - **Sanitization rule:** this file may be published. Never write personal data, identity clues, deployment addresses (hostnames, IPs, ports), or accounts into it. Keep every narrative in English; Turkish inline tokens are allowed only as product corpus / i18n test data.
 
+## 2026-09-09 — M5 (professional identity: passwords, devices, admin panel)
+
+- **Scope (user: "amatör değil profesyonel olsun"):** password login, per-device keys, admin user management, settings visibility split. Two commits: `c57e1e5` (passwords+devices), `4c82157` (admin panel).
+- **M5a:** bcrypt passwords (thread-offloaded, min 8); `POST /users/login` (uniform 401, case-insensitive names which are now unique-checked under lock); login issues a per-device key (`user_api_keys` table) so other devices survive; list/revoke own keys; `POST /users/password` (first-set needs no current). Public-login chicken-and-egg caught by tests (login/register must bypass auth but stay strictly limited).
+- **M5b:** `DELETE /users/{id}` (admin; no self-delete, no last-admin; full data wipe incl. FTS/feedback orphans); `REGISTRATION_OPEN` moved into `SETTINGS_SCHEMA` (runtime toggle via admin PATCH + live sync); `GET /config/settings` splits by role (admins full, others personal-only with effective values).
+- **Test:** full suite **695 passed** (688 + 7 new).
+- **Residuals:** settings page UI not yet admin-aware (non-admin save → 403 toast); phone-app key entry still on the port track; device-key `last_used` tracking omitted (YAGNI — column absent by design).
+
 ## 2026-09-09 — M4 (multi-user verification & docs)
 
 - **Scope (plan M4):** legacy-upgrade proof, capacity guide, access docs. Two commits: `62b6852` (legacy test + audit backfill), `47698e2` (capacity + access + changelog).
