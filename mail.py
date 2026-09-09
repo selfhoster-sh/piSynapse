@@ -143,8 +143,8 @@ class MailClient(ABC):
     async def send_message(self, account_id: int, to: str, subject: str, body: str, cc="", bcc="") -> bool:
         return await asyncio.to_thread(self._send_email, to, subject, body, cc, bcc)
 
-    async def search_messages(self, account_id: int, query: str, limit: int = 10) -> list[dict]:
-        return await asyncio.to_thread(self._search_emails, query, limit)
+    async def search_messages(self, account_id: int, query: str, limit: int = 10, mailbox_id: Any = None) -> list[dict]:
+        return await asyncio.to_thread(self._search_emails, query, limit, mailbox_id or "INBOX")
 
 
 # -- Gmail Implementation --

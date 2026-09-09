@@ -224,7 +224,7 @@ class TestMailTools:
         assert "From: a@x.com" in result[0]
         assert "Subject: Hi" in result[0]
         assert "ID:" not in result[0]
-        assert "\n1." not in result[0]
+        assert "\n1. From: a@x.com" in result[0]
         assert "Preview: hello world" in result[0]
 
     async def test_list_emails_does_not_cache_without_session(self):
