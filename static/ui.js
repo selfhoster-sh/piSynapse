@@ -31,6 +31,9 @@ const STRINGS = {
     settings:'Ayarlar', settingsTitle:'Ayarlar', settingsSaved:'Ayarlar kaydedildi',
      settingsRestart:'Bazı ayarlar sunucu yeniden başlatıldığında tam etkili olur.',
     settingsCancel:'İptal', settingsSave:'Kaydet',
+    adminReview:'İnceleme Kuyruğu', adminReviewDesc:'Kullanıcı geri bildirimlerinden gelen çelişkili yönlendirme önerileri. Onaylanan corpus\u2019a girer, reddedilen bir daha otomatik eklenmez.',
+    adminReviewEmpty:'Bekleyen öneri yok.', adminApprove:'Onayla', adminReject:'Reddet',
+    adminUsers:'Kullanıcılar', adminApproved:'Onaylı', adminPending:'Onay bekliyor', adminRole:'Yönetici',
     themeLabel:'Tema Rengi', langLabel:'Dil',
     glassLabel:'Cam Efekti',
     minimalLabel:'Sade Görünüm', minimalDesc:'Mesaj başlarındaki gönderen adı ve zaman etiketi gizlenir.',
@@ -108,6 +111,9 @@ const STRINGS = {
     settings:'Settings', settingsTitle:'Settings', settingsSaved:'Settings saved',
     settingsRestart:'Some settings take full effect only after server restart.',
     settingsCancel:'Cancel', settingsSave:'Save',
+    adminReview:'Review Queue', adminReviewDesc:'Contested routing suggestions from user feedback. Approved ones enter the corpus, rejected ones are never auto-added.',
+    adminReviewEmpty:'No pending suggestions.', adminApprove:'Approve', adminReject:'Reject',
+    adminUsers:'Users', adminApproved:'Approved', adminPending:'Pending approval', adminRole:'Admin',
     themeLabel:'Theme Color', langLabel:'Language',
     glassLabel:'Glass Effect',
     minimalLabel:'Minimal View', minimalDesc:'Hides sender names and timestamps above messages.',
@@ -3411,6 +3417,7 @@ async function openSettings(){
       enhanceAllSelects(form);
     }
     bindSettingsChips();
+    loadAdminPanel(); // no-op for non-admins and when the box is absent
   } catch {
     form.innerHTML = `<div style="text-align:center;padding:12px;color:var(--danger)">${t('connErr')}</div>`;
     bindSettingsChips();
@@ -3457,8 +3464,77 @@ function serverSectionHtml(){
           <div class="setting-desc" id="si-username">${esc(getUsername() || '—')}</div>
           <button class="ob-btn ghost" style="font-size:12px;padding:7px 12px" onclick="logoutUser()">${esc(t('logout'))}</button>
         </div>
+        <div id="admin-review-box" style="display:none">
+          <div class="setting-item">
+            <div class="setting-label"><span>${esc(t('adminUsers'))}</span></div>
+            <div id="admin-users-list"></div>
+          </div>
+          <div class="setting-item">
+            <div class="setting-label"><span>${esc(t('adminReview'))}</span></div>
+            <div class="setting-desc">${esc(t('adminReviewDesc'))}</div>
+            <div id="admin-review-list"></div>
+          </div>
+        </div>
       </div>
     </div>`;
+}
+
+// ── Admin panel (Phase 4): review queue + user approvals, admins only ────────
+async function loadAdminPanel(){
+  const box = document.getElementById('admin-review-box');
+  if(!box) return;
+  let me = null;
+  try{ const d = await api('GET', '/users/me'); me = d && d.user; }catch(e){ return; }
+  if(!me || !me.is_admin) return; // non-admins never see this box
+  box.style.display = '';
+  try{
+    const u = await api('GET', '/users');
+    window._adminUsers = u.users || [];
+    document.getElementById('admin-users-list').innerHTML = window._adminUsers.map((usr, i)=>{
+      const badge = usr.is_admin ? esc(t('adminRole')) : (usr.is_approved ? esc(t('adminApproved')) : esc(t('adminPending')));
+      const btn = usr.is_admin ? '' : (usr.is_approved
+        ? `<button class="ob-btn ghost" style="font-size:11px;padding:5px 10px" onclick="unapproveUser(${i})">${esc(t('adminReject'))}</button>`
+        : `<button class="ob-btn ghost" style="font-size:11px;padding:5px 10px" onclick="approveUser(${i})">${esc(t('adminApprove'))}</button>`);
+      return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0"><span style="flex:1">${esc(usr.name || usr.user_id || usr.id)} <span style="color:var(--text3)">· ${badge}</span></span>${btn}</div>`;
+    }).join('');
+  }catch(e){ /* admins without user-list access keep the rest working */ }
+  await refreshReviewList();
+}
+
+async function refreshReviewList(){
+  const el = document.getElementById('admin-review-list');
+  if(!el) return;
+  let patterns = [];
+  try{ const d = await api('GET', '/admin/patterns/review'); patterns = d.patterns || []; }
+  catch(e){ el.innerHTML = `<div style="color:var(--danger)">${esc(t('connErr'))}</div>`; return; }
+  window._reviewItems = patterns;
+  el.innerHTML = patterns.length ? patterns.map((p, i)=>{
+    const groups = (p.groups || []).map(g=>`${esc(g.group)} (${g.supports})`).join(' vs ');
+    return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--border)">
+      <span style="flex:1"><code style="font-size:12px">${esc(p.signature)}</code><br><span style="color:var(--text3);font-size:12px">${groups}</span></span>
+      <button class="ob-btn ghost" style="font-size:11px;padding:5px 10px" onclick="decidePattern(${i},true)">${esc(t('adminApprove'))}</button>
+      <button class="ob-btn ghost" style="font-size:11px;padding:5px 10px" onclick="decidePattern(${i},false)">${esc(t('adminReject'))}</button>
+    </div>`;
+  }).join('') : `<div style="color:var(--text3)">${esc(t('adminReviewEmpty'))}</div>`;
+}
+
+async function approveUser(i){
+  const u = (window._adminUsers || [])[i]; if(!u) return;
+  await api('POST', `/users/${encodeURIComponent(u.id)}/approve`, {});
+  toast(t('settingsSaved')); loadAdminPanel();
+}
+
+async function unapproveUser(i){
+  const u = (window._adminUsers || [])[i]; if(!u) return;
+  await api('POST', `/users/${encodeURIComponent(u.id)}/unapprove`, {});
+  toast(t('settingsSaved')); loadAdminPanel();
+}
+
+async function decidePattern(i, approve){
+  const p = (window._reviewItems || [])[i]; if(!p) return;
+  const top = (p.groups || []).slice().sort((a, b)=>b.supports - a.supports)[0] || {};
+  await api('POST', `/admin/patterns/${approve ? 'approve' : 'reject'}`, {signature: p.signature, group: top.group || ''});
+  toast(t('settingsSaved')); refreshReviewList();
 }
 
 function closeSettings(){ document.getElementById('settings-modal').classList.remove('open'); document.body.classList.remove('settings-open'); }
