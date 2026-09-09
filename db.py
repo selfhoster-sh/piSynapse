@@ -1750,6 +1750,16 @@ async def get_session_meta(session_id: str, user_id: str = "default") -> dict:
 
 # -- Rolling Summary --
 
+# Bounds for a single fold. Normal sessions fold a handful of messages per
+# turn; without a cap, a long-unfolded session (or a lowered history limit)
+# would hand the summarizer an unbounded transcript and blow the engine's
+# context (observed: 15k input tokens vs a 6656 budget on-device; the server
+# default context is 8192). Folding is oldest-first and the boundary advances
+# by exactly what was folded, so a huge backlog drains over successive turns.
+FOLD_MAX_MESSAGES = 30
+FOLD_MAX_CHARS_PER_MESSAGE = 500
+
+
 async def get_messages_to_summarize(
     session_id: str,
     history_limit: int,
@@ -1786,15 +1796,29 @@ async def get_messages_to_summarize(
     if pending_count < effective_batch:
         return [], summarized_until
 
+    # Fold at most FOLD_MAX_MESSAGES, oldest-first; the boundary advances by
+    # exactly the folded span so the remainder drains on later turns.
+    take_end = pending_ids[min(len(pending_ids), FOLD_MAX_MESSAGES) - 1]
     async with db.execute(
         """SELECT role, content FROM conversations
            WHERE session_id = ? AND user_id = ? AND id > ? AND id <= ?
            ORDER BY id ASC""",
-        (session_id, user_id, summarized_until, boundary_id),
+        (session_id, user_id, summarized_until, take_end),
     ) as cur:
         rows = await cur.fetchall()
 
-    return [{"role": r[0], "content": r[1]} for r in rows], boundary_id
+    out = []
+    for role, content in rows:
+        c = content or ""
+        if len(c) > FOLD_MAX_CHARS_PER_MESSAGE:
+            c = c[:FOLD_MAX_CHARS_PER_MESSAGE] + "…"
+        if c.strip():
+            out.append({"role": role, "content": c})
+    if not out:
+        # Nothing foldable (all blank): advance past the empty span so the
+        # fold does not retry it on every turn.
+        return [], take_end
+    return out, take_end
 
 
 async def update_session_summary(session_id: str, summary: str, summarized_until: int, user_id: str = "default"):
