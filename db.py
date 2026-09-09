@@ -2175,6 +2175,32 @@ async def get_user_settings(user_id: str) -> dict[str, str]:
     return {r[0]: r[1] for r in await cur.fetchall()}
 
 
+async def seed_admin_settings() -> int:
+    """One-time migration: copy current `.env` personal values into the
+    default admin's rows — but only keys the admin has never set (never
+    overwrite a deliberate user choice). Returns the seeded count.
+    Idempotent; safe to run on every boot (usually a no-op).
+    """
+    from config import PERSONAL_KEYS
+
+    import os as _os
+
+    stored = await get_user_settings(DEFAULT_USER_ID)
+    missing = [k for k in PERSONAL_KEYS if k not in stored and (_os.getenv(k) or "").strip()]
+    if not missing:
+        return 0
+    db = await get_db()
+    async with _write_lock():
+        for key in sorted(missing):
+            await db.execute(
+                "INSERT OR IGNORE INTO user_settings (user_id, key, value, updated_at) "
+                "VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+                (DEFAULT_USER_ID, key, _os.getenv(key, "").strip()),
+            )
+        await _commit_with_retry(db)
+    return len(missing)
+
+
 async def set_user_setting(user_id: str, key: str, value: str) -> None:
     """Upsert one personal setting. Raises ValueError for non-personal keys."""
     from config import PERSONAL_KEYS

@@ -10,6 +10,22 @@ English instructions best and users never see them (see llm/utils.py).
 
 from config import get
 
+import contextvars
+
+# Per-request language override (multi-user): the chat pipeline resolves the
+# caller's effective UI_LANGUAGE once per request and pins it here, so sync
+# helpers deep in the call tree speak the right language without threading
+# a parameter through every signature. Falls back to the global setting.
+# Context-local: never leaks across requests (or into unrelated code).
+_request_lang: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "piSynapse_request_lang", default=None
+)
+
+
+def set_request_language(lang: str | None) -> None:
+    """Pin the UI language for the current request context (or clear it)."""
+    _request_lang.set((lang or "").strip().lower() or None)
+
 _MESSAGES = {
     # Loop guard: finalize round still produced nothing (llm/utils.py).
     "llm_empty_reply": {
@@ -30,8 +46,8 @@ _MESSAGES = {
 
 
 def get_message(key: str) -> str:
-    """Return ``key`` in the instance's UI_LANGUAGE (default English)."""
-    lang = str(get("UI_LANGUAGE", "en") or "en").strip().lower()
+    """Return ``key`` in the request's UI_LANGUAGE (default English)."""
+    lang = _request_lang.get() or str(get("UI_LANGUAGE", "en") or "en").strip().lower()
     entry = _MESSAGES.get(key)
     if not entry:
         return key

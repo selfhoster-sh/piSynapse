@@ -160,11 +160,14 @@ async def lifespan(app: FastAPI):
         # Bind the pre-existing `.env` key holder as admin (idempotent;
         # zero data rewrites — existing rows already point at 'default').
         try:
-            from db import ensure_default_admin
+            from db import ensure_default_admin, seed_admin_settings
 
             admin = await ensure_default_admin()
             if admin is not None:
                 logger.info("Admin bootstrapped onto the default identity.")
+            seeded = await seed_admin_settings()
+            if seeded:
+                logger.info(f"Migrated {seeded} personal setting(s) from .env to the admin profile.")
         except Exception as e:
             logger.warning(f"Admin bootstrap skipped: {e}")
         try:

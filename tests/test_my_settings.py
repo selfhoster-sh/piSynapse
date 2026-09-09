@@ -81,3 +81,81 @@ def test_patch_settings_requires_admin(settings_api, tmp_path, monkeypatch):
     assert r.json()["updated"] == ["HISTORY_LIMIT"]
     assert "HISTORY_LIMIT=20" in (tmp_path / ".env").read_text(encoding="utf-8")
     assert client.get("/config/my-settings").status_code == 401
+
+
+def _prefs_db(tmp_path, monkeypatch):
+    import db as dbmod
+
+    monkeypatch.setattr(dbmod, "DB_PATH", str(tmp_path / "prefs.db"))
+    asyncio.run(dbmod.close_db())
+    asyncio.run(dbmod.init_db())
+    dbmod.invalidate_user_cache()
+    return dbmod
+
+
+def test_system_prompt_uses_user_city(tmp_path, monkeypatch):
+    import config as config_module
+    import db as dbmod
+    from llm.payload import _build_full_messages
+
+    _prefs_db(tmp_path, monkeypatch)
+    monkeypatch.setattr(config_module, "DEFAULT_CITY", "Ankara")
+    uid = asyncio.run(dbmod.create_user("city-user"))[0]["id"]
+    asyncio.run(dbmod.set_user_setting(uid, "DEFAULT_CITY", "İzmir"))
+
+    async def _go():
+        msgs = await _build_full_messages(
+            [{"role": "user", "content": "hi"}], [], "", "sx",
+            tool_group=None, user_id=uid,
+        )
+        return msgs[0]["content"]
+
+    system = asyncio.run(_go())
+    assert "İzmir" in system
+    assert "Ankara" not in system
+
+
+def test_request_language_scoping(tmp_path, monkeypatch):
+    import config as config_module
+    import db as dbmod
+    from llm.payload import _build_full_messages
+    from messages import _MESSAGES, get_message, set_request_language
+
+    _prefs_db(tmp_path, monkeypatch)
+    uid = asyncio.run(dbmod.create_user("lang-user"))[0]["id"]
+    asyncio.run(dbmod.set_user_setting(uid, "UI_LANGUAGE", "tr"))
+
+    async def _go():
+        await _build_full_messages(
+            [{"role": "user", "content": "hi"}], [], "", "sx",
+            tool_group=None, user_id=uid,
+        )
+        return get_message("llm_unreachable")
+
+    assert asyncio.run(_go()).startswith("Motorla")
+    # Outside the request context the live global applies again (whatever
+    # this environment resolves — repo .env included).
+    set_request_language(None)
+    glob = str(config_module.get("UI_LANGUAGE", "en") or "en").strip().lower()
+    assert get_message("llm_unreachable") == _MESSAGES["llm_unreachable"].get(glob)
+
+
+def test_seed_admin_settings_migrates_env_once(tmp_path, monkeypatch):
+    import config as config_module
+    import db as dbmod
+
+    _prefs_db(tmp_path, monkeypatch)
+    monkeypatch.setenv("DEFAULT_CITY", "Akşehir")
+    monkeypatch.setenv("UI_LANGUAGE", "tr")
+    n1 = asyncio.run(dbmod.seed_admin_settings())
+    assert n1 >= 2  # at least the two keys above (env may provide more)
+    stored = asyncio.run(dbmod.get_user_settings("default"))
+    assert stored["DEFAULT_CITY"] == "Akşehir"
+    assert stored["UI_LANGUAGE"] == "tr"
+    assert asyncio.run(dbmod.seed_admin_settings()) == 0
+    # Never overwrites a deliberate choice.
+    asyncio.run(dbmod.set_user_setting("default", "DEFAULT_CITY", "Bodrum"))
+    monkeypatch.setenv("DEFAULT_CITY", "Datça")
+    assert asyncio.run(dbmod.seed_admin_settings()) == 0
+    assert asyncio.run(dbmod.get_user_settings("default"))["DEFAULT_CITY"] == "Bodrum"
+    _ = config_module
