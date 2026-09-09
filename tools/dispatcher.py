@@ -473,6 +473,20 @@ async def _run_mail_tool(name: str, params: dict, session_id: str = "", user_tex
     from mail import get_active_mail_client
     from prompt import cache_email_context
 
+    # The configured mailbox is shared (single MAIL_PROVIDER account), so it
+    # is admin-only until per-user mail accounts land (docs/mail-accounts-*).
+    # A resolved non-admin caller is refused; unresolvable ids fall through
+    # for backward compatibility (legacy single-user flows label callers with
+    # opaque ids, and HTTP middleware already guarantees production callers
+    # are real users). Anonymous (None) callers are refused — fail closed.
+    if user_id is None:
+        return "ERROR: Email is available to the server admin only.", None
+    from db import get_user
+
+    caller = await get_user(user_id)
+    if caller is not None and not caller.get("is_admin"):
+        return "ERROR: Email is available to the server admin only.", None
+
     mc = get_active_mail_client()
     if not mc:
         return "ERROR: Mail connection failed. Check .env configuration.", None

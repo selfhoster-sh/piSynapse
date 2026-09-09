@@ -16,6 +16,13 @@
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 - **Sanitization rule:** this file may be published. Never write personal data, identity clues, deployment addresses (hostnames, IPs, ports), or accounts into it. Keep every narrative in English; Turkish inline tokens are allowed only as product corpus / i18n test data.
 
+## 2026-09-09 — auth helpers + mail gate (post-M5 hardening)
+
+- **Shared auth:** new `auth.py` with `current_user()` (401) + `require_admin()` (401/403, custom detail); routers/users.py, routers/config.py, routers/chat.py deduplicated onto it (chat keeps "default" fallback for exempt paths). 7 helper tests.
+- **Live DB check (user's doubt resolved):** live `assistant.db` is schema-current (v21, `password_hash` present, 0 users); live server runs M1-era code (restart 14:35) — `/users/me` → 401 proves router+middleware live. Password flow proven on scratch DB (NULL → bcrypt hash → True/False); live needs only the pending restart.
+- **Mail decision (docs/mail-accounts-2026-09-09.md):** Hydroxide REJECTED (upstream archived 2026-08-02, IMAP WIP); stay on official Bridge. Shared mailbox is now ADMIN-ONLY (`_run_mail_tool` gate: resolved non-admin + anonymous refused, unknown ids compat-allowed). Per-user accounts deferred (needs encrypted credential store — arch approval required).
+- **Test:** full suite **702 passed** (695 + 7 helper); dispatcher+mail 112 passed; gate covered by 3 tests.
+
 ## 2026-09-09 — M5 (professional identity: passwords, devices, admin panel)
 
 - **Scope (user: "amatör değil profesyonel olsun"):** password login, per-device keys, admin user management, settings visibility split. Two commits: `c57e1e5` (passwords+devices), `4c82157` (admin panel).
