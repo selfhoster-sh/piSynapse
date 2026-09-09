@@ -55,6 +55,11 @@ const STRINGS = {
     micNoEngine:'Ses tanıma kullanılamıyor',
     ttsErr:'Sesli çıkış başarısız oldu',
     apiKeyPrompt:'API anahtarını girin (sunucu .env dosyasındaki API_KEY değeri):',
+    loginTitle:'Giriş yap', loginSub:'Devam etmek için kaydolun veya anahtarınızla giriş yapın.',
+    loginName:'Görünen ad', loginNamePh:'örn. Salih', loginRegister:'Kaydol',
+    loginHaveKey:'Anahtarım var',
+    loginInvalidKey:'Anahtar geçersiz', loginRegClosed:'Kayıtlar kapalı — yöneticinizden davet isteyin.',
+    loginWelcome:'Hoş geldin, %s', signedInAs:'Giriş yapılan kullanıcı', logout:'Çıkış yap',
     searchPlaceholder:'Ara…', search:'Ara',
     compact:'Dar',
     thinkTitle:'Think modu',
@@ -127,6 +132,11 @@ const STRINGS = {
     micNoEngine:'Speech recognition unavailable',
     ttsErr:'Text-to-speech failed',
     apiKeyPrompt:'Enter API key (the API_KEY value from the server .env file):',
+    loginTitle:'Log in', loginSub:'Register or sign in with your key to continue.',
+    loginName:'Display name', loginNamePh:'e.g. Alex', loginRegister:'Register',
+    loginHaveKey:'I have a key',
+    loginInvalidKey:'Invalid key', loginRegClosed:'Registration is closed — ask your admin for access.',
+    loginWelcome:'Welcome, %s', signedInAs:'Signed in as', logout:'Log out',
     searchPlaceholder:'Search…', search:'Search',
     compact:'Compact',
     thinkTitle:'Think mode',
@@ -1403,10 +1413,20 @@ async function _nativeApiRoute(method, path, body){
 
 // chatStream'ı SPA'nın beklediği SSE biçimine dönüştürür: plugin olaylarını
 // `data: {...}` satırlarına çeviren {ok, body:{getReader}} nesnesi döndürür.
+// Tek aktif chatEvent listener tutulur: eski listener'lar remove edilmedikçe her
+// yeni turda birikir ve önceki turun _acc içeriğini de tekrar push ederek
+// çoğaltılmış/kaynaşmış mesajlara yol açardı.
+let _nativeLh = null;
 async function _nativeSSEResponse(payload){
   const queue=[], enc=new TextEncoder();
   let waiting=null, finished=false, _acc='', lh=null;
   const sid = payload.session_id || '';
+  const releaseListener = () => {
+    if(_nativeLh && _nativeLh === lh){
+      _nativeLh = null;
+      if(lh && lh.remove){ try{ lh.remove(); }catch(e){} }
+    }
+  };
   const pushEvent=(d)=>{
     if(finished) return;
     queue.push(d);
@@ -1415,9 +1435,9 @@ async function _nativeSSEResponse(payload){
   };
   const onEvt=(evt)=>{
     const d=(evt && evt.data && typeof evt.data==='object') ? evt.data : evt;
-    if(!d) return;
+    if(!d || _nativeLh !== lh) return;
     if(d.token) _acc += d.token;
-    if(d.done || d.error){ _nativeHistory.push({role:'assistant', content:_acc}); _nativeSessionPush(sid,{role:'assistant', content:_acc}); _nativeChatSave(true); }
+    if(d.done || d.error){ _nativeHistory.push({role:'assistant', content:_acc}); _nativeSessionPush(sid,{role:'assistant', content:_acc}); _nativeChatSave(true); releaseListener(); }
     pushEvent(d);
   };
   _nativeHistory.push({role:'user', content: payload.message||''});
@@ -1425,8 +1445,12 @@ async function _nativeSSEResponse(payload){
   if(payload.session_id && !_nativeSessions.some(s=>s.session_id===payload.session_id)){
     _nativeSessions.push({session_id:payload.session_id, name:'', last_active:new Date().toISOString(), message_count:0});
   }
+  if(_nativeLh && _nativeLh.remove){ try{ await _nativeLh.remove(); }catch(e){} }
+  _nativeLh = null;
   lh = await _NATIVE.addListener('chatEvent', onEvt);
+  _nativeLh = lh;
   _NATIVE.chatStream({ payload }).catch(err=>{
+    releaseListener();
     pushEvent({error: (err && err.message) || String(err) || 'native-stream-failed'});
   });
   return {
@@ -1517,12 +1541,16 @@ async function _nativeChatRestore(){
 }
 
 function _nativeSystem(){
-  return 'Sen PiSynapse asistanısın; Türkçe yanıt ver, kısa ve doğrudan konuş, markdown kullanabilirsin. '+
+  // Dil çapası: Python prompt.py LANGUAGE_RULE ile birebir (dil adı yok — küçük
+  // modeller adlandırılmış dile yapışır ve kuralı genelleştiremez).
+  return 'LANGUAGE RULE (highest priority): Reply in the same language the user\'s message is written in. Detect it from their words alone and mirror it exactly — never answer in any other language.\n\n'+
+    'Sen PiSynapse asistanısın; kısa ve doğrudan konuş, markdown kullanabilirsin. '+
     'Bu telefon uygulaması tamamen yerel çalışır. Araçlar: get_datetime (saat/tarih), get_weather (Ayarlardaki şehir), '+
     'list_notes/read_note/create_note/update_note/delete_note (Nextcloud), save_memory, create_task/list_tasks/complete_task, '+
     'send_email (e-posta uygulamasını açar), create_calendar_event (takvim uygulamasını açar). '+
-    'Sunucuya, önceki oturumlara ve internete kalıcı erişimin yok; yalnız bu konuşmadaki bağlamı kullan. '+
-    'Kullanıcı geçmiş isterse, bunun yerel kısıtlı bir uygulama olduğunu söyle.';
+    'Bu uygulama yerel çalışır: internete veya sunucuya erişimin yok, ancak elindeki bağlama güvenebilirsin. '+
+    'Sana sunulan sohbet geçmişi, özetler ve hafıza notları gerçektir; kullanıcı bunlarda yazan bilgileri sorduğunda hatırla ve dürüstçe aktar. '+
+    'Erişiminin sınırlı olması, elindeki bilgileri kullanmana engel değildir.';
 }
 
 // MASTER→SLAVE: pull portable server settings into the phone on successful
@@ -1573,6 +1601,16 @@ async function api(method, path, body){
   if(body) opts.body = JSON.stringify(body);
   const r = await fetch(API+path, opts);
   if(r.status === 401){
+    // Route to the login overlay instead of the native prompt() dialog —
+    // except during onboarding (its server step handles entry itself) and
+    // for the login endpoints themselves (no loops).
+    const onboarded = !!localStorage.getItem('ps_onboarded');
+    const isLoginCall = path.startsWith('/users/');
+    if(!_NATIVE && onboarded && !isLoginCall && !window._loginOpen){
+      if(key) setApiKey('');
+      showLogin();
+      throw new Error('HTTP 401');
+    }
     if(!key && !window._authPrompted){
       window._authPrompted = true;
       const newKey = prompt(t('apiKeyPrompt'));
@@ -1654,6 +1692,11 @@ document.addEventListener('DOMContentLoaded', async ()=>{
     }catch(e){}
   }
   startOnboarding();
+  // Returning user without a key (e.g. after logout): offer login instead
+  // of landing keyless into per-call auth prompts. Native excluded.
+  if(!_NATIVE && localStorage.getItem('ps_onboarded') && !getApiKey()){
+    showLogin();
+  }
   await loadSessions(); showWelcome(); startTicker(); startHealthPoll();
   refreshServerStatus();
   if(window._beacon) window._beacon({t:'init', step:'all-done'});
@@ -2001,7 +2044,7 @@ async function sendMsg(opts){
     const _k=getApiKey(); if(_k) headers['X-API-Key']=_k;
     const originFlag = _chipOrigin ? 'chip' : ''; _chipOrigin = false;
     const _payload = { message: text, session_id: sid, user_id: config.username||'default', think_mode: thinkMode, images: images||[], reasoning_effort: thinkEffort, origin: originFlag };
-    const _resp = _NATIVE ? await _nativeSSEResponse(Object.assign({}, _payload, { system: _nativeSystem(), messages: _nativeHistory.slice(-12) })) : await fetch(API+'/chat/stream',{ method:'POST', headers, body: JSON.stringify(_payload) });
+    const _resp = _NATIVE ? await _nativeSSEResponse(Object.assign({}, _payload, { system: _nativeSystem(), messages: _nativeHistory.slice(-200) })) : await fetch(API+'/chat/stream',{ method:'POST', headers, body: JSON.stringify(_payload) });
     if(!_resp.ok) throw new Error('HTTP '+_resp.status);
     const reader=_resp.body.getReader(), dec=new TextDecoder(); let buf='';
     while(true){
@@ -3409,6 +3452,11 @@ function serverSectionHtml(){
           <div class="setting-desc">${esc(t('setApiKeyDesc'))}</div>
           <input type="password" class="setting-input" style="padding:8px 10px" id="si-ps_api_key" maxlength="200" autocomplete="off" value="${esc(key)}" placeholder="${esc(t('setApiKeyPh'))}">
         </div>
+        <div class="setting-item">
+          <div class="setting-label"><span>${esc(t('signedInAs'))}</span></div>
+          <div class="setting-desc" id="si-username">${esc(getUsername() || '—')}</div>
+          <button class="ob-btn ghost" style="font-size:12px;padding:7px 12px" onclick="logoutUser()">${esc(t('logout'))}</button>
+        </div>
       </div>
     </div>`;
 }
@@ -3494,6 +3542,125 @@ function obRenderDots(){
   if(badge) badge.textContent = `${_ob.step+1}/${OB_STEPS.length} · ${t('obBadge')}`;
 }
 
+// ── Browser login (multi-user): register-or-key against /users/* ─────────────
+function setUsername(name){
+  if(name) localStorage.setItem('ps_user_name', name);
+  else localStorage.removeItem('ps_user_name');
+}
+function getUsername(){ return localStorage.getItem('ps_user_name') || ''; }
+
+async function obFetchUsers(method, path, body, key){
+  const headers = {'Content-Type':'application/json'};
+  if(key) headers['X-API-Key'] = key;
+  const opts = {method, headers};
+  if(body) opts.body = JSON.stringify(body);
+  return fetch(API + path, opts);
+}
+
+async function obRegister(){
+  // From the onboarding server step (browser): name+empty key → register,
+  // existing key → validate. Fills the key field on success.
+  const nameEl = document.getElementById('ob-sname');
+  const keyEl = document.getElementById('ob-skey');
+  const name = (nameEl?.value || '').trim();
+  let key = (keyEl?.value || '').trim();
+  if(key){
+    const me = await obValidateKey(key);
+    if(me){ toast(t('loginWelcome').replace('%s', me)); }
+    return !!me;
+  }
+  if(!name){ toast(t('loginNamePh'), true); nameEl?.focus(); return false; }
+  try{
+    const r = await obFetchUsers('POST', '/users/register', {name});
+    if(r.status === 403){ toast(t('loginRegClosed'), true); return false; }
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    if(keyEl) keyEl.value = d.api_key || '';
+    setApiKey(d.api_key || '');
+    setUsername(d.user?.name || name);
+    toast(t('loginWelcome').replace('%s', d.user?.name || name));
+    return true;
+  }catch(e){ toast(t('loginInvalidKey'), true); return false; }
+}
+
+async function obValidateKey(key){
+  // Returns the display name on success, empty string on failure.
+  if(!key) return '';
+  try{
+    const r = await obFetchUsers('GET', '/users/me', null, key);
+    if(!r.ok){ toast(t('loginInvalidKey'), true); return ''; }
+    const d = await r.json();
+    const nm = d.user?.name || '';
+    setApiKey(key);
+    setUsername(nm);
+    return nm;
+  }catch(e){ toast(t('loginInvalidKey'), true); return ''; }
+}
+
+// ── Standalone login overlay (multi-user): used at boot when onboarded but
+// keyless (logout), and on mid-session 401s. Never shown native (the app
+// authenticates through the bridge) and never re-entered while open.
+function ensureLoginOverlay(){
+  let ov = document.getElementById('login-overlay');
+  if(ov) return ov;
+  ov = document.createElement('div');
+  ov.id = 'login-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:350;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.55)';
+  ov.innerHTML = `
+    <div style="width:min(420px,92vw);background:var(--bg,#141419);border:1px solid var(--border,#2a2a35);border-radius:16px;padding:24px">
+      <div class="ob-icon">${obIcon('server')}</div>
+      <div class="ob-title">${esc(t('loginTitle'))}</div>
+      <div class="ob-sub">${esc(t('loginSub'))}</div>
+      <div class="ob-field"><label for="lo-name">${esc(t('loginName'))}</label><input class="ob-input" id="lo-name" maxlength="40" placeholder="${esc(t('loginNamePh'))}"></div>
+      <div class="ob-field"><label for="lo-key">${esc(t('obS6Key'))}</label><input class="ob-input" id="lo-key" type="password" maxlength="200" autocomplete="off" placeholder="${esc(t('obS6KeyPh'))}"></div>
+      <button class="ob-btn" style="width:100%" onclick="loginRegister()">${esc(t('loginRegister'))}</button>
+      <button class="ob-btn ghost" style="width:100%;margin-top:8px" onclick="loginWithKey()">${esc(t('loginHaveKey'))}</button>
+    </div>`;
+  document.body.appendChild(ov);
+  return ov;
+}
+
+function showLogin(){
+  if(_NATIVE || window._loginOpen) return;
+  window._loginOpen = true;
+  const ov = ensureLoginOverlay();
+  ov.style.display = 'flex';
+}
+
+function hideLogin(){
+  window._loginOpen = false;
+  const ov = document.getElementById('login-overlay');
+  if(ov) ov.style.display = 'none';
+}
+
+async function loginRegister(){
+  const name = (document.getElementById('lo-name')?.value || '').trim();
+  if(!name){ toast(t('loginNamePh'), true); return; }
+  try{
+    const r = await obFetchUsers('POST', '/users/register', {name});
+    if(r.status === 403){ toast(t('loginRegClosed'), true); return; }
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    setApiKey(d.api_key || '');
+    setUsername(d.user?.name || name);
+    toast(t('loginWelcome').replace('%s', d.user?.name || name));
+    hideLogin();
+  }catch(e){ toast(t('loginInvalidKey'), true); }
+}
+
+async function loginWithKey(){
+  const key = (document.getElementById('lo-key')?.value || '').trim();
+  const nm = await obValidateKey(key);
+  if(nm){ toast(t('loginWelcome').replace('%s', nm)); hideLogin(); }
+}
+
+function logoutUser(){
+  setApiKey('');
+  setUsername('');
+  try{ closeSettings(); }catch(e){}
+  showLogin();
+}
+
 async function obNextAction(){
   const btn = document.getElementById('ob-next');
   if(btn) btn.disabled = true;
@@ -3515,7 +3682,15 @@ async function obNextAction(){
         if(url || key){ try{ await _serverSettingsPull(); }catch(e){} }
       } else {
         if(url) localStorage.setItem('ps_server_url', url);
-        setApiKey(key);
+        if(key){
+          // Don't advance on a bad key — the user would land keyless in a
+          // prompt-loop. obValidateKey toasts and stores on success.
+          const nm = await obValidateKey(key);
+          if(!nm) return;
+        } else {
+          setApiKey('');
+          setUsername('');
+        }
       }
     }
     if(action === 'save'){
@@ -3811,7 +3986,9 @@ function renderOnboarding(){
         <div class="ob-title">${esc(t('obS6T'))}</div>
         <div class="ob-sub">${esc(t('obS6S'))}</div>
         <div class="ob-field"><label for="ob-surl">${esc(t('obS6Url'))}</label><input class="ob-input" id="ob-surl" maxlength="200" placeholder="${esc(t('obS6UrlPh'))}" value="${esc(savedUrl)}"></div>
+        <div class="ob-field"><label for="ob-sname">${esc(t('loginName'))}</label><input class="ob-input" id="ob-sname" maxlength="40" placeholder="${esc(t('loginNamePh'))}"></div>
         <div class="ob-field"><label for="ob-skey">${esc(t('obS6Key'))}</label><input class="ob-input" id="ob-skey" type="password" maxlength="200" autocomplete="off" placeholder="${esc(t('obS6KeyPh'))}" value="${esc(savedKey)}"></div>
+        <button class="ob-btn" style="width:100%" onclick="obRegister()">${esc(t('loginRegister'))}</button>
         <div class="ob-hint">${esc(t('obS6Hint'))}</div>`;
     }
     next.dataset.action = 'server';
