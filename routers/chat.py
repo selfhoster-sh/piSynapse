@@ -727,7 +727,7 @@ async def pull_chat_history(request: Request):
 # -- Memories --
 
 @router.get("/memories")
-async def list_memories(request: Request, user_id: str = Query("default"), limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0)):
+async def list_memories(request: Request, limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0)):
     # Never trust a client-supplied user_id — bind to the authenticated key.
     eff = _uid(request)
     all_mems = await get_all_memories(eff)
@@ -736,7 +736,7 @@ async def list_memories(request: Request, user_id: str = Query("default"), limit
 
 
 @router.delete("/memories")
-async def delete_memory_endpoint(request: Request, user_id: str = Query("default"), id: str = Query(...)):
+async def delete_memory_endpoint(request: Request, id: str = Query(...)):
     eff = _uid(request)
     try:
         memory_id = int(id)
@@ -749,7 +749,7 @@ async def delete_memory_endpoint(request: Request, user_id: str = Query("default
 # -- Export --
 
 @router.get("/export")
-async def export_data(request: Request, user_id: str = Query("default")):
+async def export_data(request: Request):
     """Export all user data as JSON (memories + sessions summary)."""
     eff = _uid(request)
     from db import get_all_memories, get_all_sessions
@@ -923,7 +923,7 @@ async def sync_commands(req: SyncRequest, background_tasks: BackgroundTasks, req
 # back other devices' changes, including tombstones.
 
 @router.get("/sync/items", tags=["sync"])
-async def get_sync_items_local(request: Request, user_id: str = Query("default"), entity_type: str | None = Query(None), since: str | None = Query(None)):
+async def get_sync_items_local(request: Request, entity_type: str | None = Query(None), since: str | None = Query(None)):
     """Return the user's sync items, optionally filtered by entity_type or an
     ISO `since` cutoff (exclusive). Includes tombstones (deleted=true)."""
     eff = _uid(request)

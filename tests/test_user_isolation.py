@@ -264,3 +264,79 @@ def test_audit_rows_carry_owner(iso_db):
         return await cur.fetchall()
 
     assert asyncio.run(_go()) == [("alice", 1), ("bob", 1)]
+
+
+class TestSessionInvisibility:
+    """Iron rule: one user's sessions are invisible to every other user.
+
+    Both directions, every surface: list, read, meta, rename, delete,
+    summarize, search, memories.
+    """
+
+    async def _setup_alice(self):
+        db = await dbmod.get_db()
+        await db.execute(
+            "INSERT INTO sessions (id, user_id, name, summary, summarized_until) "
+            "VALUES ('sx', 'alice', 'Alice Title', 'alice summary', 2)"
+        )
+        for i, role in enumerate(["user", "assistant", "user", "assistant"]):
+            await db.execute(
+                "INSERT INTO conversations (session_id, role, content, user_id) "
+                "VALUES ('sx', ?, ?, 'alice')",
+                (role, f"alice-msg-{i} zephyrquux"),
+            )
+        await db.execute(
+            "INSERT INTO conversations_fts (rowid, content, session_id) "
+            "SELECT id, content, session_id FROM conversations WHERE session_id = 'sx'"
+        )
+        await db.execute(
+            "INSERT INTO memories (user_id, content, category) "
+            "VALUES ('alice', 'alice likes stargazing', 'general')"
+        )
+        await db.commit()
+
+    def test_list_excludes_foreign_sessions(self, iso_db):
+        asyncio.run(self._setup_alice())
+        assert asyncio.run(dbmod.get_all_sessions("bob")) == []
+        assert asyncio.run(dbmod.get_all_history("bob")) == {}
+        assert len(asyncio.run(dbmod.get_all_sessions("alice"))) == 1
+        assert asyncio.run(dbmod.get_all_memories("bob")) == []
+        assert len(asyncio.run(dbmod.get_all_memories("alice"))) == 1
+
+    def test_read_meta_summary_excluded(self, iso_db):
+        asyncio.run(self._setup_alice())
+        assert asyncio.run(dbmod.get_history("sx", limit=10, user_id="bob")) == []
+        assert asyncio.run(dbmod.get_session_meta("sx", user_id="bob")) == {
+            "summary": "", "summarized_until": 0,
+        }
+        rows, _ = asyncio.run(dbmod.get_messages_to_summarize("sx", 2, 0, 2, user_id="bob"))
+        assert rows == []
+
+    def test_write_ops_do_not_touch_foreign_session(self, iso_db):
+        asyncio.run(self._setup_alice())
+        asyncio.run(dbmod.update_session_name("sx", "EVIL", user_id="bob"))
+        asyncio.run(dbmod.update_session_summary("sx", "EVIL", 99, user_id="bob"))
+        asyncio.run(dbmod.delete_branch("sx", 1, user_id="bob"))
+        asyncio.run(dbmod.delete_last_assistant("sx", user_id="bob"))
+        asyncio.run(dbmod.clear_history("sx", "bob"))
+
+        async def _state():
+            db = await dbmod.get_db()
+            name = await (
+                await db.execute("SELECT name, summary, summarized_until FROM sessions WHERE id = 'sx'")
+            ).fetchone()
+            n_conv = await (
+                await db.execute("SELECT COUNT(*) FROM conversations WHERE session_id = 'sx'")
+            ).fetchone()
+            return name, n_conv[0]
+
+        (name, summary, until), n = asyncio.run(_state())
+        assert (name, summary, until) == ("Alice Title", "alice summary", 2)
+        assert n == 4
+
+    def test_search_excludes_foreign_content(self, iso_db):
+        asyncio.run(self._setup_alice())
+        results = asyncio.run(dbmod.search_sessions("zephyrquux", limit=10, user_id="bob"))
+        assert all(r["session_id"] != "sx" for r in results)
+        results = asyncio.run(dbmod.search_sessions("zephyrquux", limit=10, user_id="alice"))
+        assert any(r["session_id"] == "sx" for r in results)
