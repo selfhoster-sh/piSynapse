@@ -16,6 +16,12 @@
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 - **Sanitization rule:** this file may be published. Never write personal data, identity clues, deployment addresses (hostnames, IPs, ports), or accounts into it. Keep every narrative in English; Turkish inline tokens are allowed only as product corpus / i18n test data.
 
+## 2026-09-09 — M4-ui (browser login; user asked how others log in)
+
+- **Design (user question):** entry = onboarding server step (name + Register → `/users/register`, or key → `/users/me` validate); persistence = `ps_api_key` + new `ps_user_name` (all requests already flow through `getApiKey()`, untouched); exit = settings user row + logout; boot gate for onboarded-but-keyless (native excluded); 401s reroute to the login overlay instead of `prompt()` (guarded: not during onboarding, not for `/users/*`, never re-entered). Registration-closed/invalid-key toast and stay. Commit `33834b5` (`static/ui.js` — the server web UI, NOT the frozen Android tree).
+- **Test:** `node --check` green; i18n key parity tr/en verified by script; server suite 687 passed (UI-only change). Live browser verification pending (device/Caddy).
+- **Follow-ups (not done):** settings page is not admin-aware (non-admin save → 403 toast); phone-app key-entry screen (needs the port decision track).
+
 ## 2026-09-09 — M3 (multi-user per-user settings)
 
 - **Scope (plan M3; industry pattern verified: Nextcloud/OpenWebUI two-area model — admins own the building, users own their thermostat, personal overrides global).** Three commits: `d2eef9a` (store), `64514fd` (API+gates), `2d733b5` (wiring+seed).
