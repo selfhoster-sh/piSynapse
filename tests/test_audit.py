@@ -1018,3 +1018,72 @@ def test_message_feedback_endpoint_bad_value_and_missing(correction_client):
         json={"message_id": uid, "value": "up"},
     )
     assert resp.status_code == 404
+
+
+@pytest.fixture
+def ops_db(tmp_path, monkeypatch):
+    monkeypatch.setattr(dbmod, "DB_PATH", str(tmp_path / "ops.db"))
+    asyncio.run(dbmod.close_db())
+    asyncio.run(dbmod.init_db())
+    yield dbmod
+    asyncio.run(dbmod.close_db())
+
+
+def test_quick_check_ok_on_fresh_db(ops_db):
+    assert asyncio.run(dbmod.db_quick_check()) is None
+
+
+def test_auto_backup_creates_0600_and_prunes(ops_db, tmp_path):
+    import stat as _stat
+
+    bdir = tmp_path / "backups"
+    bdir.mkdir()
+    for i in range(1, 10):
+        (bdir / f"piSynapse-auto-202001{i:02d}.db").write_bytes(b"x")
+    dest = asyncio.run(dbmod.auto_backup_db())
+    assert dest and os.path.exists(dest)
+    assert _stat.S_IMODE(os.stat(dest).st_mode) == 0o600
+    remaining = sorted(f for f in os.listdir(bdir) if f.endswith(".db"))
+    assert len(remaining) == dbmod.AUTO_BACKUP_KEEP
+    assert os.path.basename(dest) in remaining
+
+
+def test_audit_csv_pruning(ops_db, tmp_path, monkeypatch):
+    import datetime as _dt
+
+    monkeypatch.setattr(dbmod, "DB_PATH", str(tmp_path / "ops.db"))
+    outdir = os.path.join(str(tmp_path), "audit_exports")
+    os.makedirs(outdir, exist_ok=True)
+    old = (_dt.date.today() - _dt.timedelta(days=40)).isoformat()
+    fresh = _dt.date.today().isoformat()
+    open(os.path.join(outdir, f"tool-audit-{old}.csv"), "w").close()
+    open(os.path.join(outdir, f"tool-audit-{fresh}.csv"), "w").close()
+    open(os.path.join(outdir, "notes.txt"), "w").close()
+    # audit_export_dir() resolves from DB_PATH's dirname
+    removed = asyncio.run(dbmod._prune_audit_csvs(30))
+    assert removed == 1
+    left = set(os.listdir(outdir))
+    assert f"tool-audit-{fresh}.csv" in left and "notes.txt" in left
+    assert f"tool-audit-{old}.csv" not in left
+
+
+def test_get_all_history_paging(ops_db):
+    async def _seed():
+        db = await dbmod.get_db()
+        for i in range(5):
+            await db.execute(
+                "INSERT INTO conversations (session_id, role, content, user_id) "
+                "VALUES ('sx', 'user', ?, 'alice')",
+                (f"m{i}",),
+            )
+        await db.commit()
+
+    asyncio.run(_seed())
+
+    async def _flat(**kw):
+        d = await dbmod.get_all_history("alice", **kw)
+        return [m["content"] for m in d["sx"]]
+
+    assert asyncio.run(_flat()) == [f"m{i}" for i in range(5)]
+    assert asyncio.run(_flat(limit=2)) == ["m0", "m1"]
+    assert asyncio.run(_flat(limit=2, offset=3)) == ["m3", "m4"]

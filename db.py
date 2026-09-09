@@ -565,6 +565,105 @@ async def _retention_prune_conversations(db: aiosqlite.Connection) -> int:
     return removed
 
 
+async def db_quick_check() -> str | None:
+    """Run PRAGMA quick_check; return None when healthy, else a detail string."""
+    db = await get_db()
+    cur = await db.execute("PRAGMA quick_check")
+    rows = await cur.fetchall()
+    if len(rows) == 1 and str(rows[0][0]).lower() == "ok":
+        return None
+    return "; ".join(str(r[0]) for r in rows[:5])
+
+
+AUTO_BACKUP_KEEP = 7
+AUTO_BACKUP_PREFIX = "piSynapse-auto-"
+
+
+async def auto_backup_db() -> str | None:
+    """Online backup over a dedicated read-only connection, pruning generations.
+
+    Uses the sqlite3 online-backup API (chunked + yielding) instead of
+    VACUUM INTO, which refuses to run while the shared connection has open
+    statements. Owner-only 0600, atomic tmp+replace, keeps the newest
+    AUTO_BACKUP_KEEP generations. Returns the backup path or None (never
+    raises). Runs at startup and from the daily loop.
+    """
+    tmp = None
+    try:
+        import datetime as _dt
+        import sqlite3 as _sqlite3
+
+        db_path = os.path.abspath(DB_PATH)
+        backup_dir = os.path.join(os.path.dirname(db_path) or ".", "backups")
+        os.makedirs(backup_dir, mode=0o700, exist_ok=True)
+        stamp = _dt.datetime.now().strftime("%Y%m%d")
+        dest = os.path.join(backup_dir, f"{AUTO_BACKUP_PREFIX}{stamp}.db")
+        tmp = dest + ".tmp"
+
+        def _copy() -> None:
+            src = _sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=30)
+            try:
+                dst = _sqlite3.connect(tmp, timeout=30)
+                try:
+                    src.backup(dst, pages=100, sleep=0.05)
+                finally:
+                    dst.close()
+            finally:
+                src.close()
+
+        await asyncio.to_thread(_copy)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, dest)
+        gens = sorted(
+            f for f in os.listdir(backup_dir)
+            if f.startswith(AUTO_BACKUP_PREFIX) and f.endswith(".db")
+        )
+        for old in gens[:-AUTO_BACKUP_KEEP]:
+            try:
+                os.remove(os.path.join(backup_dir, old))
+            except OSError as e:
+                logger.warning(f"Could not prune old backup {old}: {e}")
+        return dest
+    except Exception as e:
+        if tmp:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+        logger.warning(f"Auto backup failed (non-fatal): {e}")
+        return None
+
+
+async def _prune_audit_csvs(retention_days: int) -> int:
+    """Delete per-day audit CSVs older than the retention window. Returns count."""
+    import datetime as _dt
+
+    if retention_days <= 0:
+        return 0
+    outdir = audit_export_dir()
+    cutoff = _dt.date.today() - _dt.timedelta(days=retention_days)
+    removed = 0
+    try:
+        names = os.listdir(outdir)
+    except OSError:
+        return 0
+    for name in names:
+        m = re.fullmatch(r"tool-audit-(\d{4})-(\d{2})-(\d{2})\.csv", name)
+        if not m:
+            continue
+        try:
+            day = _dt.date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        except ValueError:
+            continue
+        if day < cutoff:
+            try:
+                os.remove(os.path.join(outdir, name))
+                removed += 1
+            except OSError as e:
+                logger.warning(f"Could not prune audit CSV {name}: {e}")
+    return removed
+
+
 async def cleanup_expired_data() -> tuple[int, int]:
     """Delete data older than the configured retention (0 = keep forever).
 
@@ -582,6 +681,9 @@ async def cleanup_expired_data() -> tuple[int, int]:
         if CONVERSATION_RETENTION_DAYS > 0:
             async with _write_lock():
                 removed_conv = await _retention_prune_conversations(db)
+            removed_csv = await _prune_audit_csvs(CONVERSATION_RETENTION_DAYS)
+            if removed_csv:
+                logger.info(f"Retention cleanup: {removed_csv} audit CSV(s) pruned")
         if MEMORY_RETENTION_DAYS > 0:
             cur = await _write_with_retry(
                 db,
@@ -1047,6 +1149,13 @@ async def periodic_cleanup_loop(interval: float = CLEANUP_INTERVAL_SECONDS, slee
             raise
         except Exception as e:
             logger.warning(f"Periodic retention cleanup failed, will retry next cycle: {e}")
+        # Daily online backup rides the same cadence (best-effort).
+        try:
+            await auto_backup_db()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.warning(f"Periodic auto backup failed, will retry next cycle: {e}")
         # Keep the WAL file bounded: checkpoint whatever readers no longer need.
         # Best-effort; a busy checkpoint simply retries next cycle.
         try:
@@ -1247,20 +1356,27 @@ async def get_history(session_id: str, limit: int = 20, include_reasoning: bool 
     return result
 
 
-async def get_all_history(user_id: str = "default") -> dict[str, list[dict]]:
+async def get_all_history(user_id: str = "default", limit: int | None = None, offset: int = 0) -> dict[str, list[dict]]:
     """Return every conversation grouped by session_id, oldest first.
 
     Used by the single-request Android chat sync pull so a phone can
     restore its sidebar in one HTTP round-trip instead of one call per
-    session (which trips the 30 rpm rate limiter)."""
+    session (which trips the 30 rpm rate limiter). ``limit``/``offset``
+    paginate that pull; the default (None) keeps the historical unbounded
+    contract for the sync caller.
+    """
     import json
     db = await get_db()
     history: dict[str, list[dict]] = {}
-    async with db.execute(
+    sql = (
         """SELECT session_id, id, role, content, images, timestamp, reasoning
-           FROM conversations WHERE user_id = ? ORDER BY session_id, id ASC""",
-        (user_id,)
-    ) as cur:
+           FROM conversations WHERE user_id = ? ORDER BY session_id, id ASC"""
+    )
+    params: tuple = (user_id,)
+    if limit is not None:
+        sql += " LIMIT ? OFFSET ?"
+        params = (user_id, limit, offset)
+    async with db.execute(sql, params) as cur:
         rows = await cur.fetchall()
     for sid, mid, role, content, images, ts, reasoning in rows:
         item = {"id": mid, "role": role, "content": content, "timestamp": ts}
