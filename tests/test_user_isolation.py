@@ -193,3 +193,61 @@ def test_update_session_summary_bumps_last_active(iso_db):
     summary, until, last_active = asyncio.run(_row())
     assert (summary, until) == ("sum", 3)
     assert last_active, "last_active must be set on summary write"
+
+
+def test_session_maps_are_per_user(iso_db):
+    import prompt as promptmod
+
+    # NOTE: alice and bob use different sessions here. Sharing one session_id
+    # across users trips UNIQUE(session_id, seq) on insert — a known accepted
+    # residual (uuid session ids never collide in practice; the constraint
+    # cannot cover user_id without a table rebuild, and these rows are
+    # disposable caches). Reads/writes below prove the invisibility rule.
+    async def _go():
+        await dbmod.save_email_map("sa", [{"id": "m1", "subject": "A"}], "alice")
+        await dbmod.save_email_map("sb", [{"id": "m2", "subject": "B"}], "bob")
+
+    asyncio.run(_go())
+
+    async def _read():
+        return (
+            await promptmod.get_email_context("sa", "alice"),
+            await promptmod.get_email_context("sa", "bob"),
+            await promptmod.get_email_context("sb", "bob"),
+        )
+
+    got_a, got_b_wrong_session, got_b = asyncio.run(_read())
+    assert [m["id"] for m in got_a] == ["m1"]
+    assert got_b_wrong_session == []
+    assert [m["id"] for m in got_b] == ["m2"]
+
+    # clear_history("sb", "bob"): only bob's rows go.
+    asyncio.run(dbmod.clear_history("sb", "bob"))
+    got_a2, _, got_b2 = asyncio.run(_read())
+    assert [m["id"] for m in got_a2] == ["m1"]
+    assert got_b2 == []
+
+
+def test_map_backfill_reassigns_legacy_rows(iso_db):
+    async def _legacy():
+        db = await dbmod.get_db()
+        await db.execute(
+            "INSERT INTO sessions (id, user_id, name) VALUES ('sx', 'alice', 'T')"
+        )
+        await db.execute(
+            "INSERT INTO email_session_map (session_id, seq, message_id) "
+            "VALUES ('sx', 1, 'legacy-1')"
+        )
+        await db.commit()
+
+    asyncio.run(_legacy())
+    asyncio.run(dbmod.init_db())  # rerun applies the backfill block
+
+    async def _owner():
+        db = await dbmod.get_db()
+        cur = await db.execute(
+            "SELECT user_id FROM email_session_map WHERE session_id = 'sx'"
+        )
+        return (await cur.fetchone())[0]
+
+    assert asyncio.run(_owner()) == "alice"

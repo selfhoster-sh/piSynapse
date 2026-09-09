@@ -218,9 +218,9 @@ class TestMailTools:
         msgs = [{"from": "a@x.com", "subject": "Hi", "date": "Mon", "id": 5, "body": "hello world"}]
         mc = _mail_client(messages=msgs)
         with patch("mail.get_active_mail_client", return_value=mc), patch("prompt.cache_email_context", new=AsyncMock()) as cache:
-            result = await run_tool("list_emails", {"limit": 3}, context={"session_id": "s1"})
+            result = await run_tool("list_emails", {"limit": 3}, context={"session_id": "s1", "user_id": "alice"})
         mc.get_messages.assert_awaited_once_with(1, "INBOX", 3)
-        cache.assert_awaited_once_with("s1", msgs)
+        cache.assert_awaited_once_with("s1", msgs, "alice")
         assert "From: a@x.com" in result[0]
         assert "Subject: Hi" in result[0]
         assert "ID:" not in result[0]
@@ -341,9 +341,9 @@ class TestMailTools:
         msgs = [{"from": "a@x.com", "subject": "Match", "id": 2, "body": "preview"}]
         mc = _mail_client(results=msgs)
         with patch("mail.get_active_mail_client", return_value=mc), patch("prompt.cache_email_context") as cache:
-            result = await run_tool("search_emails", {"query": "Match"}, context={"session_id": "s2"})
+            result = await run_tool("search_emails", {"query": "Match"}, context={"session_id": "s2", "user_id": "alice"})
         mc.search_messages.assert_awaited_once_with(1, "Match", 10, "INBOX")
-        cache.assert_called_once_with("s2", msgs)
+        cache.assert_called_once_with("s2", msgs, "alice")
         assert "'Match' Results (1):" in result[0]
         assert "ID:" not in result[0]
 
@@ -380,8 +380,8 @@ class TestNotesTools:
         items = [{"id": 42, "title": "T", "category": "", "preview": ""}]
         with patch("nextcloud_notes.list_notes", new=AsyncMock(return_value=(" Notes:\n\n   1. T\n", items))), \
              patch("prompt.cache_notes_context", new=AsyncMock()) as cache:
-            result = await run_tool("list_notes", {}, context={"session_id": "s1"})
-        cache.assert_awaited_once_with("s1", items)
+            result = await run_tool("list_notes", {}, context={"session_id": "s1", "user_id": "alice"})
+        cache.assert_awaited_once_with("s1", items, "alice")
         assert "ID:" not in result[0]
         assert "42" not in result[0]
 

@@ -219,9 +219,9 @@ async def chat_with_ollama_stream(
     origin: str = "",
     abort_event=None,
 ):
-    full_msgs = await _build_full_messages(messages, memories or [], summary, session_id, tool_group=tool_group)
+    full_msgs = await _build_full_messages(messages, memories or [], summary, session_id, tool_group=tool_group, user_id=user_id or "default")
     context = {
-        "user_id": user_id,
+        "user_id": user_id or "default",
         "_origin": (origin or "").strip().lower(),
         "session_id": session_id,
         # Guards (CLARIFY_REQUIRED etc.) anchor their clarifying question to
@@ -475,7 +475,7 @@ async def chat_with_ollama_stream(
             logger.info("Tool leak detected in stream buffer, retrying with think-mode...")
             yield {"gen_retry": {"reason": "tool_leak"}}
             try:
-                retry_msgs = await _build_full_messages(messages, memories or [], summary, session_id, tool_group=tool_group) + current_msgs
+                retry_msgs = await _build_full_messages(messages, memories or [], summary, session_id, tool_group=tool_group, user_id=user_id or "default") + current_msgs
                 if backend == "litert":
                     retry_payload = _build_payload(
                         _normalize_messages_for_backend(retry_msgs, backend="litert"),
@@ -667,7 +667,7 @@ async def chat_with_ollama_stream(
             elif tn == "delete_note":
                 try:
                     from prompt import get_notes_context
-                    notes = await get_notes_context(session_id)
+                    notes = await get_notes_context(session_id, context.get("user_id"))
                     ref = params.get("note_id")
                     if notes and ref:
                         is_num = isinstance(ref, int) or (isinstance(ref, str) and ref.isdigit())
@@ -679,7 +679,7 @@ async def chat_with_ollama_stream(
             elif tn in ("complete_task", "delete_task"):
                 try:
                     from prompt import get_tasks_context
-                    tasks = await get_tasks_context(session_id)
+                    tasks = await get_tasks_context(session_id, context.get("user_id"))
                     ref = params.get("uid", "")
                     if tasks and ref:
                         is_num = isinstance(ref, int) or (isinstance(ref, str) and ref.isdigit())

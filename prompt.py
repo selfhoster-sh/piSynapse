@@ -235,66 +235,66 @@ def build_context(
 # message ID and survives restarts, so a resumed session still resolves
 # "read email 3" correctly.
 
-async def cache_email_context(session_id: str, emails: list[dict]):
+async def cache_email_context(session_id: str, emails: list[dict], user_id: str = "default"):
     """Persist the recent email listing for a session."""
     if not session_id:
         return
     from db import save_email_map
-    await save_email_map(session_id, emails)
+    await save_email_map(session_id, emails, user_id)
 
 
-async def get_email_context(session_id: str) -> list[dict]:
+async def get_email_context(session_id: str, user_id: str = "default") -> list[dict]:
     """Retrieve the persisted email listing for a session."""
     from db import get_email_map
-    return await get_email_map(session_id)
+    return await get_email_map(session_id, user_id)
 
 
 # -- Notes Context --
 # Same pattern as email: model sees numbered lists, we map to real Nextcloud IDs.
 
-async def cache_notes_context(session_id: str, notes: list[dict]):
+async def cache_notes_context(session_id: str, notes: list[dict], user_id: str = "default"):
     """Persist the recent note listing for a session."""
     if not session_id:
         return
     from db import save_notes_map
-    await save_notes_map(session_id, notes)
+    await save_notes_map(session_id, notes, user_id)
 
 
-async def get_notes_context(session_id: str) -> list[dict]:
+async def get_notes_context(session_id: str, user_id: str = "default") -> list[dict]:
     """Retrieve the persisted note listing for a session."""
     from db import get_notes_map
-    return await get_notes_map(session_id)
+    return await get_notes_map(session_id, user_id)
 
 
 # -- Tasks Context --
 # Same pattern as email/notes: model sees numbered lists, we map to real UIDs.
 
-async def cache_tasks_context(session_id: str, tasks: list[dict]):
+async def cache_tasks_context(session_id: str, tasks: list[dict], user_id: str = "default"):
     """Persist the recent task listing for a session."""
     if not session_id:
         return
     from db import save_tasks_map
-    await save_tasks_map(session_id, tasks)
+    await save_tasks_map(session_id, tasks, user_id)
 
 
-async def get_tasks_context(session_id: str) -> list[dict]:
+async def get_tasks_context(session_id: str, user_id: str = "default") -> list[dict]:
     """Retrieve the persisted task listing for a session."""
     from db import get_tasks_map
-    return await get_tasks_map(session_id)
+    return await get_tasks_map(session_id, user_id)
 
 
 # -- Calendar Context --
 # Same pattern as email/notes/tasks: model sees numbered lists, we map to real UIDs.
 
-async def cache_calendar_context(session_id: str, events: list[dict]):
+async def cache_calendar_context(session_id: str, events: list[dict], user_id: str = "default"):
     """Persist the recent calendar listing for a session."""
     if not session_id:
         return
     from db import save_calendar_map
-    await save_calendar_map(session_id, events)
+    await save_calendar_map(session_id, events, user_id)
 
 
-async def get_calendar_context(session_id: str) -> list[dict]:
+async def get_calendar_context(session_id: str, user_id: str = "default") -> list[dict]:
     """Retrieve the persisted calendar listing for a session."""
     from db import get_calendar_map
-    return await get_calendar_map(session_id)
+    return await get_calendar_map(session_id, user_id)

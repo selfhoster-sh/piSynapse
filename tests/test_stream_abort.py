@@ -15,7 +15,7 @@ import llm.stream as llm_stream
 
 @pytest.fixture(autouse=True)
 def _no_email_db(monkeypatch):
-    async def _empty(_session_id):
+    async def _empty(_session_id, user_id="default"):
         return []
 
     monkeypatch.setattr("prompt.get_email_context", _empty)

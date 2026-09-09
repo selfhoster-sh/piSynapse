@@ -19,7 +19,7 @@ import llm.stream as llm_stream
 def _no_email_db(monkeypatch):
     # Chat paths read the per-session email cache from SQLite; keep these
     # unit tests off the real DB (CI has no schema initialized).
-    async def _empty(_session_id):
+    async def _empty(_session_id, user_id="default"):
         return []
 
     monkeypatch.setattr("prompt.get_email_context", _empty)
