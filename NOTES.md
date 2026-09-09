@@ -16,6 +16,17 @@
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 - **Sanitization rule:** this file may be published. Never write personal data, identity clues, deployment addresses (hostnames, IPs, ports), or accounts into it. Keep every narrative in English; Turkish inline tokens are allowed only as product corpus / i18n test data.
 
+## 2026-09-09 — Faz 5 (server audit fixes): chat pipeline parity
+
+- **Scope (plan Faz 5):** stream/non-stream parity, payload robustness, abort, tool hygiene. Six commits: `1ea6891` (mail), `3b5afba` (parity), `61f1a1b` (payload), `cd3f4ea` (abort), `4059ce3` + `f91f5f0` (hygiene).
+- **Faz 5a:** `MailClient.search_messages` takes `mailbox_id` (dispatcher already passed 4 args — every mailbox search TypeError'd; mocks had masked it); list/search outputs numbered (`enumerate`, like the other tools).
+- **Faz 5b:** hatch/chip pieces moved from `llm/stream.py` to `llm/utils.py` (stream re-imports, so `llm.stream.X` test references keep working); new shared `should_arm_tool_hint` + `chip_clarify_response` used by both paths. Non-stream now injects the hint on tool-domain questions, escalates once on marker/leak/bare-name (smallest toolset, stale hint stripped), and honors the chip fast-path (new `origin` param). New `tests/test_chat_parity.py`.
+- **Faz 5c:** LiteRT normalize keeps `tool_name` (+`name` mapping); indexless single-call deltas accumulate args; trim uses an atomic triple pass (identical on well-formed input); `parse_tool_args` yields `{_parse_error: raw}` (distinct failures, distinct dedup sigs — handlers ignore unknown keys); leak parser learns bool/null/float. A test overreached on unquoted multi-word leak values (pre-existing heuristic limit) — corrected to realistic syntax.
+- **Faz 5d:** `chat_with_ollama_stream(abort_event=...)` checked per round and per tool; terminal `{done, aborted}` event; router forwards it and skips full-reply save (finally-path still persists partial text). New `tests/test_stream_abort.py`.
+- **Faz 5e:** group tool-names derived from `TOOL_GROUPS`; calendar/task/note listings sanitized; RRULE allowlist + CRLF reject; send_email address validation; verification failures surface `verification_error` (anchor logic unaffected); merge dedup with drop logging; 30s budgets on CalDAV reads + litert drain deadline; shared weather format helper.
+- **Audit corrections:** prompt groups for weather/calendar already had `get_datetime` (only email/tasks/notes/memory were missing); `sanitize_external_text` docstring always claimed calendar/notes scope (now true).
+- **Test:** full suite **627 passed** (602 + 25 new).
+
 ## 2026-09-09 — Faz 4 (server audit fixes): summary subsystem
 
 - **Scope (plan Faz 4):** bounded folds, delete repair, race-free writes. Three commits: `48c3395` (cap), `65e5763` (repair+cascade), `aaf1afc` (conditional write).
