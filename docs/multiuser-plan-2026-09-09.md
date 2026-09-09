@@ -1,5 +1,8 @@
 # Multi-User Plan — M1–M4 (2026-09-09)
 
+Status: M1 and M2 implemented (see NOTES.md entries for deviations,
+residuals and test evidence). M3–M4 pending.
+
 Decisions (user): open registration with an admin toggle (standard);
 existing `default` data belongs to the admin (bootstrap onto the `default`
 identity — zero row moves); all phases in one plan, in order.
