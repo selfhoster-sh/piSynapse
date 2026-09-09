@@ -2,11 +2,24 @@
 
 [![CI](https://github.com/selfhoster-sh/piSynapse/actions/workflows/ci.yml/badge.svg)](https://github.com/selfhoster-sh/piSynapse/actions)
 
-**Privacy-first, self-hosted personal AI assistant.**
+**Privacy-first, self-hosted personal AI assistant — with its own memory, tools, and voice, running on your hardware.**
 
-piSynapse runs entirely on your own hardware — no subscriptions, no cloud, no data leaving your machine. It connects your calendar, email, notes, tasks, and local LLM into a single conversational interface.
+piSynapse runs entirely on your own machines — no subscriptions, no cloud, no data leaving your devices. It connects your calendar, email, notes, tasks, and local LLM into a single conversational interface, on a Raspberry Pi 5 and on your phone.
 
-> **Why the name?** *pi* stands for **p**rivate **i**ntelligence — and a *synapse* is where neurons connect. Your data, your memory, and your tools all meet in one private place: your own machine.
+> **Why the name?** *pi* stands for **p**rivate **i**ntelligence — and a *synapse* is where neurons connect. Your data, your memory, and your tools all meet in one private place: your own machines.
+
+---
+
+## What makes it different
+
+Most "self-hosted AI" projects are thin wrappers around a cloud API, and most local assistants forget everything between sessions. piSynapse is built the other way around:
+
+- **Local brains, including on your phone.** Inference runs on-device: LiteRT-LM on the Pi (or Ollama), plus a companion Android app that carries its own small model with rolling summaries and on-device semantic memory — no server round-trip needed.
+- **Tools it can actually use — and verify.** 23 tools across email, calendar, tasks, notes, memory, and weather. The backend re-reads what a tool claims to have done (ID-based verification), destructive actions get confirmation cards, and identical calls are never executed twice.
+- **Memory that persists.** Hybrid keyword + semantic search over every session, rolling per-session summaries that keep long conversations inside small context windows, resume detection for follow-ups ("devam edelim"), and instant + LLM-enriched session titles.
+- **Engineered for small models.** Intent routing (regex → keywords → embeddings → evidence-gated LLM fallback), deterministic fast paths for quick actions, constrained decoding for reliable tool calls, and a pure-chat escape hatch so the model never hallucinates tools into small talk.
+- **Privacy as construction, not a promise.** Local SQLite store, PII masking in titles and logs, fail-closed API auth, secret hygiene (0600 files, masked settings reads), no telemetry.
+- **Honest scope.** Single-user home server, developed and tested on real hardware — not a multi-tenant platform pitch.
 
 ---
 
@@ -42,10 +55,10 @@ When you disable all external integrations, **zero data leaves your device**. No
 - ✅ **Tasks** — Nextcloud Tasks via CalDAV VTODO — create/list/complete/delete/search
 - 🌤️ **Weather** — Real-time forecasts via Open-Meteo (no tracking)
 - 🧠 **Long-Term Memory** — Semantic search and deduplication using local embeddings
-- 🎤 **Voice Input** — Whisper (fast/accurate) or Gemma4 native audio transcription
+- 🎤 **Voice Input** — Whisper (fast/accurate), Gemma4 native audio, or browser Web Speech transcription
 - 🔊 **Voice Output** — Piper TTS (local/offline) or browser Web Speech API
 - 🖼️ **Image Upload** — Drag-and-drop, paste, or attach images to send to the model
-- 🎨 **Themes** — 5 accent colors on a dark UI
+- 🎨 **Themes** — 6 accent colors on a dark UI
 - 🔐 **API Key Auth** — Token-based access with rate limiting
 - 📱 **PWA** — Installable on mobile and desktop with offline caching
 - 🤖 **Local LLM** — LiteRT or Ollama backend with intent classification and tool calling
@@ -105,7 +118,7 @@ piSynapse/
 ├── install.py           # Interactive setup wizard
 ├── litert_serve/        # piServe — OpenAI-compatible LiteRT-LM server
 │   ├── server.py        # SSE streaming, tool-schema passthrough, MTP decoding
-│   └── config.example.json  # Model + context settings (copied to config.json at startup)
+│   └── config.example.json  # Model + context settings (installer generates config.json from it)
 ├── example.env          # Configuration template
 ├── requirements.txt
 ├── LICENSE
@@ -170,8 +183,8 @@ The installer:
 #      litert-lm import --from-huggingface-repo litert-community/gemma-4-E2B-it-litert-lm gemma-4-E2B-it.litertlm gemma4-e2b
 #      python3 litert_serve/server.py          # OpenAI-compatible server on :9379
 #
-#    Or Ollama:
-#      curl https://ollama.com/install.sh | sh && ollama pull gemma4:e2b
+#    Or Ollama (save the installer first, review it, then run):
+#      curl -fsSL -o ollama-install.sh https://ollama.com/install.sh && sh ollama-install.sh && ollama pull gemma4:e2b
 
 # 2. Clone and install dependencies
 git clone https://github.com/selfhoster-sh/piSynapse.git
@@ -322,7 +335,7 @@ curl http://localhost:8765/health
 - [x] **Tool-Call Indicators** — Real-time status pills during tool execution
 - [x] **Multi-Domain Routing** — Combined toolset when request spans multiple domains
 - [x] **Constrained Decoding** — LL-guidance for reliable tool-call output
-- [x] **Session Titles** — RAKE instant (<1ms) + LLM enriched (background, toggle)
+- [x] **Session Titles** — Instant first-words + LLM enriched (background, toggle)
 - [x] **Regenerate** — Retry last assistant reply
 - [x] **Hybrid Search** — FTS5 + semantic over all sessions, offline fallback, snippets
 - [ ] **Nextcloud Contacts** — CardDAV contact search
@@ -335,6 +348,19 @@ curl http://localhost:8765/health
 ![Mobile UI](static/piSynapseui-mobile.jpeg)
 ![Desktop UI](static/piSynapseui-1.png)
 ![Desktop Chat](static/piSynapseui-2.png)
+
+---
+
+## Development
+
+```bash
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+python -m pytest -q          # full suite (~650 tests, ~30s)
+ruff check .                 # lint (CI gates on this too)
+```
+
+Conventions: one item = one commit + `py_compile` + green suite; user-facing strings go through the `messages` catalog (tr/en, default EN — never hardcoded); `docs/` holds the audit report, fix plan, port contract, and operational guides (`remote-access.md`, `backup-restore.md`).
 
 ---
 
