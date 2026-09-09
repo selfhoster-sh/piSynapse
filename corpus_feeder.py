@@ -22,6 +22,8 @@ from pathlib import Path
 import httpx
 import numpy as np
 
+from textnorm import normalize_signature
+
 # ── paths ──────────────────────────────────────────────────────────────────────
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = ROOT / "corpus_data"
@@ -451,8 +453,20 @@ def _is_duplicate(
     addition_records: list[dict],
     addition_matrix: np.ndarray | None,
     dup_threshold: float = 0.98,
+    signature: str | None = None,
 ) -> bool:
-    """Check if text already exists in corpus or additions (near-exact match)."""
+    """Check if text already exists in corpus or additions (near-exact match).
+
+    A signature-equality fast path catches cross-user PII variants sharing
+    one routing shape — without an embedding call.
+    """
+    if signature:
+        for rec in addition_records:
+            old = rec.get("signature")
+            if not old and rec.get("text"):
+                old = normalize_signature(rec["text"])
+            if old and old == signature:
+                return True
     from embedding import embed as embed_one
 
     vec = np.frombuffer(embed_one(text), dtype="float32")
@@ -575,6 +589,10 @@ async def _process_audit_row(
     text = message_text.strip()
     if not text:
         return {"id": audit_id, "status": "skip_empty_text"}
+    # Shareable routing signature (collective learning Phase 2): contact PII
+    # becomes placeholders, so cross-user variants dedup to one shape and raw
+    # PII never reaches the global corpus entry.
+    sig = normalize_signature(text)
 
     # Reject assistant-output / degenerate text: feeding the model's own reply
     # or a context-only fragment as an intent example would poison routing.
@@ -609,7 +627,8 @@ async def _process_audit_row(
                 "group": proposed_group, "text": text}
 
     # Check exact duplicate
-    if _is_duplicate(text, base_groups, base_matrix, existing_additions, addition_matrix):
+    if _is_duplicate(text, base_groups, base_matrix, existing_additions, addition_matrix,
+                      signature=sig):
         return {"id": audit_id, "status": "skip_duplicate", "group": proposed_group}
 
     # Check conflict
@@ -634,6 +653,7 @@ async def _process_audit_row(
             # LLM agrees with user — auto-add, resolve the conflict
             record = {
                 "text": text,
+                "signature": sig,
                 "group": proposed_group,
                 "source": signal,
                 "lang": _detect_lang(text),
@@ -664,6 +684,7 @@ async def _process_audit_row(
     # No conflict → add directly
     record = {
         "text": text,
+        "signature": sig,
         "group": proposed_group,
         "source": signal,
         "lang": _detect_lang(text),
