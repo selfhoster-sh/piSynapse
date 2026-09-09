@@ -26,12 +26,19 @@ from tools import (
 from .payload import _build_full_messages, _build_payload, _normalize_messages_for_backend, trim_messages_for_context
 from .utils import (
     CONTINUATION_NOTE,
+    _TOOL_ASK_HINT,
+    _bare_tool_name,
     _check_tool_leak,
+    _chip_clarify_question,
+    _escalation_tools,
     _get_client,
+    _wants_tools_hint,
     clean_reasoning,
     is_lookup_tool,
     is_mutation_tool,
     parse_leaked_tool_call,
+    chip_clarify_response,
+    should_arm_tool_hint,
     strip_tool_leaks,
     user_requested_action,
 )
@@ -136,80 +143,7 @@ def _shrink_tool_responses(current_msgs: list[dict]) -> None:
             m["content"] = m["content"][:600] + "\n[content truncated]"
 
 
-# Injected into pure-chat requests (tools disabled): gives small models a
-# deterministic escape verb instead of hoping they improvise FC syntax.
-_TOOL_ASK_HINT = (
-    "[system note] You currently have NO tools available in this conversation turn. "
-    "If fulfilling the user's request requires a tool (notes, tasks, email, calendar, "
-    "weather, memory), begin your reply with the exact token TOOL_NEEDED as the very "
-    "first thing, before any other text."
-)
 
-
-def _wants_tools_hint(text: str) -> bool:
-    """True when a tool-less reply opens with the TOOL_NEEDED escape marker."""
-    return bool(text) and text.lstrip().upper().startswith("TOOL_NEEDED")
-
-
-def _bare_tool_name(text: str) -> bool:
-    """True when a tool-less reply is NOTHING but a known tool name.
-
-    Small models sometimes answer a tool-needing prompt by blurting a
-    single tool name ('get_weather') instead of using the marker.
-    """
-    if not text:
-        return False
-    stripped = text.strip().strip(".!? ").lower()
-    return stripped in TOOL_NAMES
-
-
-def _escalation_tools(full_text: str, user_message: str = "") -> tuple[list, str]:
-    """Pick the SMALLEST sufficient toolset for an escalated round.
-
-    Escalating with the full combined set costs ~49s TTFT on litert; a single
-    group (~7 tools) streams its first token in ~13s. Priority:
-    1. group inferred from the leaked tool call's name (deterministic)
-    2. group inferred from keyword heuristics on the user message
-    3. full combined set as last resort
-    Returns (tools, scope_label_for_logging).
-    """
-    from tools.definitions import (
-        TOOL_GROUPS,
-        get_combined_tools,
-        get_tools_for_group,
-    )
-
-    name_to_group: dict[str, str] = {}
-    for grp, names in TOOL_GROUPS.items():
-        for n in names:
-            name_to_group.setdefault(n, grp)
-
-    leaked = parse_leaked_tool_call(full_text)
-    if leaked:
-        g = name_to_group.get(leaked["function"]["name"])
-        if g:
-            return get_tools_for_group(g), g
-    try:
-        from llm.intent import _hit_groups, _keyword_group
-        groups = _hit_groups(user_message or "")
-    except Exception:
-        groups = set()
-    if len(groups) == 1:
-        return get_tools_for_group(next(iter(groups))), f"{next(iter(groups))} (keyword)"
-    if len(groups) > 1:
-        # Genuinely multi-domain ("hava durumunu maille gönder"): a single
-        # group would misroute one of the intents, so fall through to the
-        # full combined set.
-        return get_combined_tools(), "combined"
-    # No keyword group matched — as a last resort use the single first-hit
-    # heuristic (or combined if even that finds nothing).
-    try:
-        g = _keyword_group(user_message or "")
-    except Exception:
-        g = None
-    if g:
-        return get_tools_for_group(g), f"{g} (keyword)"
-    return get_combined_tools(), "combined"
 
 
 
@@ -252,46 +186,7 @@ def _build_round_request(backend: str, full_msgs: list[dict], current_msgs: list
 
 
 
-# ── Chip-origin instant clarify ────────────────────────────────────────────────
-# Welcome chips carry no details. Instead of burning an LLM round-trip to have
-# the model ask "what should it contain?", answer deterministically here —
-# zero latency, zero tokens, and no placeholder executions possible.
-_CHIP_CREATE_PATTERNS: dict[str, tuple[str, ...]] = {
-    "tasks":    ("oluştur", "olustur", "ekle", "görev yap", "task", "todo"),
-    "calendar": ("etkinlik oluştur", "olustur", "etkinlik ekle", "planla",
-                 "toplantı", "randevu", "create event", "schedule"),
-    "notes":    ("not oluştur", "not al", "not yaz", "oluştur", "create note", "new note"),
-    "email":    ("gönder", "gonder", "send", "compose", "mail yaz", "e-posta yaz"),
-}
 
-_CHIP_CLARIFY_Q: dict[str, tuple[str, str]] = {
-    "tasks":    ("Tabii! Görevin ne olsun ve tarihi var mı?",
-                 "Sure! What's the task, and when is it due?"),
-    "calendar": ("Tabii! Etkinlik ne olsun ve hangi gün, saat kaçta?",
-                 "Sure! What's the event about, and what date and time?"),
-    "notes":    ("Tabii! Notun içeriği ne olsun?",
-                 "Sure! What should the note say?"),
-    "email":    ("Tabii! Alıcı adresi, konu ve mesajı yazar mısın?",
-                 "Sure! Who is the recipient, and what are the subject and message?"),
-}
-
-
-def _chip_clarify_question(tool_group: str, message: str) -> str | None:
-    """Deterministic clarifying question for chip-origin create requests.
-
-    Returns the question in the message's own language (simple heuristic),
-    or None when the group isn't a create/send target or no create verb
-    appears (list/read chips flow normally).
-    """
-    if tool_group not in _CHIP_CREATE_PATTERNS:
-        return None
-    low = message.lower()
-    if not any(p in low for p in _CHIP_CREATE_PATTERNS[tool_group]):
-        return None
-    tr_chars = any(c in low for c in "çğıöşüÇĞİÖŞÜ") or any(
-        w in low for w in ("için", "yarın", "bugün", "nasıl", "var mı"))
-    q_tr, q_en = _CHIP_CLARIFY_Q[tool_group]
-    return q_tr if tr_chars else q_en
 
 
 async def chat_with_ollama_stream(
@@ -325,22 +220,13 @@ async def chat_with_ollama_stream(
     from tools import get_combined_tools
     intent_no_tools = intent == "question" and tool_group is None
     if intent_no_tools:
-        try:
-            from llm.intent import _hit_groups
-        except Exception:
-            _hit_groups = None
         use_tools = False
         filtered_tools = None
-        # Polyglot escape-hatch hint injected ONLY when the message actually
-        # touches a tool domain (keyword hit). Pure-chat turns (no keyword)
-        # previously always received it, which pushed small models into
-        # spurious TOOL_NEEDED escalations ("uykum var ama uyuyamıyorum").
-        # Without the hint the model answers normally and never re-arms the
-        # hatch, killing the "gereksiz araç etkinleştiriliyor" symptom.
-        hint_armed = False
-        if _hit_groups and _hit_groups(context["_user_text"]):
+        # Shared gate (see llm/utils.py): hint ONLY on a real tool-domain
+        # touch, else small models spuriously escalate on pure chat.
+        hint_armed = should_arm_tool_hint(context["_user_text"])
+        if hint_armed:
             full_msgs = full_msgs + [{"role": "system", "content": _TOOL_ASK_HINT}]
-            hint_armed = True
         logger.info("Pure chat (question+None) — tools disabled (hint_armed=%s)", hint_armed)
     else:
         use_tools = True
@@ -356,7 +242,7 @@ async def chat_with_ollama_stream(
     last_user_msg = next((m.get("content", "") for m in reversed(messages)
                           if m.get("role") == "user"), "")
     if (origin == "chip" and not think):
-        chip_q = _chip_clarify_question(tool_group or "", last_user_msg)
+        chip_q = chip_clarify_response(origin, think, tool_group, last_user_msg)
         if chip_q:
             logger.info("Chip-origin %s request — instant clarify (LLM skipped)", tool_group)
             yield {"token": chip_q}

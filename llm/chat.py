@@ -25,12 +25,18 @@ from tools import (
 from .payload import _build_full_messages, _build_payload, _normalize_messages_for_backend, trim_messages_for_context
 from .utils import (
     _THINKING_STRIP_RE,
+    _TOOL_ASK_HINT,
+    _bare_tool_name,
     CONTINUATION_NOTE,
     _check_tool_leak,
+    _escalation_tools,
     _get_client,
+    _wants_tools_hint,
+    chip_clarify_response,
     clean_reasoning,
     is_lookup_tool,
     is_mutation_tool,
+    should_arm_tool_hint,
     strip_prefix,
     strip_tool_leaks,
     user_requested_action,
@@ -177,22 +183,31 @@ async def chat_with_ollama(
     intent: str = "action",
     tool_group: str | None = None,
     reasoning_effort: str = "",
+    origin: str = "",
 ) -> dict:
     full_msgs = await _build_full_messages(messages, memories or [], summary, session_id, tool_group=tool_group)
     context = {
         "user_id": user_id,
         "session_id": session_id,
+        "_origin": (origin or "").strip().lower(),
         "_user_text": next((m.get("content", "") for m in reversed(messages) if m.get("role") == "user"), ""),
     }
     current_msgs: list[dict] = []
     memories_saved = 0
     thinking = ""
     from tools import get_combined_tools
-    if intent == "question" and tool_group is None:
+    intent_no_tools = intent == "question" and tool_group is None
+    if intent_no_tools:
         use_tools = False
         filtered_tools = None
-        logger.info("Pure chat (question+None) — tools disabled")
+        # Shared gate with the stream path (llm/utils.py): hint ONLY on a
+        # real tool-domain touch, else small models spuriously escalate.
+        hint_armed = should_arm_tool_hint(context["_user_text"])
+        if hint_armed:
+            full_msgs = full_msgs + [{"role": "system", "content": _TOOL_ASK_HINT}]
+        logger.info("Pure chat (question+None) — tools disabled (hint_armed=%s)", hint_armed)
     else:
+        hint_armed = False
         use_tools = True
         if tool_group:
             filtered_tools = get_tools_for_group(tool_group)
@@ -201,9 +216,19 @@ async def chat_with_ollama(
             filtered_tools = get_combined_tools()
             logger.info(f"No specific group — sending combined tools ({len(filtered_tools)} tools)")
 
+    # Chip-origin fast path, mirroring the stream path: create/send chips
+    # never reach the model — the clarifying question is deterministic.
+    last_user_msg = next((m.get("content", "") for m in reversed(messages)
+                          if m.get("role") == "user"), "")
+    chip_q = chip_clarify_response(origin, think, tool_group, last_user_msg)
+    if chip_q:
+        logger.info("Chip-origin %s request — instant clarify (LLM skipped)", tool_group)
+        return {"reply": chip_q, "pending_action": None, "memories_saved": 0, "thinking": None}
+
     executed_tool_sigs: set[str] = set()
-    sig_exec_counts: dict[str, int] = {}
+    sig_exec_counts: dict[str] = {}
     final_nudge_used = False
+    tools_escalated = False
     mutation_executed = False
     continuation_noted = False
     tools_tokens = 0
@@ -261,6 +286,24 @@ async def chat_with_ollama(
                     thinking = clean_reasoning(message.get("thinking") or message.get("reasoning_content") or "")
 
         if not tool_calls:
+            if (hint_armed and not tools_escalated and not think
+                    and (_check_tool_leak(raw_content) or _wants_tools_hint(raw_content)
+                         or _bare_tool_name(raw_content))):
+                # Mid-loop hatch: non-stream twin of the stream escalate path.
+                # Redo this round with the smallest sufficient toolset.
+                tools_escalated = True
+                use_tools = True
+                # The injected hint says "you have NO tools" — now false, and
+                # left in place it would make the model re-emit the marker
+                # instead of calling the freshly attached tools.
+                full_msgs = [m for m in full_msgs if m.get("content") != _TOOL_ASK_HINT]
+                try:
+                    filtered_tools, esc_scope = _escalation_tools(raw_content, context["_user_text"])
+                except Exception:
+                    logger.exception("Escalation toolset selection failed")
+                    filtered_tools, esc_scope = get_combined_tools(), "combined"
+                logger.info("Hatch escalating (non-stream): scope=%s (%d tools)", esc_scope, len(filtered_tools))
+                continue
             return {"reply": strip_prefix(raw_content), "pending_action": None, "memories_saved": memories_saved, "thinking": thinking}
 
         non_confirm_calls = [c for c in tool_calls if c.get("function", {}).get("name", "") not in CONFIRM_TOOLS]
