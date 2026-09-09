@@ -70,9 +70,8 @@ def test_mail_factory_per_user(cuser):
 
 
 def test_nc_factories_prefer_context_creds():
-    from utils import NC_CREDS
-
     import nextcloud_notes as nn
+    from utils import NC_CREDS
 
     creds = {"url": "https://me.example.com", "user": "me", "password": "pw"}
     tok = NC_CREDS.set(creds)
