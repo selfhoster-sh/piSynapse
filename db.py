@@ -301,6 +301,16 @@ async def init_db():
     """)
 
     await db.execute("""
+        CREATE TABLE IF NOT EXISTS user_settings (
+            user_id    TEXT NOT NULL,
+            key        TEXT NOT NULL,
+            value      TEXT NOT NULL DEFAULT '',
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, key)
+        )
+    """)
+
+    await db.execute("""
         CREATE TABLE IF NOT EXISTS memories (
             id           INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id      TEXT NOT NULL DEFAULT 'default',
@@ -2154,6 +2164,58 @@ async def resolve_user_by_key(api_key: str) -> dict | None:
     if user is not None:
         _user_cache[digest] = (user, now + _USER_CACHE_TTL)
     return user
+
+
+async def get_user_settings(user_id: str) -> dict[str, str]:
+    """Return all personal settings for a user as {key: value}."""
+    db = await get_db()
+    cur = await db.execute(
+        "SELECT key, value FROM user_settings WHERE user_id = ?", (user_id,)
+    )
+    return {r[0]: r[1] for r in await cur.fetchall()}
+
+
+async def set_user_setting(user_id: str, key: str, value: str) -> None:
+    """Upsert one personal setting. Raises ValueError for non-personal keys."""
+    from config import PERSONAL_KEYS
+
+    if key not in PERSONAL_KEYS:
+        raise ValueError(f"Not a personal setting: {key}")
+    db = await get_db()
+    async with _write_lock():
+        await db.execute(
+            "INSERT INTO user_settings (user_id, key, value, updated_at) "
+            "VALUES (?, ?, ?, CURRENT_TIMESTAMP) "
+            "ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, "
+            "updated_at = CURRENT_TIMESTAMP",
+            (user_id, key, value),
+        )
+        await _commit_with_retry(db)
+
+
+async def effective_setting(user_id: str | None, key: str, default: str = "") -> str:
+    """Resolve a setting with user > global precedence.
+
+    Personal keys: the user's row wins; otherwise the live global value
+    (env-derived config attr); otherwise the given default. Unknown or
+    empty user falls straight to global.
+    """
+    if user_id:
+        try:
+            db = await get_db()
+            cur = await db.execute(
+                "SELECT value FROM user_settings WHERE user_id = ? AND key = ?",
+                (user_id, key),
+            )
+            row = await cur.fetchone()
+            if row is not None:
+                return row[0]
+        except Exception as e:
+            logger.warning(f"Personal setting lookup failed ({key}): {e}")
+    import config as _cfg
+
+    val = getattr(_cfg, key, default)
+    return default if val is None else str(val)
 
 
 # -- Rolling Summary --
