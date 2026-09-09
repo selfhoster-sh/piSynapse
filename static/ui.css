@@ -491,6 +491,9 @@ body.glass-mode .fb-tab.done{background:color-mix(in srgb, var(--accent) 20%, rg
    than before by request; theme-aware via --bg (uniform across modes). */
 #input-area::before{content:'';position:absolute;left:0;right:0;transform:none;
   width:100%;height:170px;bottom:calc(-20px - env(safe-area-inset-bottom,0px));
+  /* Behind the bar content (positioned paints above static siblings), but
+     still inside #input-area's own stacking context, so above messages. */
+  z-index:-1;
   background:linear-gradient(to top, rgba(0,0,0,.55) 0, rgba(0,0,0,.28) 55%, transparent 100%);
   background:linear-gradient(to top, var(--bg) 0%, color-mix(in srgb, var(--bg) 62%, transparent) 55%, transparent 100%);
   pointer-events:none}
