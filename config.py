@@ -149,6 +149,21 @@ CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o
 TRUSTED_HOSTS = {h.strip() for h in os.getenv("TRUSTED_HOSTS", "").split(",") if h.strip()}
 MEDIA_MAX_MB = _safe_int("MEDIA_MAX_MB", 100)
 
+# -- Personal vs system settings (multi-user) --
+# Personal keys live per-user (user_settings table, every user incl. admins);
+# everything else is system-wide (.env, admins only). Precedence everywhere:
+# user row -> global env value -> code default. Mirrors the Nextcloud /
+# Open WebUI split: admins own the building, users own their thermostat.
+PERSONAL_KEYS = frozenset({
+    "UI_LANGUAGE",
+    "ASSISTANT_USER",
+    "DEFAULT_CITY",
+    "STT_ENGINE",
+    "TTS_ENGINE",
+    "TTS_VOICE",
+    "AUTO_SEND_ON_VOICE",
+    "AUTO_TTS_ON_VOICE",
+})
 # -- Rate limits (requests/min per bucket; raise on bigger hardware) --
 RATE_LIMIT_RPM = _safe_int("RATE_LIMIT_RPM", 30)
 RATE_LIMIT_SESSION_RPM = _safe_int("RATE_LIMIT_SESSION_RPM", 20)

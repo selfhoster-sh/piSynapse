@@ -153,3 +153,39 @@ def test_rotation_invalidates_cached_resolution(monkeypatch, tmp_path):
     assert client.post("/api/thing", headers={"x-api-key": old_raw}).status_code == 401
     r = client.post("/api/thing", headers={"x-api-key": new_raw})
     assert r.status_code == 200 and r.json()["user_id"] == user["id"]
+
+
+# -- Personal settings (M3a) --
+
+def _suid(name="pref-user"):
+    async def _go():
+        user, _ = await dbmod.create_user(name)
+        return user["id"]
+
+    return asyncio.run(_go())
+
+
+def test_personal_setting_roundtrip_and_precedence(users_db, monkeypatch):
+    import config as config_module
+
+    uid = _suid()
+    # No row -> global value wins.
+    monkeypatch.setattr(config_module, "DEFAULT_CITY", "Ankara")
+    assert asyncio.run(dbmod.effective_setting(uid, "DEFAULT_CITY", "")) == "Ankara"
+    # Row wins over global.
+    asyncio.run(dbmod.set_user_setting(uid, "DEFAULT_CITY", "İzmir"))
+    assert asyncio.run(dbmod.effective_setting(uid, "DEFAULT_CITY", "")) == "İzmir"
+    # Other users unaffected; unknown user falls back to global.
+    assert asyncio.run(dbmod.effective_setting("ghost", "DEFAULT_CITY", "")) == "Ankara"
+    assert asyncio.run(dbmod.effective_setting(None, "DEFAULT_CITY", "")) == "Ankara"
+    assert asyncio.run(dbmod.get_user_settings(uid)) == {"DEFAULT_CITY": "İzmir"}
+
+
+def test_non_personal_key_rejected(users_db):
+    uid = _suid()
+    import pytest as _pytest
+
+    with _pytest.raises(ValueError):
+        asyncio.run(dbmod.set_user_setting(uid, "LLM_BACKEND", "ollama"))
+    with _pytest.raises(ValueError):
+        asyncio.run(dbmod.set_user_setting(uid, "API_KEY", "x"))
