@@ -82,6 +82,9 @@ def test_me_rotate_list_flow(users_api):
     # Rotate: new key works, old dies, and it is shown exactly once.
     new_key = client.post("/users/key/rotate", headers={"x-api-key": bob_key}).json()["api_key"]
     assert new_key != bob_key
+    # Key-only assertions below: drop the register-issued session cookies so
+    # the ambient browser session doesn't authenticate in place of the key.
+    client.cookies.clear()
     assert client.get("/users/me", headers={"x-api-key": bob_key}).status_code == 401
     assert client.get("/users/me", headers={"x-api-key": new_key}).status_code == 200
 
@@ -140,9 +143,11 @@ def test_password_set_change_and_revoke(users_api):
     assert client.post("/users/login", json={"name": "fred", "password": "first-pass"}).status_code == 401
     second = client.post("/users/login", json={"name": "fred", "password": "second-pass"})
     assert second.status_code == 200
-    # Revoke the device key; primary key keeps working.
+    # Revoke the device key; primary key keeps working. Key-only view below:
+    # clear the register/login session cookies first (see rotate test).
     kid = second.json()["key_id"]
     assert client.delete(f"/users/me/keys/{kid}", headers=h).status_code == 404 - 404 + 200
+    client.cookies.clear()
     assert client.get("/users/me", headers={"x-api-key": second.json()["api_key"]}).status_code == 401
     assert client.get("/users/me", headers=h).status_code == 200
     assert client.delete("/users/me/keys/nope", headers=h).status_code == 404

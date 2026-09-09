@@ -511,7 +511,7 @@ async def security_middleware(request: Request, call_next):
     # Credential-issuing endpoints cannot require credentials — but they stay
     # under the STRICT rate limiter (not the lenient public bucket) as
     # anti-enumeration/brute-force hardening.
-    is_public_auth = path in ("/users/register", "/users/login") and request.method == "POST"
+    is_public_auth = path in ("/users/register", "/users/login", "/users/session", "/users/logout") and request.method == "POST"
 
     # --- Skip auth for CORS preflight (only OPTIONS with Access-Control-Request-Method) ---
     if request.method == "OPTIONS" and "access-control-request-method" in request.headers:
@@ -547,9 +547,18 @@ async def security_middleware(request: Request, call_next):
 
     # --- API Key verification (DB users + legacy .env key; unknown -> 401) ---
     if not is_exempt and not is_debug and not is_public_auth:
-        from db import count_users, resolve_user_by_key
+        from db import SESSION_COOKIE_NAME, count_users, resolve_session, resolve_user_by_key
 
+        user = None
+        # Explicit credential first (API key header: native apps, curl, owner
+        # tooling), ambient session cookie second. Header wins when both are
+        # present — a deliberate credential beats an ambient one. Either
+        # yields the same request.state identity downstream.
         user = await resolve_user_by_key(request.headers.get("x-api-key", ""))
+        if user is None:
+            session_raw = request.cookies.get(SESSION_COOKIE_NAME, "")
+            if session_raw:
+                user = await resolve_session(session_raw)
         if user is None:
             # Fail-closed misconfiguration signal only when NOTHING could
             # authenticate (no .env key and no registered users at all).

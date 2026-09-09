@@ -171,6 +171,9 @@ RATE_LIMIT_PUBLIC_RPM = _safe_int("RATE_LIMIT_PUBLIC_RPM", 120)
 # Only trust X-Forwarded-For when running behind a trusted reverse proxy.
 # Enabled by default: LAN users must not be able to spoof their IP to bypass rate limits.
 TRUST_X_FORWARDED_FOR = os.getenv("TRUST_X_FORWARDED_FOR", "").strip().lower() in ("1", "true", "yes", "on")
+# Session cookie Secure flag: enable ONLY behind HTTPS (Caddy/domain setups).
+# On plain-HTTP LAN the browser would never send a Secure cookie (lockout).
+SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "").strip().lower() in ("1", "true", "yes", "on")
 
 # -- Chat --
 HISTORY_LIMIT = _safe_int("HISTORY_LIMIT", 12)

@@ -328,6 +328,20 @@ async def init_db():
     await db.execute("CREATE INDEX IF NOT EXISTS idx_user_api_keys_user ON user_api_keys(user_id)")
 
     await db.execute("""
+        CREATE TABLE IF NOT EXISTS user_sessions (
+            id         TEXT PRIMARY KEY,
+            user_id    TEXT NOT NULL,
+            token_hash TEXT NOT NULL UNIQUE,
+            device     TEXT NOT NULL DEFAULT '',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            expires_at DATETIME NOT NULL,
+            last_seen  DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id)")
+
+    await db.execute("""
         CREATE TABLE IF NOT EXISTS user_settings (
             user_id    TEXT NOT NULL,
             key        TEXT NOT NULL,
@@ -2522,12 +2536,120 @@ async def revoke_device_key(user_id: str, key_id: str) -> bool:
     return True
 
 
+# ── Browser sessions (cookie auth; API keys stay server-side) ─────────────────
+# Opaque tokens: 32 random bytes, SHA-256 stored (like API keys — the raw
+# value exists only at creation). autouse-tested hermeticity needs no clock
+# mocking: expiry is compared in SQL against CURRENT_TIMESTAMP.
+SESSION_COOKIE_NAME = "ps_session"
+SESSION_TTL_DAYS = 30
+SESSION_TOUCH_DAYS = 15
+
+
+def _hash_session_token(raw: str) -> str:
+    import hashlib as _hl
+
+    return _hl.sha256(raw.encode("utf-8")).hexdigest()
+
+
+async def create_session(user_id: str, device: str = "") -> tuple[dict, str]:
+    """Open a browser session. Returns (session_row, raw_token) — raw once."""
+    import secrets as _secrets
+    import uuid as _uuid
+
+    raw = _secrets.token_urlsafe(32)
+    sid = _uuid.uuid4().hex[:12]
+    db = await get_db()
+    async with _write_lock():
+        await db.execute(
+            "INSERT INTO user_sessions (id, user_id, token_hash, device, expires_at) "
+            "VALUES (?, ?, ?, ?, datetime('now', ?))",
+            (sid, user_id, _hash_session_token(raw), (device or "")[:100], f"+{SESSION_TTL_DAYS} days"),
+        )
+        await _commit_with_retry(db)
+    return {"id": sid, "user_id": user_id}, raw
+
+
+async def resolve_session(raw_token: str) -> dict | None:
+    """Resolve a session cookie to its user dict, or None. Never raises.
+
+    Sliding expiry: sessions idle past half their TTL get a fresh window on
+    use, so daily users never re-login while abandoned ones die on schedule.
+    """
+    from datetime import datetime as _dt
+
+    token = (raw_token or "").strip()
+    if not token:
+        return None
+    try:
+        db = await get_db()
+        cur = await db.execute(
+            "SELECT s.id, s.user_id, s.expires_at FROM user_sessions s WHERE s.token_hash = ?",
+            (_hash_session_token(token),),
+        )
+        row = await cur.fetchone()
+        if not row:
+            return None
+        try:
+            exp = _dt.strptime(row[2][:19], "%Y-%m-%d %H:%M:%S")
+        except Exception:
+            return None
+        now = _dt.utcnow()
+        if exp <= now:
+            await db.execute("DELETE FROM user_sessions WHERE id = ?", (row[0],))
+            await _commit_with_retry(db)
+            return None
+        if (exp - now).days < SESSION_TOUCH_DAYS:
+            await db.execute(
+                "UPDATE user_sessions SET expires_at = datetime('now', ?), last_seen = CURRENT_TIMESTAMP WHERE id = ?",
+                (f"+{SESSION_TTL_DAYS} days", row[0]),
+            )
+            await _commit_with_retry(db)
+        return await get_user(row[1])
+    except Exception:
+        return None
+
+
+async def revoke_session(raw_token: str) -> bool:
+    """Revoke one session (logout). Always safe to call."""
+    token = (raw_token or "").strip()
+    if not token:
+        return False
+    try:
+        db = await get_db()
+        async with _write_lock():
+            cur = await db.execute(
+                "DELETE FROM user_sessions WHERE token_hash = ?", (_hash_session_token(token),)
+            )
+            await _commit_with_retry(db)
+            return cur.rowcount > 0
+    except Exception:
+        return False
+
+
+async def revoke_other_sessions(user_id: str, keep_raw_token: str) -> int:
+    """Revoke all of a user's sessions except the current one (password change).
+
+    Returns the revoked count. Never raises.
+    """
+    try:
+        db = await get_db()
+        async with _write_lock():
+            cur = await db.execute(
+                "DELETE FROM user_sessions WHERE user_id = ? AND token_hash != ?",
+                (user_id, _hash_session_token((keep_raw_token or "").strip())),
+            )
+            await _commit_with_retry(db)
+            return cur.rowcount
+    except Exception:
+        return 0
+
+
 async def delete_user(user_id: str) -> bool:
     """Delete a user and ALL of their data (privacy-complete wipe).
 
     Removes conversations (+FTS rows), sessions, memories, session maps,
     tool audits, feedback on their messages, sync items, personal settings,
-    device keys and the user row itself — in one locked transaction.
+    device keys, browser sessions, quorum votes and the user row itself — in one locked transaction.
     Returns False when the user does not exist.
     """
     db = await get_db()
@@ -2560,6 +2682,8 @@ async def delete_user(user_id: str) -> bool:
         await db.execute("DELETE FROM sync_items WHERE user_id = ?", (user_id,))
         await db.execute("DELETE FROM user_settings WHERE user_id = ?", (user_id,))
         await db.execute("DELETE FROM user_api_keys WHERE user_id = ?", (user_id,))
+        await db.execute("DELETE FROM user_sessions WHERE user_id = ?", (user_id,))
+        await db.execute("DELETE FROM feedback_votes WHERE user_id = ?", (user_id,))
         await db.execute("DELETE FROM users WHERE id = ?", (user_id,))
         await _commit_with_retry(db)
     invalidate_user_cache(user_id)
