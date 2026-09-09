@@ -122,16 +122,24 @@ async def _weather_data(city: str = "") -> dict | None:
     }
 
 
+def format_weather_summary(data: dict) -> str:
+    """Single shared '<city>: <temp>°C, <condition>[, feels like …]' format.
+
+    Used by both the tool reply (get_weather) and the sidebar widget so a
+    format change cannot silently fork the two surfaces.
+    """
+    feels = data.get("feels_c")
+    base = f"{data.get('city')}: {data.get('temp_c')}°C, {data.get('condition')}"
+    return f"{base}, feels like {feels}°C" if feels is not None else base
+
+
 async def get_weather(city: str = "") -> str:
     city = city or config.DEFAULT_CITY or "London"
     try:
         data = await _weather_data(city)
         if data is None:
             return f"ERROR: City not found: {city}"
-        feels = data["feels_c"]
-        return (f"{data['city']}: {data['temp_c']}°C, {data['condition']}, "
-                f"feels like {feels}°C" if feels is not None
-                else f"{data['city']}: {data['temp_c']}°C, {data['condition']}")
+        return format_weather_summary(data)
     except Exception as e:
         logger.error(f"Weather API error: {e}")
         return "ERROR: unable to fetch weather data"

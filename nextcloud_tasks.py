@@ -343,7 +343,11 @@ async def create_task(summary: str, due: str = "", priority: int = 0, notes: str
 
 async def list_tasks(show_completed: bool = False) -> tuple[str, list[dict]]:
     try:
-        return await asyncio.to_thread(_list_tasks_sync, show_completed)
+        # Data-fetch budget (3x the connection timeout): a hung CalDAV
+        # server must fail the turn, not the whole request.
+        return await asyncio.wait_for(
+            asyncio.to_thread(_list_tasks_sync, show_completed), timeout=30
+        )
     except Exception as e:
         logger.error(f"Tasks Error: {e}")
         return "ERROR: Failed to list tasks.", []

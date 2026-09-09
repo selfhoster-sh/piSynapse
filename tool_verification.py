@@ -106,7 +106,7 @@ async def run_verification(
         return audit_id, verification_status
     except Exception as e:
         logger.warning(f"Verification hook failed for tool '{tool_name}': {e}")
-        return None, None
+        return None, "verification_error"
 
 
 async def _verify(
@@ -136,7 +136,9 @@ async def _verify(
         return "verified_by_fallback" if matched else "unverified"
     except Exception as e:
         logger.warning(f"Verification for tool '{tool_name}' failed: {e}")
-        return "verification_failed" if (entity_id is not None and entity_id != "") else "unverified"
+        # Visible signal (not silent None/"unverified"): the backend could not
+        # be re-read, so nothing about this write is proven.
+        return "verification_error"
 
 
 async def _confirm_by_id(tool_name: str, entity_id: str | int, params: dict) -> bool:

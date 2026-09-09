@@ -782,3 +782,14 @@ def test_parse_leaked_tool_call_literals():
     import json
     args = json.loads(call["function"]["arguments"])
     assert args == {"title": "Buy milk", "priority": 3, "done": True, "due": None, "ratio": 0.5}
+
+
+def test_format_weather_summary_both_branches():
+    from weather import format_weather_summary
+
+    assert format_weather_summary(
+        {"city": "Ankara", "temp_c": 20, "condition": "açık", "feels_c": 18}
+    ) == "Ankara: 20°C, açık, feels like 18°C"
+    assert format_weather_summary(
+        {"city": "Ankara", "temp_c": 20, "condition": "açık", "feels_c": None}
+    ) == "Ankara: 20°C, açık"

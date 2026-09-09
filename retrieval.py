@@ -31,11 +31,19 @@ def merge_history(history: list[dict], retrieved: list[dict], recent_window: int
     """Replace the older part of history with the retrieved (relevant) subset.
 
     Falls back to the original history untouched when nothing was retrieved.
+    Retrieved messages already present verbatim in the recent window are
+    dropped (they would double context tokens); the dropped count is logged
+    so silent window-eating stays visible.
     """
     if not retrieved:
         return history
     recent, _ = split_recent(history, recent_window)
-    return retrieved + recent
+    seen = {(m.get("role"), m.get("content")) for m in recent}
+    kept = [m for m in retrieved if (m.get("role"), m.get("content")) not in seen]
+    dropped = len(retrieved) - len(kept)
+    if dropped:
+        logger.info("merge_history: dropped %d retrieved message(s) already verbatim in the recent window", dropped)
+    return kept + recent
 
 
 async def _fetch_candidates(session_id: str, recent_window: int = RECENT_WINDOW, user_id: str = "default") -> list[dict]:

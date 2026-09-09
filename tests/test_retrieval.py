@@ -158,3 +158,16 @@ def test_retrieve_reuses_precomputed_query_embedding(monkeypatch):
     assert [m["content"] for m in picked] == ["c2"]
     # The query must not be embedded again — only the candidates are batched.
     assert embedded == [["c1", "c2"]]
+
+
+def test_merge_history_dedupes_verbatim_overlap():
+    hist = [{"role": "user", "content": f"m{i}"} for i in range(10)]
+    retrieved = [
+        {"role": "user", "content": "m8"},  # already verbatim in recent window
+        {"role": "assistant", "content": "relevant old"},
+    ]
+    merged = merge_history(hist, retrieved, recent_window=8)
+    contents = [m["content"] for m in merged]
+    assert contents.count("m8") == 1
+    assert "relevant old" in contents
+    assert contents[-8:] == [f"m{i}" for i in range(2, 10)]
