@@ -1,5 +1,9 @@
 # piSynapse Android Port — Durum Dokümanı
 
+> **Taşınma notu (2026-09-09):** Android uygulama ağacı bu repodan çıkarıldı; artık kardeş klasörde ayrı duruyor: `../pisynapse-android` (kendi git repo'su, dondurulmuş haliyle). Aşağıdaki içerik taşınma anındaki durumu yansıtır, güncellenmeyecektir.
+>
+> *Relocation note (2026-09-09): the Android app tree moved out of this repo to the sibling folder `../pisynapse-android` (own git repo, frozen as-is). Content below is archival.*
+
 > Durum: **CANLI (v0.15).** Kapaciter + Kotlin portu telefondaki `com.pisynapse.app` üzerinde çalışıyor; Gemma-4-E2B tamamen çevrimdışı, native tool-call döngüsünde. Bu dosya gerçekleşen mimariyi yansıtır (2026-09-05 güncel).
 > Karar zinciri (geçmiş): native Yeniden derleme → UI mevcut SPA'dan (Capacitor) → LiteRT-LM + Gemma E2B.
 
