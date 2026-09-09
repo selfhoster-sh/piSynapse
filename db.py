@@ -197,6 +197,7 @@ MIGRATIONS: list[tuple[str, str, str]] = [
     ("notes_session_map", "user_id", "TEXT DEFAULT 'default'"),
     ("tasks_session_map", "user_id", "TEXT DEFAULT 'default'"),
     ("calendar_session_map", "user_id", "TEXT DEFAULT 'default'"),
+    ("tool_audit_log", "user_id", "TEXT"),
 ]
 
 
@@ -333,7 +334,8 @@ async def init_db():
             expected_group TEXT,
             verification_status TEXT,
             confirmed_at   DATETIME,
-            conversation_id INTEGER
+            conversation_id INTEGER,
+            user_id      TEXT
         )
     """)
 
@@ -495,10 +497,12 @@ async def init_db():
     await _apply_migrations(db)
 
     # Legacy repairs run here (after migrations): they reference migrated
-    # columns that may not exist yet on old DBs.
-    # Faz 3c: idempotent re-sync gate. (user_id, client_key) must be unique so
-    # parallel re-syncs cannot duplicate rows (TOCTOU). Legacy DBs may hold
-    # duplicates from the pre-guard window: keep the earliest row per key.
+    # columns that may not exist yet on old DBs. All idempotent; scans are
+    # cheap at realistic sizes (a version gate was considered and rejected:
+    # it risks silently skipping repairs after partial runs, saving <1s).
+    for _owner_tbl, _owner_col in (("conversations", "user_id"), ("sessions", "user_id"),
+                                   ("memories", "user_id"), ("tool_audit_log", "user_id")):
+        await db.execute(f"UPDATE {_owner_tbl} SET {_owner_col} = 'default' WHERE {_owner_col} IS NULL")
     doomed_cur = await db.execute(
         "SELECT id FROM conversations WHERE client_key IS NOT NULL AND id NOT IN "
         "(SELECT MIN(id) FROM conversations WHERE client_key IS NOT NULL "
@@ -525,9 +529,6 @@ async def init_db():
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_client_key "
         "ON conversations(user_id, client_key) WHERE client_key IS NOT NULL"
     )
-    # Faz M2b: legacy map rows predate user_id (they got 'default' from the
-    # ADD COLUMN). Reassign rows whose session is owned by someone else;
-    # true-default and orphan sessions stay 'default'. Idempotent.
     for _map_tbl in ("email_session_map", "notes_session_map", "tasks_session_map", "calendar_session_map"):
         await db.execute(
             f"UPDATE {_map_tbl} SET user_id = "
