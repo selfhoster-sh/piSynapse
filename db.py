@@ -5,10 +5,12 @@ Single persistent connection with WAL mode for Pi-friendly I/O.
 
 import asyncio
 import csv
+import hashlib
 import json
 import logging
 import os
 import re
+import secrets
 
 import aiosqlite
 
@@ -278,6 +280,16 @@ async def init_db():
             summary     TEXT,
             summarized_until INTEGER DEFAULT 0,
             user_id     TEXT DEFAULT 'default'
+        )
+    """)
+
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id         TEXT PRIMARY KEY,
+            name       TEXT NOT NULL DEFAULT '',
+            key_hash   TEXT NOT NULL UNIQUE,
+            is_admin   INTEGER NOT NULL DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
 
@@ -1916,6 +1928,129 @@ async def get_session_meta(session_id: str, user_id: str = "default") -> dict:
     if row is None:
         return {"summary": "", "summarized_until": 0}
     return {"summary": row[0] or "", "summarized_until": row[1] or 0}
+
+
+# -- Users (multi-user identity) --
+#
+# One row per human. API keys are stored as SHA-256 hashes only — the raw key
+# exists solely at creation/rotation time (returned once to the caller).
+# The pre-multi-user identity keeps id "default": existing rows already point
+# there, so admin bootstrap rewrites zero data rows.
+
+DEFAULT_USER_ID = "default"
+
+
+def generate_api_key() -> str:
+    """Generate a new raw API key (returned to the caller exactly once)."""
+    return secrets.token_urlsafe(32)
+
+
+def hash_api_key(key: str) -> str:
+    """One-way hash for storage/comparison (never persist the raw key)."""
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()
+
+
+def _row_to_user(row) -> dict:
+    return {
+        "id": row[0],
+        "name": row[1] or "",
+        "is_admin": bool(row[2]),
+        "created_at": row[3],
+    }
+
+
+async def count_users() -> int:
+    db = await get_db()
+    cur = await db.execute("SELECT COUNT(*) FROM users")
+    return (await cur.fetchone())[0]
+
+
+async def get_user(user_id: str) -> dict | None:
+    db = await get_db()
+    cur = await db.execute(
+        "SELECT id, name, is_admin, created_at FROM users WHERE id = ?", (user_id,)
+    )
+    row = await cur.fetchone()
+    return _row_to_user(row) if row else None
+
+
+async def get_user_by_key_hash(key_hash: str) -> dict | None:
+    db = await get_db()
+    cur = await db.execute(
+        "SELECT id, name, is_admin, created_at FROM users WHERE key_hash = ?",
+        (key_hash,),
+    )
+    row = await cur.fetchone()
+    return _row_to_user(row) if row else None
+
+
+async def list_users() -> list[dict]:
+    db = await get_db()
+    cur = await db.execute("SELECT id, name, is_admin, created_at FROM users ORDER BY created_at, id")
+    return [_row_to_user(r) for r in await cur.fetchall()]
+
+
+async def create_user(name: str, *, is_admin: bool = False, user_id: str | None = None) -> tuple[dict, str]:
+    """Create a user with a fresh API key. Returns (user_dict, raw_key).
+
+    The raw key is returned exactly once — only its hash is stored.
+    """
+    import uuid as _uuid
+
+    raw_key = generate_api_key()
+    uid = user_id or _uuid.uuid4().hex[:12]
+    db = await get_db()
+    async with _write_lock():
+        await db.execute(
+            "INSERT INTO users (id, name, key_hash, is_admin) VALUES (?, ?, ?, ?)",
+            (uid, (name or "").strip()[:100], hash_api_key(raw_key), 1 if is_admin else 0),
+        )
+        await _commit_with_retry(db)
+    user = await get_user(uid)
+    assert user is not None
+    return user, raw_key
+
+
+async def rotate_user_key(user_id: str) -> str | None:
+    """Replace a user's API key. Returns the new raw key once, else None."""
+    raw_key = generate_api_key()
+    db = await get_db()
+    async with _write_lock():
+        cur = await db.execute(
+            "UPDATE users SET key_hash = ? WHERE id = ?", (hash_api_key(raw_key), user_id)
+        )
+        await _commit_with_retry(db)
+        if cur.rowcount == 0:
+            return None
+    return raw_key
+
+
+async def ensure_default_admin() -> dict | None:
+    """Bootstrap the admin onto the pre-existing 'default' identity.
+
+    - Users table non-empty → nothing to do (returns None).
+    - Empty + `.env` API_KEY set → create admin id 'default' bound to that
+      key's hash (the single-user owner's key keeps working, now as admin).
+    - Empty + no key → nothing (the first registration becomes admin).
+    Existing data rows already point at 'default': zero rewrites, and the
+    invisibility invariant holds from the first multi-user row on.
+    """
+    db = await get_db()
+    cur = await db.execute("SELECT COUNT(*) FROM users")
+    if (await cur.fetchone())[0] > 0:
+        return None
+    import os as _os
+
+    env_key = (_os.getenv("API_KEY") or "").strip()
+    if not env_key:
+        return None
+    async with _write_lock():
+        await db.execute(
+            "INSERT OR IGNORE INTO users (id, name, key_hash, is_admin) VALUES (?, ?, ?, 1)",
+            (DEFAULT_USER_ID, "admin", hash_api_key(env_key)),
+        )
+        await _commit_with_retry(db)
+    return await get_user(DEFAULT_USER_ID)
 
 
 # -- Rolling Summary --
