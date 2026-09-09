@@ -159,7 +159,15 @@ async def _update_summary(session_id: str, user_id: str = "default"):
         if not to_summarize:
             return
         new_summary = await summarize_conversation(to_summarize, meta["summary"])
-        await update_session_summary(session_id, new_summary, new_boundary, user_id=user_id)
+        applied = await update_session_summary(
+            session_id, new_summary, new_boundary, user_id=user_id,
+            expected_until=meta["summarized_until"],
+        )
+        if not applied:
+            logger.info(
+                f"Summary write skipped for {session_id}: boundary advanced "
+                "concurrently; the pending span refolds next turn."
+            )
     except Exception as e:
         logger.error(f"Summary update failed for {session_id}: {e}")
 
