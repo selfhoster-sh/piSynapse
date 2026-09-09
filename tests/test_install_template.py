@@ -123,3 +123,25 @@ def test_litert_max_tokens_matches_config_default():
         f"litert max_num_tokens drift: install.py={m_inst.group(1)} "
         f"config.DEFAULT_LLM_NUM_CTX={m_cfg.group(1)}"
     )
+
+
+def test_lockfile_pins_all_direct_requirements():
+    import re as _re
+
+    root = os.path.join(os.path.dirname(__file__), "..")
+    with open(os.path.join(root, "requirements.txt"), encoding="utf-8") as f:
+        direct = [
+            _re.split(r"[<>=!~\s\[]", line.strip())[0].lower()
+            for line in f
+            if line.strip() and not line.startswith("#")
+        ]
+    with open(os.path.join(root, "requirements-lock.txt"), encoding="utf-8") as f:
+        locked = {}
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "==" not in line:
+                continue
+            name, ver = line.split("==", 1)
+            locked[name.strip().lower()] = ver.strip()
+    missing = [d for d in direct if d not in locked or not locked[d]]
+    assert not missing, f"unpinned direct requirements: {missing}"
