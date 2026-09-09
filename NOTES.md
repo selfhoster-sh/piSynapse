@@ -16,6 +16,13 @@
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 - **Sanitization rule:** this file may be published. Never write personal data, identity clues, deployment addresses (hostnames, IPs, ports), or accounts into it. Keep every narrative in English; Turkish inline tokens are allowed only as product corpus / i18n test data.
 
+## 2026-09-09 — M4 (multi-user verification & docs)
+
+- **Scope (plan M4):** legacy-upgrade proof, capacity guide, access docs. Two commits: `62b6852` (legacy test + audit backfill), `47698e2` (capacity + access + changelog).
+- **M4a:** legacy-upgrade test downgrades a fresh DB (drops newest columns/tables/index, rewinds version, plants dupes + NULL owners + legacy rows) and asserts full repair: version, dedupe, NULL-norm, index, map reassignment, audit inheritance (join-backfill added when the test exposed its absence — `tool_audit_log` rows now inherit their conversation's owner before NULL-norm), new tables.
+- **M4b:** `docs/capacity.md` (bottleneck = inference; Pi 5 est. 2–3 concurrent; tunables; per-device-key guidance — estimates framed as estimates); remote-access multi-user section; CHANGELOG entries.
+- **Test:** full suite **688 passed**.
+
 ## 2026-09-09 — M4-ui (browser login; user asked how others log in)
 
 - **Design (user question):** entry = onboarding server step (name + Register → `/users/register`, or key → `/users/me` validate); persistence = `ps_api_key` + new `ps_user_name` (all requests already flow through `getApiKey()`, untouched); exit = settings user row + logout; boot gate for onboarded-but-keyless (native excluded); 401s reroute to the login overlay instead of `prompt()` (guarded: not during onboarding, not for `/users/*`, never re-entered). Registration-closed/invalid-key toast and stay. Commit `33834b5` (`static/ui.js` — the server web UI, NOT the frozen Android tree).
