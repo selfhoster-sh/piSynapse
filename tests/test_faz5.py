@@ -61,9 +61,17 @@ def test_rate_limiter_remaining():
 
 # -- Session CRUD (new endpoints) --
 
-def test_create_and_delete_session(monkeypatch):
+def test_create_and_delete_session(monkeypatch, tmp_path):
     # Wildcard no longer disables Host checking: allow the TestClient host.
     monkeypatch.setattr(mainmod, "TRUSTED_HOSTS", {"testserver"})
+    # Isolated DB: the real app lifespan (init_db + admin bootstrap) must
+    # never touch the developer's live database from tests.
+    import db as dbmod
+
+    monkeypatch.setattr(dbmod, "DB_PATH", str(tmp_path / "faz5.db"))
+    import asyncio as _asyncio
+
+    _asyncio.run(dbmod.close_db())
     from fastapi.testclient import TestClient
 
     from main import app
