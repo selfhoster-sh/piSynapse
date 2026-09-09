@@ -139,6 +139,9 @@ LLM_TITLE_ENRICHMENT = os.getenv("LLM_TITLE_ENRICHMENT", "on")
 
 # -- Security --
 API_KEY = os.getenv("API_KEY", "")
+# Open registration for new users ("on"/"off"). The admin toggles this;
+# "off" makes POST /users/register return 403. First-ever user is admin.
+REGISTRATION_OPEN = os.getenv("REGISTRATION_OPEN", "on")
 CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
 # Empty by default: main.py auto-allows this machine's local hostnames/IPs
 # and logs a warning. Set TRUSTED_HOSTS explicitly (e.g. your LAN IP or

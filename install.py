@@ -1220,6 +1220,8 @@ TTS_ENGINE={TTS_ENGINE}
 # --- Security ---
 ENV_PATH=.env
 API_KEY={API_KEY}
+# Open user registration ("on"/"off"); admin toggles it post-install.
+REGISTRATION_OPEN=on
 CORS_ORIGINS=
 # Comma-separated allowed Host header values (e.g. 192.168.1.X,myhost.local).
 # Empty = auto-allow this machine's local hostnames/IPs (safe default).
@@ -1426,7 +1428,7 @@ def step_env() -> None:
         "PROTON_IMAP_HOST", "PROTON_IMAP_PORT", "PROTON_SMTP_HOST", "PROTON_SMTP_PORT",
         "IMAP_TIMEOUT", "SMTP_TIMEOUT", "CORS_ORIGINS", "MEDIA_MAX_MB",
         "INTENT_LLM_FALLBACK", "CONFLICT_COSINE",
-        "PISERVE_ADMIN_TOKEN", "AUDIT_EXPORT_DIR",
+        "PISERVE_ADMIN_TOKEN", "AUDIT_EXPORT_DIR", "REGISTRATION_OPEN",
         # NOTE: TRUSTED_HOSTS is deliberately NOT preserved — step_env always
         # asks it, so the given answer (even an intentional emptying) wins.
     }

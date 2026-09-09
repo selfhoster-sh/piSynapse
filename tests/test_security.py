@@ -38,6 +38,8 @@ def sec_app():
 @pytest.fixture
 def client(sec_app, monkeypatch):
     monkeypatch.setattr(mainmod, "API_KEY", "secret-key")
+    # Middleware resolves keys against live env truth, not the module attr.
+    monkeypatch.setenv("API_KEY", "secret-key")
     monkeypatch.setattr(mainmod, "TRUSTED_HOSTS", set())
     return TestClient(sec_app, base_url="http://localhost")
 
@@ -170,10 +172,16 @@ def test_update_settings_applies_all_keys_on_success(tmp_path, monkeypatch):
     assert "LLM_TEMPERATURE=0.9" in (tmp_path / "env_test").read_text(encoding="utf-8")
 
 
-def test_fail_closed_returns_503_without_configured_key(monkeypatch):
+def test_fail_closed_returns_503_without_configured_key(monkeypatch, tmp_path):
     """Fail-closed auth: no API_KEY configured → protected routes are 503,
     never left open (regression guard for the open-by-default behavior).
+
+    Uses an isolated empty DB: the live dev database may legitimately hold
+    users (e.g. created by a real-app lifespan run), which must not flip
+    this test to 401.
     """
+    import db as dbmod
+
     app = FastAPI()
     app.middleware("http")(mainmod.security_middleware)
 
@@ -181,6 +189,11 @@ def test_fail_closed_returns_503_without_configured_key(monkeypatch):
     async def api_thing():
         return {"ok": True}
 
+    monkeypatch.setattr(dbmod, "DB_PATH", str(tmp_path / "sec503.db"))
+    import asyncio as _asyncio
+
+    _asyncio.run(dbmod.close_db())
+    _asyncio.run(dbmod.init_db())
     monkeypatch.setattr(mainmod, "API_KEY", "")
     monkeypatch.setattr(mainmod, "TRUSTED_HOSTS", set())
     c = TestClient(app, base_url="http://localhost")
@@ -188,7 +201,9 @@ def test_fail_closed_returns_503_without_configured_key(monkeypatch):
     assert c.post("/api/thing", headers={"x-api-key": "anything"}).status_code == 503
 
 
-def test_debug_disabled_without_configured_key(monkeypatch):
+def test_debug_disabled_without_configured_key(monkeypatch, tmp_path):
+    import db as dbmod
+
     app = FastAPI()
     app.middleware("http")(mainmod.security_middleware)
 
@@ -196,6 +211,13 @@ def test_debug_disabled_without_configured_key(monkeypatch):
     async def debug():
         return {"ok": True}
 
+    # Isolated empty DB: a live dev database holding users must not flip
+    # this to 401 (same isolation rationale as the 503 test above).
+    monkeypatch.setattr(dbmod, "DB_PATH", str(tmp_path / "secdbg.db"))
+    import asyncio as _asyncio
+
+    _asyncio.run(dbmod.close_db())
+    _asyncio.run(dbmod.init_db())
     monkeypatch.setattr(mainmod, "API_KEY", "")
     monkeypatch.setattr(mainmod, "TRUSTED_HOSTS", set())
     c = TestClient(app, base_url="http://localhost")
