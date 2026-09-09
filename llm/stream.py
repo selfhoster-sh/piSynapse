@@ -217,6 +217,7 @@ async def chat_with_ollama_stream(
     tool_group: str | None = None,
     reasoning_effort: str = "",
     origin: str = "",
+    abort_event=None,
 ):
     full_msgs = await _build_full_messages(messages, memories or [], summary, session_id, tool_group=tool_group)
     context = {
@@ -277,6 +278,11 @@ async def chat_with_ollama_stream(
     continuation_noted = False
 
     for iteration in range(get("LLM_MAX_TOOL_ITERATIONS", 5)):
+        if abort_event is not None and abort_event.is_set():
+            logger.info("Stream aborted before round %d — stopping", iteration)
+            yield {"done": True, "aborted": True, "session_id": session_id,
+                   "memories_saved": memories_saved}
+            return
         if truncation_retried or final_nudge_used:
             use_tools = False
             filtered_tools = None
@@ -551,6 +557,14 @@ async def chat_with_ollama_stream(
             for call in non_confirm_calls:
                 fn = call.get("function", {})
                 tn = fn.get("name", "")
+                if abort_event is not None and abort_event.is_set():
+                    # "Durdur" must stop tool execution too — previously the
+                    # router broke its SSE loop while this generator kept
+                    # running tools in the background, writing unchecked.
+                    logger.info("Stream aborted before tool %s — stopping", tn)
+                    yield {"done": True, "aborted": True, "session_id": session_id,
+                           "memories_saved": memories_saved}
+                    return
                 args: dict = {}
                 t0 = time.perf_counter()
                 probe_sig = f"{tn}({json.dumps(parse_tool_args(fn.get('arguments')), sort_keys=True)})"
