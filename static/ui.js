@@ -3485,6 +3485,13 @@ async function loadAdminPanel(){
   if(!box) return;
   let me = null;
   try{ const d = await api('GET', '/users/me'); me = d && d.user; }catch(e){ return; }
+  if(me && me.name){
+    // Authoritative name: keys pasted directly into settings (or stored
+    // before the username cache existed) leave ps_user_name empty → '—'.
+    setUsername(me.name);
+    const un = document.getElementById('si-username');
+    if(un) un.textContent = me.name;
+  }
   if(!me || !me.is_admin) return; // non-admins never see this box
   box.style.display = '';
   try{
