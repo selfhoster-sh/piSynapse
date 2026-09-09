@@ -9,6 +9,15 @@ Two things break over plain HTTP, and both have the same fix (HTTPS):
    localhost.`) and stays off. The native phone app is unaffected (its
    WebView origin is a secure context).
 
+## Multi-user access
+
+Every person (and ideally every device) gets their **own API key**: register
+once per device at `POST /users/register` (or via the login screen), and
+never share keys. Per-user rate limits, memories, sessions, settings and
+summaries all key off it — a shared key merges everyone's data and quota.
+Admins manage users at `GET /users`; close open registration
+(`REGISTRATION_OPEN=off`) once the household is onboarded.
+
 ## Tier 1 — Same Wi-Fi, plain HTTP (easiest, limited)
 
 Open `http://<your-pi-ip>:8765`. Fine on a trusted home LAN for chat.
