@@ -229,6 +229,8 @@ def body_client(body_app, monkeypatch):
     from fastapi.testclient import TestClient
 
     monkeypatch.setattr(mainmod, "API_KEY", "secret-key")
+    # Middleware resolves keys against live env truth, not the module attr.
+    monkeypatch.setenv("API_KEY", "secret-key")
     monkeypatch.setattr(mainmod, "TRUSTED_HOSTS", set())
     return TestClient(body_app, base_url="http://localhost")
 
