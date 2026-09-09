@@ -28,8 +28,11 @@ def _run_update(monkeypatch, tmp_path, values, options_fake, initial="LLM_BACKEN
     monkeypatch.setattr(rc, "get_llm_model_options", options_fake)
     (tmp_path / ".env").write_text(initial)
 
+    from types import SimpleNamespace
+
+    admin_request = SimpleNamespace(state=SimpleNamespace(user_id="default", is_admin=True))
     body = rc.SettingsUpdate(values=values)
-    result = asyncio.run(rc.update_settings(body))
+    result = asyncio.run(rc.update_settings(body, admin_request))
     content = (tmp_path / ".env").read_text()
     return result, content
 
