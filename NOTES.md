@@ -19,6 +19,13 @@
 - **Multi-user invisibility rule:** one user's sessions, settings, mail and keys are invisible to every other user. Every user-scoped query needs its owner guard, every guard needs a both-directions test.
 - **Pre-push check:** before push, grep new docs/journal lines for secrets, passwords, IPs and credentials the same way code gets py_compile + pytest.
 
+## 2026-09-09 — History rewrite: zero-trace secret cleanup (user decision)
+
+- **Decision (user):** full history rewrite instead of rotation-only, on the grounds of (near-)zero external clones.
+- **Method:** `git filter-repo --replace-text` (leaked password → `***REDACTED***`, LAN IP → 192.168.x.x, `=Salih` → `=[redacted]`); 679 commits rewritten. Verified 0 hits for all three patterns across all refs, 0 hits in a fresh clone from the remote, full suite **705 passed** on the rewritten tree.
+- **Push:** `main` forced (`8fc3b70...5844f4c`); tags needed no force (the secret postdates them). Pre-rewrite bundle + replace file shredded after verification.
+- **Consequences:** every other clone (laptop included) must re-clone; old commit hashes/links are dead. `/home/salih` paths deliberately left (pervasive, low-risk). User-side password rotation still recommended (defense in depth).
+
 ## 2026-09-09 — auth helpers + mail gate (post-M5 hardening)
 
 - **Shared auth:** new `auth.py` with `current_user()` (401) + `require_admin()` (401/403, custom detail); routers/users.py, routers/config.py, routers/chat.py deduplicated onto it (chat keeps "default" fallback for exempt paths). 7 helper tests.
