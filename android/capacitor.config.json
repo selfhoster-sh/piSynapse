@@ -1,8 +1,0 @@
-{
-  "appId": "com.pisynapse.app",
-  "appName": "piSynapse",
-  "webDir": "../static",
-  "android": {
-    "allowMixedContent": false
-  }
-}
