@@ -181,6 +181,16 @@ def test_async_wrappers_offload(monkeypatch):
     assert result == [{"id": "1"}]
 
 
+def test_search_messages_forwards_mailbox():
+    # Real 4-arg wrapper (dispatcher passes mailbox_id): used to TypeError.
+    imap = _FakeIMAP(ids=("7",))
+    client = _FakeMail(imap=imap)
+    import asyncio
+    emails = asyncio.run(client.search_messages(1, "hello", 5, "Archive"))
+    assert len(emails) == 1
+    assert imap.selects == ["Archive"]
+
+
 # -- Body extraction --
 
 def test_get_body_plain():

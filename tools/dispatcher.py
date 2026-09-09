@@ -440,10 +440,10 @@ async def _run_mail_tool(name: str, params: dict, session_id: str = "", user_tex
             if session_id:
                 await cache_email_context(session_id, msgs)
             lines = [f" Recent Emails (showing {len(msgs)}):"]
-            for m in msgs:
+            for i, m in enumerate(msgs, 1):
                 bp = (m.get("body", "") or "").replace("\n", " ")[:150]
                 lines.append(
-                    f"From: {m.get('from', '?')} | Subject: {m.get('subject', '(no subject)')} "
+                    f"{i}. From: {m.get('from', '?')} | Subject: {m.get('subject', '(no subject)')} "
                     f"| Date: {m.get('date', '?')} | Preview: {bp}"
                 )
             return "\n".join(lines), None
@@ -493,10 +493,10 @@ async def _run_mail_tool(name: str, params: dict, session_id: str = "", user_tex
             if session_id:
                 await cache_email_context(session_id, results)
             lines = [f"'{q}' Results ({len(results)}):"]
-            for m in results:
+            for i, m in enumerate(results, 1):
                 bp = (m.get("body", "") or "").replace("\n", " ")[:150]
                 lines.append(
-                    f"From: {m.get('from', '?')} | Subject: {m.get('subject', '(no subject)')} "
+                    f"{i}. From: {m.get('from', '?')} | Subject: {m.get('subject', '(no subject)')} "
                     f"| Preview: {bp}"
                 )
             return "\n".join(lines), None
