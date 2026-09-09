@@ -16,6 +16,16 @@
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 - **Sanitization rule:** this file may be published. Never write personal data, identity clues, deployment addresses (hostnames, IPs, ports), or accounts into it. Keep every narrative in English; Turkish inline tokens are allowed only as product corpus / i18n test data.
 
+## 2026-09-09 — M2 (multi-user isolation hardening)
+
+- **Scope (plan M2):** per-key limits, map/audit/resume/cache scoping, invisibility proofs. Four commits: `5f08ce7`→amended (rate), `b6ef217` (maps), `e2be2f0` (audit/resume/cache), `8a400fd` (params+proofs). Plus an incident fix (`31dc1f4` message reword — no code).
+- **M2a:** authed routes bucket by `user_id` (NAT-shared IPs no longer share quota); rpm tunables to env (`RATE_LIMIT_RPM=30`/`_SESSION=20`/`_PUBLIC=120`) + example/template/preserved/numeric coverage.
+- **M2b:** `user_id` on all 4 map tables (CREATE + MIGRATIONS + ownership backfill) with filtered reads/writes; dispatcher/llm/payload threading; llm contexts normalize once so storage never sees NULL. Init-ordering bug caught by tests (legacy repairs must run post-migration) + a pre-existing Faz 3c ordering flaw fixed alongside (UNIQUE index creation moved after dedupe).
+- **M2c:** audit `user_id` (column + backfill + write threading from all 4 verification call sites); resume scoped (`_last_executed_tool_group` + `resolve_resume_context` + seed owners); litert payloads always carry namespaced `user:session` cache keys (ignored while caching is off; can never cross-share when on).
+- **M2d:** vestigial `user_id` query params removed (4 endpoints; auth-bound `_uid` was always the source); `TestSessionInvisibility` proves both directions across list/read/meta/rename/deletes/summarize/search/memories.
+- **Residuals (accepted):** `UNIQUE(session_id, seq)` on map tables still spans users (write error, never a leak; uuid sessions); `create_session` INSERT OR IGNORE unchanged; NULL-owner normalization covers legacy/raw rows.
+- **Test:** full suite **679 passed** (668 + 11 new).
+
 ## 2026-09-09 — M1 (multi-user identity)
 
 - **Scope (plan `docs/multiuser-plan-2026-09-09.md`, user decisions: open registration + admin toggle, data stays on bootstrapped `default` admin, all phases in one plan).** Iron rule: one user's sessions invisible to all others. Three commits: `2ef1504` (table+keys), `cf3054e` (middleware), `e5ded62` (endpoints).

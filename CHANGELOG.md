@@ -8,6 +8,7 @@ uses [Semantic Versioning](https://semver.org/).
 
 ### Added
 - Multi-user identity: `users` table, `POST /users/register` (first user becomes admin, `REGISTRATION_OPEN` toggle), key rotation, `/users/me`, admin user listing. API keys stored hashed, returned once; auth resolves per-key with admin state.
+- Multi-user isolation hardening: per-user rate-limit buckets (with env-tunable rpm); `user_id` scoping on session maps, audit log, resume anchoring and the litert cache key; session invisibility enforced both directions; registration toggle, rpm and audit keys added to template/preserve lists.
 
 ### Security
 - Per-user isolation: summary boundary/updates, session upserts, semantic search supplement, retrieval candidates, and history/FTS clearing are now scoped by `user_id`, so a colliding `session_id` can no longer leak or clobber another user's data.
