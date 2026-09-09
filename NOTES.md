@@ -16,6 +16,15 @@
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 - **Sanitization rule:** this file may be published. Never write personal data, identity clues, deployment addresses (hostnames, IPs, ports), or accounts into it. Keep every narrative in English; Turkish inline tokens are allowed only as product corpus / i18n test data.
 
+## 2026-09-09 — M3 (multi-user per-user settings)
+
+- **Scope (plan M3; industry pattern verified: Nextcloud/OpenWebUI two-area model — admins own the building, users own their thermostat, personal overrides global).** Three commits: `d2eef9a` (store), `64514fd` (API+gates), `2d733b5` (wiring+seed).
+- **M3a:** `user_settings` table + `PERSONAL_KEYS` taxonomy (language, name, city, 5 voice keys) + `effective_setting` (user row → live global → default).
+- **M3b:** `GET/PUT /config/my-settings` (auth-bound, shared validation helper extracted from PATCH so rules can't drift); `PATCH /config/settings` now admin-only (existing direct-call tests pass an explicit admin request).
+- **M3c:** prompt builders take `user_city`; `_build_full_messages` resolves city+language once per request; `messages.py` request-scoped language override (ContextVar — sync helpers need no signature changes, never leaks across requests); `seed_admin_settings()` migrates non-empty `.env` personal values into missing admin rows once (lifespan, best-effort).
+- **Conscious deferrals:** settings UI still renders global schema (personal API exists; UI follow-up separate track); `GET /config` username stays global (dashboard bootstrap); `DEFAULT_USER`/`ASSISTANT_USER` display flows untouched.
+- **Test:** full suite **687 passed** (679 + 8 new).
+
 ## 2026-09-09 — M2 (multi-user isolation hardening)
 
 - **Scope (plan M2):** per-key limits, map/audit/resume/cache scoping, invisibility proofs. Four commits: `5f08ce7`→amended (rate), `b6ef217` (maps), `e2be2f0` (audit/resume/cache), `8a400fd` (params+proofs). Plus an incident fix (`31dc1f4` message reword — no code).
