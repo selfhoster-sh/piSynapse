@@ -19,6 +19,12 @@
 - **Multi-user invisibility rule:** one user's sessions, settings, mail and keys are invisible to every other user. Every user-scoped query needs its owner guard, every guard needs a both-directions test.
 - **Pre-push check:** before push, grep new docs/journal lines for secrets, passwords, IPs and credentials the same way code gets py_compile + pytest.
 
+## 2026-09-09 — Collective learning Phase 1: feedback ownership guard
+
+- **Plan:** `docs/collective-learning-2026-09-09.md` (4 phases: guard → lazy normalization → quorum/reputation → admin queue), grounded in federated-preference research (FedBis/FedBiscuit, adaptive reputation weighting, Byzantine-robust aggregation, Presidio-style placeholders).
+- **Phase 1:** `set_tool_correction` / `set_tool_confirmation` / `get_audit_tool_name` / `upsert_message_feedback` take `user_id` (None = unscoped, offline only); the 3 endpoints pass `auth.current_user`. Miss → 404, same as not-found (no oracle). Existing `test_audit.py` endpoint tests run behind a stub-auth middleware as "default"; new `tests/test_feedback_ownership.py` (5 tests) proves both directions + anonymous 401.
+- **Test:** full suite **710 passed** (705 + 5 new); ruff clean.
+
 ## 2026-09-09 — CI failure: tests depended on the ambient live DB (fixed)
 
 - **Symptom:** CI (`python -m pytest -q` on a fresh checkout) failed 43 tests with `no such table: users/email_session_map` + auth 401s, while the Pi suite was green.
