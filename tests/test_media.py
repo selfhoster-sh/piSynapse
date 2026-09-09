@@ -174,7 +174,7 @@ def test_upload_rejects_oversized(upload_client, monkeypatch):
         return real_get(key, default)
 
     monkeypatch.setattr(config, "get", fake_get)
-    r = upload_client.post("/chat/upload", files={"file": ("big.jpg", b"x" * (1024 * 1024 + 1), "image/jpeg")})
+    r = upload_client.post("/chat/upload", files={"file": ("big.jpg", b"\xff\xd8\xff" + b"x" * (1024 * 1024), "image/jpeg")})
     assert r.status_code == 413
     assert "max 1 MB" in r.json()["detail"]
 
@@ -312,3 +312,41 @@ def test_transcribe_gemma4_litert_empty_still_422_no_whisper(
     )
 
     assert r.status_code == 422
+
+
+def test_upload_rejects_non_image_content_type(upload_client):
+    r = upload_client.post(
+        "/chat/upload",
+        files={"file": ("evil.sh", b"#!/bin/sh\necho hi", "application/x-sh")},
+    )
+    assert r.status_code == 415
+
+
+def test_upload_rejects_bad_magic_with_image_type(upload_client):
+    r = upload_client.post(
+        "/chat/upload",
+        files={"file": ("photo.jpg", b"MZ\x90\x00not-an-image", "image/jpeg")},
+    )
+    assert r.status_code == 415
+
+
+def test_upload_accepts_png_and_webp(upload_client):
+    import base64
+
+    png = b"\x89PNG\r\n\x1a\n" + b"0" * 32
+    r = upload_client.post("/chat/upload", files={"file": ("a.png", png, "image/png")})
+    assert r.status_code == 200 and r.json()["size_bytes"] == len(png)
+    webp = b"RIFF\x00\x00\x00\x00WEBP" + b"1" * 16
+    r = upload_client.post("/chat/upload", files={"file": ("a.webp", webp, "image/webp")})
+    assert r.status_code == 200
+    assert base64.b64decode(r.json()["base64"]) == webp
+
+
+def test_safe_audio_suffix_allowlist():
+    from routers.media import _safe_audio_suffix
+
+    assert _safe_audio_suffix("rec.mp3") == ".mp3"
+    assert _safe_audio_suffix("REC.WAV") == ".wav"
+    assert _safe_audio_suffix("payload.exe") == ".webm"
+    assert _safe_audio_suffix("x." + "a" * 20) == ".webm"
+    assert _safe_audio_suffix(None) == ".webm"
