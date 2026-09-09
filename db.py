@@ -30,6 +30,34 @@ _backfill_task: asyncio.Task | None = None
 
 _LOCKED_RETRIES = 3
 
+# Serializes grouped multi-statement writes on the single shared connection.
+# aiosqlite uses legacy isolation (implicit BEGIN), so an explicit
+# BEGIN IMMEDIATE would risk "cannot start a transaction within a
+# transaction"; since every writer runs on the same event loop, an
+# asyncio.Lock gives the same no-interleaving guarantee with zero
+# SQLite-semantics risk. Slow work (embeddings) must stay OUTSIDE the lock.
+# The lock is never re-entered: db writers never call each other.
+# One lock per event loop: a module-level lock stays bound to the first loop
+# that acquires it, which breaks callers that (like the test-suite) drive the
+# module from several asyncio.run loops over the process lifetime.
+_write_locks: dict = {}
+
+
+def _write_lock():
+    """Return the write-serialization lock for the running loop."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    lock = _write_locks.get(loop)
+    if lock is None:
+        lock = asyncio.Lock()
+        # Prune locks of dead loops so the registry cannot grow unbounded.
+        for known in [k for k in _write_locks if k is not None and k.is_closed()]:
+            _write_locks.pop(known, None)
+        _write_locks[loop] = lock
+    return lock
+
 
 async def _write_with_retry(db: aiosqlite.Connection, sql: str, params: tuple = ()) -> aiosqlite.Cursor:
     """Execute a write, retrying briefly on 'database is locked' / 'busy'."""
@@ -948,38 +976,39 @@ async def save_message(session_id: str, role: str, content: str, images: list[st
         except Exception as e:
             logger.warning(f"Embedding failed for save_message (non-fatal): {e}")
 
-    cur = await db.execute(
-        "INSERT INTO conversations (session_id, role, content, images, reasoning, embedding, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (session_id, role, content, images_json, reasoning, embedding_blob, user_id),
-    )
-    # Keep FTS5 index in sync (cursor.lastrowid: SELECT last_insert_rowid()
-    # on the shared connection can return another task's row under concurrency).
-    rowid = cur.lastrowid
-    try:
-        await db.execute(
-            "INSERT INTO conversations_fts (rowid, content, session_id) VALUES (?, ?, ?)",
-            (rowid, content, session_id),
+    async with _write_lock():
+        cur = await db.execute(
+            "INSERT INTO conversations (session_id, role, content, images, reasoning, embedding, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (session_id, role, content, images_json, reasoning, embedding_blob, user_id),
         )
-    except Exception as fts_e:
-        # FTS5 is best-effort; a failure must not eat the message row.
-        logger.warning(f"save_message FTS insert failed (non-fatal): {fts_e}")
-    await db.execute(
-        """INSERT INTO sessions (id, user_id) VALUES (?, ?)
-           ON CONFLICT(id) DO UPDATE SET last_active = CURRENT_TIMESTAMP
-           WHERE sessions.user_id = excluded.user_id""",
-        (session_id, user_id),
-    )
-    if role == "user":
-        existing = await db.execute("SELECT name FROM sessions WHERE id = ? AND user_id = ?", (session_id, user_id))
-        row = await existing.fetchone()
-        if not row or not row[0]:
-            from title import generate_rake_title
-            name = generate_rake_title(content)
+        # Keep FTS5 index in sync (cursor.lastrowid: SELECT last_insert_rowid()
+        # on the shared connection can return another task's row under concurrency).
+        rowid = cur.lastrowid
+        try:
             await db.execute(
-                "UPDATE sessions SET name = ? WHERE id = ? AND user_id = ?",
-                (name, session_id, user_id),
+                "INSERT INTO conversations_fts (rowid, content, session_id) VALUES (?, ?, ?)",
+                (rowid, content, session_id),
             )
-    await _commit_with_retry(db)
+        except Exception as fts_e:
+            # FTS5 is best-effort; a failure must not eat the message row.
+            logger.warning(f"save_message FTS insert failed (non-fatal): {fts_e}")
+        await db.execute(
+            """INSERT INTO sessions (id, user_id) VALUES (?, ?)
+               ON CONFLICT(id) DO UPDATE SET last_active = CURRENT_TIMESTAMP
+               WHERE sessions.user_id = excluded.user_id""",
+            (session_id, user_id),
+        )
+        if role == "user":
+            existing = await db.execute("SELECT name FROM sessions WHERE id = ? AND user_id = ?", (session_id, user_id))
+            row = await existing.fetchone()
+            if not row or not row[0]:
+                from title import generate_rake_title
+                name = generate_rake_title(content)
+                await db.execute(
+                    "UPDATE sessions SET name = ? WHERE id = ? AND user_id = ?",
+                    (name, session_id, user_id),
+                )
+        await _commit_with_retry(db)
     return rowid
 
 
@@ -999,9 +1028,10 @@ async def delete_last_assistant(session_id: str, user_id: str = "default") -> bo
         row = await cur.fetchone()
     if not row:
         return False
-    await db.execute("DELETE FROM conversations WHERE id = ?", (row[0],))
-    await db.execute("DELETE FROM conversations_fts WHERE rowid = ?", (row[0],))
-    await _commit_with_retry(db)
+    async with _write_lock():
+        await db.execute("DELETE FROM conversations WHERE id = ?", (row[0],))
+        await db.execute("DELETE FROM conversations_fts WHERE rowid = ?", (row[0],))
+        await _commit_with_retry(db)
     return True
 
 
@@ -1023,20 +1053,22 @@ async def delete_branch(session_id: str, anchor_id: int, user_id: str = "default
         (session_id, user_id, anchor_id),
     ) as cur:
         ids = [r[0] for r in await cur.fetchall()]
-    if ids:
-        ph = ",".join("?" * len(ids))
+    async with _write_lock():
+        if ids:
+            ph = ",".join("?" * len(ids))
+            await db.execute(
+                f"DELETE FROM conversations WHERE session_id = ? AND id IN ({ph})",
+                (session_id, *ids),
+            )
+            await db.execute(f"DELETE FROM conversations_fts WHERE rowid IN ({ph})", ids)
+        # Keep the session alive + surfaced even though no rows were inserted.
         await db.execute(
-            f"DELETE FROM conversations WHERE session_id = ? AND id IN ({ph})",
-            (session_id, *ids),
+            "INSERT INTO sessions (id, user_id) VALUES (?, ?) "
+            "ON CONFLICT(id) DO UPDATE SET last_active = CURRENT_TIMESTAMP "
+            "WHERE sessions.user_id = excluded.user_id",
+            (session_id, user_id),
         )
-        await db.execute(f"DELETE FROM conversations_fts WHERE rowid IN ({ph})", ids)
-    # Keep the session alive + surfaced even though no rows were inserted.
-    await db.execute(
-        "INSERT INTO sessions (id, user_id) VALUES (?, ?) "
-        "ON CONFLICT(id) DO UPDATE SET last_active = CURRENT_TIMESTAMP",
-        (session_id, user_id),
-    )
-    await _commit_with_retry(db)
+        await _commit_with_retry(db)
     return ids
 
 
@@ -1128,19 +1160,20 @@ async def get_all_history(user_id: str = "default") -> dict[str, list[dict]]:
 
 async def clear_history(session_id: str, user_id: str = "default"):
     db = await get_db()
-    # FTS first: the rowid subquery needs the conversation rows still present.
-    await db.execute(
-        "DELETE FROM conversations_fts WHERE rowid IN "
-        "(SELECT id FROM conversations WHERE session_id = ? AND user_id = ?)",
-        (session_id, user_id),
-    )
-    await db.execute("DELETE FROM conversations WHERE session_id = ? AND user_id = ?", (session_id, user_id))
-    await db.execute("DELETE FROM sessions WHERE id = ? AND user_id = ?", (session_id, user_id))
-    await db.execute("DELETE FROM email_session_map WHERE session_id = ?", (session_id,))
-    await db.execute("DELETE FROM notes_session_map WHERE session_id = ?", (session_id,))
-    await db.execute("DELETE FROM tasks_session_map WHERE session_id = ?", (session_id,))
-    await db.execute("DELETE FROM calendar_session_map WHERE session_id = ?", (session_id,))
-    await _commit_with_retry(db)
+    async with _write_lock():
+        # FTS first: the rowid subquery needs the conversation rows still present.
+        await db.execute(
+            "DELETE FROM conversations_fts WHERE rowid IN "
+            "(SELECT id FROM conversations WHERE session_id = ? AND user_id = ?)",
+            (session_id, user_id),
+        )
+        await db.execute("DELETE FROM conversations WHERE session_id = ? AND user_id = ?", (session_id, user_id))
+        await db.execute("DELETE FROM sessions WHERE id = ? AND user_id = ?", (session_id, user_id))
+        await db.execute("DELETE FROM email_session_map WHERE session_id = ?", (session_id,))
+        await db.execute("DELETE FROM notes_session_map WHERE session_id = ?", (session_id,))
+        await db.execute("DELETE FROM tasks_session_map WHERE session_id = ?", (session_id,))
+        await db.execute("DELETE FROM calendar_session_map WHERE session_id = ?", (session_id,))
+        await _commit_with_retry(db)
 
 
 async def import_messages(session_id: str, messages: list[dict], client_key: str, user_id: str = "default") -> int:
@@ -1152,53 +1185,55 @@ async def import_messages(session_id: str, messages: list[dict], client_key: str
     """
     db = await get_db()
     inserted = 0
-    for i, m in enumerate(messages):
-        role = (m.get("role") or "").strip()
-        content = (m.get("content") or "").strip()
-        if role not in ("user", "assistant") or not content:
-            continue
-        key = f"{client_key}:{i}"
-        async with db.execute(
-            "SELECT 1 FROM conversations WHERE client_key = ? AND user_id = ?", (key, user_id)
-        ) as cur:
-            if await cur.fetchone():
+    async with _write_lock():
+        for i, m in enumerate(messages):
+            role = (m.get("role") or "").strip()
+            content = (m.get("content") or "").strip()
+            if role not in ("user", "assistant") or not content:
                 continue
-        try:
-            cur = await db.execute(
-                "INSERT INTO conversations (session_id, role, content, client_key, user_id) VALUES (?, ?, ?, ?, ?)",
-                (session_id, role, content, key, user_id),
-            )
-            rowid = cur.lastrowid
+            key = f"{client_key}:{i}"
+            async with db.execute(
+                "SELECT 1 FROM conversations WHERE client_key = ? AND user_id = ?", (key, user_id)
+            ) as cur:
+                if await cur.fetchone():
+                    continue
             try:
-                await db.execute(
-                    "INSERT INTO conversations_fts (rowid, content, session_id) VALUES (?, ?, ?)",
-                    (rowid, content, session_id),
+                cur = await db.execute(
+                    "INSERT INTO conversations (session_id, role, content, client_key, user_id) VALUES (?, ?, ?, ?, ?)",
+                    (session_id, role, content, key, user_id),
                 )
-            except Exception as fts_e:
-                # FTS5 is best-effort; a failure must not eat the message row.
-                logger.warning(f"import FTS insert failed (non-fatal): {fts_e}")
-            inserted += 1
-        except Exception as e:
-            logger.warning(f"import insert failed (session={session_id}): {e}")
-            continue
-    if inserted:
-        await db.execute(
-            "INSERT INTO sessions (id, user_id) VALUES (?, ?) "
-            "ON CONFLICT(id) DO UPDATE SET last_active = CURRENT_TIMESTAMP",
-            (session_id, user_id),
-        )
-        # Title from first user message if the server has none.
-        async with db.execute("SELECT name FROM sessions WHERE id = ? AND user_id = ?", (session_id, user_id)) as cur:
-            row = await cur.fetchone()
-        if not row or not row[0]:
-            title_src = next((m.get("content", "").strip() for m in messages if m.get("role") == "user"), "")
-            if title_src:
-                from title import generate_rake_title
-                await db.execute(
-                    "UPDATE sessions SET name = ? WHERE id = ? AND user_id = ?",
-                    (generate_rake_title(title_src), session_id, user_id),
-                )
-        await _commit_with_retry(db)
+                rowid = cur.lastrowid
+                try:
+                    await db.execute(
+                        "INSERT INTO conversations_fts (rowid, content, session_id) VALUES (?, ?, ?)",
+                        (rowid, content, session_id),
+                    )
+                except Exception as fts_e:
+                    # FTS5 is best-effort; a failure must not eat the message row.
+                    logger.warning(f"import FTS insert failed (non-fatal): {fts_e}")
+                inserted += 1
+            except Exception as e:
+                logger.warning(f"import insert failed (session={session_id}): {e}")
+                continue
+        if inserted:
+            await db.execute(
+                "INSERT INTO sessions (id, user_id) VALUES (?, ?) "
+                "ON CONFLICT(id) DO UPDATE SET last_active = CURRENT_TIMESTAMP "
+                "WHERE sessions.user_id = excluded.user_id",
+                (session_id, user_id),
+            )
+            # Title from first user message if the server has none.
+            async with db.execute("SELECT name FROM sessions WHERE id = ? AND user_id = ?", (session_id, user_id)) as cur:
+                row = await cur.fetchone()
+            if not row or not row[0]:
+                title_src = next((m.get("content", "").strip() for m in messages if m.get("role") == "user"), "")
+                if title_src:
+                    from title import generate_rake_title
+                    await db.execute(
+                        "UPDATE sessions SET name = ? WHERE id = ? AND user_id = ?",
+                        (generate_rake_title(title_src), session_id, user_id),
+                    )
+            await _commit_with_retry(db)
     return inserted
 
 
@@ -1313,21 +1348,22 @@ async def save_email_map(session_id: str, emails: list[dict]):
     if not session_id or not emails:
         return
     db = await get_db()
-    await _write_with_retry(db, "DELETE FROM email_session_map WHERE session_id = ?", (session_id,))
-    for seq, m in enumerate(emails, 1):
-        await _write_with_retry(
-            db,
-            "INSERT INTO email_session_map (session_id, seq, message_id, subject, sender, preview) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (
-                session_id,
-                seq,
-                str(m.get("id", "")),
-                m.get("subject", "")[:200],
-                m.get("from", "")[:200],
-                (m.get("body", "") or "")[:200],
-            ),
-        )
+    async with _write_lock():
+        await db.execute("DELETE FROM email_session_map WHERE session_id = ?", (session_id,))
+        for seq, m in enumerate(emails, 1):
+            await db.execute(
+                "INSERT INTO email_session_map (session_id, seq, message_id, subject, sender, preview) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    session_id,
+                    seq,
+                    str(m.get("id", "")),
+                    m.get("subject", "")[:200],
+                    m.get("from", "")[:200],
+                    (m.get("body", "") or "")[:200],
+                ),
+            )
+        await _commit_with_retry(db)
 
 
 async def get_email_map(session_id: str) -> list[dict]:
@@ -1365,21 +1401,22 @@ async def save_notes_map(session_id: str, notes: list[dict]):
     if not session_id or not notes:
         return
     db = await get_db()
-    await _write_with_retry(db, "DELETE FROM notes_session_map WHERE session_id = ?", (session_id,))
-    for seq, n in enumerate(notes, 1):
-        await _write_with_retry(
-            db,
-            "INSERT INTO notes_session_map (session_id, seq, note_id, title, category, preview) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (
-                session_id,
-                seq,
-                int(n.get("id", 0)),
-                n.get("title", "")[:200],
-                n.get("category", "")[:100],
-                (n.get("content", "") or "")[:200],
-            ),
-        )
+    async with _write_lock():
+        await db.execute("DELETE FROM notes_session_map WHERE session_id = ?", (session_id,))
+        for seq, n in enumerate(notes, 1):
+            await db.execute(
+                "INSERT INTO notes_session_map (session_id, seq, note_id, title, category, preview) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    session_id,
+                    seq,
+                    int(n.get("id", 0)),
+                    n.get("title", "")[:200],
+                    n.get("category", "")[:100],
+                    (n.get("content", "") or "")[:200],
+                ),
+            )
+        await _commit_with_retry(db)
 
 
 async def get_notes_map(session_id: str) -> list[dict]:
@@ -1415,22 +1452,23 @@ async def save_tasks_map(session_id: str, tasks: list[dict]):
     if not session_id or not tasks:
         return
     db = await get_db()
-    await _write_with_retry(db, "DELETE FROM tasks_session_map WHERE session_id = ?", (session_id,))
-    for seq, t in enumerate(tasks, 1):
-        await _write_with_retry(
-            db,
-            "INSERT INTO tasks_session_map (session_id, seq, uid, summary, due, priority, completed) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (
-                session_id,
-                seq,
-                str(t.get("uid", "")),
-                t.get("summary", "")[:200],
-                t.get("due", "")[:50],
-                int(t.get("priority", 0)),
-                1 if t.get("completed") else 0,
-            ),
-        )
+    async with _write_lock():
+        await db.execute("DELETE FROM tasks_session_map WHERE session_id = ?", (session_id,))
+        for seq, t in enumerate(tasks, 1):
+            await db.execute(
+                "INSERT INTO tasks_session_map (session_id, seq, uid, summary, due, priority, completed) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    session_id,
+                    seq,
+                    str(t.get("uid", "")),
+                    t.get("summary", "")[:200],
+                    t.get("due", "")[:50],
+                    int(t.get("priority", 0)),
+                    1 if t.get("completed") else 0,
+                ),
+            )
+        await _commit_with_retry(db)
 
 
 async def get_tasks_map(session_id: str) -> list[dict]:
@@ -1542,20 +1580,21 @@ async def save_calendar_map(session_id: str, events: list[dict]):
     if not session_id or not events:
         return
     db = await get_db()
-    await _write_with_retry(db, "DELETE FROM calendar_session_map WHERE session_id = ?", (session_id,))
-    for seq, ev in enumerate(events, 1):
-        await _write_with_retry(
-            db,
-            "INSERT INTO calendar_session_map (session_id, seq, uid, summary, start_time) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (
-                session_id,
-                seq,
-                str(ev.get("uid", "")),
-                ev.get("summary", "")[:200],
-                ev.get("start", "")[:50],
-            ),
-        )
+    async with _write_lock():
+        await db.execute("DELETE FROM calendar_session_map WHERE session_id = ?", (session_id,))
+        for seq, ev in enumerate(events, 1):
+            await db.execute(
+                "INSERT INTO calendar_session_map (session_id, seq, uid, summary, start_time) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (
+                    session_id,
+                    seq,
+                    str(ev.get("uid", "")),
+                    ev.get("summary", "")[:200],
+                    ev.get("start", "")[:50],
+                ),
+            )
+        await _commit_with_retry(db)
 
 
 async def get_calendar_map(session_id: str) -> list[dict]:
