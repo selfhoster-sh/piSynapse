@@ -185,9 +185,9 @@ async def chat_with_ollama(
     reasoning_effort: str = "",
     origin: str = "",
 ) -> dict:
-    full_msgs = await _build_full_messages(messages, memories or [], summary, session_id, tool_group=tool_group)
+    full_msgs = await _build_full_messages(messages, memories or [], summary, session_id, tool_group=tool_group, user_id=user_id or "default")
     context = {
-        "user_id": user_id,
+        "user_id": user_id or "default",
         "session_id": session_id,
         "_origin": (origin or "").strip().lower(),
         "_user_text": next((m.get("content", "") for m in reversed(messages) if m.get("role") == "user"), ""),
@@ -272,7 +272,7 @@ async def chat_with_ollama(
         # thinking budget matches the original request.
         if not tool_calls and not think and use_tools and iteration == 0 and _check_tool_leak(raw_content):
             logger.info("No tool calls produced (tool leak), retrying with think-mode...")
-            think_msgs = await _build_full_messages(messages, memories or [], summary, session_id, tool_group=tool_group)
+            think_msgs = await _build_full_messages(messages, memories or [], summary, session_id, tool_group=tool_group, user_id=user_id or "default")
             think_msgs = _normalize_messages_for_backend(think_msgs + current_msgs, backend=get("LLM_BACKEND", "litert"))
             resp2, msg2, err2 = await _llm_request(
                 think_msgs, use_think=True, use_tools=use_tools, tool_list=filtered_tools,
@@ -419,7 +419,7 @@ async def chat_with_ollama(
             elif tn == "delete_note":
                 try:
                     from prompt import get_notes_context
-                    notes = await get_notes_context(session_id)
+                    notes = await get_notes_context(session_id, context.get("user_id"))
                     ref = params.get("note_id")
                     if notes and ref:
                         is_num = isinstance(ref, int) or (isinstance(ref, str) and ref.isdigit())
@@ -431,7 +431,7 @@ async def chat_with_ollama(
             elif tn in ("complete_task", "delete_task"):
                 try:
                     from prompt import get_tasks_context
-                    tasks = await get_tasks_context(session_id)
+                    tasks = await get_tasks_context(session_id, context.get("user_id"))
                     ref = params.get("uid", "")
                     if tasks and ref:
                         is_num = isinstance(ref, int) or (isinstance(ref, str) and ref.isdigit())

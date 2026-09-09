@@ -193,6 +193,10 @@ MIGRATIONS: list[tuple[str, str, str]] = [
     ("conversations", "client_key", "TEXT"),
     ("conversations", "user_id", "TEXT DEFAULT 'default'"),
     ("sessions", "user_id", "TEXT DEFAULT 'default'"),
+    ("email_session_map", "user_id", "TEXT DEFAULT 'default'"),
+    ("notes_session_map", "user_id", "TEXT DEFAULT 'default'"),
+    ("tasks_session_map", "user_id", "TEXT DEFAULT 'default'"),
+    ("calendar_session_map", "user_id", "TEXT DEFAULT 'default'"),
 ]
 
 
@@ -355,6 +359,7 @@ async def init_db():
             sender     TEXT DEFAULT '',
             preview    TEXT DEFAULT '',
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            user_id    TEXT DEFAULT 'default',
             UNIQUE(session_id, seq)
         )
     """)
@@ -367,35 +372,9 @@ async def init_db():
     await db.execute("CREATE INDEX IF NOT EXISTS idx_intent_audit_source ON intent_audit_log(source, created_at)")
     await db.execute("CREATE INDEX IF NOT EXISTS idx_email_session_map_session ON email_session_map(session_id, seq)")
 
-    # Faz 3c: idempotent re-sync gate. (user_id, client_key) must be unique so
-    # parallel re-syncs cannot duplicate rows (TOCTOU). Legacy DBs may hold
-    # duplicates from the pre-guard window: keep the earliest row per key.
-    doomed_cur = await db.execute(
-        "SELECT id FROM conversations WHERE client_key IS NOT NULL AND id NOT IN "
-        "(SELECT MIN(id) FROM conversations WHERE client_key IS NOT NULL "
-        "GROUP BY user_id, client_key)"
-    )
-    doomed = [r[0] for r in await doomed_cur.fetchall()]
-    if doomed:
-        logger.warning(
-            "Removing %d duplicate import rows before enforcing "
-            "UNIQUE(user_id, client_key)", len(doomed),
-        )
-        ph = ",".join("?" * len(doomed))
-        try:
-            await db.execute(f"DELETE FROM conversations_fts WHERE rowid IN ({ph})", doomed)
-        except Exception as fts_e:
-            # External-content FTS5 quirk: when NONE of the target rowids are
-            # indexed (past best-effort FTS misses), the DELETE raises
-            # "malformed" instead of deleting nothing. That same absence means
-            # there is nothing to orphan, so dropping the FTS leg is safe —
-            # and init_db must never crash on legacy data (startup SPOF).
-            logger.warning(f"FTS cleanup skipped during dedupe (non-fatal): {fts_e}")
-        await db.execute(f"DELETE FROM conversations WHERE id IN ({ph})", doomed)
-    await db.execute(
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_client_key "
-        "ON conversations(user_id, client_key) WHERE client_key IS NOT NULL"
-    )
+    # Legacy repairs (dedupe + backfill + unique gate) run after
+    # _apply_migrations below: they reference migrated columns that may not
+    # exist yet on old DBs.
     await db.execute("CREATE INDEX IF NOT EXISTS idx_memories_created ON memories(created_at)")
     await db.execute("CREATE INDEX IF NOT EXISTS idx_tool_audit_conv ON tool_audit_log(conversation_id)")
     await db.execute(
@@ -413,6 +392,7 @@ async def init_db():
             category   TEXT DEFAULT '',
             preview    TEXT DEFAULT '',
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            user_id    TEXT DEFAULT 'default',
             UNIQUE(session_id, seq)
         )
     """)
@@ -430,6 +410,7 @@ async def init_db():
             priority   INTEGER DEFAULT 0,
             completed  INTEGER DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            user_id    TEXT DEFAULT 'default',
             UNIQUE(session_id, seq)
         )
     """)
@@ -445,6 +426,7 @@ async def init_db():
             summary    TEXT DEFAULT '',
             start_time TEXT DEFAULT '',
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            user_id    TEXT DEFAULT 'default',
             UNIQUE(session_id, seq)
         )
     """)
@@ -511,6 +493,48 @@ async def init_db():
         logger.warning(f"FTS5 migration/drift check failed (non-fatal): {e}")
 
     await _apply_migrations(db)
+
+    # Legacy repairs run here (after migrations): they reference migrated
+    # columns that may not exist yet on old DBs.
+    # Faz 3c: idempotent re-sync gate. (user_id, client_key) must be unique so
+    # parallel re-syncs cannot duplicate rows (TOCTOU). Legacy DBs may hold
+    # duplicates from the pre-guard window: keep the earliest row per key.
+    doomed_cur = await db.execute(
+        "SELECT id FROM conversations WHERE client_key IS NOT NULL AND id NOT IN "
+        "(SELECT MIN(id) FROM conversations WHERE client_key IS NOT NULL "
+        "GROUP BY user_id, client_key)"
+    )
+    doomed = [r[0] for r in await doomed_cur.fetchall()]
+    if doomed:
+        logger.warning(
+            "Removing %d duplicate import rows before enforcing "
+            "UNIQUE(user_id, client_key)", len(doomed),
+        )
+        ph = ",".join("?" * len(doomed))
+        try:
+            await db.execute(f"DELETE FROM conversations_fts WHERE rowid IN ({ph})", doomed)
+        except Exception as fts_e:
+            # External-content FTS5 quirk: when NONE of the target rowids are
+            # indexed (past best-effort FTS misses), the DELETE raises
+            # "malformed" instead of deleting nothing. That same absence means
+            # there is nothing to orphan, so dropping the FTS leg is safe —
+            # and init_db must never crash on legacy data (startup SPOF).
+            logger.warning(f"FTS cleanup skipped during dedupe (non-fatal): {fts_e}")
+        await db.execute(f"DELETE FROM conversations WHERE id IN ({ph})", doomed)
+    await db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_client_key "
+        "ON conversations(user_id, client_key) WHERE client_key IS NOT NULL"
+    )
+    # Faz M2b: legacy map rows predate user_id (they got 'default' from the
+    # ADD COLUMN). Reassign rows whose session is owned by someone else;
+    # true-default and orphan sessions stay 'default'. Idempotent.
+    for _map_tbl in ("email_session_map", "notes_session_map", "tasks_session_map", "calendar_session_map"):
+        await db.execute(
+            f"UPDATE {_map_tbl} SET user_id = "
+            f"(SELECT s.user_id FROM sessions s WHERE s.id = {_map_tbl}.session_id) "
+            f"WHERE EXISTS (SELECT 1 FROM sessions s WHERE s.id = {_map_tbl}.session_id "
+            f"AND s.user_id != 'default')"
+        )
 
     await cleanup_expired_data()
 
@@ -1427,10 +1451,10 @@ async def clear_history(session_id: str, user_id: str = "default"):
         )
         await db.execute("DELETE FROM conversations WHERE session_id = ? AND user_id = ?", (session_id, user_id))
         await db.execute("DELETE FROM sessions WHERE id = ? AND user_id = ?", (session_id, user_id))
-        await db.execute("DELETE FROM email_session_map WHERE session_id = ?", (session_id,))
-        await db.execute("DELETE FROM notes_session_map WHERE session_id = ?", (session_id,))
-        await db.execute("DELETE FROM tasks_session_map WHERE session_id = ?", (session_id,))
-        await db.execute("DELETE FROM calendar_session_map WHERE session_id = ?", (session_id,))
+        await db.execute("DELETE FROM email_session_map WHERE session_id = ? AND user_id = ?", (session_id, user_id))
+        await db.execute("DELETE FROM notes_session_map WHERE session_id = ? AND user_id = ?", (session_id, user_id))
+        await db.execute("DELETE FROM tasks_session_map WHERE session_id = ? AND user_id = ?", (session_id, user_id))
+        await db.execute("DELETE FROM calendar_session_map WHERE session_id = ? AND user_id = ?", (session_id, user_id))
         await _repair_summary_boundaries(db)
         await _commit_with_retry(db)
 
@@ -1608,17 +1632,21 @@ async def search_sessions(query: str, limit: int = 20, user_id: str = "default")
 # correctly even after a restart or when a session is resumed later. Rows are
 # replaced on every list_emails / search_emails call.
 
-async def save_email_map(session_id: str, emails: list[dict]):
+async def save_email_map(session_id: str, emails: list[dict], user_id: str = "default"):
     """Replace the stored email listing for a session with a new one."""
     if not session_id or not emails:
         return
+    user_id = user_id or "default"
     db = await get_db()
     async with _write_lock():
-        await db.execute("DELETE FROM email_session_map WHERE session_id = ?", (session_id,))
+        await db.execute(
+            "DELETE FROM email_session_map WHERE session_id = ? AND user_id = ?",
+            (session_id, user_id),
+        )
         for seq, m in enumerate(emails, 1):
             await db.execute(
-                "INSERT INTO email_session_map (session_id, seq, message_id, subject, sender, preview) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO email_session_map (session_id, seq, message_id, subject, sender, preview, user_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
                     session_id,
                     seq,
@@ -1626,20 +1654,22 @@ async def save_email_map(session_id: str, emails: list[dict]):
                     m.get("subject", "")[:200],
                     m.get("from", "")[:200],
                     (m.get("body", "") or "")[:200],
+                    user_id,
                 ),
             )
         await _commit_with_retry(db)
 
 
-async def get_email_map(session_id: str) -> list[dict]:
+async def get_email_map(session_id: str, user_id: str = "default") -> list[dict]:
     """Return the persisted email listing for a session (list-number order)."""
     if not session_id:
         return []
+    user_id = user_id or "default"
     db = await get_db()
     async with db.execute(
         """SELECT message_id, subject, sender, preview FROM email_session_map
-           WHERE session_id = ? ORDER BY seq ASC""",
-        (session_id,),
+           WHERE session_id = ? AND user_id = ? ORDER BY seq ASC""",
+        (session_id, user_id),
     ) as cur:
         rows = await cur.fetchall()
     return [
@@ -1661,17 +1691,21 @@ async def clear_email_map(session_id: str):
 # ("1., 2., ...") and this table maps list positions to real Nextcloud note
 # IDs per session, so "read note 3" resolves correctly.
 
-async def save_notes_map(session_id: str, notes: list[dict]):
+async def save_notes_map(session_id: str, notes: list[dict], user_id: str = "default"):
     """Replace the stored note listing for a session with a new one."""
     if not session_id or not notes:
         return
+    user_id = user_id or "default"
     db = await get_db()
     async with _write_lock():
-        await db.execute("DELETE FROM notes_session_map WHERE session_id = ?", (session_id,))
+        await db.execute(
+            "DELETE FROM notes_session_map WHERE session_id = ? AND user_id = ?",
+            (session_id, user_id),
+        )
         for seq, n in enumerate(notes, 1):
             await db.execute(
-                "INSERT INTO notes_session_map (session_id, seq, note_id, title, category, preview) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO notes_session_map (session_id, seq, note_id, title, category, preview, user_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
                     session_id,
                     seq,
@@ -1679,20 +1713,22 @@ async def save_notes_map(session_id: str, notes: list[dict]):
                     n.get("title", "")[:200],
                     n.get("category", "")[:100],
                     (n.get("content", "") or "")[:200],
+                    user_id,
                 ),
             )
         await _commit_with_retry(db)
 
 
-async def get_notes_map(session_id: str) -> list[dict]:
+async def get_notes_map(session_id: str, user_id: str = "default") -> list[dict]:
     """Return the persisted note listing for a session (list-number order)."""
     if not session_id:
         return []
+    user_id = user_id or "default"
     db = await get_db()
     async with db.execute(
         """SELECT note_id, title, category, preview FROM notes_session_map
-           WHERE session_id = ? ORDER BY seq ASC""",
-        (session_id,),
+           WHERE session_id = ? AND user_id = ? ORDER BY seq ASC""",
+        (session_id, user_id,),
     ) as cur:
         rows = await cur.fetchall()
     return [
@@ -1712,17 +1748,21 @@ async def clear_notes_map(session_id: str):
 # -- Tasks Session Map --
 # Same pattern as email/notes: model sees numbered list, we map to real UIDs.
 
-async def save_tasks_map(session_id: str, tasks: list[dict]):
+async def save_tasks_map(session_id: str, tasks: list[dict], user_id: str = "default"):
     """Replace the stored task listing for a session with a new one."""
     if not session_id or not tasks:
         return
+    user_id = user_id or "default"
     db = await get_db()
     async with _write_lock():
-        await db.execute("DELETE FROM tasks_session_map WHERE session_id = ?", (session_id,))
+        await db.execute(
+            "DELETE FROM tasks_session_map WHERE session_id = ? AND user_id = ?",
+            (session_id, user_id),
+        )
         for seq, t in enumerate(tasks, 1):
             await db.execute(
-                "INSERT INTO tasks_session_map (session_id, seq, uid, summary, due, priority, completed) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO tasks_session_map (session_id, seq, uid, summary, due, priority, completed, user_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     session_id,
                     seq,
@@ -1731,20 +1771,22 @@ async def save_tasks_map(session_id: str, tasks: list[dict]):
                     t.get("due", "")[:50],
                     int(t.get("priority", 0)),
                     1 if t.get("completed") else 0,
+                    user_id,
                 ),
             )
         await _commit_with_retry(db)
 
 
-async def get_tasks_map(session_id: str) -> list[dict]:
+async def get_tasks_map(session_id: str, user_id: str = "default") -> list[dict]:
     """Return the persisted task listing for a session (list-number order)."""
     if not session_id:
         return []
+    user_id = user_id or "default"
     db = await get_db()
     async with db.execute(
         """SELECT uid, summary, due, priority, completed FROM tasks_session_map
-           WHERE session_id = ? ORDER BY seq ASC""",
-        (session_id,),
+           WHERE session_id = ? AND user_id = ? ORDER BY seq ASC""",
+        (session_id, user_id,),
     ) as cur:
         rows = await cur.fetchall()
     return [
@@ -1840,37 +1882,43 @@ async def get_sync_items(user_id: str, entity_type: str | None = None, since: st
 # -- Calendar Session Map --
 # Same pattern as email/notes/tasks: model sees numbered list, we map to real UIDs.
 
-async def save_calendar_map(session_id: str, events: list[dict]):
+async def save_calendar_map(session_id: str, events: list[dict], user_id: str = "default"):
     """Replace the stored calendar listing for a session with a new one."""
     if not session_id or not events:
         return
+    user_id = user_id or "default"
     db = await get_db()
     async with _write_lock():
-        await db.execute("DELETE FROM calendar_session_map WHERE session_id = ?", (session_id,))
+        await db.execute(
+            "DELETE FROM calendar_session_map WHERE session_id = ? AND user_id = ?",
+            (session_id, user_id),
+        )
         for seq, ev in enumerate(events, 1):
             await db.execute(
-                "INSERT INTO calendar_session_map (session_id, seq, uid, summary, start_time) "
-                "VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO calendar_session_map (session_id, seq, uid, summary, start_time, user_id) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
                 (
                     session_id,
                     seq,
                     str(ev.get("uid", "")),
                     ev.get("summary", "")[:200],
                     ev.get("start", "")[:50],
+                    user_id,
                 ),
             )
         await _commit_with_retry(db)
 
 
-async def get_calendar_map(session_id: str) -> list[dict]:
+async def get_calendar_map(session_id: str, user_id: str = "default") -> list[dict]:
     """Return the persisted calendar listing for a session (list-number order)."""
     if not session_id:
         return []
+    user_id = user_id or "default"
     db = await get_db()
     async with db.execute(
         """SELECT uid, summary, start_time FROM calendar_session_map
-           WHERE session_id = ? ORDER BY seq ASC""",
-        (session_id,),
+           WHERE session_id = ? AND user_id = ? ORDER BY seq ASC""",
+        (session_id, user_id,),
     ) as cur:
         rows = await cur.fetchall()
     return [

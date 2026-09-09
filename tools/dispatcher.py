@@ -72,18 +72,19 @@ def _as_position(ref) -> int | None:
     return None
 
 
-async def _resolve_position(session_id: str, ref, context_fn, id_field: str):
+async def _resolve_position(session_id: str, ref, context_fn, id_field: str, user_id: str | None = None):
     """Map a 1-based list position to the real ID via the session's last listing.
 
     The model only ever sees numbered list items (never raw IDs), so every
     reference must be a number that fits the persisted listing. Out-of-range,
     non-numeric, or missing-listing references all resolve to None — guessing
-    could silently affect the wrong record.
+    could silently affect the wrong record. Listings are per-user: a position
+    from another user's session never resolves here (iron rule).
     """
     pos = _as_position(ref)
     if pos is None:
         return None
-    items = await context_fn(session_id)
+    items = await context_fn(session_id, user_id or "default")
     if items and 1 <= pos <= len(items):
         return items[pos - 1].get(id_field)
     return None
@@ -143,7 +144,10 @@ def _mask_params_for_log(params: dict) -> str:
 
 async def run_tool(name: str, params: dict, context: dict | None = None) -> tuple[str, str | int | None]:
     """Route a tool call to the appropriate handler and return (result_string, entity_id)."""
-    context = context or {}
+    context = dict(context or {})
+    if not context.get("user_id"):
+        # Storage invariant: user_id is never NULL downstream (iron rule).
+        context["user_id"] = "default"
     user_text = (context.get("_user_text") or "").strip()
     chip_origin = (context.get("_origin") == "chip")
     logger.info("Tool call: %s params=%s", name, _mask_params_for_log(params))
@@ -199,7 +203,7 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> tupl
                     asyncio.to_thread(list_events, days), timeout=30
                 )
                 if not raw.startswith("ERROR") and session_id:
-                    await cache_calendar_context(session_id, events)
+                    await cache_calendar_context(session_id, events, context.get("user_id"))
                 return raw, None
             elif name == "update_calendar_event":
                 from calendar_ops import update_event
@@ -212,7 +216,7 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> tupl
                 uid_ref = params.get("event_uid", "")
                 uid = ""
                 if uid_ref:
-                    uid = await _resolve_position(session_id, uid_ref, _get_context_fn("calendar"), id_field="uid")
+                    uid = await _resolve_position(session_id, uid_ref, _get_context_fn("calendar"), id_field="uid", user_id=context.get("user_id"))
                     if uid is None:
                         return f"ERROR: Event '{uid_ref}' not found. Run list_calendar_events first to see available events.", None
                 return await asyncio.to_thread(update_event, s, new_summary=new_s, new_start_time=new_t, new_duration_minutes=new_d, event_uid=uid), uid
@@ -224,7 +228,7 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> tupl
                 uid_ref = params.get("event_uid", "")
                 uid = ""
                 if uid_ref:
-                    uid = await _resolve_position(session_id, uid_ref, _get_context_fn("calendar"), id_field="uid")
+                    uid = await _resolve_position(session_id, uid_ref, _get_context_fn("calendar"), id_field="uid", user_id=context.get("user_id"))
                     if uid is None:
                         return f"ERROR: Event '{uid_ref}' not found. Run list_calendar_events first to see available events.", None
                 return await asyncio.to_thread(delete_event, s, event_uid=uid), uid
@@ -249,7 +253,7 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> tupl
 
     if name in {"list_emails", "read_email", "send_email", "search_emails"}:
         # _run_mail_tool already returns (result_string, entity_id)
-        return await _run_mail_tool(name, params, context.get("session_id", ""), context.get("_user_text", ""), chip_origin)
+        return await _run_mail_tool(name, params, context.get("session_id", ""), context.get("_user_text", ""), chip_origin, user_id=context.get("user_id"))
 
     if name == "save_memory":
         content = (params.get("content") or "").strip()
@@ -279,16 +283,16 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> tupl
         return result, rowid
 
     if name in {"create_note", "list_notes", "read_note", "update_note", "delete_note", "search_notes"}:
-        return await _run_notes_tool(name, params, context.get("session_id", ""), context.get("_user_text", ""), chip_origin)
+        return await _run_notes_tool(name, params, context.get("session_id", ""), context.get("_user_text", ""), chip_origin, user_id=context.get("user_id"))
 
     if name in {"create_task", "list_tasks", "complete_task", "delete_task", "search_tasks"}:
         # _run_tasks_tool already returns (result_string, entity_id)
-        return await _run_tasks_tool(name, params, context.get("session_id", ""), context.get("_user_text", ""), chip_origin)
+        return await _run_tasks_tool(name, params, context.get("session_id", ""), context.get("_user_text", ""), chip_origin, user_id=context.get("user_id"))
 
     return "ERROR: Tool not found.", None
 
 
-async def _run_notes_tool(name: str, params: dict, session_id: str = "", user_text: str = "", chip_origin: bool = False) -> tuple[str, int | None]:
+async def _run_notes_tool(name: str, params: dict, session_id: str = "", user_text: str = "", chip_origin: bool = False, user_id: str | None = None) -> tuple[str, int | None]:
     """Dispatch note tool calls with session-aware ID resolution.
 
     Returns the ``(result_text, entity_id)`` tuple the verification hook
@@ -334,13 +338,13 @@ async def _run_notes_tool(name: str, params: dict, session_id: str = "", user_te
             raw, items = await _list_notes_raw()
             if not raw.startswith("ERROR") and session_id:
                 from prompt import cache_notes_context
-                await cache_notes_context(session_id, items)
+                await cache_notes_context(session_id, items, user_id)
             return raw, None
         elif name == "read_note":
             nid = params.get("note_id")
             if not nid:
                 return "ERROR: note_id required.", None
-            resolved = await _resolve_position(session_id, nid, _get_context_fn("notes"), id_field="id")
+            resolved = await _resolve_position(session_id, nid, _get_context_fn("notes"), id_field="id", user_id=user_id)
             if resolved is None:
                 return f"ERROR: Note '{nid}' not found. Run list_notes first to see available notes.", None
             return await get_note(resolved), None
@@ -348,7 +352,7 @@ async def _run_notes_tool(name: str, params: dict, session_id: str = "", user_te
             nid = params.get("note_id")
             if not nid:
                 return "ERROR: note_id required.", None
-            resolved = await _resolve_position(session_id, nid, _get_context_fn("notes"), id_field="id")
+            resolved = await _resolve_position(session_id, nid, _get_context_fn("notes"), id_field="id", user_id=user_id)
             if resolved is None:
                 return f"ERROR: Note '{nid}' not found. Run list_notes first to see available notes.", None
             result = await update_note(
@@ -363,7 +367,7 @@ async def _run_notes_tool(name: str, params: dict, session_id: str = "", user_te
             nid = params.get("note_id")
             if not nid:
                 return "ERROR: note_id required.", None
-            resolved = await _resolve_position(session_id, nid, _get_context_fn("notes"), id_field="id")
+            resolved = await _resolve_position(session_id, nid, _get_context_fn("notes"), id_field="id", user_id=user_id)
             if resolved is None:
                 return f"ERROR: Note '{nid}' not found. Run list_notes first to see available notes.", None
             result = await delete_note(resolved)
@@ -375,7 +379,7 @@ async def _run_notes_tool(name: str, params: dict, session_id: str = "", user_te
             raw, items = await _search_notes_raw(q)
             if not raw.startswith("ERROR") and session_id:
                 from prompt import cache_notes_context
-                await cache_notes_context(session_id, items)
+                await cache_notes_context(session_id, items, user_id)
             return raw, None
     except Exception as e:
         logger.error(f"Notes Error: {e}")
@@ -384,7 +388,7 @@ async def _run_notes_tool(name: str, params: dict, session_id: str = "", user_te
     return "ERROR: Tool not found.", None
 
 
-async def _run_tasks_tool(name: str, params: dict, session_id: str = "", user_text: str = "", chip_origin: bool = False) -> tuple[str, str | int | None]:
+async def _run_tasks_tool(name: str, params: dict, session_id: str = "", user_text: str = "", chip_origin: bool = False, user_id: str | None = None) -> tuple[str, str | int | None]:
     """Dispatch task tool calls with session-aware UID resolution."""
     from nextcloud_tasks import (
         complete_task,
@@ -424,14 +428,14 @@ async def _run_tasks_tool(name: str, params: dict, session_id: str = "", user_te
             raw, items = await _list_tasks_raw(show_completed=show_completed)
             if not raw.startswith("ERROR") and session_id:
                 from prompt import cache_tasks_context
-                await cache_tasks_context(session_id, items)
+                await cache_tasks_context(session_id, items, user_id)
             return raw, None
         elif name == "complete_task":
             uid = params.get("uid")
             uid = str(uid).strip() if uid is not None else ""
             if not uid:
                 return "ERROR: uid required.", None
-            resolved = await _resolve_position(session_id, uid, _get_context_fn("tasks"), id_field="uid")
+            resolved = await _resolve_position(session_id, uid, _get_context_fn("tasks"), id_field="uid", user_id=user_id)
             if resolved is None:
                 return f"ERROR: Task '{uid}' not found. Run list_tasks first to see available tasks.", None
             result = await complete_task(resolved)
@@ -441,7 +445,7 @@ async def _run_tasks_tool(name: str, params: dict, session_id: str = "", user_te
             uid = str(uid).strip() if uid is not None else ""
             if not uid:
                 return "ERROR: uid required.", None
-            resolved = await _resolve_position(session_id, uid, _get_context_fn("tasks"), id_field="uid")
+            resolved = await _resolve_position(session_id, uid, _get_context_fn("tasks"), id_field="uid", user_id=user_id)
             if resolved is None:
                 return f"ERROR: Task '{uid}' not found. Run list_tasks first to see available tasks.", None
             result = await delete_task(resolved)
@@ -453,7 +457,7 @@ async def _run_tasks_tool(name: str, params: dict, session_id: str = "", user_te
             raw, items = await _search_tasks_raw(q)
             if not raw.startswith("ERROR") and session_id:
                 from prompt import cache_tasks_context
-                await cache_tasks_context(session_id, items)
+                await cache_tasks_context(session_id, items, user_id)
             return raw, None
     except ValueError as e:
         return f"ERROR: {e}", None
@@ -464,7 +468,7 @@ async def _run_tasks_tool(name: str, params: dict, session_id: str = "", user_te
     return "ERROR: Tool not found.", None
 
 
-async def _run_mail_tool(name: str, params: dict, session_id: str = "", user_text: str = "", chip_origin: bool = False) -> tuple[str, str | int | None]:
+async def _run_mail_tool(name: str, params: dict, session_id: str = "", user_text: str = "", chip_origin: bool = False, user_id: str | None = None) -> tuple[str, str | int | None]:
     """Dispatch email tool calls to the active mail client."""
     from mail import get_active_mail_client
     from prompt import cache_email_context
@@ -483,7 +487,7 @@ async def _run_mail_tool(name: str, params: dict, session_id: str = "", user_tex
             if not msgs:
                 return "Inbox is empty.", None
             if session_id:
-                await cache_email_context(session_id, msgs)
+                await cache_email_context(session_id, msgs, user_id)
             lines = [f" Recent Emails (showing {len(msgs)}):"]
             for i, m in enumerate(msgs, 1):
                 bp = (m.get("body", "") or "").replace("\n", " ")[:150]
@@ -497,7 +501,7 @@ async def _run_mail_tool(name: str, params: dict, session_id: str = "", user_tex
             mid = params.get("message_id") or params.get("id")
             if not mid:
                 return "ERROR: message_id required.", None
-            resolved = await _resolve_position(session_id, mid, _get_context_fn("email"), id_field="id")
+            resolved = await _resolve_position(session_id, mid, _get_context_fn("email"), id_field="id", user_id=user_id)
             if resolved is None:
                 return "ERROR: Email not found. Run list_emails first to get the current listing.", None
             m = await mc.get_message(account_id, mailbox_id, resolved)
@@ -540,7 +544,7 @@ async def _run_mail_tool(name: str, params: dict, session_id: str = "", user_tex
             if not results:
                 return f"'{q}' no results found.", None
             if session_id:
-                await cache_email_context(session_id, results)
+                await cache_email_context(session_id, results, user_id)
             lines = [f"'{q}' Results ({len(results)}):"]
             for i, m in enumerate(results, 1):
                 bp = (m.get("body", "") or "").replace("\n", " ")[:150]

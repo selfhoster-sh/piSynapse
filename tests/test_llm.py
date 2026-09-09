@@ -654,7 +654,7 @@ def test_stream_forwards_tool_group_to_build_full_messages(monkeypatch):
 
     captured = {}
 
-    async def fake_build(messages, memories, summary, session_id, tool_group=None):
+    async def fake_build(messages, memories, summary, session_id, tool_group=None, user_id="default"):
         captured["tool_group"] = tool_group
         return [{"role": "user", "content": "hi"}]
 
@@ -677,7 +677,7 @@ def test_stream_defaults_tool_group_to_none(monkeypatch):
 
     captured = {}
 
-    async def fake_build(messages, memories, summary, session_id, tool_group=None):
+    async def fake_build(messages, memories, summary, session_id, tool_group=None, user_id="default"):
         captured["tool_group"] = tool_group
         return [{"role": "user", "content": "hi"}]
 

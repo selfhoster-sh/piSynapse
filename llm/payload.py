@@ -94,13 +94,14 @@ async def _build_full_messages(
     summary: str,
     email_session_id: str,
     tool_group: str | None = None,
+    user_id: str | None = None,
 ) -> list[dict]:
     from prompt import build_context, get_email_context, get_system_prompt, get_tool_system_prompt
 
     ctx = build_context(
         memories=memories or None,
         summary=summary,
-        email_context=await get_email_context(email_session_id) or None,
+        email_context=await get_email_context(email_session_id, user_id or "default") or None,
     )
     if tool_group:
         system = get_tool_system_prompt(tool_group) + ctx
