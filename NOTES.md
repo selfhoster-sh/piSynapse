@@ -19,6 +19,12 @@
 - **Multi-user invisibility rule:** one user's sessions, settings, mail and keys are invisible to every other user. Every user-scoped query needs its owner guard, every guard needs a both-directions test.
 - **Pre-push check:** before push, grep new docs/journal lines for secrets, passwords, IPs and credentials the same way code gets py_compile + pytest.
 
+## 2026-09-09 — Collective learning Phase 2: signature normalization
+
+- **New `textnorm.py`:** deterministic regex-only `normalize_signature` (email/phone/url/date/long-digit → lowercase placeholders; casefold + whitespace collapse; idempotent fixed-point). No NER (Pi budget) — bare names stay, documented as residual for quorum/review.
+- **Feeder wiring:** `_process_audit_row` computes the signature once; `_is_duplicate` gains a signature-equality fast path (catches cross-user PII variants, skips an embedding call); addition records carry `"signature"` (additive — consumers untouched). One existing test fake updated for the new kwarg.
+- **Test:** `tests/test_textnorm.py` (9 tests: classes, idempotence, Turkish samples, cross-user equality, residual). Full suite **719 passed** (710 + 9); ruff clean.
+
 ## 2026-09-09 — Collective learning Phase 1: feedback ownership guard
 
 - **Plan:** `docs/collective-learning-2026-09-09.md` (4 phases: guard → lazy normalization → quorum/reputation → admin queue), grounded in federated-preference research (FedBis/FedBiscuit, adaptive reputation weighting, Byzantine-robust aggregation, Presidio-style placeholders).

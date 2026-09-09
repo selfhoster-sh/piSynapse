@@ -312,7 +312,7 @@ class TestCorpusFeederDuplicate:
         _seed_rows(audit_db, [{"tool_name": "get_weather", "conversation_id": 6,
                                "confirmed_at": "2026-08-31T12:00:00"}])
 
-        def fake_is_dup(text, bgroups, bmat, addrecs, addmat, dup_threshold=0.98):
+        def fake_is_dup(text, bgroups, bmat, addrecs, addmat, dup_threshold=0.98, signature=None):
             return True  # pretend it's a duplicate
         monkeypatch.setattr(cf, "_is_duplicate", fake_is_dup)
         monkeypatch.setattr(cf, "_load_base_corpus_embeddings",
