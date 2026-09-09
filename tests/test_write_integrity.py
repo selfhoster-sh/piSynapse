@@ -192,7 +192,10 @@ def test_legacy_upgrade_applies_all_repairs(wdb):
             "INSERT INTO tool_audit_log (tool_name, success, conversation_id) "
             "VALUES ('list_notes', 1, 4)"
         )
-        await db.execute(f"PRAGMA user_version = {len(dbmod.MIGRATIONS) - 5}")
+        # Rewind past exactly the 6 newest migrations (4 map user_id +
+        # audit user_id + users password_hash); keep this count in sync
+        # with MIGRATIONS or the upgrade path under test changes shape.
+        await db.execute(f"PRAGMA user_version = {len(dbmod.MIGRATIONS) - 6}")
         await db.commit()
 
     asyncio.run(_downgrade())
