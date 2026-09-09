@@ -47,3 +47,18 @@ def test_collect_health_disabled_nextcloud_does_not_degrade(monkeypatch):
 
     assert result["status"] == "healthy"
     assert result["dependencies"]["nextcloud"] == "disabled"
+
+
+def test_degraded_flag_surfaces_in_health(monkeypatch):
+    import main as mainmod
+
+    async def _ok():
+        return "ok"
+
+    monkeypatch.setattr(mainmod, "_check_db", _ok)
+    monkeypatch.setattr(mainmod, "_check_llm", _ok)
+    monkeypatch.setattr(mainmod, "_check_nextcloud", _ok)
+    monkeypatch.setattr(mainmod, "DB_DEGRADED", "OperationalError: boom")
+    payload = asyncio.run(mainmod.collect_health())
+    assert payload["status"] == "degraded"
+    assert payload["startup_error"] == "OperationalError: boom"

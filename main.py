@@ -99,6 +99,11 @@ _session_limiter = _RateLimiter(rpm=20)
 _public_limiter = _RateLimiter(rpm=120)
 
 
+# Set when lifespan startup cannot initialize the database. The app keeps
+# serving so /health reports the condition instead of crash-looping blindly.
+DB_DEGRADED: str | None = None
+
+
 def _effective_trusted_hosts() -> set[str]:
     """Resolve the Host allowlist, refusing to disable the check.
 
@@ -136,8 +141,41 @@ async def lifespan(app: FastAPI):
             "Set TRUSTED_HOSTS in .env (e.g. your LAN IP) to restrict for production."
         )
 
-    await init_db()
-    logger.info("Database ready (WAL mode active)")
+    global DB_DEGRADED
+    try:
+        await init_db()
+        logger.info("Database ready (WAL mode active)")
+    except Exception as e:
+        # Fail visible, not silent: serve degraded so /health reports the
+        # condition (with recovery hint) instead of crash-looping.
+        DB_DEGRADED = f"{type(e).__name__}: {e}"
+        logger.critical(
+            "Database init failed — serving DEGRADED. Recovery: restore "
+            "backups/piSynapse-auto-*.db over assistant.db and restart. Error: %s",
+            e,
+        )
+    else:
+        try:
+            from db import db_quick_check
+
+            problem = await db_quick_check()
+            if problem is not None:
+                DB_DEGRADED = problem
+                logger.critical(
+                    "Database integrity check failed — serving DEGRADED. "
+                    "Recovery: see docs/backup-restore.md. Detail: %s", problem,
+                )
+        except Exception as e:
+            logger.warning(f"Integrity check skipped: {e}")
+    # Baseline online backup at startup (best-effort, never blocks boot).
+    try:
+        from db import auto_backup_db
+
+        backup_path = await auto_backup_db()
+        if backup_path:
+            logger.info(f"Startup DB backup: {backup_path}")
+    except Exception as e:
+        logger.warning(f"Startup backup skipped: {e}")
 
     # Embedding dimension drift guard (Faz 2): stored vectors written by a
     # different model than the configured one silently zero out cosine scores.
@@ -643,12 +681,15 @@ async def collect_health() -> dict:
         "nextcloud": await _check_nextcloud(),
     }
     configured = {k: v for k, v in deps.items() if v != "disabled"}
-    degraded = any(v != "ok" for v in configured.values())
-    return {
+    degraded = any(v != "ok" for v in configured.values()) or DB_DEGRADED is not None
+    payload = {
         "status": "degraded" if degraded else "healthy",
         "model": LLM_MODEL,
         "dependencies": deps,
     }
+    if DB_DEGRADED is not None:
+        payload["startup_error"] = DB_DEGRADED
+    return payload
 
 
 @app.post("/debug")
