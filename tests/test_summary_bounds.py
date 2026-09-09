@@ -33,6 +33,16 @@ def _seed(session_id, user_id, n, prefix="m", content_fn=None):
                 (session_id, role, content, user_id),
             )
         await db.commit()
+        # Mirror save_message: every conversation row gets an FTS row
+        # (raw conversation-only inserts trip the external-content FTS quirk
+        # on subquery deletes and do not occur in production).
+        await db.execute(
+            "INSERT INTO conversations_fts (rowid, content, session_id) "
+            "SELECT id, content, session_id FROM conversations "
+            "WHERE session_id = ? AND user_id = ?",
+            (session_id, user_id),
+        )
+        await db.commit()
 
     asyncio.run(_go())
 
@@ -98,3 +108,99 @@ def test_empty_span_advances_boundary(sum_db):
     )
     assert rows2 == []
     assert new_boundary2 >= new_boundary
+
+
+def _msg_ids(session_id="sx"):
+    async def _go():
+        db = await dbmod.get_db()
+        cur = await db.execute(
+            "SELECT id FROM conversations WHERE session_id = ? ORDER BY id", (session_id,)
+        )
+        return [r[0] for r in await cur.fetchall()]
+
+    return asyncio.run(_go())
+
+
+def test_branch_delete_clamps_boundary(sum_db):
+    _seed("sx", "alice", 10)
+    ids = _msg_ids()
+    asyncio.run(dbmod.update_session_summary("sx", "sum", 8, user_id="alice"))
+    asyncio.run(dbmod.delete_branch("sx", ids[5], user_id="alice"))
+    meta = asyncio.run(dbmod.get_session_meta("sx", user_id="alice"))
+    assert meta["summary"] == "sum"
+    assert meta["summarized_until"] == ids[4]
+
+
+def test_clear_history_clears_summary(sum_db):
+    _seed("sx", "alice", 6)
+    asyncio.run(dbmod.update_session_summary("sx", "sum", 4, user_id="alice"))
+    asyncio.run(dbmod.clear_history("sx", "alice"))
+    meta = asyncio.run(dbmod.get_session_meta("sx", user_id="alice"))
+    assert meta == {"summary": "", "summarized_until": 0}
+
+
+def test_delete_cascades_feedback_and_audits(sum_db):
+    _seed("sx", "alice", 4)
+    ids = _msg_ids()
+
+    async def _seed_links():
+        db = await dbmod.get_db()
+        await db.execute(
+            "INSERT INTO message_feedback (message_id, value) VALUES (?, 'up'), (?, 'down')",
+            (ids[0], ids[3]),
+        )
+        await db.execute(
+            "INSERT INTO tool_audit_log (tool_name, success, is_summary, conversation_id) "
+            "VALUES ('get_weather', 1, 0, ?), ('list_notes', 1, 0, ?)",
+            (ids[0], ids[2]),
+        )
+        await db.commit()
+
+    asyncio.run(_seed_links())
+    asyncio.run(dbmod.delete_branch("sx", ids[2], user_id="alice"))
+
+    async def _left():
+        db = await dbmod.get_db()
+        fb = await (
+            await db.execute("SELECT message_id FROM message_feedback")
+        ).fetchall()
+        au = await (
+            await db.execute("SELECT conversation_id FROM tool_audit_log")
+        ).fetchall()
+        return {r[0] for r in fb}, {r[0] for r in au}
+
+    fb, au = asyncio.run(_left())
+    assert fb == {ids[0]}
+    assert au == {ids[0]}
+
+
+def test_retention_repair(sum_db, monkeypatch):
+    import config as config_module
+
+    monkeypatch.setattr(config_module, "CONVERSATION_RETENTION_DAYS", 1)
+    monkeypatch.setattr(config_module, "MEMORY_RETENTION_DAYS", 0)
+
+    async def _seed_old():
+        db = await dbmod.get_db()
+        for i in range(6):
+            await db.execute(
+                "INSERT INTO conversations (session_id, role, content, user_id, timestamp) "
+                "VALUES ('sx', 'user', ?, 'alice', datetime('now', '-3 days'))",
+                (f"old{i}",),
+            )
+        for i in range(4):
+            await db.execute(
+                "INSERT INTO conversations (session_id, role, content, user_id) "
+                "VALUES ('sx', 'user', ?, 'alice')",
+                (f"new{i}",),
+            )
+        await db.commit()
+
+    asyncio.run(_seed_old())
+    fresh_max = _msg_ids()[-1]
+    asyncio.run(dbmod.update_session_summary("sx", "sum", 9999, user_id="alice"))
+    removed_conv, _ = asyncio.run(dbmod.cleanup_expired_data())
+    assert removed_conv == 6
+    meta = asyncio.run(dbmod.get_session_meta("sx", user_id="alice"))
+    assert meta["summary"] == "sum"
+    assert meta["summarized_until"] == fresh_max

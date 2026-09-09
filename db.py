@@ -518,6 +518,44 @@ async def _vacuum_if_fragmented(db: aiosqlite.Connection) -> None:
         logger.warning(f"VACUUM skipped: {e}")
 
 
+async def _retention_prune_conversations(db: aiosqlite.Connection) -> int:
+    """Delete conversations older than retention + purge their orphans.
+
+    Runs inside the caller's write lock. Returns the removed row count.
+    """
+    from config import CONVERSATION_RETENTION_DAYS
+
+    cur = await _write_with_retry(
+        db,
+        "DELETE FROM conversations WHERE timestamp < datetime('now', ?)",
+        (f"-{CONVERSATION_RETENTION_DAYS} days",),
+    )
+    removed = cur.rowcount if cur.rowcount else 0
+    # Purge matching FTS5 rows
+    await _write_with_retry(
+        db,
+        "DELETE FROM conversations_fts WHERE rowid NOT IN (SELECT id FROM conversations)",
+    )
+    await _write_with_retry(
+        db,
+        "DELETE FROM sessions WHERE id NOT IN (SELECT DISTINCT session_id FROM conversations)"
+    )
+    # Orphan feedback/audits of pruned messages (same pattern as FTS).
+    await _write_with_retry(
+        db,
+        "DELETE FROM message_feedback WHERE message_id NOT IN (SELECT id FROM conversations)",
+    )
+    await _write_with_retry(
+        db,
+        "DELETE FROM tool_audit_log WHERE conversation_id IS NOT NULL "
+        "AND conversation_id NOT IN (SELECT id FROM conversations)",
+    )
+    # Surviving sessions may point past the pruned tail.
+    await _repair_summary_boundaries(db)
+    await _commit_with_retry(db)
+    return removed
+
+
 async def cleanup_expired_data() -> tuple[int, int]:
     """Delete data older than the configured retention (0 = keep forever).
 
@@ -533,21 +571,8 @@ async def cleanup_expired_data() -> tuple[int, int]:
         db = await get_db()
         removed_conv = removed_mem = 0
         if CONVERSATION_RETENTION_DAYS > 0:
-            cur = await _write_with_retry(
-                db,
-                "DELETE FROM conversations WHERE timestamp < datetime('now', ?)",
-                (f"-{CONVERSATION_RETENTION_DAYS} days",),
-            )
-            removed_conv = cur.rowcount if cur.rowcount else 0
-            # Purge matching FTS5 rows
-            await _write_with_retry(
-                db,
-                "DELETE FROM conversations_fts WHERE rowid NOT IN (SELECT id FROM conversations)",
-            )
-            await _write_with_retry(
-                db,
-                "DELETE FROM sessions WHERE id NOT IN (SELECT DISTINCT session_id FROM conversations)"
-            )
+            async with _write_lock():
+                removed_conv = await _retention_prune_conversations(db)
         if MEMORY_RETENTION_DAYS > 0:
             cur = await _write_with_retry(
                 db,
@@ -1106,6 +1131,9 @@ async def delete_last_assistant(session_id: str, user_id: str = "default") -> bo
     async with _write_lock():
         await db.execute("DELETE FROM conversations WHERE id = ?", (row[0],))
         await db.execute("DELETE FROM conversations_fts WHERE rowid = ?", (row[0],))
+        await db.execute("DELETE FROM message_feedback WHERE message_id = ?", (row[0],))
+        await db.execute("DELETE FROM tool_audit_log WHERE conversation_id = ?", (row[0],))
+        await _repair_summary_boundaries(db)
         await _commit_with_retry(db)
     return True
 
@@ -1136,6 +1164,10 @@ async def delete_branch(session_id: str, anchor_id: int, user_id: str = "default
                 (session_id, *ids),
             )
             await db.execute(f"DELETE FROM conversations_fts WHERE rowid IN ({ph})", ids)
+            await db.execute(f"DELETE FROM message_feedback WHERE message_id IN ({ph})", ids)
+            await db.execute(
+                f"DELETE FROM tool_audit_log WHERE conversation_id IN ({ph})", ids
+            )
         # Keep the session alive + surfaced even though no rows were inserted.
         await db.execute(
             "INSERT INTO sessions (id, user_id) VALUES (?, ?) "
@@ -1143,6 +1175,7 @@ async def delete_branch(session_id: str, anchor_id: int, user_id: str = "default
             "WHERE sessions.user_id = excluded.user_id",
             (session_id, user_id),
         )
+        await _repair_summary_boundaries(db)
         await _commit_with_retry(db)
     return ids
 
@@ -1236,6 +1269,17 @@ async def get_all_history(user_id: str = "default") -> dict[str, list[dict]]:
 async def clear_history(session_id: str, user_id: str = "default"):
     db = await get_db()
     async with _write_lock():
+        # Feedback/audit cascade first: their subqueries need the rows present.
+        await db.execute(
+            "DELETE FROM message_feedback WHERE message_id IN "
+            "(SELECT id FROM conversations WHERE session_id = ? AND user_id = ?)",
+            (session_id, user_id),
+        )
+        await db.execute(
+            "DELETE FROM tool_audit_log WHERE conversation_id IN "
+            "(SELECT id FROM conversations WHERE session_id = ? AND user_id = ?)",
+            (session_id, user_id),
+        )
         # FTS first: the rowid subquery needs the conversation rows still present.
         await db.execute(
             "DELETE FROM conversations_fts WHERE rowid IN "
@@ -1248,6 +1292,7 @@ async def clear_history(session_id: str, user_id: str = "default"):
         await db.execute("DELETE FROM notes_session_map WHERE session_id = ?", (session_id,))
         await db.execute("DELETE FROM tasks_session_map WHERE session_id = ?", (session_id,))
         await db.execute("DELETE FROM calendar_session_map WHERE session_id = ?", (session_id,))
+        await _repair_summary_boundaries(db)
         await _commit_with_retry(db)
 
 
@@ -1758,6 +1803,31 @@ async def get_session_meta(session_id: str, user_id: str = "default") -> dict:
 # by exactly what was folded, so a huge backlog drains over successive turns.
 FOLD_MAX_MESSAGES = 30
 FOLD_MAX_CHARS_PER_MESSAGE = 500
+
+
+async def _repair_summary_boundaries(db: aiosqlite.Connection) -> None:
+    """Reconcile summary boundaries with surviving messages. Call inside the
+    caller's write lock, before its commit, after any delete path (branch /
+    last / clear / retention).
+
+    - Clamps every session's ``summarized_until`` to its surviving MAX(id):
+      otherwise the fold computes an empty pending span forever (stall) while
+      the prompt keeps injecting a summary of deleted content.
+    - Clears summary+until where no messages remain.
+    Stale facts in a surviving summary are NOT purged here — they dilute as
+    new folds append (documented residual); re-summarizing from scratch on a
+    synchronous delete path would stall the API.
+    """
+    await db.execute(
+        "UPDATE sessions SET summarized_until = MIN(summarized_until, "
+        "COALESCE((SELECT MAX(c.id) FROM conversations c "
+        "WHERE c.session_id = sessions.id AND c.user_id = sessions.user_id), 0))"
+    )
+    await db.execute(
+        "UPDATE sessions SET summary = '', summarized_until = 0 "
+        "WHERE NOT EXISTS (SELECT 1 FROM conversations c "
+        "WHERE c.session_id = sessions.id AND c.user_id = sessions.user_id)"
+    )
 
 
 async def get_messages_to_summarize(
