@@ -102,11 +102,14 @@ def test_trusted_host_explicit_set(sec_app, monkeypatch):
     assert c.get("/health", headers={"host": "other.local"}).status_code == 403
 
 
-def test_trusted_host_star_always_allows(sec_app, monkeypatch):
+def test_trusted_host_star_no_longer_disables_check(sec_app, monkeypatch):
     monkeypatch.setattr(mainmod, "API_KEY", "secret-key")
     monkeypatch.setattr(mainmod, "TRUSTED_HOSTS", {"*"})
     c = TestClient(sec_app)
-    assert c.get("/health", headers={"host": "anything.example.com"}).status_code == 200
+    # Wildcard is ignored (fail-closed): arbitrary hosts are rejected,
+    # local names still pass via the safe default.
+    assert c.get("/health", headers={"host": "anything.example.com"}).status_code == 403
+    assert c.get("/health", headers={"host": "localhost"}).status_code == 200
 
 
 # -- routers/config.py: newline injection guard --
@@ -211,3 +214,30 @@ def test_hardening_headers_present():
     assert r.headers["referrer-policy"] == "no-referrer"
     assert "geolocation=()" in r.headers["permissions-policy"]
     assert "strict-transport-security" not in r.headers  # plaintext HTTP
+
+
+def test_trusted_hosts_wildcard_ignored(monkeypatch):
+    monkeypatch.setattr(mainmod, "TRUSTED_HOSTS", {"*", "example.com"})
+    effective = mainmod._effective_trusted_hosts()
+    assert "*" not in effective
+    assert "example.com" in effective
+    monkeypatch.setattr(mainmod, "TRUSTED_HOSTS", {"*"})
+    assert mainmod._effective_trusted_hosts() == mainmod._LOCAL_TRUSTED_HOSTS
+
+
+def test_cors_wildcard_rejected():
+    import pytest as _pytest
+
+    with _pytest.raises(RuntimeError):
+        mainmod._validate_cors_origins(["https://a.example", "*"])
+    mainmod._validate_cors_origins(["https://a.example"])
+    mainmod._validate_cors_origins([])
+
+
+def test_exempt_paths_share_lenient_bucket(client, monkeypatch):
+    monkeypatch.setattr(mainmod, "_public_limiter", mainmod._RateLimiter(rpm=2))
+    assert client.get("/health").status_code == 200
+    assert client.get("/health").status_code == 200
+    r = client.get("/health")
+    assert r.status_code == 429
+    assert r.headers["X-RateLimit-Limit"] == "2"

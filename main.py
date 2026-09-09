@@ -94,6 +94,29 @@ _rate_limiter = _RateLimiter(rpm=30)
 _session_limiter = _RateLimiter(rpm=20)
 
 
+# Exempt paths (health/static) get their own lenient bucket: still bounded
+# against L7 floods, far above any legitimate poller.
+_public_limiter = _RateLimiter(rpm=120)
+
+
+def _effective_trusted_hosts() -> set[str]:
+    """Resolve the Host allowlist, refusing to disable the check.
+
+    A literal "*" in TRUSTED_HOSTS is rejected with an error log and ignored
+    (falls back to local-only) instead of turning Host validation off.
+    """
+    trusted = {h for h in TRUSTED_HOSTS if h != "*"}
+    if "*" in TRUSTED_HOSTS:
+        logger.error("TRUSTED_HOSTS contains '*': refusing to disable Host checking; wildcard ignored.")
+    return _LOCAL_TRUSTED_HOSTS if not trusted else {h.lower() for h in trusted}
+
+
+def _validate_cors_origins(origins: list[str]) -> None:
+    """Fail fast on a credentialed wildcard (spec violation + CSRF risk)."""
+    if "*" in (origins or []):
+        raise RuntimeError("CORS_ORIGINS must not contain '*': allow_credentials=True forbids wildcards.")
+
+
 # ── Lifespan ──────────────────────────────────────────────────────────────────
 
 @asynccontextmanager
@@ -305,6 +328,7 @@ app = FastAPI(
 # CORS — restrict to specific origins when set, otherwise same-origin only
 # allow_headers must be explicit when allow_credentials=True (spec forbids "*")
 _CORS_HEADERS = ["X-API-Key", "Content-Type", "X-Request-ID", "Authorization"]
+_validate_cors_origins(CORS_ORIGINS)
 if CORS_ORIGINS:
     app.add_middleware(
         CORSMiddleware,
@@ -393,10 +417,8 @@ _LOCAL_TRUSTED_HOSTS = _local_trusted_hosts()
 
 @app.middleware("http")
 async def trusted_host_middleware(request: Request, call_next):
-    if "*" in TRUSTED_HOSTS:
-        return await call_next(request)
     # Unset → auto-allow this machine's local names/IPs (safe default).
-    allowed = _LOCAL_TRUSTED_HOSTS if not TRUSTED_HOSTS else {h.lower() for h in TRUSTED_HOSTS}
+    allowed = _effective_trusted_hosts()
     host = request.headers.get("host", "").split(":")[0].lower()
     if not host or host not in allowed:
         return JSONResponse(status_code=403, content={"detail": "Invalid Host header"})
@@ -474,19 +496,20 @@ async def security_middleware(request: Request, call_next):
         request.state.user_id = get_user_id_for_key(key)
 
     # --- Rate limiting ---
-    client_ip = None
-    if not is_exempt or is_debug:
-        if TRUST_X_FORWARDED_FOR:
-            client_ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-        else:
-            # Default: never trust the spoofable X-Forwarded-For header.
-            client_ip = request.client.host if request.client else "unknown"
-        if not client_ip:
-            client_ip = "unknown"
-        allowed, remaining = _rate_limiter.allow(client_ip)
-        if not allowed:
-            return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded. Try again later."},
-                               headers={"Retry-After": "60", "X-RateLimit-Limit": str(_rate_limiter.rpm), "X-RateLimit-Remaining": "0"})
+    # Authenticated routes use the strict bucket; exempt paths (health/static)
+    # use a separate lenient bucket so unauthenticated floods still cap out.
+    limiter = _rate_limiter if (not is_exempt or is_debug) else _public_limiter
+    if TRUST_X_FORWARDED_FOR:
+        client_ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+    else:
+        # Default: never trust the spoofable X-Forwarded-For header.
+        client_ip = request.client.host if request.client else "unknown"
+    if not client_ip:
+        client_ip = "unknown"
+    allowed, remaining = limiter.allow(client_ip)
+    if not allowed:
+        return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded. Try again later."},
+                           headers={"Retry-After": "60", "X-RateLimit-Limit": str(limiter.rpm), "X-RateLimit-Remaining": "0"})
 
     # --- Body size limit ---
     # Only the transcription endpoints accept larger payloads (audio recordings);
@@ -516,8 +539,8 @@ async def security_middleware(request: Request, call_next):
 
     response = await call_next(request)
     if client_ip:
-        rem = _rate_limiter.remaining(client_ip)
-        response.headers["X-RateLimit-Limit"] = str(_rate_limiter.rpm)
+        rem = limiter.remaining(client_ip)
+        response.headers["X-RateLimit-Limit"] = str(limiter.rpm)
         response.headers["X-RateLimit-Remaining"] = str(rem)
     return response
 
