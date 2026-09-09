@@ -31,7 +31,7 @@ const STRINGS = {
     settings:'Ayarlar', settingsTitle:'Ayarlar', settingsSaved:'Ayarlar kaydedildi',
      settingsRestart:'Bazı ayarlar sunucu yeniden başlatıldığında tam etkili olur.',
     settingsCancel:'İptal', settingsSave:'Kaydet', settingsSearch:'Ayarlarda ara…', settingsDirty:'Kaydedilmemiş değişiklikler', settingsNoResult:'Aramana uyan ayar yok.',
-    navAppearance:'Görünüm', navAccount:'Hesap', navAssistant:'Asistan', navModel:'Model', navChat:'Sohbet', navVoice:'Ses', navServer:'Sunucu', navAdmin:'Yönetici',
+    navAppearance:'Görünüm', navAccount:'Hesap', navAssistant:'Asistan', navModel:'Model', navChat:'Sohbet', navVoice:'Ses', navServer:'Sunucu', navAdmin:'Yönetici', readonlyNote:'Bu ekrandaki sunucu ayarları salt görüntülenir — değişiklikleri yalnızca yöneticiler yapabilir.',
     modeLabel:'Tema', modeDark:'Koyu', modeLight:'Açık', modeAmoled:'AMOLED', accentLabel:'Vurgu rengi',
     adminReview:'İnceleme Kuyruğu', adminReviewDesc:'Kullanıcı geri bildirimlerinden gelen çelişkili yönlendirme önerileri. Onaylanan corpus\u2019a girer, reddedilen bir daha otomatik eklenmez.',
     adminReviewEmpty:'Bekleyen öneri yok.', adminApprove:'Onayla', adminReject:'Reddet',
@@ -122,7 +122,7 @@ const STRINGS = {
     settings:'Settings', settingsTitle:'Settings', settingsSaved:'Settings saved',
     settingsRestart:'Some settings take full effect only after server restart.',
     settingsCancel:'Cancel', settingsSave:'Save', settingsSearch:'Search settings…', settingsDirty:'Unsaved changes', settingsNoResult:'No settings match your search.',
-    navAppearance:'Appearance', navAccount:'Account', navAssistant:'Assistant', navModel:'Model', navChat:'Chat', navVoice:'Voice', navServer:'Server', navAdmin:'Admin',
+    navAppearance:'Appearance', navAccount:'Account', navAssistant:'Assistant', navModel:'Model', navChat:'Chat', navVoice:'Voice', navServer:'Server', navAdmin:'Admin', readonlyNote:'Server settings here are read-only — only admins can change them.',
     modeLabel:'Theme', modeDark:'Dark', modeLight:'Light', modeAmoled:'AMOLED', accentLabel:'Accent color',
     adminReview:'Review Queue', adminReviewDesc:'Contested routing suggestions from user feedback. Approved ones enter the corpus, rejected ones are never auto-added.',
     adminReviewEmpty:'No pending suggestions.', adminApprove:'Approve', adminReject:'Reject',
@@ -233,7 +233,9 @@ function enhanceSelect(sel){
   sel.addEventListener('change', buildMenu);
 }
 function enhanceAllSelects(root){
-  (root||document).querySelectorAll('#lang-select, #settings-form select').forEach(enhanceSelect);
+  // Every dropdown uses the internal menu — never the browser-native popup.
+  // Guarded per-element, so re-rendered regions can re-run this freely.
+  (root||document).querySelectorAll('select').forEach(enhanceSelect);
 }
 document.addEventListener('click',()=>document.querySelectorAll('.sel-wrap.open').forEach(w=>w.classList.remove('open')));
 document.addEventListener('keydown',e=>{
@@ -576,6 +578,7 @@ function applyMinimal(on){
   minimal = on;
   document.body.classList.toggle('minimal-chat', on);
   localStorage.setItem('ps_minimal', on ? '1' : '0');
+  try{ layoutTimestamps(); }catch(e){}
 }
 
 function applyAmoled(on){
@@ -2365,6 +2368,25 @@ function refreshLastState(){
     const bar=g.querySelector('.msg-actions')||g.querySelector('.tool-status.done');
     if(bar) bar.classList.toggle('not-last', g!==assistants[assistants.length-1]);
   });
+  layoutTimestamps();
+}
+
+function layoutTimestamps(){
+  // Minimal mode: the timestamp leaves the meta row for the action bar
+  // (thin, right-aligned, next to the thumbs) and rides its dim/hover
+  // rhythm for free. Reversible so toggling the mode restores everything.
+  const minimal = document.body.classList.contains('minimal-chat');
+  document.querySelectorAll('#messages .msg-group.assistant').forEach(g=>{
+    const ts = g.querySelector('.msg-meta .ts, .msg-actions .ts, .tool-status .ts');
+    if(!ts) return;
+    if(minimal){
+      const bar = g.querySelector('.msg-actions') || g.querySelector('.tool-status.done');
+      if(bar && ts.parentElement !== bar){ ts.dataset.moved = '1'; bar.appendChild(ts); }
+    } else if(ts.dataset.moved){
+      const meta = g.querySelector('.msg-meta');
+      if(meta){ meta.appendChild(ts); delete ts.dataset.moved; }
+    }
+  });
 }
 
 function addMsg(role, content, forceScroll=true, ts=null, images=null, reasoning=null, audits=null, mid=null, feedback=null, fbNote=null){
@@ -3453,8 +3475,8 @@ async function openSettings(){
       tabsEl.hidden = true;
       document.getElementById('settings-pane-server').hidden = true;
       document.getElementById('settings-pane-phone').hidden = false;
-      const pageOf = (label)=> label === 'Personal' ? 'assistant'
-        : label === 'Chat' ? 'chat' : label === 'Voice' ? 'voice' : 'model';
+      const pageOf = (label)=> label === 'Personal' || label === 'Model' || label === 'Generation'
+        || label === 'Chat' ? 'assistant' : label === 'Voice' ? 'voice' : 'model';
       for (const [sectionLabel, keys] of Object.entries(SETTINGS_GROUPS)) {
         if(sectionLabel === 'General') continue; // language lives in Appearance
         html += renderGroup(sectionLabel, keys, false, pageOf(sectionLabel));
@@ -3518,7 +3540,7 @@ function serverSectionHtml(){
 function accountSectionHtml(){
   const key = localStorage.getItem('ps_api_key') || '';
   return `
-    <div class="settings-section settings-page" data-sec="Hesap" data-page="account">
+    <div class="settings-section settings-page" data-sec="Hesap" data-page="server">
       <div class="settings-section-title">${esc(t('navAccount'))}</div>
       <div class="settings-section-inner">
         <div class="setting-item">
@@ -3556,6 +3578,30 @@ function adminSectionHtml(){
     </div>`;
 }
 
+function _applyRoleLock(isAdmin){
+  // Non-admins view server settings read-only (web): assistant/model/voice
+  // pages render disabled; the local key field, logout and appearance stay
+  // interactive. Admins (and native) are unrestricted.
+  const form = document.getElementById('settings-form');
+  if(!form) return;
+  const lock = !isAdmin && !_NATIVE;
+  form.querySelectorAll('input, select, textarea, button').forEach(el=>{
+    if(el.id === 'si-ps_api_key') return;
+    if(el.classList.contains('info-btn')) return;
+    const oc = el.getAttribute('onclick') || '';
+    if(oc.includes('logoutUser') || oc.includes('toggleAdvanced') || oc.includes('toggleSettingInfo')) return;
+    if(el.classList.contains('sel-btn') || el.tagName !== 'BUTTON'){ el.disabled = lock; }
+  });
+  let rn = document.getElementById('settings-readonly-note');
+  if(lock && !rn){
+    rn = document.createElement('div');
+    rn.id = 'settings-readonly-note'; rn.className = 'settings-readonly';
+    form.prepend(rn);
+  }
+  if(rn){ rn.style.display = lock ? '' : 'none'; if(lock) rn.textContent = t('readonlyNote'); }
+  _markSettingsClean();
+}
+
 // ── Admin panel (Phase 4): review queue + user approvals, admins only ────────
 async function loadAdminPanel(){
   const box = document.getElementById('admin-review-box');
@@ -3582,8 +3628,10 @@ async function loadAdminPanel(){
   if(!me || !me.is_admin){
     // Non-admins get no admin page at all (not even an empty shell).
     stripAdminPage();
+    _applyRoleLock(false);
     return;
   }
+  _applyRoleLock(true);
   box.style.display = '';
   try{
     const u = await api('GET', '/users');
@@ -3676,10 +3724,8 @@ function _markSettingsClean(){
 
 // ── Paged settings layout (web): sidebar nav + one visible page ─────────────
 const SETTINGS_PAGE_DEFS = [
-  ['appearance', 'navAppearance'], ['account', 'navAccount'],
-  ['assistant', 'navAssistant'], ['model', 'navModel'],
-  ['chat', 'navChat'], ['voice', 'navVoice'],
-  ['server', 'navServer'], ['admin', 'navAdmin'],
+  ['appearance', 'navAppearance'], ['assistant', 'navAssistant'],
+  ['voice', 'navVoice'], ['server', 'navServer'], ['admin', 'navAdmin'],
 ];
 
 function _ensureSettingsLayout(){
@@ -3811,12 +3857,10 @@ async function saveSettings(){
   }
 
   try {
-    // Role-aware save (sector standard: users only ever see what sticks).
-    // Non-admins hold personal keys only — PATCH would 403, so they PUT.
-    const personal = !_NATIVE && window._isAdmin === false;
-    const result = personal
-      ? await api('PUT', '/config/my-settings', { values })
-      : await api('PATCH', '/config/settings', { values });
+    // Non-admins are view-only on web (fields render disabled; see
+    // _applyRoleLock). Guard the click path too — never rely on UI alone.
+    if(!_NATIVE && window._isAdmin === false){ toast(t('readonlyNote'), true); return; }
+    const result = await api('PATCH', '/config/settings', { values });
     toast(t('settingsSaved'));
     _snapshotSettings();
     if (result.restart_required && result.restart_required.length > 0) {
@@ -4566,6 +4610,7 @@ function renderOnboarding(){
     next.dataset.action = '';
     next.textContent = t('obDone');
   }
+  try{ enhanceAllSelects(body); }catch(e){}
 }
 
 async function autoDetectCity(){

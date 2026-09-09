@@ -40,6 +40,18 @@
 - **Note:** server half takes effect on the pending restart.
 - **Test:** full-file users/audit green; `node --check` clean.
 
+## 2026-09-09 — UI polish round (scroll, selects, glass, fade, minimal, regroup)
+
+- **Scroll:** paged layout flex chain was missing `min-height:0` (main+nav never shrank → clipped, unscrolled). Fixed + bounded admin lists.
+- **Spacing:** section rhythm 2→14px gaps + section margins + button gaps.
+- **Light:** surfaces off-white (#f4f5f7); light+glass rebuilt from white tints (was dark smudges); settings modal solidifies under glass-open.
+- **Glass perf:** topbar 16→10px blur, fb-tab saturate dropped + 12→8px, static specular insets for the glassy read (zero per-frame cost).
+- **Dropdowns:** `enhanceAllSelects` covers every `<select>` now (was settings-form only — font/onboarding used native popups); called after each dynamic render.
+- **Fade:** relocated below the bar to the viewport bottom, darker, theme-aware; uniform across modes.
+- **Minimal:** timestamp survives — JS-moved next to the thumbs, thin, riding the row dim/hover rhythm (full on last, hover on older); reversible on toggle.
+- **Regroup:** pages Appearance/Assistant(Model+Gen+Chat+Adv+Personal+Other)/Voice/Server(+Account)/Admin(bottom); non-admin server fields disabled + readonly note, save guarded; General folded into Appearance.
+- **Test:** full suite **755 passed**; ruff clean; `node --check` clean; i18n both dicts.
+
 ## 2026-09-09 — Settings v2: sidebar layout + real themes (pre-2.0)
 
 - **Layout (from scratch):** two-pane (nav rail + one visible page) replaces the scroll wall on web; pages Account/Appearance/Assistant/Model/Chat/Voice/Server/Admin built from the live schema (role-adaptive, admin page stripped for non-admins); search stacks all pages; native keeps tabs. Modal widened 520→760px; mobile collapses to top rail.
