@@ -237,6 +237,15 @@ function enhanceAllSelects(root){
   // Guarded per-element, so re-rendered regions can re-run this freely.
   (root||document).querySelectorAll('select').forEach(enhanceSelect);
 }
+if(typeof document !== 'undefined' && !window._selOutsideCloser){
+  // Open menus close on outside tap — otherwise they linger over the rows
+  // below and read as a rendering bug.
+  window._selOutsideCloser = true;
+  document.addEventListener('click', (e)=>{
+    if(e.target.closest && e.target.closest('.sel-wrap')) return;
+    document.querySelectorAll('.sel-wrap.open').forEach(w=>w.classList.remove('open'));
+  });
+}
 document.addEventListener('click',()=>document.querySelectorAll('.sel-wrap.open').forEach(w=>w.classList.remove('open')));
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape') document.querySelectorAll('.sel-wrap.open').forEach(w=>w.classList.remove('open'));
@@ -3466,8 +3475,7 @@ async function openSettings(){
       document.getElementById('settings-form').innerHTML = html;
       const serverHtml = renderFromGroups(byGroup(serverKeys));
       document.getElementById('settings-pane-server').innerHTML = serverHtml;
-      enhanceAllSelects(form);
-      enhanceAllSelects(document.getElementById('settings-pane-server'));
+      enhanceAllSelects();
       if (tabsEl) tabsEl.hidden = !serverKeys.length;
       setTabActive('phone');
     } else {
@@ -3491,7 +3499,7 @@ async function openSettings(){
       html += serverSectionHtml();
       if(window._isAdmin !== false) html += adminSectionHtml();
       form.innerHTML = html;
-      enhanceAllSelects(form);
+      enhanceAllSelects();
       _ensureSettingsLayout();
       _buildSettingsNav();
     }
@@ -3735,6 +3743,7 @@ function _ensureSettingsLayout(){
   const body = document.querySelector('.settings-body');
   const pane = document.getElementById('settings-pane-phone');
   if(!body || !pane) return;
+  body.classList.add('paged');
   const chips = document.getElementById('settings-chips');
   if(chips) chips.style.display = 'none';
   const layout = document.createElement('div');

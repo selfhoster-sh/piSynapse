@@ -830,8 +830,8 @@ body.theme-light.glass-mode .ob-box{
   color:#141419;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .2s}@media (hover:hover){
 .settings-save:hover:not(:focus){background:var(--accent-h);transform:translateY(-1px)}}
 .settings-save:disabled{opacity:.45;cursor:default;transform:none}
-.settings-search-row{padding:0 16px 8px}
-.settings-search-row .setting-input{width:100%}
+.settings-search-row{padding:0 16px 10px}
+.settings-search-row .setting-input{width:100%;padding:11px 14px;font-size:14px}
 .settings-dirty{font-size:12px;color:var(--accent);margin-right:auto}
 .settings-empty{padding:18px;text-align:center;color:var(--text3);font-size:13px}
 .settings-readonly{padding:10px 14px;margin-bottom:6px;border:1px dashed var(--border);border-radius:10px;font-size:12.5px;color:var(--text2);background:var(--surface2)}
@@ -847,7 +847,11 @@ body.theme-light.glass-mode .ob-box{
 /* Two-pane settings: nav rail + one visible page (sector standard).
    Search mode stacks every page and hides the rail. */
 .settings-layout{display:flex;min-height:0;flex:1;overflow:hidden}
-.settings-body{overflow:hidden}
+/* Paged mode owns the scroll chain: body flexes, layout fills, main scrolls.
+   (Native keeps the legacy scrolling body — class only set with the rail.) */
+.settings-body.paged{display:flex;flex-direction:column;overflow:hidden}
+.settings-tabs[hidden]{display:none!important}
+#settings-chips:empty{display:none}
 .settings-nav{width:196px;flex-shrink:0;min-height:0;overflow-y:auto;padding:4px 0 12px 2px;display:flex;flex-direction:column;gap:2px}
 .set-nav-btn{border:none;background:transparent;color:var(--text2);font:inherit;font-size:13.5px;font-weight:600;text-align:left;padding:9px 12px;border-radius:9px;cursor:pointer;white-space:nowrap}
 .set-nav-btn:hover{background:var(--surface2);color:var(--text)}
