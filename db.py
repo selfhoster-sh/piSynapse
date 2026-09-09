@@ -390,6 +390,18 @@ async def init_db():
         )
     """)
 
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS feedback_votes (
+            audit_id       INTEGER NOT NULL,
+            user_id        TEXT NOT NULL,
+            signature      TEXT NOT NULL DEFAULT '',
+            proposed_group TEXT NOT NULL DEFAULT '',
+            signal         TEXT NOT NULL DEFAULT 'confirm',
+            created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(audit_id, user_id)
+        )
+    """)
+
     await db.execute("CREATE INDEX IF NOT EXISTS idx_conversations_session ON conversations(session_id, timestamp)")
     await db.execute("CREATE INDEX IF NOT EXISTS idx_memories_user ON memories(user_id, importance DESC)")
     await db.execute("CREATE INDEX IF NOT EXISTS idx_tool_audit_created ON tool_audit_log(created_at)")
@@ -397,6 +409,7 @@ async def init_db():
     await db.execute("CREATE INDEX IF NOT EXISTS idx_intent_audit_created ON intent_audit_log(created_at)")
     await db.execute("CREATE INDEX IF NOT EXISTS idx_intent_audit_source ON intent_audit_log(source, created_at)")
     await db.execute("CREATE INDEX IF NOT EXISTS idx_email_session_map_session ON email_session_map(session_id, seq)")
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_feedback_votes_sig ON feedback_votes(signature, proposed_group)")
 
     # Legacy repairs (dedupe + backfill + unique gate) run after
     # _apply_migrations below: they reference migrated columns that may not
@@ -952,6 +965,141 @@ async def set_tool_confirmation(audit_id: int, user_id: str | None = None) -> bo
     except Exception as e:
         logger.warning(f"Tool confirmation update failed for audit_id={audit_id}: {e}")
         return False
+
+
+# ── Collective-learning quorum (Phase 3) ──────────────────────────────────────
+# Votes mirror feedback writes for quorum accounting. Raw audit rows stay
+# per-user and invisible; only anonymized (signature, group) tallies below
+# ever influence shared learning. Nothing here raises.
+FEEDBACK_DAILY_CAP = 50
+QUORUM_MIN_USERS = 2
+REPUTATION_FLOOR = 0.5
+
+
+async def _user_text_for_audit(db, audit_id: int, user_id: str) -> str | None:
+    """Resolve the user's trigger sentence behind an audit row (owner-scoped)."""
+    cur = await db.execute(
+        "SELECT conversation_id FROM tool_audit_log WHERE id = ? AND user_id = ?",
+        (audit_id, user_id),
+    )
+    row = await cur.fetchone()
+    if not row or not row[0]:
+        return None
+    cur = await db.execute(
+        "SELECT session_id FROM conversations WHERE id = ? AND user_id = ?",
+        (row[0], user_id),
+    )
+    srow = await cur.fetchone()
+    if not srow:
+        return None
+    cur = await db.execute(
+        "SELECT content FROM conversations WHERE session_id = ? AND id < ? "
+        "AND role = 'user' AND user_id = ? ORDER BY id DESC LIMIT 1",
+        (srow[0], row[0], user_id),
+    )
+    urow = await cur.fetchone()
+    return urow[0] if urow and urow[0] else None
+
+
+async def record_feedback_vote(audit_id: int, user_id: str, signal: str, group: str | None) -> bool:
+    """Mirror a scoped feedback write into quorum accounting. Never raises.
+
+    Re-votes overwrite (matches feedback overwrite semantics). Skips quietly
+    when the trigger text is unresolvable — the feedback itself already applied.
+    """
+    try:
+        from textnorm import normalize_signature
+
+        db = await get_db()
+        text = await _user_text_for_audit(db, audit_id, user_id)
+        if not text:
+            return False
+        sig = normalize_signature(text)
+        if not sig:
+            return False
+        await db.execute(
+            """INSERT INTO feedback_votes (audit_id, user_id, signature, proposed_group, signal)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(audit_id, user_id) DO UPDATE SET
+                 signature = excluded.signature, proposed_group = excluded.proposed_group,
+                 signal = excluded.signal, created_at = CURRENT_TIMESTAMP""",
+            (audit_id, user_id, sig, group or "", signal),
+        )
+        await _commit_with_retry(db)
+        return True
+    except Exception as e:
+        logger.warning(f"Feedback vote record failed for audit_id={audit_id}: {e}")
+        return False
+
+
+async def get_pattern_support(signature: str, group: str) -> dict:
+    """Distinct-user support/contradiction counts for a (signature, group)."""
+    try:
+        db = await get_db()
+        cur = await db.execute(
+            "SELECT proposed_group, COUNT(DISTINCT user_id) FROM feedback_votes "
+            "WHERE signature = ? GROUP BY proposed_group",
+            (signature,),
+        )
+        supports = contradicts = 0
+        for grow, n in await cur.fetchall():
+            if grow == group:
+                supports += n
+            else:
+                contradicts += n
+        return {"supports": supports, "contradicts": contradicts}
+    except Exception:
+        return {"supports": 0, "contradicts": 0}
+
+
+async def user_reputation(user_id: str) -> float:
+    """Agreement rate with decided patterns (weight, never a ban).
+
+    A pattern is decided when ≥2 distinct users voted and one group holds a
+    strict majority of distinct users. Users with no decided votes score 1.0
+    (neutral). Never raises.
+    """
+    try:
+        db = await get_db()
+        cur = await db.execute(
+            "SELECT signature, proposed_group, user_id FROM feedback_votes WHERE signature != ''"
+        )
+        rows = await cur.fetchall()
+        by_sig: dict[str, list[tuple[str, str]]] = {}
+        for s, g, u in rows:
+            by_sig.setdefault(s, []).append((g, u))
+        decided: dict[str, str] = {}
+        for s, votes in by_sig.items():
+            per_group: dict[str, set[str]] = {}
+            for g, u in votes:
+                per_group.setdefault(g, set()).add(u)
+            total = len({u for _, u in votes})
+            if total < 2:
+                continue
+            top = max(len(us) for us in per_group.values())
+            winners = [g for g, us in per_group.items() if len(us) == top]
+            if len(winners) == 1 and top > total / 2:
+                decided[s] = winners[0]
+        mine = [(s, g) for s, g, u in rows if u == user_id and s in decided]
+        if not mine:
+            return 1.0
+        return sum(1 for s, g in mine if decided[s] == g) / len(mine)
+    except Exception:
+        return 1.0
+
+
+async def count_user_votes_today(user_id: str) -> int:
+    """Feedback votes cast by a user today (UTC) — flood-control counter."""
+    try:
+        db = await get_db()
+        cur = await db.execute(
+            "SELECT COUNT(*) FROM feedback_votes WHERE user_id = ? AND date(created_at) = date('now')",
+            (user_id,),
+        )
+        row = await cur.fetchone()
+        return int(row[0]) if row else 0
+    except Exception:
+        return 0
 
 
 async def upsert_message_feedback(message_id: int, value: str,

@@ -19,6 +19,13 @@
 - **Multi-user invisibility rule:** one user's sessions, settings, mail and keys are invisible to every other user. Every user-scoped query needs its owner guard, every guard needs a both-directions test.
 - **Pre-push check:** before push, grep new docs/journal lines for secrets, passwords, IPs and credentials the same way code gets py_compile + pytest.
 
+## 2026-09-09 — Collective learning Phase 3: quorum + reputation + freeze
+
+- **`feedback_votes`** (UNIQUE(audit_id, user_id), re-vote overwrites) mirrored from correction/confirmation endpoints; message 👍/👎 votes nothing (not mined). `get_pattern_support` (distinct-user supports/contradicts), `user_reputation` (decided-pattern agreement, 1.0 neutral), `FEEDBACK_DAILY_CAP=50` → 429 at endpoints.
+- **Feeder freeze:** reputable contradictors + supports < 2 → `pending_review` (`frozen_contradiction`); reputation consumed as the freeze gate. Single-user flows never freeze. Sync mirrors of the quorum helpers in the feeder (driver differs).
+- **Residuals:** age filter not implemented (freezes young instances); adaptive weighting on add is future.
+- **Test:** `tests/test_quorum.py` (6 tests). Full suite **725 passed** (719 + 6); ruff clean.
+
 ## 2026-09-09 — Collective learning Phase 2: signature normalization
 
 - **New `textnorm.py`:** deterministic regex-only `normalize_signature` (email/phone/url/date/long-digit → lowercase placeholders; casefold + whitespace collapse; idempotent fixed-point). No NER (Pi budget) — bare names stay, documented as residual for quorum/review.
