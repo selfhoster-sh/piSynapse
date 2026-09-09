@@ -71,21 +71,23 @@ def test_debug_requires_query_token(client):
     assert r.status_code == 401
 
 
-def test_debug_accepts_valid_query_token(client):
-    r = client.post("/debug?k=secret-key")
-    assert r.status_code == 200
+def test_debug_rejects_query_token(client):
+    # Legacy ?k= removed (keys in URLs leak into logs/proxies): must 401.
+    r = client.post("/debug?k=secret-key", json={})
+    assert r.status_code == 401
 
 
 def test_debug_is_rate_limited(client, monkeypatch):
     monkeypatch.setattr(mainmod, "_rate_limiter", mainmod._RateLimiter(rpm=2))
-    assert client.post("/debug?k=secret-key").status_code == 200
-    assert client.post("/debug?k=secret-key").status_code == 200
-    assert client.post("/debug?k=secret-key").status_code == 429
+    headers = {"x-api-key": "secret-key"}
+    assert client.post("/debug", headers=headers).status_code == 200
+    assert client.post("/debug", headers=headers).status_code == 200
+    assert client.post("/debug", headers=headers).status_code == 429
 
 
 def test_debug_body_capped_at_8kb(client):
     big = "x" * (8 * 1024 + 10)
-    r = client.post("/debug?k=secret-key", content=big)
+    r = client.post("/debug", headers={"x-api-key": "secret-key"}, content=big)
     assert r.status_code == 413
 
 
@@ -241,3 +243,36 @@ def test_exempt_paths_share_lenient_bucket(client, monkeypatch):
     r = client.get("/health")
     assert r.status_code == 429
     assert r.headers["X-RateLimit-Limit"] == "2"
+
+
+def test_settings_masks_passwords(monkeypatch):
+    import asyncio as _asyncio
+
+    import routers.config as rc
+
+    async def _no_options(backend=None):
+        return []
+
+    monkeypatch.setattr(rc, "get_llm_model_options", _no_options)
+    monkeypatch.setenv("NEXTCLOUD_PASSWORD", "s3cret-value")
+    monkeypatch.setenv("NEXTCLOUD_USER", "plain-user")
+    result = _asyncio.run(rc.get_settings())
+    assert result["NEXTCLOUD_PASSWORD"]["value"] == "********"
+    assert result["NEXTCLOUD_USER"]["value"] == "plain-user"
+
+
+def test_debug_body_redacted():
+    out = mainmod._redact_debug_body({
+        "event": "chat_open",
+        "subject": "Hi",
+        "body": "secret text here",
+        "count": 3,
+        "nested": {"token": "abc", "ok": True},
+        "items": ["a", "b"],
+    })
+    assert out["event"] == "chat_open"
+    assert out["subject"] == "[REDACTED]"
+    assert out["body"] == "[REDACTED]"
+    assert out["count"] == 3
+    assert out["nested"] == {"token": "[REDACTED]", "ok": True}
+    assert out["items"] == ["a", "b"]

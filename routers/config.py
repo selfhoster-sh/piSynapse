@@ -82,7 +82,17 @@ async def get_config():
 async def get_settings():
     result = {}
     for key, schema in SETTINGS_SCHEMA.items():
-        entry = {"value": os.getenv(key, schema["default"]), "type": schema["type"], "label": schema.get("label", {})}
+        raw = os.getenv(key, schema["default"])
+        # Secret-bearing keys are never returned in plaintext: any API-key
+        # holder could otherwise read them straight off this endpoint and
+        # pivot (e.g. NEXTCLOUD_PASSWORD). The UI shows a placeholder; the
+        # values themselves are managed via installer/.env (PATCH ignores
+        # PROTECTED_SETTINGS anyway).
+        if any(h in key for h in ("PASSWORD", "SECRET", "TOKEN", "API_KEY")):
+            value = "********" if raw else ""
+        else:
+            value = raw
+        entry = {"value": value, "type": schema["type"], "label": schema.get("label", {})}
         if key == "LLM_MODEL":
             entry["options"] = await get_llm_model_options()
             # Normalize value to match backend format so dropdown shows correct selection
