@@ -81,9 +81,15 @@ def _uid(request: Request) -> str:
     """Resolve the authenticated user_id set by the auth middleware.
 
     Never trust a client-supplied user_id: the middleware binds the API key
-    to a user, overriding any spoofed value in the request body.
+    to a user, overriding any spoofed value in the request body. Falls back
+    to "default" on exempt paths where the middleware sets no user.
     """
-    return getattr(request.state, "user_id", "default") or "default"
+    from auth import current_user
+
+    try:
+        return current_user(request)
+    except HTTPException:
+        return "default"
 
 
 # -- Request/Response Models --

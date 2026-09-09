@@ -12,6 +12,8 @@ except ImportError:
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from auth import current_user as _authed_uid
+from auth import require_admin
 from config import ENV_PATH, PROTECTED_SETTINGS, RESTART_REQUIRED_KEYS, SETTINGS_SCHEMA, get, get_llm_model_options
 
 logger = logging.getLogger("piSynapse")
@@ -142,13 +144,6 @@ class SettingsUpdate(BaseModel):
     values: dict[str, str]
 
 
-def _authed_uid(request: Request) -> str:
-    uid = getattr(request.state, "user_id", None) or ""
-    if not uid:
-        raise HTTPException(status_code=401, detail="Invalid or missing API key")
-    return uid
-
-
 @router.get("/my-settings")
 async def get_my_settings(request: Request):
     """Return the caller's personal settings with effective values."""
@@ -227,8 +222,7 @@ async def _validate_setting_value(key: str, value: str, new_backend: str | None 
 
 @router.patch("/settings")
 async def update_settings(body: SettingsUpdate, request: Request):
-    if not bool(getattr(request.state, "is_admin", False)):
-        raise HTTPException(status_code=403, detail="System settings are admin-only")
+    require_admin(request, detail="System settings are admin-only")
     if not ENV_PATH.exists():
         raise HTTPException(status_code=500, detail=".env file not found")
 
