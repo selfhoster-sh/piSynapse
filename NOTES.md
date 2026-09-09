@@ -19,6 +19,11 @@
 - **Multi-user invisibility rule:** one user's sessions, settings, mail and keys are invisible to every other user. Every user-scoped query needs its owner guard, every guard needs a both-directions test.
 - **Pre-push check:** before push, grep new docs/journal lines for secrets, passwords, IPs and credentials the same way code gets py_compile + pytest.
 
+## 2026-09-09 — Later: web.html/app.html converged (unification candidate)
+
+- `static/web.html` vs `static/app.html` differ by ONE line (a server-status span); both load the same vendor + `ui.js`. The MASTER/SLAVE split now lives in the `_NATIVE` runtime flag, not in the files. `index.html` is just the detecting loader.
+- Future cleanup: single shell is possible, but native loads `app.html` directly (capacitor config, frozen port track) — do not touch until that side moves.
+
 ## 2026-09-09 — v2.0.0 release
 
 - **Cut from:** 204 commits since v1.8.0 (server audit fixes, multi-user, collective learning, sessions, onboarding v2, per-user services, settings v2, security pass). Suite 755, ruff clean.
