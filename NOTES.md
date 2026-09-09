@@ -40,6 +40,17 @@
 - **Note:** server half takes effect on the pending restart.
 - **Test:** full-file users/audit green; `node --check` clean.
 
+## 2026-09-09 — Round 3: scroll-chain, selects, liquid prototype, misc fixes
+
+- **Scroll chain:** `.settings-body` wasn't flex → paged layout never sized, Assistant page clipped. `.paged` flex chain; native keeps legacy scroll.
+- **Tabs leak:** author `display:flex` beat `hidden` → Telefon/Sunucu tabs on web. Override + empty-chips rules.
+- **Selects:** coverage was form-scoped → document-wide + outside-tap closer (open menus lingered).
+- **Search:** taller input.
+- **Light:** surfaces stepped down (no pure white); light+glass rebuilt; settings solidifies under glass-open.
+- **Liquid glass (experimental, desktop-only):** SVG feTurbulence+feDisplacement lens on topbar/modals, blur dialed back where it takes over, pointer:fine gate, implies glass, toggle in Appearance with persistence. Frosted stays default.
+- **Wizard:** stacked-button margin bug (my spacing rule) removed; Next-display reset at render top (Back-to-welcome dead-end closed).
+- **Test:** full suite **755 passed**; ruff clean; `node --check` clean; i18n both dicts.
+
 ## 2026-09-09 — UI fix round: scroll, selects, tabs, search size
 
 - **Scroll:** paged chain missed flex on `.settings-body` (layout never sized → main clipped, Assistant page worst). `.paged` flex chain added; native keeps legacy scroll. Verified chain by reading, not by eye.
