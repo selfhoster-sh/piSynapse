@@ -104,9 +104,18 @@ async def _secure_db_files() -> None:
 
     The DB is created on first run (not by install.py), so this runs on
     every startup as a guarantee for fresh and pre-existing installs.
+    Covers every *.db* file in the DB directory (not just the configured
+    path) so stray world-readable copies cannot linger.
     """
-    for path in (DB_PATH, DB_PATH + "-wal", DB_PATH + "-shm", DB_PATH + "-journal"):
-        path = os.path.abspath(path)
+    paths = [DB_PATH, DB_PATH + "-wal", DB_PATH + "-shm", DB_PATH + "-journal"]
+    db_dir = os.path.dirname(os.path.abspath(DB_PATH)) or "."
+    try:
+        for name in os.listdir(db_dir):
+            if name.endswith(".db") or ".db-" in name:
+                paths.append(os.path.join(db_dir, name))
+    except OSError as e:
+        logger.warning(f"Could not list DB directory {db_dir}: {e}")
+    for path in dict.fromkeys(os.path.abspath(p) for p in paths):
         try:
             if os.path.exists(path):
                 os.chmod(path, 0o600)

@@ -72,8 +72,12 @@ def _safe_float(key: str, default: float) -> float:
         return default
 
 # -- Paths --
-ENV_PATH = Path(os.getenv("ENV_PATH", ".env"))
-DB_PATH = os.getenv("DB_PATH", "assistant.db")
+# Resolved against the repo root (not CWD): a different working directory
+# must never silently fork a second DB/.env (split-brain). Explicit absolute
+# ENV_PATH/DB_PATH env values are honored as-is.
+_REPO_ROOT = Path(__file__).resolve().parent
+ENV_PATH = Path(os.getenv("ENV_PATH", _REPO_ROOT / ".env"))
+DB_PATH = os.getenv("DB_PATH", str(_REPO_ROOT / "assistant.db"))
 
 # -- LLM Backend --
 # "ollama" — Ollama server (default, http://localhost:11434)

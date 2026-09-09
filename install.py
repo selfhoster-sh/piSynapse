@@ -775,6 +775,13 @@ def _start_litert_server(litert_bin: str) -> bool:
 
     info(f"Starting piServe on 127.0.0.1:{LITERT_PORT}...")
     log_path = os.path.abspath("litert-server.log")
+    try:
+        # Single-generation rotation: the spawned daemon inherits this FD
+        # across reboots, so an unbounded append would grow forever.
+        if os.path.exists(log_path) and os.path.getsize(log_path) > 50 * 1024 * 1024:
+            os.replace(log_path, log_path + ".1")
+    except OSError as e:
+        warn(f"Could not rotate {log_path}: {e}")
     logf = open(log_path, "ab")
     try:
         subprocess.Popen(
