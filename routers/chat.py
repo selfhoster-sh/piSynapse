@@ -497,6 +497,10 @@ async def set_tool_correction(req: CorrectionRequest, request: Request):
     from tools.definitions import TOOL_NAMES, TOOL_TO_GROUP
 
     uid = current_user(request)
+    from db import FEEDBACK_DAILY_CAP, count_user_votes_today, record_feedback_vote
+
+    if await count_user_votes_today(uid) >= FEEDBACK_DAILY_CAP:
+        raise HTTPException(status_code=429, detail="Daily feedback limit reached. Try again tomorrow.")
 
     if not req.expected_tool and not req.expected_group:
         raise HTTPException(
@@ -521,6 +525,8 @@ async def set_tool_correction(req: CorrectionRequest, request: Request):
     ok = await set_tool_correction(req.audit_id, req.expected_tool, req.expected_group, user_id=uid)
     if not ok:
         raise HTTPException(status_code=404, detail="Audit log entry not found")
+    vote_group = req.expected_group or (TOOL_TO_GROUP.get(req.expected_tool) if req.expected_tool else None)
+    await record_feedback_vote(req.audit_id, uid, "correct", vote_group)
 
     # Same-group "correction" (BUG-5): the picked group already matches the
     # tool's own group — a no-op, not a real correction. Surface it so the UI
@@ -554,10 +560,19 @@ async def set_tool_confirmation(req: ConfirmRequest, request: Request):
     Scoped to the caller's own audit rows (multi-user invisibility).
     """
     from db import set_tool_confirmation
+    from tools.definitions import TOOL_TO_GROUP
 
-    ok = await set_tool_confirmation(req.audit_id, user_id=current_user(request))
+    uid = current_user(request)
+    from db import FEEDBACK_DAILY_CAP, count_user_votes_today, get_audit_tool_name, record_feedback_vote
+
+    if await count_user_votes_today(uid) >= FEEDBACK_DAILY_CAP:
+        raise HTTPException(status_code=429, detail="Daily feedback limit reached. Try again tomorrow.")
+
+    ok = await set_tool_confirmation(req.audit_id, user_id=uid)
     if not ok:
         raise HTTPException(status_code=404, detail="Audit log entry not found")
+    tool_name = await get_audit_tool_name(req.audit_id, user_id=uid)
+    await record_feedback_vote(req.audit_id, uid, "confirm", TOOL_TO_GROUP.get(tool_name) if tool_name else None)
     return {"ok": True, "audit_id": req.audit_id}
 
 

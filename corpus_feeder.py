@@ -445,6 +445,56 @@ def _check_conflict(
     return None
 
 
+# ── quorum helpers (collective learning Phase 3) ─────────────────────────────
+# Sync mirrors of db.get_pattern_support / db.user_reputation (different DB
+# driver here — raw sqlite3 vs aiosqlite). Thresholds mirror db.py.
+QUORUM_MIN_USERS = 2
+REPUTATION_FLOOR = 0.5
+
+
+def _vote_support(conn: sqlite3.Connection, signature: str, group: str) -> dict:
+    """Distinct-user support + contradictor list for a (signature, group)."""
+    try:
+        rows = conn.execute(
+            "SELECT proposed_group, user_id FROM feedback_votes WHERE signature = ?",
+            (signature,),
+        ).fetchall()
+    except Exception:
+        return {"supports": 0, "contradictors": []}
+    supports = len({u for g, u in rows if g == group})
+    contradictors = sorted({u for g, u in rows if g != group})
+    return {"supports": supports, "contradictors": contradictors}
+
+
+def _voter_reputation(conn: sqlite3.Connection, user_id: str) -> float:
+    """Agreement rate with decided patterns (sync mirror of db.user_reputation)."""
+    try:
+        rows = conn.execute(
+            "SELECT signature, proposed_group, user_id FROM feedback_votes WHERE signature != ''"
+        ).fetchall()
+    except Exception:
+        return 1.0
+    by_sig: dict[str, list] = {}
+    for s, g, u in rows:
+        by_sig.setdefault(s, []).append((g, u))
+    decided: dict[str, str] = {}
+    for s, votes in by_sig.items():
+        per_group: dict[str, set] = {}
+        for g, u in votes:
+            per_group.setdefault(g, set()).add(u)
+        total = len({u for _, u in votes})
+        if total < 2:
+            continue
+        top = max(len(us) for us in per_group.values())
+        winners = [g for g, us in per_group.items() if len(us) == top]
+        if len(winners) == 1 and top > total / 2:
+            decided[s] = winners[0]
+    mine = [(s, g) for s, g, u in rows if u == user_id and s in decided]
+    if not mine:
+        return 1.0
+    return sum(1 for s, g in mine if decided[s] == g) / len(mine)
+
+
 # ── duplicate check ────────────────────────────────────────────────────────────
 def _is_duplicate(
     text: str,
@@ -624,6 +674,27 @@ async def _process_audit_row(
         if not dry_run:
             _append_genuinely_ambiguous(record)
         return {"id": audit_id, "status": "skip_context_dependent",
+                "group": proposed_group, "text": text}
+
+    # Contradiction freeze (collective learning Phase 3): reputable voters
+    # disagree on this shape and no side has quorum — never auto-add; the
+    # admin queue decides. Single-user flows (no contradictors) pass through.
+    sup = _vote_support(conn, sig, proposed_group)
+    reputable = [u for u in sup["contradictors"] if _voter_reputation(conn, u) >= REPUTATION_FLOOR]
+    if reputable and sup["supports"] < QUORUM_MIN_USERS:
+        record = {
+            "text": text,
+            "signature": sig,
+            "proposed_group": proposed_group,
+            "audit_id": audit_id,
+            "reason": "frozen_contradiction",
+            "supports": sup["supports"],
+            "contradictors": reputable,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        if not dry_run:
+            _append_pending_review(record)
+        return {"id": audit_id, "status": "frozen_contradiction",
                 "group": proposed_group, "text": text}
 
     # Check exact duplicate

@@ -26,7 +26,7 @@ regex first (email/phone/URL/IBAN — cheap, exact), name rules second,
 Presidio-class NER only if ever needed. Run lazily on quorum candidates,
 never per message (Pi budget).
 
-## Phase 3 — Quorum + reputation (weights, not bans)
+## Phase 3 — Quorum + reputation (weights, not bans) [IMPLEMENTED 2026-09-09]
 A normalized pattern enters the corpus only after: 2 approved-account
 agreements OR 1 agreement + admin approval (single-user fallback: admin
 approval alone, else learning stalls). Contradiction (A→calendar, B→tasks)
@@ -38,6 +38,18 @@ live in `feedback_votes(audit_id, user_id)` (UNIQUE, admin-visible only);
 `routing_patterns` carries NO user_id.
 Sybil note: registration is open, so raw user-count quorum is weak —
 quorum counts age/approval-filtered accounts.
+
+Implementation (this commit): `feedback_votes` table (UNIQUE(audit_id,
+user_id), re-vote overwrites) mirrored from the two audit-feedback endpoints
+(message 👍/👎 is not mined, so it votes nothing); `get_pattern_support`
+(distinct-user supports/contradicts); `user_reputation` (agreement rate on
+decided patterns, 1.0 neutral); `FEEDBACK_DAILY_CAP=50` enforced at the
+endpoints (429); feeder contradiction freeze (reputable contradictors +
+supports < 2 → `pending_review`, reason `frozen_contradiction`) — reputation
+is consumed as the freeze gate. Single-user flows never freeze (no
+contradictors). Residuals: account-age filter not implemented (would freeze
+young instances — documented future gate); full adaptive weighting on add
+(not just freeze) is future work.
 
 ## Phase 4 — Admin review queue UI
 Surface frozen/contested patterns (wired to the feeder's pending-review)
