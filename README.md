@@ -34,7 +34,7 @@ When you disable all external integrations, **zero data leaves your device**. No
 
 ## Features
 
-- 💬 **Web UI** — Clean chat interface with session management, **hybrid titles (RAKE instant + LLM)**, **regenerate**, memory panel, think mode (opt-in), and multi-language support (EN/TR)
+- 💬 **Web UI** — Clean chat interface with session management, **hybrid titles (instant + LLM)**, **regenerate**, memory panel, think mode (opt-in), and multi-language support (EN/TR)
 - 🔍 **Search** — **Hybrid FTS5 + semantic** (keyword + meaning, cross-language, offline fallback) over all sessions with highlighted snippets
 - 📅 **Calendar** — Nextcloud CalDAV integration for schedule management
 - 📧 **Email** — Gmail and ProtonMail (via ProtonBridge) read/send/search
@@ -204,6 +204,8 @@ python3 -m uvicorn main:app --host 0.0.0.0 --port 8765
 ```
 
 Then open `http://<your-pi-ip>:8765` in your browser. The installer can also create a `pisynapse.service` systemd unit that runs on port 8765 and starts on boot.
+
+> **Remote access & voice input:** plain HTTP works on your home LAN for chat, but browser microphone needs HTTPS. See [`docs/remote-access.md`](docs/remote-access.md) for the three tiers (same-WiFi, Tailscale HTTPS, own domain + reverse proxy).
 
 ---
 
