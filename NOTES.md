@@ -16,6 +16,21 @@
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 - **Sanitization rule:** this file may be published. Never write personal data, identity clues, deployment addresses (hostnames, IPs, ports), or accounts into it. Keep every narrative in English; Turkish inline tokens are allowed only as product corpus / i18n test data.
 
+## 2026-09-09 — Incident: uncommitted Android tree wiped by `reset --hard`, recovered from laptop
+
+- **What happened:** during the Faz 3 commit-message repair, a `git reset --hard` (part of recovering from an ill-advised `filter-branch`) silently discarded the pre-existing uncommitted Android work (`PiSynapseBridge.kt` session fold hardening, `static/ui.js` language anchor/listener fix/prompt tail). The loss went unnoticed through Faz 4–6 (server scope never touches those files).
+- **Recovery:** the laptop build tree (`pisynapse-android`) held authoritative copies (it had received the fixed files via scp/sync). Both files were copied back; `git diff --stat` after restore is byte-identical in shape to the pre-reset state (41 + 30 lines). The monolithic `assets/public/index.html` edit was intentionally NOT restored (superseded: wrong file, and already overwritten on the laptop by the static sync).
+- **Rule learned:** before ANY history-rewriting or tree-resetting command, run `git status` + `git stash list` and confirm no foreign uncommitted work is present. Prefer `rebase -i` reword over filter-branch/amend chains.
+- **Status:** Android tree restored uncommitted, exactly as handed over (that scope stays frozen per the port decision).
+
+## 2026-09-09 — Faz 7 (server audit fixes): install + runtime resilience
+
+- **Scope (plan Faz 7, user-gated items excluded):** installer robustness + runtime resilience. Two commits: `bb756a3` (installer), `c384c9b` (resilience).
+- **Faz 7a:** `menu()` honors `BATCH_MODE`; piper downloads via tmp+atomic replace (partials removed on failure); `TRUSTED_HOSTS` dropped from `preserved_keys` (asked answer wins, even intentional emptying); TTS `browser` writes empty voice + piper-without-download warns now; litert-absent warning for `--skip-llm`; data dirs 0700; shim 0750; ollama `install.sh` saved-to-file + explicit approval (batch refuses unseen remote scripts); litert import + ollama pull retry once; disk/RAM pre-check (warn-only) + optional embedding/whisper pre-download (non-fatal). New `tests/test_install.py` (installer imports cleanly — stdlib only).
+- **Faz 7b:** lifespan catches `init_db` failure → serves degraded with `DB_DEGRADED` in `/health` (recovery hint logged); startup integrity `quick_check`; `auto_backup_db()` via sqlite3 online-backup on a dedicated read-only connection (`VACUUM INTO` refuses while the shared connection has open statements — verified), atomic, 0600, keep 7, at startup + daily loop; `docs/backup-restore.md` restore procedure; audit-CSV pruning under retention; `get_all_history` limit/offset (default unbounded preserves sync contract).
+- **Deferred to the user (NOT done):** systemd regen + orphan removal (A-K4, needs backup + approval); secret rotation (K8); backup encryption decision; LAN exposure lockdown. See fix-plan "Kullanıcı aksiyonları".
+- **Test:** full suite **648 passed**.
+
 ## 2026-09-09 — Faz 6 (server audit fixes): security hardening
 
 - **Scope (plan Faz 6):** trust, secrets, uploads, ops hygiene. Four commits: `2e07b09` (trust), `40d8f3a` (secrets), `cb7c7b1` (upload), `7925bed` (ops).
