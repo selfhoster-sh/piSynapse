@@ -199,7 +199,17 @@ MIGRATIONS: list[tuple[str, str, str]] = [
     ("calendar_session_map", "user_id", "TEXT DEFAULT 'default'"),
     ("tool_audit_log", "user_id", "TEXT"),
     ("users", "password_hash", "TEXT"),
+    ("users", "is_approved", "INTEGER DEFAULT 0"),
 ]
+
+
+# One-time data backfills, keyed by the migration index that requires them.
+# Unlike the every-boot repairs in init_db, these run exactly once (inside
+# _apply_migrations) so later admin edits are never overwritten.
+_DATA_BACKFILLS: dict[int, list[str]] = {
+    # Grandfather pre-approval rows: everyone on board keeps counting.
+    21: ["UPDATE users SET is_approved = 1"],
+}
 
 
 async def _get_schema_version(db: aiosqlite.Connection) -> int:
@@ -246,6 +256,8 @@ async def _apply_migrations(db: aiosqlite.Connection):
             if "duplicate column" not in str(e).lower():
                 logger.warning(f"Migration {table}.{column} failed: {e}")
                 break
+        for _stmt in _DATA_BACKFILLS.get(i, []):
+            await db.execute(_stmt)
         await db.execute(f"PRAGMA user_version = {i + 1}")
     await _commit_with_retry(db)
 
@@ -298,6 +310,7 @@ async def init_db():
             key_hash   TEXT NOT NULL UNIQUE,
             is_admin   INTEGER NOT NULL DEFAULT 0,
             password_hash TEXT,
+            is_approved INTEGER NOT NULL DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -399,6 +412,16 @@ async def init_db():
             signal         TEXT NOT NULL DEFAULT 'confirm',
             created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(audit_id, user_id)
+        )
+    """)
+
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS pattern_approvals (
+            signature      TEXT PRIMARY KEY,
+            proposed_group TEXT NOT NULL DEFAULT '',
+            status         TEXT NOT NULL DEFAULT 'approved',
+            decided_by     TEXT NOT NULL DEFAULT '',
+            decided_at     DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
 
@@ -1033,12 +1056,18 @@ async def record_feedback_vote(audit_id: int, user_id: str, signal: str, group: 
 
 
 async def get_pattern_support(signature: str, group: str) -> dict:
-    """Distinct-user support/contradiction counts for a (signature, group)."""
+    """Distinct-user support/contradiction counts for a (signature, group).
+
+    Only approved users count (admins always do) — open registration must
+    not let sockpuppets manufacture quorum. Deleted users drop out via JOIN.
+    """
     try:
         db = await get_db()
         cur = await db.execute(
-            "SELECT proposed_group, COUNT(DISTINCT user_id) FROM feedback_votes "
-            "WHERE signature = ? GROUP BY proposed_group",
+            "SELECT v.proposed_group, COUNT(DISTINCT v.user_id) FROM feedback_votes v "
+            "JOIN users u ON u.id = v.user_id "
+            "WHERE v.signature = ? AND (u.is_approved = 1 OR u.is_admin = 1) "
+            "GROUP BY v.proposed_group",
             (signature,),
         )
         supports = contradicts = 0
@@ -1055,14 +1084,16 @@ async def get_pattern_support(signature: str, group: str) -> dict:
 async def user_reputation(user_id: str) -> float:
     """Agreement rate with decided patterns (weight, never a ban).
 
-    A pattern is decided when ≥2 distinct users voted and one group holds a
+    A pattern is decided when ≥2 distinct approved users voted and one group holds a
     strict majority of distinct users. Users with no decided votes score 1.0
     (neutral). Never raises.
     """
     try:
         db = await get_db()
         cur = await db.execute(
-            "SELECT signature, proposed_group, user_id FROM feedback_votes WHERE signature != ''"
+            "SELECT v.signature, v.proposed_group, v.user_id FROM feedback_votes v "
+            "JOIN users u ON u.id = v.user_id "
+            "WHERE v.signature != '' AND (u.is_approved = 1 OR u.is_admin = 1)"
         )
         rows = await cur.fetchall()
         by_sig: dict[str, list[tuple[str, str]]] = {}
@@ -1100,6 +1131,91 @@ async def count_user_votes_today(user_id: str) -> int:
         return int(row[0]) if row else 0
     except Exception:
         return 0
+
+
+async def record_pattern_decision(signature: str, group: str, status: str, decided_by: str) -> None:
+    """Store an admin decision on a routing pattern (approved/rejected).
+
+    Approved patterns skip the contradiction freeze; rejected ones are never
+    auto-added. Never raises.
+    """
+    if status not in ("approved", "rejected") or not signature:
+        return
+    try:
+        db = await get_db()
+        await db.execute(
+            """INSERT INTO pattern_approvals (signature, proposed_group, status, decided_by)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(signature) DO UPDATE SET
+                 proposed_group = excluded.proposed_group, status = excluded.status,
+                 decided_by = excluded.decided_by, decided_at = CURRENT_TIMESTAMP""",
+            (signature, group or "", status, decided_by),
+        )
+        await _commit_with_retry(db)
+    except Exception as e:
+        logger.warning(f"Pattern decision record failed: {e}")
+
+
+async def get_pattern_decision(signature: str) -> dict | None:
+    """Return the admin decision for a signature, or None."""
+    try:
+        db = await get_db()
+        cur = await db.execute(
+            "SELECT proposed_group, status, decided_by, decided_at FROM pattern_approvals WHERE signature = ?",
+            (signature,),
+        )
+        row = await cur.fetchone()
+        if not row:
+            return None
+        return {"group": row[0], "status": row[1], "decided_by": row[2], "decided_at": row[3]}
+    except Exception:
+        return None
+
+
+async def get_review_queue() -> list[dict]:
+    """Frozen candidates for the admin queue: reputable contradiction, no quorum, undecided.
+
+    Each item carries supports/contradicts counts plus contradictor ids with
+    reputations so the admin decides informed. Never raises.
+    """
+    try:
+        db = await get_db()
+        cur = await db.execute(
+            "SELECT DISTINCT v.signature FROM feedback_votes v "
+            "JOIN users u ON u.id = v.user_id "
+            "WHERE v.signature != '' AND (u.is_approved = 1 OR u.is_admin = 1)"
+        )
+        sigs = [r[0] for r in await cur.fetchall()]
+        queue = []
+        for s in sigs:
+            if await get_pattern_decision(s) is not None:
+                continue
+            cur = await db.execute(
+                "SELECT v.proposed_group, v.user_id FROM feedback_votes v "
+                "JOIN users u ON u.id = v.user_id "
+                "WHERE v.signature = ? AND (u.is_approved = 1 OR u.is_admin = 1)",
+                (s,),
+            )
+            per_group: dict[str, set[str]] = {}
+            for g, u in await cur.fetchall():
+                per_group.setdefault(g, set()).add(u)
+            if len(per_group) < 2:
+                continue
+            total_supports = 0
+            groups = []
+            for g, us in per_group.items():
+                sub = await get_pattern_support(s, g)
+                total_supports = max(total_supports, sub["supports"])
+                groups.append({"group": g, "supports": sub["supports"], "voters": sorted(us)})
+            if total_supports >= QUORUM_MIN_USERS:
+                continue
+            for g in groups:
+                g["reputations"] = {u: await user_reputation(u) for u in g["voters"]}
+            queue.append({"signature": s, "groups": groups})
+        return queue
+    except Exception as e:
+        logger.warning(f"Review queue build failed: {e}")
+        return []
 
 
 async def upsert_message_feedback(message_id: int, value: str,
@@ -2215,6 +2331,7 @@ def _row_to_user(row) -> dict:
         "name": row[1] or "",
         "is_admin": bool(row[2]),
         "created_at": row[3],
+        "is_approved": bool(row[4]) if len(row) > 4 else False,
     }
 
 
@@ -2227,12 +2344,12 @@ async def count_users() -> int:
 async def get_user(user_id: str) -> dict | None:
     db = await get_db()
     cur = await db.execute(
-        "SELECT id, name, is_admin, created_at, password_hash FROM users WHERE id = ?", (user_id,)
+        "SELECT id, name, is_admin, created_at, password_hash, is_approved FROM users WHERE id = ?", (user_id,)
     )
     row = await cur.fetchone()
     if row is None:
         return None
-    user = _row_to_user(row[:4])
+    user = _row_to_user((row[0], row[1], row[2], row[3], row[5]))
     user["has_password"] = bool(row[4])
     return user
 
@@ -2240,7 +2357,7 @@ async def get_user(user_id: str) -> dict | None:
 async def get_user_by_key_hash(key_hash: str) -> dict | None:
     db = await get_db()
     cur = await db.execute(
-        "SELECT id, name, is_admin, created_at FROM users WHERE key_hash = ?",
+        "SELECT id, name, is_admin, created_at, is_approved FROM users WHERE key_hash = ?",
         (key_hash,),
     )
     row = await cur.fetchone()
@@ -2249,15 +2366,18 @@ async def get_user_by_key_hash(key_hash: str) -> dict | None:
 
 async def list_users() -> list[dict]:
     db = await get_db()
-    cur = await db.execute("SELECT id, name, is_admin, created_at FROM users ORDER BY created_at, id")
+    cur = await db.execute("SELECT id, name, is_admin, created_at, is_approved FROM users ORDER BY created_at, id")
     return [_row_to_user(r) for r in await cur.fetchall()]
 
 
-async def create_user(name: str, *, is_admin: bool = False, user_id: str | None = None) -> tuple[dict, str]:
+async def create_user(name: str, *, is_admin: bool = False, user_id: str | None = None,
+                      approved: bool = False) -> tuple[dict, str]:
     """Create a user with a fresh API key. Returns (user_dict, raw_key).
 
     The raw key is returned exactly once — only its hash is stored.
     Display names are unique case-insensitively (login is by name).
+    `approved` gates quorum counting (collective learning); admins are
+    always approved at creation.
     """
     import uuid as _uuid
 
@@ -2272,8 +2392,9 @@ async def create_user(name: str, *, is_admin: bool = False, user_id: str | None 
         if await cur.fetchone():
             raise ValueError(f"Name already taken: {clean}")
         await db.execute(
-            "INSERT INTO users (id, name, key_hash, is_admin) VALUES (?, ?, ?, ?)",
-            (uid, clean[:100], hash_api_key(raw_key), 1 if is_admin else 0),
+            "INSERT INTO users (id, name, key_hash, is_admin, is_approved) VALUES (?, ?, ?, ?, ?)",
+            (uid, clean[:100], hash_api_key(raw_key), 1 if is_admin else 0,
+             1 if (approved or is_admin) else 0),
         )
         await _commit_with_retry(db)
     user = await get_user(uid)
@@ -2300,14 +2421,14 @@ async def get_user_by_name(name: str) -> dict | None:
     """Case-insensitive lookup for password login. Returns row with hash."""
     db = await get_db()
     cur = await db.execute(
-        "SELECT id, name, is_admin, created_at, password_hash FROM users "
+        "SELECT id, name, is_admin, created_at, password_hash, is_approved FROM users "
         "WHERE lower(name) = lower(?)",
         ((name or "").strip(),),
     )
     row = await cur.fetchone()
     if row is None:
         return None
-    user = _row_to_user(row[:4])
+    user = _row_to_user((row[0], row[1], row[2], row[3], row[5]))
     user["has_password"] = bool(row[4])
     return user
 
@@ -2466,11 +2587,31 @@ async def ensure_default_admin() -> dict | None:
         return None
     async with _write_lock():
         await db.execute(
-            "INSERT OR IGNORE INTO users (id, name, key_hash, is_admin) VALUES (?, ?, ?, 1)",
+            "INSERT OR IGNORE INTO users (id, name, key_hash, is_admin, is_approved) VALUES (?, ?, ?, 1, 1)",
             (DEFAULT_USER_ID, "admin", hash_api_key(env_key)),
         )
         await _commit_with_retry(db)
     return await get_user(DEFAULT_USER_ID)
+
+
+async def set_approved(user_id: str, approved: bool) -> bool:
+    """Set a user's quorum-approval flag (admin only via endpoint).
+
+    Approval gates collective-learning quorum counting only — chat, tools,
+    settings and feedback all work identically for unapproved users.
+    Returns False when the user does not exist.
+    """
+    db = await get_db()
+    async with _write_lock():
+        cur = await db.execute(
+            "UPDATE users SET is_approved = ? WHERE id = ?",
+            (1 if approved else 0, user_id),
+        )
+        await _commit_with_retry(db)
+        ok = cur.rowcount > 0
+    if ok:
+        invalidate_user_cache(user_id)
+    return ok
 
 
 _USER_CACHE_TTL = 60.0

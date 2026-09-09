@@ -453,10 +453,16 @@ REPUTATION_FLOOR = 0.5
 
 
 def _vote_support(conn: sqlite3.Connection, signature: str, group: str) -> dict:
-    """Distinct-user support + contradictor list for a (signature, group)."""
+    """Distinct-user support + contradictor list for a (signature, group).
+
+    Only approved users count (admins always do) — mirrors
+    db.get_pattern_support (different driver here).
+    """
     try:
         rows = conn.execute(
-            "SELECT proposed_group, user_id FROM feedback_votes WHERE signature = ?",
+            "SELECT v.proposed_group, v.user_id FROM feedback_votes v "
+            "JOIN users u ON u.id = v.user_id "
+            "WHERE v.signature = ? AND (u.is_approved = 1 OR u.is_admin = 1)",
             (signature,),
         ).fetchall()
     except Exception:
@@ -466,11 +472,27 @@ def _vote_support(conn: sqlite3.Connection, signature: str, group: str) -> dict:
     return {"supports": supports, "contradictors": contradictors}
 
 
+def _pattern_decision(conn: sqlite3.Connection, signature: str) -> str | None:
+    """Admin decision for a signature (approved/rejected/None)."""
+    try:
+        row = conn.execute(
+            "SELECT status FROM pattern_approvals WHERE signature = ?", (signature,)
+        ).fetchone()
+    except Exception:
+        return None
+    return row[0] if row else None
+
+
 def _voter_reputation(conn: sqlite3.Connection, user_id: str) -> float:
-    """Agreement rate with decided patterns (sync mirror of db.user_reputation)."""
+    """Agreement rate with decided patterns (sync mirror of db.user_reputation).
+
+    Only approved users' votes decide patterns.
+    """
     try:
         rows = conn.execute(
-            "SELECT signature, proposed_group, user_id FROM feedback_votes WHERE signature != ''"
+            "SELECT v.signature, v.proposed_group, v.user_id FROM feedback_votes v "
+            "JOIN users u ON u.id = v.user_id "
+            "WHERE v.signature != '' AND (u.is_approved = 1 OR u.is_admin = 1)"
         ).fetchall()
     except Exception:
         return 1.0
@@ -679,23 +701,30 @@ async def _process_audit_row(
     # Contradiction freeze (collective learning Phase 3): reputable voters
     # disagree on this shape and no side has quorum — never auto-add; the
     # admin queue decides. Single-user flows (no contradictors) pass through.
-    sup = _vote_support(conn, sig, proposed_group)
-    reputable = [u for u in sup["contradictors"] if _voter_reputation(conn, u) >= REPUTATION_FLOOR]
-    if reputable and sup["supports"] < QUORUM_MIN_USERS:
-        record = {
-            "text": text,
-            "signature": sig,
-            "proposed_group": proposed_group,
-            "audit_id": audit_id,
-            "reason": "frozen_contradiction",
-            "supports": sup["supports"],
-            "contradictors": reputable,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
-        if not dry_run:
-            _append_pending_review(record)
-        return {"id": audit_id, "status": "frozen_contradiction",
+    # An admin decision overrides: approved skips the freeze, rejected skips
+    # the row entirely.
+    decision = _pattern_decision(conn, sig)
+    if decision == "rejected":
+        return {"id": audit_id, "status": "skip_admin_rejected",
                 "group": proposed_group, "text": text}
+    if decision != "approved":
+        sup = _vote_support(conn, sig, proposed_group)
+        reputable = [u for u in sup["contradictors"] if _voter_reputation(conn, u) >= REPUTATION_FLOOR]
+        if reputable and sup["supports"] < QUORUM_MIN_USERS:
+            record = {
+                "text": text,
+                "signature": sig,
+                "proposed_group": proposed_group,
+                "audit_id": audit_id,
+                "reason": "frozen_contradiction",
+                "supports": sup["supports"],
+                "contradictors": reputable,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+            if not dry_run:
+                _append_pending_review(record)
+            return {"id": audit_id, "status": "frozen_contradiction",
+                    "group": proposed_group, "text": text}
 
     # Check exact duplicate
     if _is_duplicate(text, base_groups, base_matrix, existing_additions, addition_matrix,

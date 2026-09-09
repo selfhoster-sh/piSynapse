@@ -46,7 +46,7 @@ async def register_user(req: RegisterRequest):
 
     is_first = await count_users() == 0
     try:
-        user, raw_key = await create_user(req.name, is_admin=is_first)
+        user, raw_key = await create_user(req.name, is_admin=is_first, approved=is_first)
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
@@ -173,3 +173,32 @@ async def delete_one_user(user_id: str, request: Request):
             raise HTTPException(status_code=409, detail="Cannot delete the last admin")
     await delete_user(user_id)
     return {"ok": True, "deleted": user_id}
+
+
+@router.post("/{user_id}/approve")
+async def approve_one_user(user_id: str, request: Request):
+    """Mark a user quorum-approved (admin only).
+
+    Approval gates collective-learning quorum counting only — chat, tools,
+    settings and feedback work identically for unapproved users. Admins
+    always count regardless of the flag.
+    """
+    from db import get_user, set_approved
+
+    _require_admin(request)
+    if await get_user(user_id) is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    await set_approved(user_id, True)
+    return {"ok": True, "user_id": user_id, "is_approved": True}
+
+
+@router.post("/{user_id}/unapprove")
+async def unapprove_one_user(user_id: str, request: Request):
+    """Revoke a user's quorum approval (admin only)."""
+    from db import get_user, set_approved
+
+    _require_admin(request)
+    if await get_user(user_id) is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    await set_approved(user_id, False)
+    return {"ok": True, "user_id": user_id, "is_approved": False}

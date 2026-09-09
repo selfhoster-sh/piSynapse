@@ -18,10 +18,33 @@ def qdb(tmp_path, monkeypatch):
 
 @pytest.fixture
 def voters(qdb):
-    a, _ = asyncio.run(qdb.create_user("anna"))
-    b, _ = asyncio.run(qdb.create_user("bob"))
-    c, _ = asyncio.run(qdb.create_user("cim"))
+    a, _ = asyncio.run(qdb.create_user("anna", approved=True))
+    b, _ = asyncio.run(qdb.create_user("bob", approved=True))
+    c, _ = asyncio.run(qdb.create_user("cim", approved=True))
     return qdb, a["id"], b["id"], c["id"]
+
+
+def test_unapproved_votes_do_not_count_until_approved(voters):
+    dbmod, a, b, c = voters
+    d, _ = asyncio.run(dbmod.create_user("dora"))  # unapproved
+    d = d["id"]
+    aid_d = _seed_audit(dbmod, d, session="s9")
+    asyncio.run(dbmod.record_feedback_vote(aid_d, d, "correct", "email"))
+    sup = asyncio.run(dbmod.get_pattern_support(_sig("Ahmet'e mail at"), "email"))
+    assert sup == {"supports": 0, "contradicts": 0}
+    asyncio.run(dbmod.set_approved(d, True))
+    sup = asyncio.run(dbmod.get_pattern_support(_sig("Ahmet'e mail at"), "email"))
+    assert sup == {"supports": 1, "contradicts": 0}
+
+
+def test_admin_counts_without_approval_flag(voters):
+    dbmod, a, _, _ = voters
+    r, _ = asyncio.run(dbmod.create_user("root", is_admin=True))
+    asyncio.run(dbmod.set_approved(r["id"], False))  # admins count regardless
+    aid_r = _seed_audit(dbmod, r["id"], session="s8")
+    asyncio.run(dbmod.record_feedback_vote(aid_r, r["id"], "correct", "email"))
+    sup = asyncio.run(dbmod.get_pattern_support(_sig("Ahmet'e mail at"), "email"))
+    assert sup["supports"] == 1
 
 
 def _seed_audit(dbmod, uid, text="Ahmet'e mail at", session="s1"):
@@ -102,6 +125,9 @@ def test_feeder_freezes_reputable_contradiction(tmp_path):
     conn.execute("CREATE TABLE conversations (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, content TEXT, user_id TEXT)")
     conn.execute("CREATE TABLE tool_audit_log (id INTEGER PRIMARY KEY, tool_name TEXT, conversation_id INTEGER, confirmed_at DATETIME, expected_group TEXT, user_id TEXT)")
     conn.execute("CREATE TABLE feedback_votes (audit_id INTEGER, user_id TEXT, signature TEXT, proposed_group TEXT, signal TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(audit_id, user_id))")
+    conn.execute("CREATE TABLE users (id TEXT PRIMARY KEY, is_admin INTEGER DEFAULT 0, is_approved INTEGER DEFAULT 0)")
+    conn.execute("INSERT INTO users VALUES ('a', 0, 1)")
+    conn.execute("INSERT INTO users VALUES ('b', 0, 1)")
     conn.execute("INSERT INTO conversations VALUES (1, 's', 'user', 'Ahmet e mail at', 'a')")
     conn.execute("INSERT INTO conversations VALUES (2, 's', 'assistant', 'ok', 'a')")
     conn.execute("INSERT INTO tool_audit_log VALUES (1, 'send_email', 2, NULL, 'tasks', 'a')")

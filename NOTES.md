@@ -19,6 +19,13 @@
 - **Multi-user invisibility rule:** one user's sessions, settings, mail and keys are invisible to every other user. Every user-scoped query needs its owner guard, every guard needs a both-directions test.
 - **Pre-push check:** before push, grep new docs/journal lines for secrets, passwords, IPs and credentials the same way code gets py_compile + pytest.
 
+## 2026-09-09 — Collective learning Phase 4: approval + admin queue (done)
+
+- **Approval flag:** `users.is_approved` (migration 22 + grandfather backfill via version-gated `_DATA_BACKFILLS`); new registrations unapproved except first-admin; admins always count; `POST /users/{id}/approve|unapprove` (admin). Quorum/reputation/feeder count approved-or-admin voters only. Legacy-upgrade rewind 6→7.
+- **Pattern decisions:** `pattern_approvals` + `routers/admin.py` (review/approve/reject/decisions); feeder: approved skips freeze, rejected skips row. `tests/test_approval.py` (6 tests incl. backfill simulation + feeder decision paths).
+- **UI:** browser settings admin-only section (user approve/revoke + review queue approve/reject, tr/en, escaped, index actions); `node --check` + 78/78 i18n parity.
+- **Test:** full suite **733 passed** (725 + 8); ruff clean.
+
 ## 2026-09-09 — Collective learning Phase 3: quorum + reputation + freeze
 
 - **`feedback_votes`** (UNIQUE(audit_id, user_id), re-vote overwrites) mirrored from correction/confirmation endpoints; message 👍/👎 votes nothing (not mined). `get_pattern_support` (distinct-user supports/contradicts), `user_reputation` (decided-pattern agreement, 1.0 neutral), `FEEDBACK_DAILY_CAP=50` → 429 at endpoints.
