@@ -51,6 +51,19 @@ contradictors). Residuals: account-age filter not implemented (would freeze
 young instances — documented future gate); full adaptive weighting on add
 (not just freeze) is future work.
 
-## Phase 4 — Admin review queue UI
+## Phase 4 — Admin review queue UI [IMPLEMENTED 2026-09-09]
 Surface frozen/contested patterns (wired to the feeder's pending-review)
 in the admin panel: approve/reject, reputation visible to admin only.
+
+Implementation: `users.is_approved` (migration 22 + one-time grandfather
+backfill; new registrations unapproved except first-admin; admins always
+count) with admin `POST /users/{id}/approve|unapprove`; quorum tallies join
+approved-or-admin voters only. `pattern_approvals` table + `routers/admin.py`
+(review/approve/reject/decisions, all admin-only, mounted in main.py);
+feeder honors decisions (approved skips freeze, rejected skips the row) and
+counts approved voters only. Browser settings gains an admin-only section
+(users approve/revoke + review queue with approve/reject, tr/en keys,
+XSS-escaped, index-based actions); non-admins never see the box (`/users/me`
+gate). i18n parity 78/78 verified.
+Residual: native-app admin section deferred (browser-first); account-age
+filter intentionally dropped in favor of approval (works at any scale).

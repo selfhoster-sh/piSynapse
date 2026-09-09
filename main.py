@@ -625,6 +625,7 @@ async def security_middleware(request: Request, call_next):
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 
+from routers.admin import router as admin_router
 from routers.chat import router as chat_router
 from routers.config import router as config_router
 from routers.media import router as media_router
@@ -633,6 +634,7 @@ from routers.users import router as users_router
 from routers.widgets import router as widgets_router
 
 app.include_router(chat_router)
+app.include_router(admin_router)
 app.include_router(users_router)
 app.include_router(config_router)
 app.include_router(tools_router)
