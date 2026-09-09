@@ -8,6 +8,7 @@ annotated-doc==0.0.4
 annotated-types==0.8.0
 anyio==4.14.2
 ast_serialize==0.6.0
+bcrypt==5.0.0
 av==18.0.0
 blis==1.3.3
 caldav==3.2.1

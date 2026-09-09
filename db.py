@@ -198,6 +198,7 @@ MIGRATIONS: list[tuple[str, str, str]] = [
     ("tasks_session_map", "user_id", "TEXT DEFAULT 'default'"),
     ("calendar_session_map", "user_id", "TEXT DEFAULT 'default'"),
     ("tool_audit_log", "user_id", "TEXT"),
+    ("users", "password_hash", "TEXT"),
 ]
 
 
@@ -296,9 +297,22 @@ async def init_db():
             name       TEXT NOT NULL DEFAULT '',
             key_hash   TEXT NOT NULL UNIQUE,
             is_admin   INTEGER NOT NULL DEFAULT 0,
+            password_hash TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     """)
+
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS user_api_keys (
+            id         TEXT PRIMARY KEY,
+            user_id    TEXT NOT NULL,
+            name       TEXT NOT NULL DEFAULT '',
+            key_hash   TEXT NOT NULL UNIQUE,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_user_api_keys_user ON user_api_keys(user_id)")
 
     await db.execute("""
         CREATE TABLE IF NOT EXISTS user_settings (
@@ -2038,10 +2052,14 @@ async def count_users() -> int:
 async def get_user(user_id: str) -> dict | None:
     db = await get_db()
     cur = await db.execute(
-        "SELECT id, name, is_admin, created_at FROM users WHERE id = ?", (user_id,)
+        "SELECT id, name, is_admin, created_at, password_hash FROM users WHERE id = ?", (user_id,)
     )
     row = await cur.fetchone()
-    return _row_to_user(row) if row else None
+    if row is None:
+        return None
+    user = _row_to_user(row[:4])
+    user["has_password"] = bool(row[4])
+    return user
 
 
 async def get_user_by_key_hash(key_hash: str) -> dict | None:
@@ -2064,16 +2082,23 @@ async def create_user(name: str, *, is_admin: bool = False, user_id: str | None 
     """Create a user with a fresh API key. Returns (user_dict, raw_key).
 
     The raw key is returned exactly once — only its hash is stored.
+    Display names are unique case-insensitively (login is by name).
     """
     import uuid as _uuid
 
+    clean = (name or "").strip()
+    if not clean:
+        raise ValueError("Name must not be empty")
     raw_key = generate_api_key()
     uid = user_id or _uuid.uuid4().hex[:12]
     db = await get_db()
     async with _write_lock():
+        cur = await db.execute("SELECT 1 FROM users WHERE lower(name) = lower(?)", (clean,))
+        if await cur.fetchone():
+            raise ValueError(f"Name already taken: {clean}")
         await db.execute(
             "INSERT INTO users (id, name, key_hash, is_admin) VALUES (?, ?, ?, ?)",
-            (uid, (name or "").strip()[:100], hash_api_key(raw_key), 1 if is_admin else 0),
+            (uid, clean[:100], hash_api_key(raw_key), 1 if is_admin else 0),
         )
         await _commit_with_retry(db)
     user = await get_user(uid)
@@ -2094,6 +2119,111 @@ async def rotate_user_key(user_id: str) -> str | None:
             return None
     invalidate_user_cache(user_id)
     return raw_key
+
+
+async def get_user_by_name(name: str) -> dict | None:
+    """Case-insensitive lookup for password login. Returns row with hash."""
+    db = await get_db()
+    cur = await db.execute(
+        "SELECT id, name, is_admin, created_at, password_hash FROM users "
+        "WHERE lower(name) = lower(?)",
+        ((name or "").strip(),),
+    )
+    row = await cur.fetchone()
+    if row is None:
+        return None
+    user = _row_to_user(row[:4])
+    user["has_password"] = bool(row[4])
+    return user
+
+
+async def set_password(user_id: str, raw_password: str) -> None:
+    """Store a bcrypt hash (CPU work offloaded to a thread)."""
+    import asyncio as _asyncio
+
+    import bcrypt as _bcrypt
+
+    hashed = await _asyncio.to_thread(
+        _bcrypt.hashpw, raw_password.encode("utf-8"), _bcrypt.gensalt()
+    )
+    db = await get_db()
+    async with _write_lock():
+        cur = await db.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?",
+            (hashed.decode("utf-8"), user_id),
+        )
+        await _commit_with_retry(db)
+        if cur.rowcount == 0:
+            raise ValueError(f"Unknown user: {user_id}")
+
+
+async def verify_password(user_id: str, raw_password: str) -> bool:
+    """Check a password against the stored bcrypt hash (thread-offloaded)."""
+    import asyncio as _asyncio
+
+    import bcrypt as _bcrypt
+
+    db = await get_db()
+    cur = await db.execute("SELECT password_hash FROM users WHERE id = ?", (user_id,))
+    row = await cur.fetchone()
+    if row is None or not row[0]:
+        return False
+    try:
+        return await _asyncio.to_thread(
+            _bcrypt.checkpw, raw_password.encode("utf-8"), row[0].encode("utf-8")
+        )
+    except (ValueError, TypeError):
+        return False
+
+
+async def create_device_key(user_id: str, device_name: str = "") -> tuple[dict, str]:
+    """Issue an additional per-device API key. Returns (row, raw_key once)."""
+    import uuid as _uuid
+
+    raw_key = generate_api_key()
+    kid = _uuid.uuid4().hex[:12]
+    label = (device_name or "").strip()[:100]
+    db = await get_db()
+    async with _write_lock():
+        await db.execute(
+            "INSERT INTO user_api_keys (id, user_id, name, key_hash) VALUES (?, ?, ?, ?)",
+            (kid, user_id, label, hash_api_key(raw_key)),
+        )
+        await _commit_with_retry(db)
+    return {"id": kid, "user_id": user_id, "name": label}, raw_key
+
+
+async def list_device_keys(user_id: str) -> list[dict]:
+    """Device keys for a user (never includes hashes)."""
+    db = await get_db()
+    cur = await db.execute(
+        "SELECT id, user_id, name, created_at FROM user_api_keys "
+        "WHERE user_id = ? ORDER BY created_at, id",
+        (user_id,),
+    )
+    return [
+        {"id": r[0], "user_id": r[1], "name": r[2], "created_at": r[3]}
+        for r in await cur.fetchall()
+    ]
+
+
+async def revoke_device_key(user_id: str, key_id: str) -> bool:
+    """Delete one of the user's device keys. Returns True when removed."""
+    db = await get_db()
+    async with _write_lock():
+        cur = await db.execute(
+            "SELECT key_hash FROM user_api_keys WHERE id = ? AND user_id = ?",
+            (key_id, user_id),
+        )
+        row = await cur.fetchone()
+        if row is None:
+            return False
+        await db.execute(
+            "DELETE FROM user_api_keys WHERE id = ? AND user_id = ?", (key_id, user_id)
+        )
+        await _commit_with_retry(db)
+    _user_cache.pop(row[0], None)
+    return True
 
 
 async def ensure_default_admin() -> dict | None:
@@ -2165,6 +2295,14 @@ async def resolve_user_by_key(api_key: str) -> dict | None:
                 user = {"id": DEFAULT_USER_ID, "name": "", "is_admin": True, "created_at": None}
         else:
             user = await get_user_by_key_hash(digest)
+            if user is None:
+                db = await get_db()
+                cur = await db.execute(
+                    "SELECT user_id FROM user_api_keys WHERE key_hash = ?", (digest,)
+                )
+                row = await cur.fetchone()
+                if row is not None:
+                    user = await get_user(row[0])
     except Exception as e:
         logger.warning(f"User resolution failed (denying closed): {e}")
         return None
