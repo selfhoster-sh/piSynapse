@@ -508,10 +508,10 @@ async def security_middleware(request: Request, call_next):
 
     # --- Skip auth for exempt paths ---
     is_exempt = path == "/health" or path == "/" or path == "/favicon.ico" or path == "/sw.js" or path.startswith("/static")
-    # User registration issues credentials, so it cannot require them —
-    # but it stays under the STRICT rate limiter (not the lenient public
-    # bucket) as anti-enumeration hardening.
-    is_public_registration = path == "/users/register" and request.method == "POST"
+    # Credential-issuing endpoints cannot require credentials — but they stay
+    # under the STRICT rate limiter (not the lenient public bucket) as
+    # anti-enumeration/brute-force hardening.
+    is_public_auth = path in ("/users/register", "/users/login") and request.method == "POST"
 
     # --- Skip auth for CORS preflight (only OPTIONS with Access-Control-Request-Method) ---
     if request.method == "OPTIONS" and "access-control-request-method" in request.headers:
@@ -546,7 +546,7 @@ async def security_middleware(request: Request, call_next):
             return JSONResponse(status_code=401, content={"detail": "Invalid or missing API key"})
 
     # --- API Key verification (DB users + legacy .env key; unknown -> 401) ---
-    if not is_exempt and not is_debug and not is_public_registration:
+    if not is_exempt and not is_debug and not is_public_auth:
         from db import count_users, resolve_user_by_key
 
         user = await resolve_user_by_key(request.headers.get("x-api-key", ""))

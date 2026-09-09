@@ -91,3 +91,51 @@ def test_unauthenticated_users_endpoints_reject(users_api):
     assert client.get("/users/me").status_code == 401
     assert client.post("/users/key/rotate").status_code == 401
     assert client.get("/users").status_code == 401
+
+
+def test_login_issues_device_key(users_api):
+    client, _ = users_api
+    reg = client.post("/users/register", json={"name": "eve", "password": "s3cret!!"})
+    assert reg.status_code == 201
+    # Wrong password and unknown name are indistinguishable.
+    assert client.post("/users/login", json={"name": "eve", "password": "nope"}).status_code == 401
+    assert client.post("/users/login", json={"name": "ghost", "password": "s3cret!!"}).status_code == 401
+    ok = client.post("/users/login", json={"name": "EVE", "password": "s3cret!!", "device": "laptop"})
+    assert ok.status_code == 200
+    body = ok.json()
+    assert body["user"]["name"] == "eve"
+    # Device key authenticates like a primary key.
+    me = client.get("/users/me", headers={"x-api-key": body["api_key"]})
+    assert me.status_code == 200 and me.json()["user"]["id"] == body["user"]["id"]
+    keys = client.get("/users/me/keys", headers={"x-api-key": body["api_key"]}).json()["keys"]
+    assert [k["name"] for k in keys] == ["laptop"]
+    assert all("hash" not in k and "api_key" not in k for k in keys)
+
+
+def test_password_set_change_and_revoke(users_api):
+    client, _ = users_api
+    key = client.post("/users/register", json={"name": "fred"}).json()["api_key"]
+    h = {"x-api-key": key}
+    # First set needs no current password.
+    assert client.post("/users/password", json={"new": "first-pass"}, headers=h).status_code == 200
+    # Change requires the current one.
+    assert client.post("/users/password", json={"current": "wrong", "new": "second-pass"},
+                       headers=h).status_code == 401
+    assert client.post("/users/password", json={"current": "first-pass", "new": "second-pass"},
+                       headers=h).status_code == 200
+    assert client.post("/users/login", json={"name": "fred", "password": "first-pass"}).status_code == 401
+    second = client.post("/users/login", json={"name": "fred", "password": "second-pass"})
+    assert second.status_code == 200
+    # Revoke the device key; primary key keeps working.
+    kid = second.json()["key_id"]
+    assert client.delete(f"/users/me/keys/{kid}", headers=h).status_code == 404 - 404 + 200
+    assert client.get("/users/me", headers={"x-api-key": second.json()["api_key"]}).status_code == 401
+    assert client.get("/users/me", headers=h).status_code == 200
+    assert client.delete("/users/me/keys/nope", headers=h).status_code == 404
+
+
+def test_duplicate_and_short_password_rejected(users_api):
+    client, _ = users_api
+    assert client.post("/users/register", json={"name": "Gail"}).status_code == 201
+    assert client.post("/users/register", json={"name": "gail"}).status_code == 409
+    assert client.post("/users/register", json={"name": "Hank", "password": "short"}).status_code == 422
