@@ -40,6 +40,14 @@
 - **Note:** server half takes effect on the pending restart.
 - **Test:** full-file users/audit green; `node --check` clean.
 
+## 2026-09-09 — UI fix round: scroll, selects, tabs, search size
+
+- **Scroll:** paged chain missed flex on `.settings-body` (layout never sized → main clipped, Assistant page worst). `.paged` flex chain added; native keeps legacy scroll. Verified chain by reading, not by eye.
+- **Tabs:** author CSS `display:flex` beat the `hidden` attribute — Telefon/Sunucu tabs leaked onto web. `[hidden]` override + empty-chips rule added.
+- **Selects:** enhanced coverage was form-scoped (font/onboarding stayed native) → document-wide + outside-tap closer (open menus lingered over rows below).
+- **Search:** taller input (11/14px).
+- **Test:** full suite **755 passed**; ruff clean; `node --check` clean.
+
 ## 2026-09-09 — UI polish round (scroll, selects, glass, fade, minimal, regroup)
 
 - **Scroll:** paged layout flex chain was missing `min-height:0` (main+nav never shrank → clipped, unscrolled). Fixed + bounded admin lists.
