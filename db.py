@@ -2445,6 +2445,15 @@ def _row_to_user(row) -> dict:
     }
 
 
+# Display names that would collide with system identities or enable
+# impersonation (login is by name; ensure_default_admin owns 'admin').
+# Case-insensitive exact match. Homoglyph lookalikes are a known residual.
+RESERVED_USERNAMES = frozenset({
+    "admin", "administrator", "system", "support",
+    "api", "null", "undefined", "server", "pisynapse",
+})
+
+
 async def count_users() -> int:
     db = await get_db()
     cur = await db.execute("SELECT COUNT(*) FROM users")
@@ -2494,6 +2503,8 @@ async def create_user(name: str, *, is_admin: bool = False, user_id: str | None 
     clean = (name or "").strip()
     if not clean:
         raise ValueError("Name must not be empty")
+    if clean.casefold() in RESERVED_USERNAMES:
+        raise ValueError(f"Name is reserved: {clean}")
     raw_key = generate_api_key()
     uid = user_id or _uuid.uuid4().hex[:12]
     db = await get_db()

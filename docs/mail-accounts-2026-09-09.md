@@ -13,18 +13,24 @@
 
 ## Decision
 1. Hydroxide: no. Stay on official Bridge (Proton) + direct IMAP (Gmail).
-2. Now: shared mailbox is ADMIN-ONLY. `_run_mail_tool` refuses resolved
-   non-admin callers and anonymous callers with
-   "ERROR: Email is available to the server admin only." Unresolvable ids fall
-   through (legacy single-user flows use opaque caller labels; HTTP middleware
-   already guarantees production callers are real users).
-3. Later (needs approval — new secrets architecture): per-user mail accounts.
-   Requirements: encrypted per-user credential store (Fernet, key in .env,
-   never plaintext in DB); Gmail per-user = app password (trivial); Proton
-   per-user = each account added to the shared Bridge by the owner (outside
-   this app) + per-user bridge password in the encrypted store.
+2. [SUPERSEDED — implemented below] Shared mailbox was briefly admin-only.
+3. [IMPLEMENTED 2026-09-09] Per-user mail accounts: `credstore.py` (Fernet,
+   `MAIL_CREDS_KEY` in .env, never plaintext in DB); Gmail per-user = app
+   password; Proton per-user = Bridge-registered account + its bridge
+   password. Resolution: personal creds → legacy shared mailbox (admins;
+   backward compatible) → clear "not configured" error. Anonymous refused.
+
+## Proton Bridge multi-account (verified 2026-09-09)
+One Bridge instance serves unlimited PAID accounts (free plans have no Bridge
+access): each added account gets its own bridge password in its own
+configuration panel, and IMAP login selects the account by address — all on
+the same localhost:1143/1025. So the per-user (address + bridge password)
+model is correct with one operational requirement: the admin adds each
+user's Proton account to the Pi's Bridge once (Bridge GUI/CLI `+`), and the
+user pastes THEIR account's bridge password. Gmail users need nothing
+server-side (direct IMAP + app password).
 
 ## Changed
-- tools/dispatcher.py: gate at top of `_run_mail_tool`.
-- tests/test_auth_helpers.py: deny non-admin, deny anonymous, allow
-  unknown-id compat (3 tests).
+- `credstore.py` + `user_credentials` table + own-only CRUD endpoints.
+- `tools/dispatcher.py`: personal → shared(admin) → not-configured resolution.
+- `tests/test_credentials.py` (6 tests incl. wrong-key unreadability).

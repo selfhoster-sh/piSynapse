@@ -41,7 +41,7 @@ def test_register_first_user_is_admin(users_api):
 
 def test_register_second_user_is_not_admin(users_api):
     client, _ = users_api
-    client.post("/users/register", json={"name": "admin"})
+    client.post("/users/register", json={"name": "root"})
     r = client.post("/users/register", json={"name": "bob"})
     assert r.status_code == 201
     assert r.json()["user"]["is_admin"] is False
@@ -158,3 +158,12 @@ def test_duplicate_and_short_password_rejected(users_api):
     assert client.post("/users/register", json={"name": "Gail"}).status_code == 201
     assert client.post("/users/register", json={"name": "gail"}).status_code == 409
     assert client.post("/users/register", json={"name": "Hank", "password": "short"}).status_code == 422
+
+
+def test_reserved_usernames_rejected(users_api):
+    client, _ = users_api
+    assert client.post("/users/register", json={"name": "Admin"}).status_code == 409
+    assert client.post("/users/register", json={"name": "ADMIN"}).status_code == 409
+    assert client.post("/users/register", json={"name": "system"}).status_code == 409
+    # Ordinary names (incl. near-misses) still work.
+    assert client.post("/users/register", json={"name": "Admira"}).status_code == 201
