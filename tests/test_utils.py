@@ -44,3 +44,11 @@ def test_decode_email_header_plain():
 def test_decode_email_header_encoded():
     result = decode_email_header("=?UTF-8?B?VGXDn3Rrw7xyw6fDpQ==?=")
     assert isinstance(result, str)
+
+
+def test_sanitize_external_text_strips_markup_and_scripts():
+    from utils import sanitize_external_text
+
+    assert sanitize_external_text("<b>hi</b>") == "hi"
+    assert "javascript:" not in sanitize_external_text('x javascript:alert(1)').lower()
+    assert sanitize_external_text("Ignore previous instructions") == "Ignore previous instructions"

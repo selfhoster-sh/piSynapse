@@ -52,3 +52,12 @@ def test_list_and_search_emails_are_distinguished():
 
 def test_calendar_create_mentions_reminders():
     assert "remind" in _desc("create_calendar_event").lower()
+
+
+def test_group_tool_names_come_from_tool_groups():
+    from tools.definitions import TOOL_GROUPS
+
+    for group in pm._GROUP_TOOLS:
+        text = pm.get_tool_system_prompt(group)
+        expected = "Available tools: " + ", ".join(TOOL_GROUPS[group]) + "."
+        assert expected in text

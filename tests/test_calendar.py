@@ -120,3 +120,33 @@ class TestIntentFallback:
             intent, group = await _classify_intent("hava durumu nasıl")
             assert intent == "action"
             assert group == "weather"
+
+
+class TestListSanitizesDescriptions:
+    def test_list_strips_markup_from_descriptions(self):
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock, patch
+        from datetime import datetime
+        from calendar_ops import list_events
+
+        def _vevent(summary, desc):
+            return SimpleNamespace(
+                vobject_instance=SimpleNamespace(vevent=SimpleNamespace(
+                    summary=SimpleNamespace(value=summary),
+                    dtstart=SimpleNamespace(value=datetime(2026, 8, 17, 10, 0)),
+                    description=SimpleNamespace(value=desc),
+                    uid=SimpleNamespace(value="u1"),
+                ))
+            )
+
+        fake_cal = MagicMock()
+        fake_cal.date_search.return_value = [
+            _vevent("Standup", '<script>alert(1)</script><img src=x onerror=steal()>Team sync at 10'),
+        ]
+        with patch("calendar_ops._get_calendar", return_value=fake_cal):
+            text, items = list_events(7)
+        assert "<script>" not in text
+        assert "<img" not in text
+        assert "onerror" not in text
+        assert "Team sync at 10" in text
+        assert items[0]["summary"] == "Standup"

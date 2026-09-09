@@ -10,7 +10,7 @@ from datetime import date, datetime
 
 from icalendar import Todo
 
-from utils import retry
+from utils import retry, sanitize_external_text
 
 logger = logging.getLogger("piSynapse")
 
@@ -247,7 +247,7 @@ def _list_tasks_sync(show_completed: bool) -> tuple[str, list[dict]]:
             lines.append(f"      {' | '.join(meta)}")
         desc = t.get("description", "")
         if desc:
-            lines.append(f"      Notes: {desc[:120]}")
+            lines.append(f"      Notes: {sanitize_external_text(desc)[:120]}")
         lines.append("")
 
     return "\n".join(lines), tasks

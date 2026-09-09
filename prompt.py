@@ -136,6 +136,15 @@ def get_tool_system_prompt(group: str) -> str:
         if default_city else ""
     )
     names, instructions = _GROUP_TOOLS.get(group, ("", ""))
+    try:
+        # Single source of truth: TOOL_GROUPS owns membership (e.g.
+        # get_datetime in every group). The tuple's names string is legacy.
+        from tools.definitions import TOOL_GROUPS as _TOOL_GROUPS
+
+        if group in _TOOL_GROUPS:
+            names = ", ".join(_TOOL_GROUPS[group])
+    except Exception:
+        pass
 
     return f"""{LANGUAGE_RULE}You are piSynapse — a friendly, warm, and conversational AI assistant who genuinely enjoys chatting.{city_line}
 
