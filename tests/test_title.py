@@ -1,4 +1,4 @@
-"""Tests for hybrid title generation: RAKE instant + LLM enriched."""
+"""Tests for hybrid title generation: instant + LLM enriched."""
 
 import asyncio
 
@@ -8,70 +8,70 @@ import config as config_module
 import db as dbmod
 import embedding
 import title as title_module
-from title import generate_rake_title
+from title import generate_instant_title
 
 
-class TestRakeTitle:
+class TestInstantTitle:
     """Unit tests for first-4-words instant title."""
 
     def test_turkish_weather(self):
-        result = generate_rake_title("İstanbul için yarınki hava durumu bilgisini gönder")
+        result = generate_instant_title("İstanbul için yarınki hava durumu bilgisini gönder")
         assert result == "İstanbul için yarınki hava"
 
     def test_turkish_email(self):
-        result = generate_rake_title("Bana gelen son e-postaları özetleyip önemli olanları işaretler misin")
+        result = generate_instant_title("Bana gelen son e-postaları özetleyip önemli olanları işaretler misin")
         assert result == "Bana gelen son e-postaları"
         assert len(result.split()) == 4
 
     def test_english_weather(self):
-        result = generate_rake_title("What is the current weather forecast for London tomorrow")
+        result = generate_instant_title("What is the current weather forecast for London tomorrow")
         assert result == "What is the current"
 
     def test_english_technical(self):
-        result = generate_rake_title("How do I fix memory leak issues in Node.js express application")
+        result = generate_instant_title("How do I fix memory leak issues in Node.js express application")
         assert result == "How do I fix"
 
     def test_strips_email(self):
-        result = generate_rake_title("hava durumu bilgisini sa.dg725@proton.me adresine gönder")
+        result = generate_instant_title("hava durumu bilgisini sa.dg725@proton.me adresine gönder")
         # PII masked — the address must not land in the sidebar title verbatim
         assert "sa.dg725@proton.me" not in result
         assert result == "hava durumu bilgisini [e-posta]"
 
     def test_strips_url(self):
-        result = generate_rake_title("Bu sayfadaki bilgileri özetle https://example.com")
+        result = generate_instant_title("Bu sayfadaki bilgileri özetle https://example.com")
         assert "https://example.com" not in result
         assert result == "Bu sayfadaki bilgileri özetle"
 
     def test_short_input(self):
-        result = generate_rake_title("Hava durumu")
+        result = generate_instant_title("Hava durumu")
         assert result == "Hava durumu"
         assert len(result.split()) <= 4
 
     def test_single_word(self):
-        result = generate_rake_title("Merhaba")
+        result = generate_instant_title("Merhaba")
         assert result == "Merhaba"
 
     def test_max_words_limit(self):
-        result = generate_rake_title("Python aiosqlite veritabanı bağlantısı kilitlenme hatası çözümü", max_words=3)
+        result = generate_instant_title("Python aiosqlite veritabanı bağlantısı kilitlenme hatası çözümü", max_words=3)
         # max_words caps the default 4-word take
         assert result == "Python aiosqlite veritabanı"
         assert len(result.split()) == 3
 
     def test_empty_input(self):
-        result = generate_rake_title("")
+        result = generate_instant_title("")
         assert result == "Yeni Sohbet"
 
     def test_only_stop_words(self):
-        result = generate_rake_title("bir ve bu ile için ne var")
+        result = generate_instant_title("bir ve bu ile için ne var")
         assert result == "bir ve bu ile"
 
     def test_numbers_stripped(self):
-        result = generate_rake_title("toplantı saat 14:00'da başlayacak")
+        result = generate_instant_title("toplantı saat 14:00'da başlayacak")
         assert result == "toplantı saat 14:00'da başlayacak"
         assert "14" in result
 
     def test_turkish_technical(self):
-        result = generate_rake_title("Python aiosqlite veritabanı bağlantısı kilitlenme hatasını nasıl çözerim")
+        result = generate_instant_title("Python aiosqlite veritabanı bağlantısı kilitlenme hatasını nasıl çözerim")
         assert result == "Python aiosqlite veritabanı bağlantısı"
 
     def test_performance(self):
@@ -80,13 +80,13 @@ class TestRakeTitle:
         times = []
         for _ in range(100):
             t0 = time.perf_counter()
-            generate_rake_title("İstanbul için yarınki hava durumu bilgisini gönder")
+            generate_instant_title("İstanbul için yarınki hava durumu bilgisini gönder")
             times.append((time.perf_counter() - t0) * 1000)
         avg = sum(times) / len(times)
         assert avg < 1.0, f"Too slow: {avg:.3f}ms avg (must be <1ms)"
 
     def test_casing_preserved(self):
-        result = generate_rake_title("python async hatası çözümü")
+        result = generate_instant_title("python async hatası çözümü")
         assert result == "python async hatası çözümü"
 
 
@@ -172,7 +172,7 @@ class TestEnrichTitle:
         from routers import chat as chat_router
 
         _seed_turns(n_pairs=2)  # total 4: second user turn landed first
-        assert _session_name() == generate_rake_title("plan trip idea 0")
+        assert _session_name() == generate_instant_title("plan trip idea 0")
         calls = []
         _fake_llm(monkeypatch, calls)
         asyncio.run(chat_router._enrich_title("sx", user_id="alice"))

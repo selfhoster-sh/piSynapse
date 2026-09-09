@@ -8,7 +8,7 @@ Layer 2 — LLM: 2-5 word enriched title from full conversation (background).
 import re
 
 
-def generate_rake_title(text: str, max_words: int = 5) -> str:  # noqa: D401
+def generate_instant_title(text: str, max_words: int = 5) -> str:  # noqa: D401
     """First words of user message as instant title. No language list.
 
     Emails/URLs are masked: sidebar titles must never carry PII verbatim.
@@ -51,7 +51,7 @@ Title:"""
 async def generate_llm_title(user_msg: str, assistant_msg: str) -> str | None:
     """Generate an enriched session title via LLM.
 
-    Returns the title string, or None on failure (caller keeps RAKE title).
+    Returns the title string, or None on failure (caller keeps instant title).
     This function is designed to be called as a background task — it should
     never raise exceptions that crash the server.
     """
