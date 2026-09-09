@@ -4,7 +4,6 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-import auth
 from auth import current_user, require_admin
 
 

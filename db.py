@@ -1841,7 +1841,8 @@ async def clear_tasks_map(session_id: str):
 
 async def upsert_sync_items(user_id: str, items: list[dict]) -> int:
     """Upsert remote sync items for a user. Each item: uuid|entity_type|data|updated_at|deleted.
-    Last-write-wins: a newer updated_at overwrites the stored row wholesale."""
+    Last-write-wins: a newer updated_at overwrites the stored row wholesale.
+    """
     if not items:
         return 0
     db = await get_db()
@@ -1878,7 +1879,8 @@ async def upsert_sync_items(user_id: str, items: list[dict]) -> int:
 
 async def get_sync_items(user_id: str, entity_type: str | None = None, since: str | None = None) -> list[dict]:
     """Return all sync items (or a subtype) for a user, optionally filtered by
-    `since` (ISO updated_at cutoff, exclusive). Includes tombstones (deleted=1)."""
+    `since` (ISO updated_at cutoff, exclusive). Includes tombstones (deleted=1).
+    """
     db = await get_db()
     if entity_type and since:
         sql = ("SELECT uuid, entity_type, data, updated_at, deleted FROM sync_items "
@@ -2370,9 +2372,9 @@ async def seed_admin_settings() -> int:
     overwrite a deliberate user choice). Returns the seeded count.
     Idempotent; safe to run on every boot (usually a no-op).
     """
-    from config import PERSONAL_KEYS
-
     import os as _os
+
+    from config import PERSONAL_KEYS
 
     stored = await get_user_settings(DEFAULT_USER_ID)
     missing = [k for k in PERSONAL_KEYS if k not in stored and (_os.getenv(k) or "").strip()]

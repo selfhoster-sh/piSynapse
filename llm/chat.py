@@ -22,12 +22,18 @@ from tools import (
     validate_confirm_params,
 )
 
-from .payload import _build_full_messages, _build_payload, _normalize_messages_for_backend, litert_cache_key, trim_messages_for_context
+from .payload import (
+    _build_full_messages,
+    _build_payload,
+    _normalize_messages_for_backend,
+    litert_cache_key,
+    trim_messages_for_context,
+)
 from .utils import (
     _THINKING_STRIP_RE,
     _TOOL_ASK_HINT,
-    _bare_tool_name,
     CONTINUATION_NOTE,
+    _bare_tool_name,
     _check_tool_leak,
     _escalation_tools,
     _get_client,

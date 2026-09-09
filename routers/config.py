@@ -147,8 +147,8 @@ class SettingsUpdate(BaseModel):
 @router.get("/my-settings")
 async def get_my_settings(request: Request):
     """Return the caller's personal settings with effective values."""
-    from config import PERSONAL_KEYS, get as _get
-
+    from config import PERSONAL_KEYS
+    from config import get as _get
     from db import get_user_settings
 
     uid = _authed_uid(request)
@@ -171,7 +171,6 @@ async def get_my_settings(request: Request):
 async def put_my_settings(body: SettingsUpdate, request: Request):
     """Save the caller's personal settings (validated like system ones)."""
     from config import PERSONAL_KEYS
-
     from db import set_user_setting
 
     uid = _authed_uid(request)

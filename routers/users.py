@@ -157,7 +157,7 @@ async def delete_one_user(user_id: str, request: Request):
     Refuses self-deletion and deleting the last admin — the instance must
     always keep exactly one way in.
     """
-    from db import count_users, delete_user, get_user
+    from db import delete_user, get_user
 
     me = _require_admin(request)
     if user_id == me:

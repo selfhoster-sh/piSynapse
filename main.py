@@ -196,7 +196,7 @@ async def lifespan(app: FastAPI):
     # different model than the configured one silently zero out cosine scores.
     # Best-effort, never blocks startup.
     try:
-        from config import EMBED_MODEL as _embed_model
+        from config import EMBED_MODEL
         from db import get_db as _dim_get_db
         _dim_db = await _dim_get_db()
         _dim_row = await (
@@ -214,7 +214,7 @@ async def lifespan(app: FastAPI):
             ).fetchone()
         if _dim_row is not None and _dim_row[0]:
             _stored_dim = len(bytes(_dim_row[0])) // 4
-            _lname = str(_embed_model).lower()
+            _lname = str(EMBED_MODEL).lower()
             _expected = (
                 384 if "minilm" in _lname else (768 if "mpnet" in _lname else None)
             )
@@ -223,7 +223,7 @@ async def lifespan(app: FastAPI):
                     "Embedding dimension drift: stored vectors are %d-dim but "
                     "EMBED_MODEL '%s' produces %d-dim. Run reembed_all.py, "
                     "otherwise retrieval/memory similarity silently returns 0.",
-                    _stored_dim, _embed_model, _expected,
+                    _stored_dim, EMBED_MODEL, _expected,
                 )
     except Exception as _dim_e:
         logger.warning(f"Embedding dimension check skipped: {_dim_e}")
@@ -626,10 +626,10 @@ async def security_middleware(request: Request, call_next):
 # ── Routers ───────────────────────────────────────────────────────────────────
 
 from routers.chat import router as chat_router
-from routers.users import router as users_router
 from routers.config import router as config_router
 from routers.media import router as media_router
 from routers.tools import router as tools_router
+from routers.users import router as users_router
 from routers.widgets import router as widgets_router
 
 app.include_router(chat_router)
