@@ -29,6 +29,13 @@ def _isolated_db(tmp_path, monkeypatch):
     monkeypatch.setattr(dbmod, "DB_PATH", str(tmp_path / "t.db"))
     asyncio.run(dbmod.close_db())
     asyncio.run(dbmod.init_db())
+    # Rate limiters are process-global token buckets: refill them so one
+    # test's traffic can never 429 the next (CI runs the suite in 1 process).
+    import main as mainmod
+
+    monkeypatch.setattr(mainmod, "_rate_limiter", mainmod._RateLimiter(rpm=mainmod._rate_limiter.rpm))
+    monkeypatch.setattr(mainmod, "_session_limiter", mainmod._RateLimiter(rpm=mainmod._session_limiter.rpm))
+    monkeypatch.setattr(mainmod, "_public_limiter", mainmod._RateLimiter(rpm=mainmod._public_limiter.rpm))
     yield
     asyncio.run(dbmod.close_db())
 

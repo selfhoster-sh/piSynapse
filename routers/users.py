@@ -9,11 +9,23 @@ API keys are returned exactly once (creation/rotation) and stored hashed.
 
 from datetime import date
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from auth import current_user as _authed_user_id
 from auth import require_admin as _require_admin
+
+
+def _set_session_cookie(response: Response, raw_token: str) -> None:
+    """Attach the session cookie: HttpOnly + Lax, Secure only behind HTTPS."""
+    from config import SESSION_COOKIE_SECURE
+    from db import SESSION_COOKIE_NAME, SESSION_TTL_DAYS
+
+    response.set_cookie(
+        SESSION_COOKIE_NAME, raw_token,
+        max_age=SESSION_TTL_DAYS * 86400, httponly=True, samesite="lax",
+        secure=SESSION_COOKIE_SECURE, path="/",
+    )
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -36,13 +48,13 @@ class PasswordRequest(BaseModel):
 
 
 @router.post("/register", status_code=201)
-async def register_user(req: RegisterRequest):
+async def register_user(req: RegisterRequest, response: Response):
     """Create a user + API key. First user becomes admin."""
     from config import get
 
     if str(get("REGISTRATION_OPEN", "on")).strip().lower() != "on":
         raise HTTPException(status_code=403, detail="Registration is closed by the admin")
-    from db import count_users, create_user, set_password
+    from db import count_users, create_session, create_user, set_password
 
     is_first = await count_users() == 0
     try:
@@ -55,6 +67,9 @@ async def register_user(req: RegisterRequest):
         raise
     if req.password:
         await set_password(user["id"], req.password)
+    # Signup auto-login: the browser never needs the API key afterwards.
+    _, raw_session = await create_session(user["id"], req.device or "browser")
+    _set_session_cookie(response, raw_session)
     return {"user": user, "api_key": raw_key}
 
 
@@ -77,6 +92,38 @@ async def login_user(req: LoginRequest):
     return {"user": public, "api_key": raw_key, "key_id": row["id"]}
 
 
+@router.post("/session")
+async def open_session(req: LoginRequest, response: Response):
+    """Password login for browsers: session cookie, NO key material returned.
+
+    Identical 401 for unknown name vs wrong password (no enumeration).
+    The API key stays server-side; the browser authenticates with the
+    HttpOnly session cookie from here on.
+    """
+    from db import create_session, get_user_by_name, verify_password
+
+    user = await get_user_by_name(req.name)
+    ok = await verify_password(user["id"], req.password) if user else False
+    if not user or not ok:
+        raise HTTPException(status_code=401, detail="Invalid name or password")
+    _, raw = await create_session(user["id"], req.device or "browser")
+    _set_session_cookie(response, raw)
+    return {"user": await _public_user(user["id"])}
+
+
+@router.post("/logout")
+async def close_session(request: Request, response: Response):
+    """Revoke the current browser session and clear the cookie.
+
+    Always succeeds (idempotent) so a dead session can never trap the UI.
+    """
+    from db import SESSION_COOKIE_NAME, revoke_session
+
+    await revoke_session(request.cookies.get(SESSION_COOKIE_NAME, ""))
+    response.delete_cookie(SESSION_COOKIE_NAME, path="/")
+    return {"ok": True}
+
+
 async def _public_user(user_id: str) -> dict:
     from db import get_user
 
@@ -88,8 +135,11 @@ async def _public_user(user_id: str) -> dict:
 
 @router.post("/password")
 async def set_own_password(body: PasswordRequest, request: Request):
-    """Set (first time) or change the account password (min 8 chars)."""
-    from db import set_password, verify_password
+    """Set (first time) or change the account password (min 8 chars).
+
+    Changing the password revokes all other browser sessions.
+    """
+    from db import SESSION_COOKIE_NAME, revoke_other_sessions, set_password, verify_password
 
     uid = _authed_user_id(request)
     user = await _public_user(uid)
@@ -97,6 +147,7 @@ async def set_own_password(body: PasswordRequest, request: Request):
         if not body.current or not await verify_password(uid, body.current):
             raise HTTPException(status_code=401, detail="Current password is wrong")
     await set_password(uid, body.new)
+    await revoke_other_sessions(uid, request.cookies.get(SESSION_COOKIE_NAME, ""))
     return {"ok": True}
 
 
