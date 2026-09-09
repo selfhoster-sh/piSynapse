@@ -460,14 +460,15 @@ async def security_middleware(request: Request, call_next):
     if request.method == "OPTIONS" and "access-control-request-method" in request.headers:
         is_exempt = True
 
-    # --- Debug beacon: sendBeacon cannot set headers, so key is in JSON body as _k
-    # (legacy ?k= query param still accepted for backward compat, but not used by frontend).
+    # --- Debug beacon: sendBeacon cannot set headers, so the key travels
+    # in the JSON body as _k. The legacy ?k= query param was removed: keys
+    # in URLs leak into logs/proxies (audit Y22).
     # Always require auth for /debug — never leave it open. ---
     is_debug = path == "/debug"
     if is_debug:
         if not API_KEY:
             return JSONResponse(status_code=403, content={"detail": "Debug endpoint disabled: API_KEY not configured"})
-        key = request.headers.get("x-api-key", "") or request.query_params.get("k", "")
+        key = request.headers.get("x-api-key", "")
         if not key:
             # Try JSON body (_k from sendBeacon)
             try:
@@ -654,13 +655,39 @@ async def collect_health() -> dict:
 async def debug_ingest(request: Request):
     try:
         body = await request.json()
-        # Never log the API key (_k/k) even in debug
+        # Never persist the API key or client PII: drop auth fields, redact
+        # sensitive values, truncate the rest, and log at debug level only
+        # (INFO journals must not accumulate beacon payloads).
         body.pop("_k", None)
         body.pop("k", None)
-        print(f"DBG|{json.dumps(body, ensure_ascii=False)[:2000]}")
+        logger.debug("DBG|%s", json.dumps(_redact_debug_body(body), ensure_ascii=False)[:1000])
     except Exception as e:
-        print(f"DBG|bad payload: {e}")
+        logger.debug("DBG|bad payload: %s", e)
     return {"ok": True}
+
+
+_DEBUG_SENSITIVE_HINTS = (
+    "password", "token", "secret", "credential", "auth", "api_key",
+    "mail", "body", "content", "message", "prompt", "subject",
+)
+
+
+def _redact_debug_body(body):
+    """Redact a debug-beacon payload for logging (PII-safe)."""
+    if isinstance(body, dict):
+        out = {}
+        for k, v in body.items():
+            kl = str(k).lower()
+            if kl in ("_k", "k") or any(h in kl for h in _DEBUG_SENSITIVE_HINTS):
+                out[k] = "[REDACTED]"
+            else:
+                out[k] = _redact_debug_body(v)
+        return out
+    if isinstance(body, list):
+        return [_redact_debug_body(v) for v in body[:20]]
+    if isinstance(body, (bool, int, float)) or body is None:
+        return body
+    return str(body)[:120]
 
 
 # NOTE: CalDAV client (calendar_ops.py, nextcloud_tasks.py) holds credentials
