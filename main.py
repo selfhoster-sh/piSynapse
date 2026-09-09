@@ -4,7 +4,6 @@ FastAPI app with lifespan, CORS, API-key auth, rate limiting, static files, and 
 
 import asyncio
 import contextvars
-import hmac
 import json
 import logging
 import os
@@ -155,6 +154,16 @@ async def lifespan(app: FastAPI):
             e,
         )
     else:
+        # Bind the pre-existing `.env` key holder as admin (idempotent;
+        # zero data rewrites — existing rows already point at 'default').
+        try:
+            from db import ensure_default_admin
+
+            admin = await ensure_default_admin()
+            if admin is not None:
+                logger.info("Admin bootstrapped onto the default identity.")
+        except Exception as e:
+            logger.warning(f"Admin bootstrap skipped: {e}")
         try:
             from db import db_quick_check
 
@@ -493,6 +502,10 @@ async def security_middleware(request: Request, call_next):
 
     # --- Skip auth for exempt paths ---
     is_exempt = path == "/health" or path == "/" or path == "/favicon.ico" or path == "/sw.js" or path.startswith("/static")
+    # User registration issues credentials, so it cannot require them —
+    # but it stays under the STRICT rate limiter (not the lenient public
+    # bucket) as anti-enumeration hardening.
+    is_public_registration = path == "/users/register" and request.method == "POST"
 
     # --- Skip auth for CORS preflight (only OPTIONS with Access-Control-Request-Method) ---
     if request.method == "OPTIONS" and "access-control-request-method" in request.headers:
@@ -504,8 +517,14 @@ async def security_middleware(request: Request, call_next):
     # Always require auth for /debug — never leave it open. ---
     is_debug = path == "/debug"
     if is_debug:
-        if not API_KEY:
-            return JSONResponse(status_code=403, content={"detail": "Debug endpoint disabled: API_KEY not configured"})
+        from db import count_users, resolve_user_by_key
+
+        try:
+            has_users = await count_users() > 0
+        except Exception:
+            has_users = False
+        if not API_KEY and not has_users:
+            return JSONResponse(status_code=403, content={"detail": "Debug endpoint disabled: no credentials configured"})
         key = request.headers.get("x-api-key", "")
         if not key:
             # Try JSON body (_k from sendBeacon)
@@ -517,22 +536,30 @@ async def security_middleware(request: Request, call_next):
                     key = data.get("_k", "") or data.get("k", "")
             except Exception:
                 pass
-        if not hmac.compare_digest(key, API_KEY):
+        if await resolve_user_by_key(key) is None:
             return JSONResponse(status_code=401, content={"detail": "Invalid or missing API key"})
 
-    # --- API Key verification (fail-closed: no key configured = no access) ---
-    if not is_exempt and not is_debug:
-        if not API_KEY:
-            return JSONResponse(
-                status_code=503,
-                content={"detail": "Server misconfigured: API_KEY is not set in .env. Refusing to serve unprotected endpoints."},
-            )
-        key = request.headers.get("x-api-key", "")
-        if not hmac.compare_digest(key, API_KEY):
+    # --- API Key verification (DB users + legacy .env key; unknown -> 401) ---
+    if not is_exempt and not is_debug and not is_public_registration:
+        from db import count_users, resolve_user_by_key
+
+        user = await resolve_user_by_key(request.headers.get("x-api-key", ""))
+        if user is None:
+            # Fail-closed misconfiguration signal only when NOTHING could
+            # authenticate (no .env key and no registered users at all).
+            try:
+                configured = bool(API_KEY) or await count_users() > 0
+            except Exception:
+                configured = bool(API_KEY)
+            if not configured:
+                return JSONResponse(
+                    status_code=503,
+                    content={"detail": "Server misconfigured: no credentials set. Register the first user or set API_KEY in .env."},
+                )
             return JSONResponse(status_code=401, content={"detail": "Invalid or missing API key"})
-        # Resolve API key → user_id for downstream handlers/db queries.
-        from config import get_user_id_for_key
-        request.state.user_id = get_user_id_for_key(key)
+        # Resolve API key → user for downstream handlers/db queries.
+        request.state.user_id = user["id"]
+        request.state.is_admin = bool(user.get("is_admin"))
 
     # --- Rate limiting ---
     # Authenticated routes use the strict bucket; exempt paths (health/static)
@@ -587,12 +614,14 @@ async def security_middleware(request: Request, call_next):
 # ── Routers ───────────────────────────────────────────────────────────────────
 
 from routers.chat import router as chat_router
+from routers.users import router as users_router
 from routers.config import router as config_router
 from routers.media import router as media_router
 from routers.tools import router as tools_router
 from routers.widgets import router as widgets_router
 
 app.include_router(chat_router)
+app.include_router(users_router)
 app.include_router(config_router)
 app.include_router(tools_router)
 app.include_router(widgets_router)

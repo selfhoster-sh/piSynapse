@@ -6,11 +6,13 @@ Single persistent connection with WAL mode for Pi-friendly I/O.
 import asyncio
 import csv
 import hashlib
+import hmac
 import json
 import logging
 import os
 import re
 import secrets
+import time
 
 import aiosqlite
 
@@ -2022,6 +2024,7 @@ async def rotate_user_key(user_id: str) -> str | None:
         await _commit_with_retry(db)
         if cur.rowcount == 0:
             return None
+    invalidate_user_cache(user_id)
     return raw_key
 
 
@@ -2051,6 +2054,55 @@ async def ensure_default_admin() -> dict | None:
         )
         await _commit_with_retry(db)
     return await get_user(DEFAULT_USER_ID)
+
+
+_USER_CACHE_TTL = 60.0
+_user_cache: dict[str, tuple[dict, float]] = {}
+
+
+def invalidate_user_cache(user_id: str | None = None) -> None:
+    """Drop cached key resolutions (all, or one user's). Call on rotation."""
+    if user_id is None:
+        _user_cache.clear()
+        return
+    for k in [k for k, (u, _) in _user_cache.items() if u.get("id") == user_id]:
+        _user_cache.pop(k, None)
+
+
+async def resolve_user_by_key(api_key: str) -> dict | None:
+    """Resolve a raw API key to its user dict, or None. Never raises.
+
+    Order: legacy `.env` API_KEY (maps to the default identity, preserving
+    single-user behavior) → DB `key_hash` lookup with a short TTL cache.
+    DB errors resolve to None (deny closed; health still reports the outage).
+    """
+    key = (api_key or "").strip()
+    if not key:
+        return None
+    digest = hash_api_key(key)
+    now = time.monotonic()
+    hit = _user_cache.get(digest)
+    if hit is not None:
+        user, expires = hit
+        if expires > now:
+            return user
+    try:
+        import os as _os
+
+        env_key = (_os.getenv("API_KEY") or "").strip()
+        user: dict | None = None
+        if env_key and hmac.compare_digest(key, env_key):
+            user = await get_user(DEFAULT_USER_ID)
+            if user is None:
+                user = {"id": DEFAULT_USER_ID, "name": "", "is_admin": True, "created_at": None}
+        else:
+            user = await get_user_by_key_hash(digest)
+    except Exception as e:
+        logger.warning(f"User resolution failed (denying closed): {e}")
+        return None
+    if user is not None:
+        _user_cache[digest] = (user, now + _USER_CACHE_TTL)
+    return user
 
 
 # -- Rolling Summary --
