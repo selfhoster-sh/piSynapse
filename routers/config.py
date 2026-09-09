@@ -9,7 +9,7 @@ try:
 except ImportError:
     _HAS_FCNTL = False
     fcntl = None  # type: ignore[assignment]
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from config import ENV_PATH, PROTECTED_SETTINGS, RESTART_REQUIRED_KEYS, SETTINGS_SCHEMA, get, get_llm_model_options
@@ -119,8 +119,93 @@ class SettingsUpdate(BaseModel):
     values: dict[str, str]
 
 
+def _authed_uid(request: Request) -> str:
+    uid = getattr(request.state, "user_id", None) or ""
+    if not uid:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+    return uid
+
+
+@router.get("/my-settings")
+async def get_my_settings(request: Request):
+    """Return the caller's personal settings with effective values."""
+    from config import PERSONAL_KEYS, get as _get
+
+    from db import get_user_settings
+
+    uid = _authed_uid(request)
+    stored = await get_user_settings(uid)
+    result = {}
+    for key in sorted(PERSONAL_KEYS):
+        schema = SETTINGS_SCHEMA.get(key, {})
+        entry = {
+            "value": stored.get(key, _get(key, schema.get("default", ""))),
+            "type": schema.get("type", "str"),
+            "label": schema.get("label", {}),
+        }
+        if "options" in schema:
+            entry["options"] = schema["options"]
+        result[key] = entry
+    return {"user_id": uid, "settings": result}
+
+
+@router.put("/my-settings")
+async def put_my_settings(body: SettingsUpdate, request: Request):
+    """Save the caller's personal settings (validated like system ones)."""
+    from config import PERSONAL_KEYS
+
+    from db import set_user_setting
+
+    uid = _authed_uid(request)
+    updated = []
+    for key, value in body.values.items():
+        if key not in PERSONAL_KEYS:
+            raise HTTPException(status_code=400, detail=f"Not a personal setting: {key}")
+        await set_user_setting(uid, key, await _validate_setting_value(key, value))
+        updated.append(key)
+    return {"ok": True, "updated": updated}
+
+
+async def _validate_setting_value(key: str, value: str, new_backend: str | None = None,
+                                    current_backend: str | None = None) -> str:
+    """Validate one setting value against SETTINGS_SCHEMA. Returns normalized str.
+
+    Shared by system PATCH and personal PUT so both surfaces enforce
+    identical rules. Raises HTTPException(400) on any violation.
+    """
+    from config import SETTINGS_SCHEMA as _SCHEMA
+
+    schema = _SCHEMA.get(key)
+    if schema is None:
+        raise HTTPException(status_code=400, detail=f"Unknown setting: {key}")
+    try:
+        if schema["type"] == "int":
+            value = str(int(float(value)))
+        elif schema["type"] == "float":
+            value = str(float(value))
+        elif schema["type"] == "select":
+            allowed = [o["value"] for o in schema.get("options", [])]
+            if key == "LLM_MODEL":
+                allowed = [o["value"] for o in await get_llm_model_options(new_backend or current_backend)]
+            if allowed and value not in allowed:
+                raise HTTPException(status_code=400, detail=f"Invalid option for {key}: {value}. Allowed: {allowed}")
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail=f"Invalid value for {key}: {value}")
+    if "min" in schema and schema["type"] in ("int", "float") and float(value) < schema["min"]:
+        raise HTTPException(status_code=400, detail=f"{key} must be >= {schema['min']}")
+    if "max" in schema and schema["type"] in ("int", "float") and float(value) > schema["max"]:
+        raise HTTPException(status_code=400, detail=f"{key} must be <= {schema['max']}")
+    # Never allow line breaks: a "\n" in a value could inject a new
+    # key=value line into .env on the next read.
+    if "\n" in value or "\r" in value:
+        raise HTTPException(status_code=400, detail=f"Invalid value for {key}: newlines are not allowed")
+    return value
+
+
 @router.patch("/settings")
-async def update_settings(body: SettingsUpdate):
+async def update_settings(body: SettingsUpdate, request: Request):
+    if not bool(getattr(request.state, "is_admin", False)):
+        raise HTTPException(status_code=403, detail="System settings are admin-only")
     if not ENV_PATH.exists():
         raise HTTPException(status_code=500, detail=".env file not found")
 
@@ -140,29 +225,8 @@ async def update_settings(body: SettingsUpdate):
     for key, value in body.values.items():
         if key not in SETTINGS_SCHEMA or key in PROTECTED_SETTINGS:
             continue
-        schema = SETTINGS_SCHEMA[key]
-        try:
-            if schema["type"] == "int":
-                value = str(int(float(value)))
-            elif schema["type"] == "float":
-                value = str(float(value))
-            elif schema["type"] == "select":
-                allowed = [o["value"] for o in schema.get("options", [])]
-                if key == "LLM_MODEL":
-                    allowed = [o["value"] for o in await get_llm_model_options(new_backend or current_backend)]
-                if allowed and value not in allowed:
-                    raise HTTPException(status_code=400, detail=f"Invalid option for {key}: {value}. Allowed: {allowed}")
-        except (ValueError, TypeError):
-            raise HTTPException(status_code=400, detail=f"Invalid value for {key}: {value}")
-        if "min" in schema and schema["type"] in ("int", "float") and float(value) < schema["min"]:
-            raise HTTPException(status_code=400, detail=f"{key} must be >= {schema['min']}")
-        if "max" in schema and schema["type"] in ("int", "float") and float(value) > schema["max"]:
-            raise HTTPException(status_code=400, detail=f"{key} must be <= {schema['max']}")
-        # Never allow line breaks: a "\n" in a value could inject a new
-        # key=value line into .env on the next read.
-        if "\n" in value or "\r" in value:
-            raise HTTPException(status_code=400, detail=f"Invalid value for {key}: newlines are not allowed")
-        validated[key] = value
+        validated[key] = await _validate_setting_value(
+            key, value, new_backend=new_backend, current_backend=current_backend)
         updated_keys.append(key)
 
     # All values validated OK — only now mutate the running process.

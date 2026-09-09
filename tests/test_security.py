@@ -118,6 +118,18 @@ def test_trusted_host_star_no_longer_disables_check(sec_app, monkeypatch):
 
 # -- routers/config.py: newline injection guard --
 
+_ADMIN_REQ = None
+
+
+def _admin_request():
+    global _ADMIN_REQ
+    if _ADMIN_REQ is None:
+        from types import SimpleNamespace
+
+        _ADMIN_REQ = SimpleNamespace(state=SimpleNamespace(user_id="default", is_admin=True))
+    return _ADMIN_REQ
+
+
 def test_update_settings_rejects_newline_in_value(tmp_path, monkeypatch):
     import routers.config as rc
     from routers.config import SettingsUpdate
@@ -126,7 +138,7 @@ def test_update_settings_rejects_newline_in_value(tmp_path, monkeypatch):
     (tmp_path / "env_test").write_text("ASSISTANT_USER=old\n", encoding="utf-8")
 
     with pytest.raises(HTTPException) as exc:
-        asyncio.run(rc.update_settings(SettingsUpdate(values={"ASSISTANT_USER": "bob\nAPI_KEY=evil"})))
+        asyncio.run(rc.update_settings(SettingsUpdate(values={"ASSISTANT_USER": "bob\nAPI_KEY=evil"}), _admin_request()))
     assert exc.value.status_code == 400
     assert "newlines" in exc.value.detail
 
@@ -149,7 +161,7 @@ def test_update_settings_is_atomic_on_multi_key_failure(tmp_path, monkeypatch):
         asyncio.run(rc.update_settings(SettingsUpdate(values={
             "LLM_TEMPERATURE": "0.9",          # valid
             "LLM_MAX_OUTPUT_TOKENS": "99999",  # exceeds schema max → 400
-        })))
+        }), _admin_request()))
     assert exc.value.status_code == 400
 
     assert os.environ.get("LLM_TEMPERATURE") is None
@@ -166,7 +178,7 @@ def test_update_settings_applies_all_keys_on_success(tmp_path, monkeypatch):
 
     monkeypatch.delenv("LLM_TEMPERATURE", raising=False)
 
-    resp = asyncio.run(rc.update_settings(SettingsUpdate(values={"LLM_TEMPERATURE": "0.9"})))
+    resp = asyncio.run(rc.update_settings(SettingsUpdate(values={"LLM_TEMPERATURE": "0.9"}), _admin_request()))
     assert resp["ok"] is True
     assert os.environ.get("LLM_TEMPERATURE") == "0.9"
     assert "LLM_TEMPERATURE=0.9" in (tmp_path / "env_test").read_text(encoding="utf-8")
