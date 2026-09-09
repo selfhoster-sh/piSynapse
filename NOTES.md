@@ -15,6 +15,9 @@
 - Currency rule: before relying on a statement in this file, verify it against the code. Found-stale statements get struck through with a dated reason (invalid/unnecessary/done/fixed) — never silently deleted.
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 - **Sanitization rule:** this file may be published. Never write personal data, identity clues, deployment addresses (hostnames, IPs, ports), or accounts into it. Keep every narrative in English; Turkish inline tokens are allowed only as product corpus / i18n test data.
+- **Test-DB isolation rule (2026-09-09 incident):** tests must NEVER touch the live `assistant.db` — app/lifespan tests use tmp-path DBs only. A full-suite run once wrote a test admin row into the live DB; it was deleted and the offending test isolated.
+- **Multi-user invisibility rule:** one user's sessions, settings, mail and keys are invisible to every other user. Every user-scoped query needs its owner guard, every guard needs a both-directions test.
+- **Pre-push check:** before push, grep new docs/journal lines for secrets, passwords, IPs and credentials the same way code gets py_compile + pytest.
 
 ## 2026-09-09 — auth helpers + mail gate (post-M5 hardening)
 
@@ -246,13 +249,13 @@
 - **Kotlin bridge pull:** `ServerStore.getServerSettings()` (GET /config/settings JSON) + `PiSynapseBridge.pullServerSettings()` (@PluginMethod, io.Execute). 
 - **JS otomatik pull:** `_serverSettingsPull()` — sadece `_PORTABLE_KEYS = [NEXTCLOUD_URL, NEXTCLOUD_USER, NEXTCLOUD_PASSWORD, ASSISTANT_USER, DEFAULT_CITY]`'ı `configSet` ile ConfigStore'a yazar (sunucu LLM/model altyapısı cihaza taşınmaz). Tetikleyiciler: onboarding s6 `action==='server'` sonrası + `_nativeChatRestore` only-server dalı (app restart'ta oturum varsa). Sunucu müsait değilse sessiz retry.
 - **Canlı doğrulama (v0.20, TECNO CM5, CDP):**
-  - `pullServerSettings()` direkt: `pullok:true`, 29 ayar geldi, NEXTCLOUD_URL=http://192.168.x.x:8080, user[redacted].
-  - `_serverSettingsPull()` → ConfigStore'a yazdı: NEXTCLOUD_URL/USER/PASSWORD (+ASSISTANT_USER[redacted]) cihaz config'inde.
-  - Telefon config: sync_mode=only-server, SERVER_URL=http://192.168.x.x:8765, key set → restart'ta otomatik pull aktif.
+  - `pullServerSettings()` direkt: `pullok:true`, 29 ayar geldi, NEXTCLOUD_URL=http://192.168.x.x:8080 (sanitize 2026-09-09: LAN IP redacted), user=[redacted].
+  - `_serverSettingsPull()` → ConfigStore'a yazdı: NEXTCLOUD_URL/USER/PASSWORD (+ASSISTANT_USER=[redacted]) cihaz config'inde.
+  - Telefon config: sync_mode=only-server, SERVER_URL=http://192.168.x.x:8765 (sanitize 2026-09-09: LAN IP redacted), key set → restart'ta otomatik pull aktif.
   - pytest: **560 passed** (31s).
   - JSON top 29 ayar — NEXTCLOUD üçlüsü GET'te, PATCH'te engelli.
 - **Yeni build akışı v0.20:** Kotlin değişirse `ServerStore.kt`+`PiSynapseBridge.kt` laptop'a scp → `JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64; ANDROID_HOME=/home/salih/android-sdk; cd /home/salih/pisynapse-android/android && ./gradlew assembleDebug -q` → `app-debug.apk` (55M) → scp → `adb install -r`. Asset'ler (index/web/app.html ui.js ui.css) ayrı scp public/.
-- **ssh notu:** laptop ssh şifresi `***REDACTED***`; sshpass kullan (scp/ssh). `ANDROID_SDK` = /home/salih/android-sdk.
+- **ssh notu:** ~~laptop ssh şifresi burada yazıyordu — sanitize 2026-09-09: şifre metinden silindi (git geçmişinde duruyor, laptop şifresini döndür).~~ sshpass kullan (scp/ssh). `ANDROID_SDK` = /home/salih/android-sdk.
 - **Thread iş parçacığı uyarısı:** `io.execute`'da `call.resolve` — `pullServerSettings` aynı deseni izliyor.
 
 ## 2026-09-06 — Faz UI-SPLIT: iki ayrı kök dosya (web.html=MASTER / app.html=SLAVE), ortak ui.js/ui.css
