@@ -93,6 +93,20 @@ def test_unauthenticated_users_endpoints_reject(users_api):
     assert client.get("/users").status_code == 401
 
 
+def test_me_legacy_env_key_without_row_returns_owner(users_api):
+    # No users rows at all (pre-bootstrap): the server owner's .env key
+    # (conftest API_KEY=test-key) must still validate as the owner instead
+    # of 401ing in the login UI.
+    import os
+
+    client, _ = users_api
+    r = client.get("/users/me", headers={"x-api-key": os.environ["API_KEY"]})
+    assert r.status_code == 200
+    user = r.json()["user"]
+    assert user["id"] == "default" and user["is_admin"] is True
+    assert "key_hash" not in r.text
+
+
 def test_login_issues_device_key(users_api):
     client, _ = users_api
     reg = client.post("/users/register", json={"name": "eve", "password": "s3cret!!"})
