@@ -475,6 +475,12 @@ def validate_confirm_params(tool: str, params: dict) -> str | None:
 def parse_tool_args(raw) -> dict:
     """Tool call arguments normally arrive as a dict, but some models emit
     them as a JSON-encoded string -- handle both safely.
+
+    A broken JSON string yields ``{"_parse_error": raw}`` instead of ``{}``:
+    distinct failures must produce distinct dedup signatures (two different
+    broken payloads previously collided on ``{}`` and the second was refused
+    as a repeat), and tool handlers ignore unknown keys via params.get while
+    their missing-param errors steer the model to a correction round.
     """
     if isinstance(raw, dict):
         return raw
@@ -482,5 +488,5 @@ def parse_tool_args(raw) -> dict:
         try:
             return json.loads(raw)
         except json.JSONDecodeError:
-            return {}
+            return {"_parse_error": raw}
     return {}

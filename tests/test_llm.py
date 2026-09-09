@@ -722,3 +722,63 @@ def test_stream_ollama_error_line_surfaces_as_error_event(monkeypatch):
     events = _collect_stream_events([{"role": "user", "content": "selam"}], intent="action")
 
     assert any("error" in ev for ev in events)
+
+
+def test_normalize_litert_preserves_tool_name():
+    from llm.payload import _normalize_messages_for_backend
+
+    msgs = [
+        {"role": "assistant", "content": "", "tool_calls": [{"function": {"name": "x", "arguments": "{}"}}]},
+        {"role": "tool", "tool_name": "x", "tool_call_id": "c1", "content": "42"},
+    ]
+    out = _normalize_messages_for_backend(msgs, backend="litert")
+    assert out[1]["tool_name"] == "x"
+    assert out[1]["name"] == "x"
+    assert out[1]["tool_call_id"] == "c1"
+
+
+def test_merge_indexless_single_call_accumulates():
+    from llm.stream import _merge_tool_calls
+
+    acc = [{"function": {"name": "send_email", "arguments": '{"to": "a'}}]
+    tc = [{"function": {"arguments": '@x.com"}'}}]
+    out = _merge_tool_calls(acc, tc)
+    assert out[0]["function"] == {"name": "send_email", "arguments": '{"to": "a@x.com"}'}
+
+
+def test_merge_indexless_multi_call_falls_back_to_replace():
+    from llm.stream import _merge_tool_calls
+
+    acc = [{"function": {"name": "a", "arguments": "{}"}}]
+    tc = [{"function": {"name": "b"}}, {"function": {"name": "c"}}]
+    assert _merge_tool_calls(acc, tc) == tc
+
+
+def test_trim_never_splits_tool_triples():
+    sys_msg = {"role": "system", "content": "sys " * 50}
+
+    def _triple(tag, size=120):
+        return [
+            {"role": "assistant", "content": "", "tool_calls": [{"function": {"name": tag, "arguments": "{}"}, "id": tag}]},
+            {"role": "tool", "content": f"result {tag} " * size, "tool_call_id": tag},
+        ]
+
+    messages = [sys_msg, {"role": "user", "content": "q0"}] + _triple("a") + _triple("b") + [{"role": "user", "content": "q now"}]
+    trimmed = trim_messages_for_context(messages, context_window=700, reserved_output=64)
+    assert trimmed[0] is sys_msg
+    assert trimmed[-1]["content"] == "q now"
+    roles = [(m.get("role"), bool(m.get("tool_calls"))) for m in trimmed[1:]]
+    # No leading orphan tool; every kept assistant-call is followed by results.
+    assert not (roles and roles[0][0] == "tool")
+    for i, (role, has_tc) in enumerate(roles):
+        if role == "assistant" and has_tc:
+            assert i + 1 < len(roles) and roles[i + 1][0] == "tool"
+
+
+def test_parse_leaked_tool_call_literals():
+    from llm.utils import parse_leaked_tool_call
+
+    call = parse_leaked_tool_call('<|tool_call|>call:create_task{title:"Buy milk", priority:3, done:true, due:null, ratio:0.5}<tool_call|>')
+    import json
+    args = json.loads(call["function"]["arguments"])
+    assert args == {"title": "Buy milk", "priority": 3, "done": True, "due": None, "ratio": 0.5}

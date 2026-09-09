@@ -110,6 +110,22 @@ def _merge_tool_calls(acc: list, tc: list) -> list:
     if not tc:
         return acc
     if any(c.get("index") is None for c in tc):
+        # Indexless deltas (LiteRT sends them raw): when both sides hold a
+        # single call, accumulate argument fragments instead of replacing
+        # (replacing truncated multi-chunk JSON to {} and misfired tools).
+        if len(acc) == 1 and len(tc) == 1:
+            target, call = acc[0], tc[0]
+            for k, v in call.items():
+                if k == "function" and isinstance(v, dict):
+                    fn = target.setdefault("function", {})
+                    for fk, fv in v.items():
+                        if fk == "arguments" and isinstance(fv, str):
+                            fn["arguments"] = fn.get("arguments", "") + fv
+                        elif fk not in fn or fn[fk] in (None, ""):
+                            fn[fk] = fv
+                elif v is not None and (k not in target or target[k] in (None, "")):
+                    target[k] = v
+            return acc
         return tc
     for call in tc:
         idx = call.get("index", 0)

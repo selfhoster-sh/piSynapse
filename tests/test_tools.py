@@ -96,7 +96,12 @@ class TestParseToolArgs:
         assert parse_tool_args('{"key": "val"}') == {"key": "val"}
 
     def test_invalid_string(self):
-        assert parse_tool_args("not json") == {}
+        assert parse_tool_args("not json") == {"_parse_error": "not json"}
+
+    def test_broken_payloads_do_not_collide(self):
+        a = parse_tool_args('{"to": "a@x')
+        b = parse_tool_args('{"to": "b@y')
+        assert a != b  # distinct failures -> distinct dedup signatures
 
     def test_none(self):
         assert parse_tool_args(None) == {}
