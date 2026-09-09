@@ -777,12 +777,22 @@ async def upload_image(file: UploadFile = File(...)):
     except (TypeError, ValueError):
         max_mb = 100
     max_bytes = max_mb * 1024 * 1024
+    content_type = (file.content_type or "").split(";")[0].strip().lower()
+    if not content_type.startswith("image/"):
+        await file.close()
+        raise HTTPException(status_code=415, detail=f"Only image/* uploads accepted (got {content_type or 'unknown'}).")
     chunks: list[bytes] = []
     total = 0
+    head = b""
     while True:
         chunk = await file.read(1024 * 1024)
         if not chunk:
             break
+        if not head:
+            head = chunk[:16]
+            if not _looks_like_image(head):
+                await file.close()
+                raise HTTPException(status_code=415, detail="File content is not a recognized image (JPEG/PNG/GIF/WebP/BMP/media).")
         total += len(chunk)
         if total > max_bytes:
             await file.close()
@@ -790,7 +800,30 @@ async def upload_image(file: UploadFile = File(...)):
         chunks.append(chunk)
     await file.close()
     data = b"".join(chunks)
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty file.")
     return {"ok": True, "base64": base64.b64encode(data).decode("utf-8"), "size_bytes": len(data)}
+
+
+def _looks_like_image(head: bytes) -> bool:
+    """Magic-byte sniff for common image formats (plus ISO-BMFF media).
+
+    The content-type check above gates the declared type; this gates the
+    actual bytes so executables/scripts cannot ride in as image/*.
+    """
+    if head.startswith(b"\xff\xd8\xff"):  # JPEG
+        return True
+    if head.startswith(b"\x89PNG\r\n\x1a\n"):  # PNG
+        return True
+    if head.startswith((b"GIF87a", b"GIF89a")):  # GIF
+        return True
+    if head.startswith(b"RIFF") and len(head) >= 12 and head[8:12] == b"WEBP":  # WebP
+        return True
+    if head.startswith(b"BM"):  # BMP
+        return True
+    if len(head) >= 8 and head[4:8] == b"ftyp":  # HEIC/HEIF + ISO-BMFF media
+        return True
+    return False
 
 
 # -- Offline Sync (mobile) --

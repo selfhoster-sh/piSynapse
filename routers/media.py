@@ -109,6 +109,21 @@ def _upload_max_bytes() -> int:
         return 100 * 1024 * 1024
 
 
+_AUDIO_SUFFIXES = frozenset({".webm", ".wav", ".mp3", ".m4a", ".ogg", ".flac"})
+
+
+def _safe_audio_suffix(filename: str | None) -> str:
+    """Clamp the temp-file suffix to known audio containers.
+
+    The client-controlled filename must not dictate the suffix ffmpeg sees;
+    unknown/overlong suffixes fall back to .webm.
+    """
+    suffix = os.path.splitext(filename or "audio.webm")[1].lower() or ".webm"
+    if len(suffix) > 6 or suffix not in _AUDIO_SUFFIXES:
+        return ".webm"
+    return suffix
+
+
 async def _save_upload(audio: UploadFile) -> str:
     """Stream an upload body to a temp file with a hard size cap.
 
@@ -125,7 +140,7 @@ async def _save_upload(audio: UploadFile) -> str:
                 raise _UploadTooLargeError(max_bytes)
         except (ValueError, TypeError):
             pass  # malformed header → rely on chunked accumulation
-    suffix = os.path.splitext(audio.filename or "audio.webm")[1] or ".webm"
+    suffix = _safe_audio_suffix(audio.filename)
     tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
     tmp_path = tmp.name
     try:
@@ -203,7 +218,7 @@ async def transcribe_audio(
     model = await asyncio.to_thread(_get_whisper)
     if model is None:
         raise HTTPException(status_code=503, detail="Transcription service unavailable. Install faster-whisper or openai-whisper.")
-    suffix = os.path.splitext(audio.filename or "audio.webm")[1] or ".webm"
+    suffix = _safe_audio_suffix(audio.filename)
     try:
         tmp_path = await _save_upload(audio)
     except _UploadTooLargeError as e:
