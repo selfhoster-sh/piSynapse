@@ -40,6 +40,14 @@
 - **Note:** server half takes effect on the pending restart.
 - **Test:** full-file users/audit green; `node --check` clean.
 
+## 2026-09-09 — Security pass + speed note (user requests)
+
+- **Audit (verified, not claimed):** SQL 100% parameterized (`?` everywhere; f-string parts are constants/placeholder-runs/ints; LIKE escapes wildcards; FTS MATCH bound with LIKE fallback); XSS via `esc()` on all dynamic HTML incl. the new admin UI, `renderMd`→local-vendor DOMPurify, link protocol allowlist, no eval/Function/document.write; image previews are local dataURLs; subprocess only in install.py with fixed argv (no shell, no user input).
+- **Hardened:** `renderMd` fallback now sanitizes too (was raw when marked missing); preview `src` escaped.
+- **Residuals (honest):** homoglyph usernames; Secure-cookie needs HTTPS to matter; LAN-HTTP sniffing is transport, not app; no CSP (inline handlers would break — documented why).
+- **Speed note:** `tourSpeed` tr/en in tour curious + settings server section (heavy first answers ~1min is normal on Pi).
+- **Test:** full suite green; ruff clean; `node --check` clean.
+
 ## 2026-09-09 — Login/UI hardening round (user-reported issues)
 
 - **Reserved names:** `admin` (and 8 system-like names) rejected at `create_user` (409) — login-by-name made a second "admin" ambiguous with the bootstrap row. Existing test using "admin" as first user renamed.
