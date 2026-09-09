@@ -8,6 +8,7 @@ import csv
 import json
 import logging
 import os
+import re
 
 import aiosqlite
 
@@ -133,6 +134,7 @@ async def get_db() -> aiosqlite.Connection:
         await conn.execute("PRAGMA temp_store=MEMORY")
         await conn.execute("PRAGMA foreign_keys=ON")
         await conn.execute("PRAGMA busy_timeout=10000")
+        await conn.execute("PRAGMA journal_size_limit=67108864")
         await _secure_db_files()
         _db = conn
         return _db
@@ -187,12 +189,40 @@ async def _get_schema_version(db: aiosqlite.Connection) -> int:
     return int(row[0]) if row else 0
 
 
+_IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_DDL_UNSAFE_RE = re.compile(r";|--|/\*|\*/")
+
+
+def _safe_ident(name: str) -> str:
+    """Quote a schema identifier; rejects anything but plain names."""
+    if not _IDENT_RE.fullmatch(name or ""):
+        raise ValueError(f"Unsafe schema identifier: {name!r}")
+    return f'"{name}"'
+
+
+def _safe_ddl_definition(definition: str) -> str:
+    """Allow column definitions built from types/defaults only.
+
+    Blocks statement stacking (;) and comment breakout (--, /* */), the
+    realistic injection vectors for DDL assembled from parts. (The
+    ``PRAGMA user_version = {i + 1}`` below needs no guard: ``i`` is a
+    range() int by construction.)
+    """
+    if not definition or _DDL_UNSAFE_RE.search(definition):
+        raise ValueError(f"Unsafe column definition: {definition!r}")
+    return definition
+
+
 async def _apply_migrations(db: aiosqlite.Connection):
     version = await _get_schema_version(db)
     for i in range(version, len(MIGRATIONS)):
         table, column, definition = MIGRATIONS[i]
         try:
-            await _write_with_retry(db, f"ALTER TABLE {table} ADD COLUMN {column} {definition}")  # noqa: E501
+            await _write_with_retry(
+                db,
+                f"ALTER TABLE {_safe_ident(table)} ADD COLUMN {_safe_ident(column)} "
+                f"{_safe_ddl_definition(definition)}",
+            )
         except Exception as e:
             if "duplicate column" not in str(e).lower():
                 logger.warning(f"Migration {table}.{column} failed: {e}")
@@ -313,6 +343,42 @@ async def init_db():
     await db.execute("CREATE INDEX IF NOT EXISTS idx_intent_audit_created ON intent_audit_log(created_at)")
     await db.execute("CREATE INDEX IF NOT EXISTS idx_intent_audit_source ON intent_audit_log(source, created_at)")
     await db.execute("CREATE INDEX IF NOT EXISTS idx_email_session_map_session ON email_session_map(session_id, seq)")
+
+    # Faz 3c: idempotent re-sync gate. (user_id, client_key) must be unique so
+    # parallel re-syncs cannot duplicate rows (TOCTOU). Legacy DBs may hold
+    # duplicates from the pre-guard window: keep the earliest row per key.
+    doomed_cur = await db.execute(
+        "SELECT id FROM conversations WHERE client_key IS NOT NULL AND id NOT IN "
+        "(SELECT MIN(id) FROM conversations WHERE client_key IS NOT NULL "
+        "GROUP BY user_id, client_key)"
+    )
+    doomed = [r[0] for r in await doomed_cur.fetchall()]
+    if doomed:
+        logger.warning(
+            "Removing %d duplicate import rows before enforcing "
+            "UNIQUE(user_id, client_key)", len(doomed),
+        )
+        ph = ",".join("?" * len(doomed))
+        try:
+            await db.execute(f"DELETE FROM conversations_fts WHERE rowid IN ({ph})", doomed)
+        except Exception as fts_e:
+            # External-content FTS5 quirk: when NONE of the target rowids are
+            # indexed (past best-effort FTS misses), the DELETE raises
+            # "malformed" instead of deleting nothing. That same absence means
+            # there is nothing to orphan, so dropping the FTS leg is safe —
+            # and init_db must never crash on legacy data (startup SPOF).
+            logger.warning(f"FTS cleanup skipped during dedupe (non-fatal): {fts_e}")
+        await db.execute(f"DELETE FROM conversations WHERE id IN ({ph})", doomed)
+    await db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_client_key "
+        "ON conversations(user_id, client_key) WHERE client_key IS NOT NULL"
+    )
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_memories_created ON memories(created_at)")
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_tool_audit_conv ON tool_audit_log(conversation_id)")
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_tool_audit_day "
+        "ON tool_audit_log(substr(created_at, 1, 10))"
+    )
 
     await db.execute("""
         CREATE TABLE IF NOT EXISTS notes_session_map (
@@ -947,6 +1013,15 @@ async def periodic_cleanup_loop(interval: float = CLEANUP_INTERVAL_SECONDS, slee
             raise
         except Exception as e:
             logger.warning(f"Periodic retention cleanup failed, will retry next cycle: {e}")
+        # Keep the WAL file bounded: checkpoint whatever readers no longer need.
+        # Best-effort; a busy checkpoint simply retries next cycle.
+        try:
+            db = await get_db()
+            await db.execute("PRAGMA wal_checkpoint(PASSIVE)")
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.debug(f"WAL checkpoint skipped: {e}")
 
 
 # -- Conversations --
@@ -1213,7 +1288,13 @@ async def import_messages(session_id: str, messages: list[dict], client_key: str
                     logger.warning(f"import FTS insert failed (non-fatal): {fts_e}")
                 inserted += 1
             except Exception as e:
-                logger.warning(f"import insert failed (session={session_id}): {e}")
+                # A lost TOCTOU race lands here as a UNIQUE violation: the
+                # winning task already inserted this key, so skipping is the
+                # correct idempotent outcome (debug, not warning).
+                if "UNIQUE constraint failed" in str(e):
+                    logger.debug(f"import deduped by constraint (session={session_id}): {e}")
+                else:
+                    logger.warning(f"import insert failed (session={session_id}): {e}")
                 continue
         if inserted:
             await db.execute(
