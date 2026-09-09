@@ -9,10 +9,16 @@ import re
 
 
 def generate_rake_title(text: str, max_words: int = 5) -> str:  # noqa: D401
-    """First words of user message as instant title. No language list."""
+    """First words of user message as instant title. No language list.
+
+    Emails/URLs are masked: sidebar titles must never carry PII verbatim.
+    """
     clean = text.strip()
     if not clean:
         return "Yeni Sohbet"
+    # Mask before splitting so a masked token still occupies its position.
+    clean = re.sub(r"[\w.+-]+@[\w-]+\.[\w.]+", "[e-posta]", clean)
+    clean = re.sub(r"https?://\S+|www\.\S+", "[link]", clean)
     # Split on whitespace, take up to 4 words (capped by max_words),
     # strip trailing punctuation
     words = clean.split()

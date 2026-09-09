@@ -167,30 +167,39 @@ async def _update_summary(session_id: str, user_id: str = "default"):
 async def _enrich_title(session_id: str, user_id: str = "default"):
     """Background task: replace the RAKE instant title with an LLM-generated one.
 
-    Only runs when LLM_TITLE_ENRICHMENT is enabled and ONLY on the very first
-    assistant reply of the session (when total message count in DB is exactly 2:
-    1 user + 1 assistant). Never runs on subsequent turns.
-    Reads user + assistant messages from DB, calls LLM, updates session name.
-    Failure is silent — the RAKE title stays as fallback.
+    Runs at the first opportunity (up to 4 messages, covering a fast second
+    turn that lands before this background task) and only while the current
+    name is still the RAKE title — an already enriched or user-renamed session
+    is never overwritten. Reads the FIRST user + assistant messages from DB,
+    calls the LLM, updates the session name. Failure is silent — the RAKE
+    title stays as fallback.
     """
     try:
         from config import get
         if get("LLM_TITLE_ENRICHMENT", "on") != "on":
             return
-        # Robust first-turn check: total row count must be exactly 2 (1 user + 1 assistant).
-        # Using COUNT(*) avoids race where get_history(limit=3) sees a transient 2
-        # while total is actually 50 (limit truncates, COUNT does not).
         db = await get_db()
         async with db.execute("SELECT COUNT(*) FROM conversations WHERE session_id = ? AND user_id = ?", (session_id, user_id)) as cur:
             total = (await cur.fetchone())[0]
-        if total != 2:
+        if total < 2 or total > 4:
             return
-        messages = await get_history(session_id, limit=2, user_id=user_id)
-        user_msg = messages[0]["content"] if messages[0]["role"] == "user" else ""
-        asst_msg = messages[1]["content"] if messages[1]["role"] == "assistant" else ""
+        history = await get_history(session_id, limit=4, user_id=user_id)
+        # get_history returns chronological (ASC) order: the first turn is first.
+        user_msg = next((m["content"] for m in history if m["role"] == "user"), "")
+        asst_msg = next((m["content"] for m in history if m["role"] == "assistant"), "")
         if not user_msg or not asst_msg:
             return
-        from title import generate_llm_title
+        from title import generate_llm_title, generate_rake_title
+        async with db.execute(
+            "SELECT name FROM sessions WHERE id = ? AND user_id = ?", (session_id, user_id)
+        ) as cur:
+            row = await cur.fetchone()
+        current_name = row[0] if row else ""
+        # Enrichable = no name yet, the create_session placeholder, or the
+        # RAKE instant title. Anything else was enriched or user-renamed.
+        if current_name and current_name not in ("New Chat", "Yeni Sohbet") \
+                and current_name != generate_rake_title(user_msg):
+            return  # already enriched or renamed — never overwrite
         title = await generate_llm_title(user_msg, asst_msg)
         if title:
             await update_session_name(session_id, title, user_id=user_id)
