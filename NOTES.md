@@ -40,6 +40,17 @@
 - **Note:** server half takes effect on the pending restart.
 - **Test:** full-file users/audit green; `node --check` clean.
 
+## 2026-09-09 — Login/UI hardening round (user-reported issues)
+
+- **Reserved names:** `admin` (and 8 system-like names) rejected at `create_user` (409) — login-by-name made a second "admin" ambiguous with the bootstrap row. Existing test using "admin" as first user renamed.
+- **Sidebar stale-auth:** fresh logins kept seeing the key prompt — `finishOnboarding` and all overlay login paths now refresh sessions; auth-needed copy no longer mentions API keys (routes to overlay).
+- **Ceremony tick:** copy button flips to ✓ on success. Wizard + overlay password fields wiped on close (DOM hygiene).
+- **Approval transparency:** settings shows account status (Admin/Approved/Pending). Approval gates quorum weight only — never app usage (stated; usage-gating left as an open question for the user).
+- **Admin delete:** user rows gain delete (confirm + server guards) next to approve/revoke.
+- **Proton truth:** one Bridge serves unlimited paid accounts, each with its own bridge password (verified) — hint + `docs/mail-accounts` updated; free plans have no Bridge.
+- **Curious:** expanded to six detailed items (what/model/tools/weather/thumbs/loop, 23 tools verified).
+- **Test:** full suite green; ruff clean; `node --check` clean.
+
 ## 2026-09-09 — Session auth + onboarding v2 + per-user services (user spec)
 
 - **Decision (user delegated):** session-cookie auth (JWT rejected as overweight); mail/Nextcloud vertical included now.

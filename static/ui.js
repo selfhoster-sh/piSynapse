@@ -9,8 +9,8 @@ const STRINGS = {
     ph:'Bir şey sor…',
     welcomeTitle:'piSynapse', welcomeSub:'Özel. Yerel. Senin.\nTüm veriler Pi\'nde kalır.',
     noChats:'Henüz sohbet yok', chatPrefix:'Sohbet', del:'Sil', noMem:'Henüz hafıza yok',
-    authNeeded:'Bağlantı doğrulanamadı (API anahtarı geçersiz veya eksik)',
-    authEnter:'Anahtarı yeniden gir',
+    authNeeded:'Oturum açılamadı — giriş yapman gerekiyor',
+    authEnter:'Giriş yap',
     serverMisconf:'Sunucu API_KEY olmadan çalışıyor — .env dosyasında API_KEY ayarlayın.',
     noMemNote:'Konuşurken paylaştığın önemli detaylar burada tutulur.', loading:'Yükleniyor…',
     connErr:'Sunucuya ulaşılamadı', errConnLost:'Sunucuyla bağlantı kurulamadı. Lütfen tekrar dene.',
@@ -33,7 +33,7 @@ const STRINGS = {
     settingsCancel:'İptal', settingsSave:'Kaydet',
     adminReview:'İnceleme Kuyruğu', adminReviewDesc:'Kullanıcı geri bildirimlerinden gelen çelişkili yönlendirme önerileri. Onaylanan corpus\u2019a girer, reddedilen bir daha otomatik eklenmez.',
     adminReviewEmpty:'Bekleyen öneri yok.', adminApprove:'Onayla', adminReject:'Reddet',
-    adminUsers:'Kullanıcılar', adminApproved:'Onaylı', adminPending:'Onay bekliyor', adminRole:'Yönetici',
+    adminUsers:'Kullanıcılar', adminApproved:'Onaylı', adminPending:'Onay bekliyor', adminRole:'Yönetici', adminDelete:'Sil', adminDeleteConfirm:'Bu hesabı ve tüm verilerini silmek istediğine emin misin?',
     themeLabel:'Tema Rengi', langLabel:'Dil',
     glassLabel:'Cam Efekti',
     minimalLabel:'Sade Görünüm', minimalDesc:'Mesaj başlarındaki gönderen adı ve zaman etiketi gizlenir.',
@@ -68,9 +68,9 @@ const STRINGS = {
     loginT:'Giriş yap', loginPass:'Parola', loginBtn:'Giriş yap', loginBad:'Kullanıcı adı veya parola hatalı.',
     keyT:'Anahtarın hazır', keyS:'Bu anahtar; telefon uygulaması ve diğer cihazların bu sunucuya bağlanmasını sağlar.', keyWarn:'Bu ekranı kapatınca bir daha gösterilmeyecek. Kaybedersen hesabından yenisini üretebilirsin.', keyCopy:'Kopyala', keyCopied:'Kopyalandı ✓', keyDownload:'.txt olarak indir', keyConfirm:'Anahtarımı kaydettim, devam et',
     cityT:'Şehrin', cityS:'Hava durumu bu şehre göre gösterilir.', skipBtn:'Atla', citySkipNote:'Atlarsan hava durumu widget’ı gösterilmez; sonradan Ayarlar’dan ekleyebilirsin.', citySave:'Kaydet ve devam et',
-    mailT:'E-posta', mailS:'Asistanın e-postalarını okuyup gönderebilmesi için hesabını bağla.', mailProvider:'Sağlayıcı', mailAddress:'E-posta adresi', mailSecret:'Uygulama / bridge şifresi', mailPassHintGmail:'Gmail → Google Hesabı › Güvenlik › Uygulama şifreleri’nden üretilir.', mailPassHintProton:'Proton → Bridge uygulamasının verdiği bridge şifresi.', mailSkipNote:'Atlarsan e-posta araçları hata verir; sonradan Ayarlar’dan ekleyebilirsin.', needFields:'Devam etmek için alanları doldur veya Atla’ya bas.',
+    mailT:'E-posta', mailS:'Asistanın e-postalarını okuyup gönderebilmesi için hesabını bağla.', mailProvider:'Sağlayıcı', mailAddress:'E-posta adresi', mailSecret:'Uygulama / bridge şifresi', mailPassHintGmail:'Gmail → Google Hesabı › Güvenlik › Uygulama şifreleri’nden üretilir.', mailPassHintProton:'Proton → Bridge’e ekli hesabın bridge şifresi (ücretli plan gerekir, hesabı sunucuya admin ekler).', mailSkipNote:'Atlarsan e-posta araçları hata verir; sonradan Ayarlar’dan ekleyebilirsin.', needFields:'Devam etmek için alanları doldur veya Atla’ya bas.',
     ncT:'Nextcloud', ncS:'Notların, görevlerin ve takvimin için Nextcloud hesabını bağla.', ncUrl:'Sunucu adresi', ncUser:'Kullanıcı adı', ncPass:'Parola', ncSkipNote:'Atlarsan not, görev ve takvim araçları hatalı çalışır; sonradan Ayarlar’dan ekleyebilirsin.',
-    tourT:'Neler yapabilirim?', tourS:'Altı araç grubu emrinde:', tgWeather:'Hava durumu: şehir sor, tahmin al.', tgCalendar:'Takvim: etkinlik ekle, listele, sil.', tgTasks:'Görevler: yapılacakları tut, tamamla.', tgNotes:'Notlar: hızlı not al, bul, düzenle.', tgEmail:'E-posta: oku, ara, gönder (hesabını bağladıysan).', tgMemory:'Hafıza: “unutma ki …” dediklerin kalıcı olur.', curiousT:'Meraklısına: nasıl çalışıyor?', curious1:'Soruların Pi’ndeki küçük modelde yanıtlanır; dışarı veri gitmez.', curious2:'Model, isteğine göre doğru aracı seçer ve sonucu sana anlatır.', curious3:'👍/👎 geri bildirimlerin anonim desenlere dönüşür ve yönlendirmeyi herkes için iyileştirir.',
+    tourT:'Neler yapabilirim?', tourS:'Altı araç grubu emrinde:', tgWeather:'Hava durumu: şehir sor, tahmin al.', tgCalendar:'Takvim: etkinlik ekle, listele, sil.', tgTasks:'Görevler: yapılacakları tut, tamamla.', tgNotes:'Notlar: hızlı not al, bul, düzenle.', tgEmail:'E-posta: oku, ara, gönder (hesabını bağladıysan).', tgMemory:'Hafıza: “unutma ki …” dediklerin kalıcı olur.', curiousT:'Meraklısına: nasıl çalışıyor?', cxWhat:'piSynapse, kendi sunucunda çalışan kişisel bir asistandır: sohbet arayüzü, küçük bir dil modeli ve 23 araca (takvim, e-posta, hava durumu, notlar, görevler, hafıza) erişen bir orkestrasyon katmanından oluşur. Verilerin Pi’nin dışına çıkmaz.', cxModel:'Soruların Pi’deki küçük modelde (şu an gemma4) yanıtlanır. Model tek başına internete çıkmaz; güncel bilgi gereken konularda araçları çağırır ve dönen sonucu sana anlatır. Uzun sohbetlerde eski mesajlar otomatik özetlenip sistem talimatına gömülür, bağlam kopmaz.', cxTools:'Araç çağırma şöyle işler: model önce niyetini sınıflar (ör. “takvim” grubu), ilgili araçları dener, sonucu doğrular ve cevaba yazar. Her çağrı denetim kaydına düşer; yanlış giden adım, kaydın üzerindeki kimlikle mesaja bağlanır.', cxWeather:'Hava durumu Open-Meteo’dan alınır: şehrin koordinata çevrilir, güncel tahmin çekilir, model tabloyu cümleye döker. Şehir bilgin yoksa widget gizli kalır.', cxThumbs:'Mesajlardaki 👍/👎, o turun kaydına işlenir: 👍 doğru tercihi, 👎 ise beklenen doğru grubu/işlevi toplar. Sinyaller kimliksiz desenlere dönüşür; çelişkili desenler yönetici onayına düşer, kimse kimsenin satırını göremez.', cxLoop:'Döngü böyle kapanır: geri bildirimin yönlendirmeyi, yönlendirme de sonraki cevapları iyileştirir — veri sende, öğrenme herkeste.',
     ovPassLogin:'Parolayla giriş yap', ovBackKey:'Anahtarla girişe dön',
     searchPlaceholder:'Ara…', search:'Ara',
     compact:'Dar',
@@ -98,8 +98,8 @@ const STRINGS = {
     ph:'Ask something…',
     welcomeTitle:'piSynapse', welcomeSub:'Private. Local. Yours.\nAll data stays on your Pi.',
     noChats:'No chats yet', chatPrefix:'Chat', del:'Delete', noMem:'No memories yet',
-    authNeeded:'Connection failed (API key invalid or missing)',
-    authEnter:'Re-enter key',
+    authNeeded:'Could not start a session — please sign in',
+    authEnter:'Sign in',
     serverMisconf:'The server is running without an API key — set API_KEY in .env.',
     noMemNote:'Important details you share will be structured here.', loading:'Loading…',
     connErr:'Could not reach server', errConnLost:'Could not connect to the server. Please try again.',
@@ -122,7 +122,7 @@ const STRINGS = {
     settingsCancel:'Cancel', settingsSave:'Save',
     adminReview:'Review Queue', adminReviewDesc:'Contested routing suggestions from user feedback. Approved ones enter the corpus, rejected ones are never auto-added.',
     adminReviewEmpty:'No pending suggestions.', adminApprove:'Approve', adminReject:'Reject',
-    adminUsers:'Users', adminApproved:'Approved', adminPending:'Pending approval', adminRole:'Admin',
+    adminUsers:'Users', adminApproved:'Approved', adminPending:'Pending approval', adminRole:'Admin', adminDelete:'Delete', adminDeleteConfirm:'Delete this account and all its data?',
     themeLabel:'Theme Color', langLabel:'Language',
     glassLabel:'Glass Effect',
     minimalLabel:'Minimal View', minimalDesc:'Hides sender names and timestamps above messages.',
@@ -157,9 +157,9 @@ const STRINGS = {
     loginT:'Sign in', loginPass:'Password', loginBtn:'Sign in', loginBad:'Invalid username or password.',
     keyT:'Your key is ready', keyS:'This key connects the phone app and other devices to this server.', keyWarn:'It will never be shown again once you leave this screen. If you lose it, you can generate a new one from your account.', keyCopy:'Copy', keyCopied:'Copied ✓', keyDownload:'Download as .txt', keyConfirm:'I saved my key, continue',
     cityT:'Your city', cityS:'Weather is shown for this city.', skipBtn:'Skip', citySkipNote:'If you skip, the weather widget stays hidden; you can add it later in Settings.', citySave:'Save and continue',
-    mailT:'Email', mailS:'Connect your account so the assistant can read and send email.', mailProvider:'Provider', mailAddress:'Email address', mailSecret:'App / bridge password', mailPassHintGmail:'Gmail → generated under Google Account › Security › App passwords.', mailPassHintProton:'Proton → the bridge password from the Bridge app.', mailSkipNote:'If you skip, email tools will report an error; you can add it later in Settings.', needFields:'Fill the fields or press Skip to continue.',
+    mailT:'Email', mailS:'Connect your account so the assistant can read and send email.', mailProvider:'Provider', mailAddress:'Email address', mailSecret:'App / bridge password', mailPassHintGmail:'Gmail → generated under Google Account › Security › App passwords.', mailPassHintProton:'Proton → the bridge password of the Bridge-registered account (paid plan; the admin adds it).', mailSkipNote:'If you skip, email tools will report an error; you can add it later in Settings.', needFields:'Fill the fields or press Skip to continue.',
     ncT:'Nextcloud', ncS:'Connect Nextcloud for your notes, tasks and calendar.', ncUrl:'Server URL', ncUser:'Username', ncPass:'Password', ncSkipNote:'If you skip, notes, tasks and calendar tools will malfunction; you can add it later in Settings.',
-    tourT:'What can I do?', tourS:'Six tool groups at your command:', tgWeather:'Weather: ask a city, get a forecast.', tgCalendar:'Calendar: add, list, delete events.', tgTasks:'Tasks: keep todos, complete them.', tgNotes:'Notes: jot down, find, edit.', tgEmail:'Email: read, search, send (if you connected it).', tgMemory:'Memory: “remember that …” sticks permanently.', curiousT:'Curious: how does it work?', curious1:'Your questions are answered by a small model on your Pi; no data leaves.', curious2:'The model picks the right tool for each request and explains the result.', curious3:'Your 👍/👎 feedback becomes anonymous patterns that improve routing for everyone.',
+    tourT:'What can I do?', tourS:'Six tool groups at your command:', tgWeather:'Weather: ask a city, get a forecast.', tgCalendar:'Calendar: add, list, delete events.', tgTasks:'Tasks: keep todos, complete them.', tgNotes:'Notes: jot down, find, edit.', tgEmail:'Email: read, search, send (if you connected it).', tgMemory:'Memory: “remember that …” sticks permanently.', curiousT:'Curious: how does it work?', cxWhat:'piSynapse is a personal assistant running on your own server: a chat interface, a small language model, and an orchestration layer with 23 tools (calendar, email, weather, notes, tasks, memory). Your data never leaves the Pi.', cxModel:'Your questions are answered by a small on-Pi model (currently gemma4). It has no internet of its own; for fresh information it calls tools and narrates the result. Long chats are auto-summarized into the system prompt so context never breaks.', cxTools:'Tool calling works like this: the model classifies your intent (e.g. the “calendar” group), tries the relevant tools, verifies the outcome and writes the answer. Every call lands in the audit log, linked to its message.', cxWeather:'Weather comes from Open-Meteo: your city is geocoded, the forecast is fetched, the model turns the table into sentences. With no city on file the widget stays hidden.', cxThumbs:'The 👍/👎 on messages attach to that turn’s record: 👍 confirms the choice, 👎 collects the expected group or function. Signals become identity-free patterns; contested patterns fall to admin review, and nobody sees anyone else’s rows.', cxLoop:'That closes the loop: your feedback improves routing, routing improves the next answers — data stays yours, learning benefits everyone.',
     ovPassLogin:'Sign in with password', ovBackKey:'Back to key sign-in',
     searchPlaceholder:'Search…', search:'Search',
     compact:'Compact',
@@ -3482,6 +3482,7 @@ function serverSectionHtml(){
         <div class="setting-item">
           <div class="setting-label"><span>${esc(t('signedInAs'))}</span></div>
           <div class="setting-desc" id="si-username">${esc(getUsername() || '—')}</div>
+          <div class="setting-desc" id="si-status" style="font-size:12px;color:var(--text3)"></div>
           <button class="ob-btn ghost" style="font-size:12px;padding:7px 12px" onclick="logoutUser()">${esc(t('logout'))}</button>
         </div>
         <div id="admin-review-box" style="display:none">
@@ -3512,6 +3513,12 @@ async function loadAdminPanel(){
     const un = document.getElementById('si-username');
     if(un) un.textContent = me.name;
   }
+  // Account status for everyone (transparency while approval is pending —
+  // approval gates quorum weight only, never app usage).
+  if(me){
+    const st = document.getElementById('si-status');
+    if(st) st.textContent = me.is_admin ? t('adminRole') : (me.is_approved ? t('adminApproved') : t('adminPending'));
+  }
   if(!me || !me.is_admin) return; // non-admins never see this box
   box.style.display = '';
   try{
@@ -3519,9 +3526,13 @@ async function loadAdminPanel(){
     window._adminUsers = u.users || [];
     document.getElementById('admin-users-list').innerHTML = window._adminUsers.map((usr, i)=>{
       const badge = usr.is_admin ? esc(t('adminRole')) : (usr.is_approved ? esc(t('adminApproved')) : esc(t('adminPending')));
-      const btn = usr.is_admin ? '' : (usr.is_approved
-        ? `<button class="ob-btn ghost" style="font-size:11px;padding:5px 10px" onclick="unapproveUser(${i})">${esc(t('adminReject'))}</button>`
-        : `<button class="ob-btn ghost" style="font-size:11px;padding:5px 10px" onclick="approveUser(${i})">${esc(t('adminApprove'))}</button>`);
+      let btn = '';
+      if(!usr.is_admin){
+        btn = usr.is_approved
+          ? `<button class="ob-btn ghost" style="font-size:11px;padding:5px 10px" onclick="unapproveUser(${i})">${esc(t('adminReject'))}</button>`
+          : `<button class="ob-btn ghost" style="font-size:11px;padding:5px 10px" onclick="approveUser(${i})">${esc(t('adminApprove'))}</button>`;
+        btn += ` <button class="ob-btn ghost" style="font-size:11px;padding:5px 10px" onclick="deleteUser(${i})">${esc(t('adminDelete'))}</button>`;
+      }
       return `<div style="display:flex;align-items:center;gap:8px;padding:4px 0"><span style="flex:1">${esc(usr.name || usr.user_id || usr.id)} <span style="color:var(--text3)">· ${badge}</span></span>${btn}</div>`;
     }).join('');
   }catch(e){ /* admins without user-list access keep the rest working */ }
@@ -3554,6 +3565,15 @@ async function approveUser(i){
 async function unapproveUser(i){
   const u = (window._adminUsers || [])[i]; if(!u) return;
   await api('POST', `/users/${encodeURIComponent(u.id)}/unapprove`, {});
+  toast(t('settingsSaved')); loadAdminPanel();
+}
+
+async function deleteUser(i){
+  const u = (window._adminUsers || [])[i]; if(!u) return;
+  if(!confirm(t('adminDeleteConfirm'))) return;
+  try{
+    await api('DELETE', `/users/${encodeURIComponent(u.id)}`);
+  }catch(e){ toast(t('connErr'), true); return; }
   toast(t('settingsSaved')); loadAdminPanel();
 }
 
@@ -3697,7 +3717,10 @@ function obMailHint(){
 function obCopyKey(){
   const key = _ob.pendingKey || '';
   if(!key) return;
-  const done = ()=>{ _ob.keySaved = true; toast(t('keyCopied')); obKeyGate(); };
+  const done = ()=>{ _ob.keySaved = true; toast(t('keyCopied')); obKeyGate();
+    const cb = document.getElementById('ob-key-copy');
+    if(cb) cb.textContent = '✓ ' + t('keyCopied');
+  };
   if(navigator.clipboard && navigator.clipboard.writeText){
     navigator.clipboard.writeText(key).then(done).catch(()=>obFallbackCopy(key, done));
   } else {
@@ -3816,7 +3839,10 @@ function showLogin(){
 function hideLogin(){
   window._loginOpen = false;
   const ov = document.getElementById('login-overlay');
-  if(ov) ov.style.display = 'none';
+  if(ov){
+    ov.style.display = 'none';
+    try{ ov.querySelectorAll('input[type=password]').forEach(el=>{ el.value=''; }); }catch(e){}
+  }
 }
 
 async function loginRegister(){
@@ -3834,12 +3860,13 @@ async function loginRegister(){
     toast(t('loginWelcome').replace('%s', d.user?.name || name));
     hideLogin();
   }catch(e){ toast(t('loginInvalidKey'), true); }
+  try{ loadSessions(); }catch(e){}
 }
 
 async function loginWithKey(){
-  const key = (document.getElementById('lo-key')?.value || '').trim();
+  const key = document.getElementById('lo-key')?.value.trim();
   const nm = await obValidateKey(key);
-  if(nm){ toast(t('loginWelcome').replace('%s', nm)); hideLogin(); }
+  if(nm){ toast(t('loginWelcome').replace('%s', nm)); hideLogin(); try{ loadSessions(); }catch(e){} }
 }
 
 function logoutUser(){
@@ -4250,7 +4277,7 @@ function renderOnboarding(){
       <div class="ob-sub">${esc(t('keyS'))}</div>
       <div class="ob-field"><input class="ob-input" id="ob-apikey" readonly value="${esc(k)}" onclick="this.select()" style="font-family:monospace;font-size:13px"></div>
       <div style="display:flex;gap:8px">
-        <button class="ob-btn ghost" style="flex:1" onclick="obCopyKey()">${esc(t('keyCopy'))}</button>
+        <button class="ob-btn ghost" id="ob-key-copy" style="flex:1" onclick="obCopyKey()">${esc(t('keyCopy'))}</button>
         <button class="ob-btn ghost" style="flex:1" onclick="obDownloadKey()">${esc(t('keyDownload'))}</button>
       </div>
       <div class="ob-hint">${esc(t('keyWarn'))}</div>
@@ -4304,7 +4331,7 @@ function renderOnboarding(){
       <div class="ob-sub">${esc(t('tourS'))}</div>
       ${groups.map(g=>`<div class="ob-row"><div style="display:flex;align-items:center;gap:12px"><span style="color:var(--accent);font-weight:700">•</span><div><div class="ob-row-txt">${esc(groupLabel(g))}</div><div class="ob-row-sub">${esc(t('tg'+g[0].toUpperCase()+g.slice(1)))}</div></div></div></div>`).join('')}
       <details style="margin-top:12px"><summary style="cursor:pointer;color:var(--accent);font-size:13px">${esc(t('curiousT'))}</summary>
-        <div class="ob-row-sub" style="margin-top:8px">${esc(t('curious1'))}<br><br>${esc(t('curious2'))}<br><br>${esc(t('curious3'))}</div>
+        <div class="ob-row-sub" style="margin-top:8px">${esc(t('cxWhat'))}<br><br>${esc(t('cxModel'))}<br><br>${esc(t('cxTools'))}<br><br>${esc(t('cxWeather'))}<br><br>${esc(t('cxThumbs'))}<br><br>${esc(t('cxLoop'))}</div>
       </details>`;
     next.dataset.action = '';
     next.textContent = t('obDone');
@@ -4381,6 +4408,13 @@ function finishOnboarding(){
   localStorage.setItem('ps_onboarded','1');
   document.getElementById('onboard').classList.remove('open');
   document.body.classList.remove('settings-open');
+  // Fresh credentials were just minted: wipe secrets from the wizard DOM and
+  // refresh the sidebar (it rendered keyless during onboarding).
+  try{
+    document.querySelectorAll('#onboard input[type=password]').forEach(el=>{ el.value=''; });
+  }catch(e){}
+  _ob.pendingKey = '';
+  try{ loadSessions(); }catch(e){}
 }
 
 // ── Ticker (Marquee) ────────────────────────────────────────────────────────
