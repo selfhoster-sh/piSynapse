@@ -345,9 +345,9 @@ async def _create_audit_entry():
     """Helper to create an audit log entry and return its ID."""
     db = await dbmod.get_db()
     await db.execute(
-        "INSERT INTO tool_audit_log (tool_name, params, success, duration_ms, created_at) "
-        "VALUES (?, ?, ?, ?, ?)",
-        ("get_datetime", "{}", 1, 10.0, "2026-08-28 10:00:00"),
+        "INSERT INTO tool_audit_log (tool_name, params, success, duration_ms, created_at, user_id) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        ("get_datetime", "{}", 1, 10.0, "2026-08-28 10:00:00", "default"),
     )
     await db.commit()
     rows = await _fetch_all("SELECT id FROM tool_audit_log WHERE tool_name = 'get_datetime'")
@@ -456,11 +456,22 @@ def test_tool_to_group_mapping_consistent():
 
 @pytest.fixture
 def correction_client(audit_db):
-    from fastapi import FastAPI
+    from fastapi import FastAPI, Request
     from fastapi.testclient import TestClient
+    from starlette.middleware.base import BaseHTTPMiddleware
 
     from routers.chat import router as chat_router
+
+    class _StubAuth(BaseHTTPMiddleware):
+        """Stand-in for main.py's auth middleware: every call is "default"."""
+
+        async def dispatch(self, request: Request, call_next):
+            request.state.user_id = "default"
+            request.state.is_admin = False
+            return await call_next(request)
+
     app = FastAPI()
+    app.add_middleware(_StubAuth)
     app.include_router(chat_router)
     return TestClient(app)
 

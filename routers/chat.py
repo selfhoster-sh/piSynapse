@@ -13,6 +13,7 @@ from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Query, Requ
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
+from auth import current_user
 from config import get
 from db import (
     _commit_with_retry,
@@ -84,8 +85,6 @@ def _uid(request: Request) -> str:
     to a user, overriding any spoofed value in the request body. Falls back
     to "default" on exempt paths where the middleware sets no user.
     """
-    from auth import current_user
-
     try:
         return current_user(request)
     except HTTPException:
@@ -189,7 +188,6 @@ async def _enrich_title(session_id: str, user_id: str = "default"):
     title stays as fallback.
     """
     try:
-        from config import get
         if get("LLM_TITLE_ENRICHMENT", "on") != "on":
             return
         db = await get_db()
@@ -485,17 +483,20 @@ class CorrectionRequest(BaseModel):
 
 
 @router.post("/tool-correction")
-async def set_tool_correction(req: CorrectionRequest):
+async def set_tool_correction(req: CorrectionRequest, request: Request):
     """Set a correction on a tool audit log entry for fine-tuning data collection.
 
     Called when the user identifies a tool call was incorrect. The user may
     send EITHER a precise expected_tool (exact tool name, power-user / curl)
     OR an expected_group (domain key from GET /tools/groups, the UI path) —
     at least one is required. Updates the fields and sets corrected_at.
+    Scoped to the caller's own audit rows (multi-user invisibility).
     """
     from db import get_audit_tool_name, set_tool_correction
     from llm.intent import tool_group_keys
     from tools.definitions import TOOL_NAMES, TOOL_TO_GROUP
+
+    uid = current_user(request)
 
     if not req.expected_tool and not req.expected_group:
         raise HTTPException(
@@ -517,7 +518,7 @@ async def set_tool_correction(req: CorrectionRequest):
             detail=f"Invalid expected_group: '{req.expected_group}'. Valid groups: {valid_groups}",
         )
 
-    ok = await set_tool_correction(req.audit_id, req.expected_tool, req.expected_group)
+    ok = await set_tool_correction(req.audit_id, req.expected_tool, req.expected_group, user_id=uid)
     if not ok:
         raise HTTPException(status_code=404, detail="Audit log entry not found")
 
@@ -526,7 +527,7 @@ async def set_tool_correction(req: CorrectionRequest):
     # can warn and so corpus_feeder skips these as noise.
     noop = False
     if req.expected_group is not None and req.expected_tool is None:
-        tool_name = await get_audit_tool_name(req.audit_id)
+        tool_name = await get_audit_tool_name(req.audit_id, user_id=uid)
         if tool_name and TOOL_TO_GROUP.get(tool_name) == req.expected_group:
             noop = True
 
@@ -544,16 +545,17 @@ class ConfirmRequest(BaseModel):
 
 
 @router.post("/tool-confirm")
-async def set_tool_confirmation(req: ConfirmRequest):
+async def set_tool_confirmation(req: ConfirmRequest, request: Request):
     """Record a positive confirmation on a tool audit log entry.
 
     Called when the user marks a tool call as correct. A confirmation is the
     opposite of a correction, so any previously stored correction fields on
     the row are cleared (and vice versa) — a row holds at most one signal.
+    Scoped to the caller's own audit rows (multi-user invisibility).
     """
     from db import set_tool_confirmation
 
-    ok = await set_tool_confirmation(req.audit_id)
+    ok = await set_tool_confirmation(req.audit_id, user_id=current_user(request))
     if not ok:
         raise HTTPException(status_code=404, detail="Audit log entry not found")
     return {"ok": True, "audit_id": req.audit_id}
@@ -566,7 +568,7 @@ class MessageFeedbackRequest(BaseModel):
 
 
 @router.post("/message-feedback")
-async def post_message_feedback(req: MessageFeedbackRequest):
+async def post_message_feedback(req: MessageFeedbackRequest, request: Request):
     """Store a 👍/👎 verdict for an assistant message that had no tool call.
 
     The thumbs are now universal: every round is markable, so subtle failures —
@@ -574,13 +576,14 @@ async def post_message_feedback(req: MessageFeedbackRequest):
     intent, or hallucinating a no-tool reply — are captured as data instead of
     silently lost. One row per message; marking the other thumb overwrites it.
     A free-text note on 👎 records *why* it was wrong.
+    Scoped to the caller's own messages (multi-user invisibility).
     """
     from db import upsert_message_feedback
 
     if req.value not in ("up", "down"):
         raise HTTPException(status_code=400, detail="value must be 'up' or 'down'")
 
-    ok = await upsert_message_feedback(req.message_id, req.value, req.note)
+    ok = await upsert_message_feedback(req.message_id, req.value, req.note, user_id=current_user(request))
     if not ok:
         raise HTTPException(
             status_code=404,

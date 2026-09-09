@@ -874,7 +874,8 @@ async def log_intent_audit(message: str, chosen_group: str | None,
 
 
 async def set_tool_correction(audit_id: int, expected_tool: str | None,
-                              expected_group: str | None = None) -> bool:
+                               expected_group: str | None = None,
+                               user_id: str | None = None) -> bool:
     """Set a correction on a tool audit log entry.
 
     Updates expected_tool and/or expected_group and sets corrected_at to
@@ -884,14 +885,20 @@ async def set_tool_correction(audit_id: int, expected_tool: str | None,
     confirmation and correction are mutually exclusive feedback states, so a
     row always holds at most one of them. Returns True if a row was updated,
     False if not found.
+
+    Ownership: pass the caller's user_id to scope the write to their own
+    rows (multi-user invisibility). None disables scoping — offline
+    scripts/tests only; HTTP endpoints must always pass current_user.
     """
     try:
         db = await get_db()
-        cur = await db.execute(
-            "UPDATE tool_audit_log SET expected_tool = ?, expected_group = ?, "
-            "corrected_at = CURRENT_TIMESTAMP, confirmed_at = NULL WHERE id = ?",
-            (expected_tool, expected_group, audit_id),
-        )
+        sql = ("UPDATE tool_audit_log SET expected_tool = ?, expected_group = ?, "
+               "corrected_at = CURRENT_TIMESTAMP, confirmed_at = NULL WHERE id = ?")
+        args: tuple = (expected_tool, expected_group, audit_id)
+        if user_id is not None:
+            sql += " AND user_id = ?"
+            args = (*args, user_id)
+        cur = await db.execute(sql, args)
         await _commit_with_retry(db)
         return cur.rowcount > 0
     except Exception as e:
@@ -899,13 +906,20 @@ async def set_tool_correction(audit_id: int, expected_tool: str | None,
         return False
 
 
-async def get_audit_tool_name(audit_id: int) -> str | None:
-    """Return the tool_name of an audit log row, or None if not found."""
+async def get_audit_tool_name(audit_id: int, user_id: str | None = None) -> str | None:
+    """Return the tool_name of an audit log row, or None if not found.
+
+    Pass user_id to scope the read to the caller's own rows (None = unscoped,
+    offline use only).
+    """
     try:
         db = await get_db()
-        cur = await db.execute(
-            "SELECT tool_name FROM tool_audit_log WHERE id = ?", (audit_id,)
-        )
+        sql = "SELECT tool_name FROM tool_audit_log WHERE id = ?"
+        args: tuple = (audit_id,)
+        if user_id is not None:
+            sql += " AND user_id = ?"
+            args = (*args, user_id)
+        cur = await db.execute(sql, args)
         row = await cur.fetchone()
         return row[0] if row else None
     except Exception as e:
@@ -913,22 +927,26 @@ async def get_audit_tool_name(audit_id: int) -> str | None:
         return None
 
 
-async def set_tool_confirmation(audit_id: int) -> bool:
+async def set_tool_confirmation(audit_id: int, user_id: str | None = None) -> bool:
     """Record a positive (confirmation) signal on a tool audit log entry.
 
     Sets confirmed_at to the current timestamp. Confirmation is the opposite
     of a correction: any previously stored expected_tool/expected_group and
     their corrected_at are cleared so a row never holds two opposing signals.
     Returns True if a row was updated, False if not found.
+
+    Ownership: pass the caller's user_id (None = unscoped, offline use only).
     """
     try:
         db = await get_db()
-        cur = await db.execute(
-            "UPDATE tool_audit_log SET confirmed_at = CURRENT_TIMESTAMP, "
-            "expected_tool = NULL, expected_group = NULL, corrected_at = NULL "
-            "WHERE id = ?",
-            (audit_id,),
-        )
+        sql = ("UPDATE tool_audit_log SET confirmed_at = CURRENT_TIMESTAMP, "
+               "expected_tool = NULL, expected_group = NULL, corrected_at = NULL "
+               "WHERE id = ?")
+        args: tuple = (audit_id,)
+        if user_id is not None:
+            sql += " AND user_id = ?"
+            args = (*args, user_id)
+        cur = await db.execute(sql, args)
         await _commit_with_retry(db)
         return cur.rowcount > 0
     except Exception as e:
@@ -937,21 +955,28 @@ async def set_tool_confirmation(audit_id: int) -> bool:
 
 
 async def upsert_message_feedback(message_id: int, value: str,
-                                  note: str | None = None) -> bool:
+                                  note: str | None = None,
+                                  user_id: str | None = None) -> bool:
     """Store a user's 👍/👎 verdict for an assistant message that had no tool
     call (or whose round failed before any audit existed). One row per message:
     pressing the other thumb overwrites the stored verdict; a note can be
     attached to a 👎 to capture *why* it was wrong (model dropped the intent,
     asked instead of acting, hallucinated, …). Never raises.
+
+    Ownership: pass the caller's user_id to accept only their own messages
+    (None = role check only, offline use only).
     """
     if value not in ("up", "down"):
         return False
     note = (note or "").strip() or None
     try:
         db = await get_db()
-        async with db.execute(
-            "SELECT role FROM conversations WHERE id = ?", (message_id,)
-        ) as cur:
+        sql = "SELECT role FROM conversations WHERE id = ?"
+        args: tuple = (message_id,)
+        if user_id is not None:
+            sql += " AND user_id = ?"
+            args = (*args, user_id)
+        async with db.execute(sql, args) as cur:
             row = await cur.fetchone()
         if not row or row[0] != "assistant":
             return False
