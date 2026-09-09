@@ -2,24 +2,29 @@
 
 [![CI](https://github.com/selfhoster-sh/piSynapse/actions/workflows/ci.yml/badge.svg)](https://github.com/selfhoster-sh/piSynapse/actions)
 
-**Privacy-first, self-hosted personal AI assistant — with its own memory, tools, and voice, running on your hardware.**
+**Privacy-first, self-hosted personal AI assistant — with its own memory and tools, running on your hardware.**
 
-piSynapse runs entirely on your own machines — no subscriptions, no cloud, no data leaving your devices. It connects your calendar, email, notes, tasks, and local LLM into a single conversational interface, on a Raspberry Pi 5 and on your phone.
+piSynapse runs entirely on your own machines — no subscriptions, no cloud, no data leaving your devices. It connects your calendar, email, notes, tasks, and local LLM into a single conversational interface, on your own server (a Raspberry Pi 5 is enough to start) and every browser around it.
 
 > **Why the name?** *pi* stands for **p**rivate **i**ntelligence — and a *synapse* is where neurons connect. Your data, your memory, and your tools all meet in one private place: your own machines.
 
 ---
 
-## What makes it different
+## Why piSynapse
 
-Most "self-hosted AI" projects are thin wrappers around a cloud API, and most local assistants forget everything between sessions. piSynapse is built the other way around:
+piSynapse is a personal AI assistant that lives on your own machine — a home server, a Raspberry Pi (enough to start), any Linux box. It chats, remembers, and uses tools (email, calendar, tasks, notes, weather) on your behalf. No account, no subscription, no cloud in the middle.
 
-- **Local brains, including on your phone.** Inference runs on-device: LiteRT-LM on the Pi (or Ollama), plus a companion Android app that carries its own small model with rolling summaries and on-device semantic memory — no server round-trip needed.
-- **Tools it can actually use — and verify.** 23 tools across email, calendar, tasks, notes, memory, and weather. The backend re-reads what a tool claims to have done (ID-based verification), destructive actions get confirmation cards, and identical calls are never executed twice.
-- **Memory that persists.** Hybrid keyword + semantic search over every session, rolling per-session summaries that keep long conversations inside small context windows, resume detection for follow-ups ("devam edelim"), and instant + LLM-enriched session titles.
-- **Engineered for small models.** Intent routing (regex → keywords → embeddings → evidence-gated LLM fallback), deterministic fast paths for quick actions, constrained decoding for reliable tool calls, and a pure-chat escape hatch so the model never hallucinates tools into small talk.
-- **Privacy as construction, not a promise.** Local SQLite store, PII masking in titles and logs, fail-closed API auth, secret hygiene (0600 files, masked settings reads), no telemetry.
-- **Honest scope.** Single-user home server, developed and tested on real hardware — not a multi-tenant platform pitch.
+- **Your data stays home.** Conversations, memories, and tool data live in a local database on your hardware. The model runs locally too. The only traffic that ever leaves is the one you explicitly connect: your Gmail, your Nextcloud, a weather lookup for your city.
+- **It remembers.** Every session is searchable by keyword and by meaning; long conversations fold into rolling summaries so context survives small context windows; follow-ups like "keep going" resolve to what you meant. Memory is a store, not a prompt trick.
+- **It verifies before it trusts.** Small models get things wrong — the system is built on that assumption. Tool calls are re-read to confirm they did what they claim; destructive actions ask first; every call lands in an audit log; thumbs up/down feed corrections back into routing. The loop exists because perfection doesn't.
+- **Many people, no mixing.** Each user's sessions, settings, and files are invisible to the others — enforced in every query and tested both directions. Yet feedback improves routing for everyone: corrections become anonymous, quorum-gated patterns, never shared sentences.
+- **Small hardware, honestly.** Developed and tested on a Raspberry Pi 5 with a ~2 GB model. That choice has a price (see limits), and it buys independence: no GPU server, no per-token bill.
+
+### Honest limits
+
+- **Reasoning is small-model reasoning.** It can misroute, hallucinate a tool, or need a nudge. Verification and confirmations exist precisely for this — and feedback keeps improving it.
+- **Speed follows your hardware.** A heavy question's first answer can take up to a minute on a Pi. That's normal here.
+- **Some integrations have owners.** ProtonMail needs the paid Bridge app; Gmail needs an app password. Nothing phones home on its own.
 
 ---
 
@@ -59,7 +64,7 @@ When you disable all external integrations, **zero data leaves your device**. No
 - 🔊 **Voice Output** — Piper TTS (local/offline) or browser Web Speech API
 - 🖼️ **Image Upload** — Drag-and-drop, paste, or attach images to send to the model
 - 🎨 **Themes** — 6 accent colors on a dark UI
-- 🔐 **API Key Auth** — Token-based access with rate limiting
+- 🔐 **Accounts & Auth** — Password login with browser sessions (HttpOnly cookies), per-device API keys, multi-user accounts with an admin panel, approval-gated onboarding, rate limiting
 - 📱 **PWA** — Installable on mobile and desktop with offline caching
 - 🤖 **Local LLM** — LiteRT or Ollama backend with intent classification and tool calling
 
@@ -171,7 +176,7 @@ The installer:
 3. Creates a Python virtual environment and installs dependencies.
 4. Lets you choose an LLM backend: **LiteRT-LM** (recommended — imports models from HuggingFace) or **Ollama** (downloads via `ollama pull`).
 5. Downloads Piper TTS voices (optional — Turkish and English).
-6. Walks you through `.env` configuration: email (choose **ProtonMail via ProtonBridge** or **Gmail with App Password**), Nextcloud, weather, voice, and personalization.
+6. Writes server defaults and secrets (API key, credential-encryption key); personal setup — name, city, mail, Nextcloud — happens per-user in the browser onboarding after first launch.
 7. Optionally creates systemd services for auto-start on boot (`pisynapse.service`, plus `piserve.service` when you pick the LiteRT backend).
 
 ### Manual Setup
@@ -234,6 +239,8 @@ All settings are in `.env`. See [`example.env`](example.env) for the full list w
 | `OLLAMA_BASE_URL` | Ollama server URL | `http://localhost:11434` |
 | `PISERVE_ADMIN_TOKEN` | piServe admin token (optional, for `/v1/admin/*`) | — |
 | `API_KEY` | Auth key (auto-generated by installer) | — |
+| `MAIL_CREDS_KEY` | Per-user credential encryption key (auto-generated) | — |
+| `SESSION_COOKIE_SECURE` | Session cookie Secure flag — enable only behind HTTPS | `off` |
 | `MAIL_PROVIDER` | `gmail`, `proton`, or leave empty (disabled) | `—` (disabled) |
 | `GMAIL_USER` | Gmail address | — |
 | `GMAIL_APP_PASSWORD` | Gmail App Password (16 chars, no spaces) | — |
@@ -338,6 +345,9 @@ curl http://localhost:8765/health
 - [x] **Session Titles** — Instant first-words + LLM enriched (background, toggle)
 - [x] **Regenerate** — Retry last assistant reply
 - [x] **Hybrid Search** — FTS5 + semantic over all sessions, offline fallback, snippets
+- [x] **Multi-User Accounts** — Passwords, browser sessions, per-device keys, admin panel with approvals and review queue
+- [x] **Collective Learning** — Thumbs/corrections become anonymous quorum-gated routing patterns; per-user encrypted mail/Nextcloud credentials
+- [x] **Guided Onboarding** — Register/login gateway, once-shown API key ceremony, city/mail/Nextcloud steps with skip paths
 - [ ] **Nextcloud Contacts** — CardDAV contact search
 - [ ] **Nextcloud News** — RSS feed integration
 
@@ -356,7 +366,7 @@ curl http://localhost:8765/health
 ```bash
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-python -m pytest -q          # full suite (~650 tests, ~30s)
+python -m pytest -q          # full suite (~750 tests, ~60s)
 ruff check .                 # lint (CI gates on this too)
 ```
 

@@ -19,6 +19,12 @@
 - **Multi-user invisibility rule:** one user's sessions, settings, mail and keys are invisible to every other user. Every user-scoped query needs its owner guard, every guard needs a both-directions test.
 - **Pre-push check:** before push, grep new docs/journal lines for secrets, passwords, IPs and credentials the same way code gets py_compile + pytest.
 
+## 2026-09-09 — v2.0.0 release
+
+- **Cut from:** 204 commits since v1.8.0 (server audit fixes, multi-user, collective learning, sessions, onboarding v2, per-user services, settings v2, security pass). Suite 755, ruff clean.
+- **Docs:** README "Why piSynapse" + Honest limits (no superlatives, no household framing, name = private intelligence); installer/personal-setup truth; roadmap checked items; dev counts.
+- **Upgrade notes for the user:** restart the server (activates everything); wipe + fresh start when ready (backup `backups/piSynapse-20260909-presession-auth.tar.gz`); SESSION_COOKIE_SECURE stays off on plain HTTP.
+
 ## 2026-09-09 — Onboarding rebuild (web): single name, no URL, explicit entry
 
 - **Defects fixed (user audit):** double name (s3 account-name vs login-name unexplained) → ONE display name shared by both steps (s6 prefilled from s3; register syncs ASSISTANT_USER best-effort); server-URL field asked on web though requests are always same-origin (`ps_server_url` was write-only) → removed, replaced by a static connected-origin line (native phone flow untouched); register-vs-login indistinguishable → s6 now two explicit choices (register button vs key + Next), keyless advance deleted (it built broken 401-loop sessions); s5 tips read throwaway → rewritten as four concrete first-day reasons; s3 PATCH silently 403'd for non-admins → personal PUT with PATCH fallback.
