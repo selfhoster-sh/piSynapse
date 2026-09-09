@@ -16,6 +16,16 @@
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 - **Sanitization rule:** this file may be published. Never write personal data, identity clues, deployment addresses (hostnames, IPs, ports), or accounts into it. Keep every narrative in English; Turkish inline tokens are allowed only as product corpus / i18n test data.
 
+## 2026-09-09 — M1 (multi-user identity)
+
+- **Scope (plan `docs/multiuser-plan-2026-09-09.md`, user decisions: open registration + admin toggle, data stays on bootstrapped `default` admin, all phases in one plan).** Iron rule: one user's sessions invisible to all others. Three commits: `2ef1504` (table+keys), `cf3054e` (middleware), `e5ded62` (endpoints).
+- **M1a:** `users` table (id incl. reserved `default`, name, key_hash UNIQUE, is_admin) + generate/SHA-256/verify + create/get/list/rotate/count + `ensure_default_admin` (empty + `.env` key → admin on `default`, zero rewrites; empty + no key → waits for first registration).
+- **M1b:** middleware resolves via DB (`key_hash` + 60s TTL, invalidated on rotate); `.env` key → default identity (backward compatible); unknown → 401; 503 only when nothing could authenticate; `request.state` carries `user_id` + `is_admin`.
+- **M1c:** `routers/users.py` — register (201, first-is-admin, 403 when closed), rotate (key shown once), me, list (admin, no key material); `REGISTRATION_OPEN` (default on) in env/example/template/preserved; admin bootstrap in lifespan (best-effort); `/users/register` public under the strict limiter.
+- **Test-pollution incident (root-caused, fixed):** full-suite 401s traced to `test_faz5`'s real-app lifespan writing a `default|admin` row bound to the public `test-key` into the live dev DB — a real security wart (deleted the row). Fix: that test now runs on a tmp DB; the two no-credentials tests use isolated DBs instead of assuming live-DB emptiness. Earlier "flaky" failures were this mechanism, not flakes — verified by row timestamp + bisection.
+- **Test:** full suite **668 passed** (651 + 17 new), 2× consecutive green.
+- **Residuals:** `get_user_id_for_key` kept (unused by middleware now, external callers safe); per-key rate limits, map/audit `user_id`, resume/cache keying, per-user settings → M2/M3.
+
 ## 2026-09-09 — README overhaul (user: explain the project + differentiation)
 
 - **New "What makes it different" section** (commit `9eae4c9`): local brains incl. phone companion, verified tools (23, ID-based), persisting memory, small-model engineering, privacy-as-construction, honest single-user scope. Every claim verified against the tree before writing (tool count, groups, backends, endpoints, UI split).
