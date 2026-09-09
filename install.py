@@ -813,6 +813,36 @@ def _wait_litert_ready(timeout_s: int = 120) -> bool:
     return False
 
 
+def _render_piserve_unit(user: str, user_home: str, python: str, server_py: Path) -> str:
+    """Render the piserve.service unit text (pure; tested).
+
+    The unit always points at the repo's litert_serve/server.py — a copy
+    elsewhere (e.g. an orphan ~/litert_serve) must never be served.
+    EnvironmentFile is dash-prefixed (optional): missing .env must not fail
+    the unit; when present it carries PISERVE_ADMIN_TOKEN through.
+    """
+    repo_dir = server_py.parent.parent
+    return f"""[Unit]
+Description=piServe (LiteRT-LM backend for piSynapse)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={user}
+Environment=HOME={user_home}
+WorkingDirectory={server_py.parent}
+UMask=0077
+EnvironmentFile=-{repo_dir}/.env
+ExecStart={python} {server_py}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+"""
+
+
 def _create_piserve_service(server_py: Path) -> bool:
     """Create a systemd unit that runs litert_serve/server.py (piServe)."""
     if not shutil.which("systemctl"):
@@ -823,22 +853,7 @@ def _create_piserve_service(server_py: Path) -> bool:
     python = os.path.abspath(_litert_python())
     user_home = os.path.expanduser(f"~{user}")
 
-    unit = f"""[Unit]
-Description=piServe (LiteRT-LM backend for piSynapse)
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User={user}
-Environment=HOME={user_home}
-ExecStart={python} {server_py}
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-"""
+    unit = _render_piserve_unit(user, user_home, python, server_py)
     try:
         tmp = Path("/tmp/piserve.service")
         tmp.write_text(unit, encoding="utf-8")
@@ -1446,6 +1461,33 @@ def step_env() -> None:
 
 # ── Step 7: systemd service (Linux only) ─────────────────────────────────────
 
+def _render_pisynapse_unit(user: str, project_dir: str, uvicorn_path: str, wants_litert: bool) -> str:
+    """Render the pisynapse.service unit text (pure; tested).
+
+    Depends on piserve.service (never the legacy litert.service name) when
+    the LiteRT backend is in use.
+    """
+    after = "network-online.target" + (" piserve.service" if wants_litert else "")
+    return f"""[Unit]
+Description=piSynapse AI Assistant
+After={after}
+Wants=network-online.target{" piserve.service" if wants_litert else ""}
+
+[Service]
+Type=simple
+User={user}
+WorkingDirectory={project_dir}
+UMask=0077
+Environment=PATH={os.path.join(project_dir, VENV_DIR, "bin")}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart={uvicorn_path} main:app --host 0.0.0.0 --port 8765
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+"""
+
+
 def step_systemd() -> None:
     if IS_WIN or sys.platform == "darwin":
         info("systemd is Linux-only — to auto-start on boot on this OS, see README.md")
@@ -1463,24 +1505,7 @@ def step_systemd() -> None:
         uvicorn_path = os.path.join(project_dir, VENV_DIR, "bin", "uvicorn")
         wants_litert = STATE.get("backend") == "litert" and os.path.exists("/etc/systemd/system/piserve.service")
 
-        unit = f"""[Unit]
-Description=piSynapse AI Assistant
-After=network-online.target{" piserve.service" if wants_litert else ""}
-Wants=network-online.target{" piserve.service" if wants_litert else ""}
-
-[Service]
-Type=simple
-User={user}
-WorkingDirectory={project_dir}
-UMask=0077
-Environment=PATH={os.path.join(project_dir, VENV_DIR, "bin")}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ExecStart={uvicorn_path} main:app --host 0.0.0.0 --port 8765
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-"""
+        unit = _render_pisynapse_unit(user, project_dir, uvicorn_path, wants_litert)
         service_path = Path("/etc/systemd/system/pisynapse.service")
         try:
             tmp = Path("/tmp/pisynapse.service")
