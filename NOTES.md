@@ -100,7 +100,7 @@
 
 - **Phase 8:** `docs/port-contract.md` freezes post-fix behavior for the Kotlin port: session/user_id scope, fold formula + caps + conditional write + repair, parity loop, trim/normalize rules, intent layers + resume anchoring, memory/retrieval budgets, canonical mpnet model, SSE shapes (incl. aborted terminal), LANGUAGE_RULE verbatim, summary injection text, inference seam (`conversation_cache_max`), and the acceptance test list.
 - **Session totals (user delegated overnight, no confirmation asks):** Phase 0–8 complete, 30 commits, full suite **563 → 648 passed** (+85 tests), zero failures. Working tree holds only the restored frozen Android files (untouched since recovery).
-- **Still awaiting the user (NOT done):** (1) secret rotation — Gmail app-password, Nextcloud password, API key; (2) systemd regen + orphan `/home/salih/litert_serve` removal — needs backup + explicit approval; (3) backup encryption decision (gpg/age?); (4) LAN lockdown — port to 127.0.0.1 + ufw. Details in fix-plan "Kullanıcı aksiyonları".
+- **Still awaiting the user (NOT done):** (1) secret rotation — Gmail app-password, Nextcloud password, API key; (2) systemd regen + orphan `/home/salih/litert_serve` removal — needs backup + explicit approval; (3) backup encryption decision (gpg/age?); (4) LAN lockdown — port to 127.0.0.1 + ufw. Details in the fix-plan's user-actions section.
 - **Suggested next:** pick up the port (A: Kotlin faithful port vs B: embedded Python — decision still open) against `docs/port-contract.md`.
 
 ## 2026-09-09 — Incident: uncommitted Android tree wiped by `reset --hard`, recovered from laptop
@@ -115,7 +115,7 @@
 - **Scope (plan Phase 7, user-gated items excluded):** installer robustness + runtime resilience. Two commits: `bb756a3` (installer), `c384c9b` (resilience).
 - **Phase 7a:** `menu()` honors `BATCH_MODE`; piper downloads via tmp+atomic replace (partials removed on failure); `TRUSTED_HOSTS` dropped from `preserved_keys` (asked answer wins, even intentional emptying); TTS `browser` writes empty voice + piper-without-download warns now; litert-absent warning for `--skip-llm`; data dirs 0700; shim 0750; ollama `install.sh` saved-to-file + explicit approval (batch refuses unseen remote scripts); litert import + ollama pull retry once; disk/RAM pre-check (warn-only) + optional embedding/whisper pre-download (non-fatal). New `tests/test_install.py` (installer imports cleanly — stdlib only).
 - **Phase 7b:** lifespan catches `init_db` failure → serves degraded with `DB_DEGRADED` in `/health` (recovery hint logged); startup integrity `quick_check`; `auto_backup_db()` via sqlite3 online-backup on a dedicated read-only connection (`VACUUM INTO` refuses while the shared connection has open statements — verified), atomic, 0600, keep 7, at startup + daily loop; `docs/backup-restore.md` restore procedure; audit-CSV pruning under retention; `get_all_history` limit/offset (default unbounded preserves sync contract).
-- **Deferred to the user (NOT done):** systemd regen + orphan removal (A-K4, needs backup + approval); secret rotation (K8); backup encryption decision; LAN exposure lockdown. See fix-plan "Kullanıcı aksiyonları".
+- **Deferred to the user (NOT done):** systemd regen + orphan removal (A-K4, needs backup + approval); secret rotation (K8); backup encryption decision; LAN exposure lockdown. See the fix-plan's user-actions section.
 - **Test:** full suite **648 passed**.
 
 ## 2026-09-09 — Phase 6 (server audit fixes): security hardening
