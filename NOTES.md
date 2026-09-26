@@ -24,6 +24,13 @@
 - `static/web.html` vs `static/app.html` differ by ONE line (a server-status span); both load the same vendor + `ui.js`. The MASTER/SLAVE split now lives in the `_NATIVE` runtime flag, not in the files. `index.html` is just the detecting loader.
 - Future cleanup: single shell is possible, but native loads `app.html` directly (capacitor config, frozen port track) — do not touch until that side moves.
 
+## 2026-09-27 — Keepalive deployed (tunnel still degrading)
+
+- Tunnel RTT decayed 293ms → 3s within the hour; small API calls still 200, long SSE streams die mid-flight (browser connErr toast, no answer).
+- Deployed the `: ping` keepalive with a clean restart (00:07, no hang this time); `/health` all-ok.
+- piai.sudosalih.com resolves to a plain VPS IP (no Cloudflare in path); full external loop answers in ~1.4s for tiny requests.
+- Residual: throughput itself is environmental — if streams still die, next levers are client stall-detect/resume and shedding load (jellyfin/qbit) for first-token latency.
+
 ## 2026-09-26 — SSE keepalive + hermetic embeddings (tunnel fallout)
 
 - **Keepalive:** `/chat/stream` now emits `: ping` comments on >15s idle gaps via a queue fan-in (the model iterator is never cancelled — wait_for on it could corrupt generator state; only the harmless queue.get times out). UI reader already skips non-data lines (verified). Pump errors still surface; client-abort semantics unchanged. `tests/test_stream_keepalive.py` (2).
