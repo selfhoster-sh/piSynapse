@@ -24,6 +24,13 @@
 - `static/web.html` vs `static/app.html` differ by ONE line (a server-status span); both load the same vendor + `ui.js`. The MASTER/SLAVE split now lives in the `_NATIVE` runtime flag, not in the files. `index.html` is just the detecting loader.
 - Future cleanup: single shell is possible, but native loads `app.html` directly (capacitor config, frozen port track) — do not touch until that side moves.
 
+## 2026-09-27 — Root cause found: embedding download stalls chats (fixed)
+
+- **The 504 explained:** every chat embeds via fastembed mpnet, never cached locally; over the degraded link the weight download stalls at 0% — setup phase silent >90s → VPS nginx 504 → connErr toast. Direct-litert probes bypassed the app, hiding it.
+- **Fix:** `get_model` circuit breaker (fail fast 10min after error) + `HF_HUB_DOWNLOAD_TIMEOUT=30`; callers already degrade (keyword fallbacks). Background resumable model fetch started; when it lands, embeddings go full-quality automatically.
+- **Deployed 00:37**, `/health` all-ok. `tests/test_embedding_resilience.py` (2).
+- **Still needed on VPS:** raise proxy timeouts for the stream location (snippet given to user).
+
 ## 2026-09-27 — Keepalive deployed (tunnel still degrading)
 
 - Tunnel RTT decayed 293ms → 3s within the hour; small API calls still 200, long SSE streams die mid-flight (browser connErr toast, no answer).
