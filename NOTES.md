@@ -24,6 +24,13 @@
 - `static/web.html` vs `static/app.html` differ by ONE line (a server-status span); both load the same vendor + `ui.js`. The MASTER/SLAVE split now lives in the `_NATIVE` runtime flag, not in the files. `index.html` is just the detecting loader.
 - Future cleanup: single shell is possible, but native loads `app.html` directly (capacitor config, frozen port track) — do not touch until that side moves.
 
+## 2026-09-26 — SSE keepalive + hermetic embeddings (tunnel fallout)
+
+- **Keepalive:** `/chat/stream` now emits `: ping` comments on >15s idle gaps via a queue fan-in (the model iterator is never cancelled — wait_for on it could corrupt generator state; only the harmless queue.get times out). UI reader already skips non-data lines (verified). Pump errors still surface; client-abort semantics unchanged. `tests/test_stream_keepalive.py` (2).
+- **Hermetic embeddings:** the suite hung suite-wide today — `save_message` embeds best-effort and fastembed tried downloading mpnet over the 3s tunnel (never local; CI only passed on fast bandwidth). Autouse `_hermetic_embeddings` in conftest: deterministic bag-of-words vectors (same text → same vector, overlap → similar), per-test fakes still override. Previously-hanging files pass in ~5s; suite 49s, zero network.
+- **Rule learned:** tests must not depend on ambient anything — files, DB, network, or model weights. CI-green is not proof (fast network masked the download).
+- **Test:** full suite **757 passed** (755 + 2); ruff clean.
+
 ## 2026-09-26 — Post-move outage: tunnel latency + stale Nextcloud URL (fixed)
 
 - **Symptom:** UI "server unreachable", chats never returning, red status dot.
