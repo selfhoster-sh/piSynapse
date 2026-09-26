@@ -24,6 +24,14 @@
 - `static/web.html` vs `static/app.html` differ by ONE line (a server-status span); both load the same vendor + `ui.js`. The MASTER/SLAVE split now lives in the `_NATIVE` runtime flag, not in the files. `index.html` is just the detecting loader.
 - Future cleanup: single shell is possible, but native loads `app.html` directly (capacitor config, frozen port track) — do not touch until that side moves.
 
+## 2026-09-26 — Post-move outage: tunnel latency + stale Nextcloud URL (fixed)
+
+- **Symptom:** UI "server unreachable", chats never returning, red status dot.
+- **Findings:** Pi healthy throughout (app up, inference 2.7s direct). Root causes: (1) AmneziaWG path avg ~300ms w/ spikes — browser polls time out, long SSE stalls; (2) NEXTCLOUD_URL still pointed at the dead old-LAN IP (health degraded red); (3) cold model after reboot + 6/8GB RAM pressure slowed first tokens.
+- **Fixed:** `.env` backed up, NEXTCLOUD_URL → localhost:8080 (local docker NC answers in 0.5s); service restarted 21:20, `/health` all-ok.
+- **Incident:** graceful shutdown hung in stop-sigterm (stuck SSE on the flaky tunnel suspected) — restart took minutes. Future fix: graceful-shutdown timeout / SSE keepalive comments (`: ping`, UI reader already skips them).
+- **Residual (environmental):** tunnel speed is outside app control; guidance given (same-LAN direct IP when possible, patience on first post-restart prompt, pause heavy containers if needed).
+
 ## 2026-09-10 — v2.0.0 live (user restarted 00:36, all healthy)
 
 - Live server now runs current main (first time since İş 2): multi-user, sessions, onboarding v2, collective learning, per-user services all active. `/health` healthy (db/llm/nextcloud ok).
