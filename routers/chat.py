@@ -15,6 +15,10 @@ from pydantic import BaseModel, Field, field_validator
 
 from auth import current_user
 from config import get
+
+# SSE keepalive between events (seconds). Slow middleboxes/tunnels drop
+# streams that go quiet; browsers skip the resulting `: ping` comments.
+KEEPALIVE_S = 15
 from db import (
     _commit_with_retry,
     clear_history,
@@ -343,15 +347,39 @@ async def chat_stream(req: ChatRequest, request: Request, background_tasks: Back
 
     async def generate():
         nonlocal reply_saved
-        stream_audit_ids: list[int] = []
+        stream_audit_ids: list[str] = []
+        # Tunnel-tolerance fan-in: the model stream pumps into a queue while
+        # this loop drains it. Idle gaps yield SSE comments (browsers skip
+        # them — verified reader) so slow middleboxes never see a dead
+        # stream. The inner iterator is NEVER cancelled (wait_for on it could
+        # corrupt generator state); only the harmless queue.get times out.
+        queue: asyncio.Queue = asyncio.Queue()
+
+        async def pump():
+            try:
+                async for event in chat_with_ollama_stream(
+                    history, memories=memories, think=req.think_mode,
+                    summary=meta["summary"], user_id=user_id, session_id=req.session_id,
+                    intent=intent, tool_group=tool_group, reasoning_effort=req.reasoning_effort,
+                    origin=(req.origin or "").strip().lower(),
+                    abort_event=abort_event,
+                ):
+                    await queue.put(event)
+            finally:
+                await queue.put(None)
+
+        pump_task = asyncio.ensure_future(pump())
         try:
-            async for event in chat_with_ollama_stream(
-                history, memories=memories, think=req.think_mode,
-                summary=meta["summary"], user_id=user_id, session_id=req.session_id,
-                intent=intent, tool_group=tool_group, reasoning_effort=req.reasoning_effort,
-                origin=(req.origin or "").strip().lower(),
-                abort_event=abort_event,
-            ):
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=KEEPALIVE_S)
+                except asyncio.TimeoutError:
+                    if pump_task.done() and queue.empty():
+                        break
+                    yield ": ping\n\n"
+                    continue
+                if event is None:
+                    break
                 if abort_event.is_set():
                     logger.info("Stream aborted for session %s", req.session_id)
                     break
@@ -397,10 +425,14 @@ async def chat_stream(req: ChatRequest, request: Request, background_tasks: Back
                 elif "error" in event:
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                     return
+            if pump_task.done() and not pump_task.cancelled() and pump_task.exception() is not None:
+                raise pump_task.exception()
         except Exception as e:
             logger.error("Chat stream generate error: %s\n%s", e, traceback.format_exc())
             yield f"data: {json.dumps({'error': 'Stream error'})}\n\n"
         finally:
+            if not pump_task.done():
+                pump_task.cancel()
             _abort_events.pop(req.session_id, None)
             if not reply_saved and reply_parts:
                 try:
