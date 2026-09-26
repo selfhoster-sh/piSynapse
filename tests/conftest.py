@@ -17,6 +17,45 @@ os.environ.setdefault("API_KEY", "test-key")
 
 
 @pytest.fixture(autouse=True)
+def _hermetic_embeddings(monkeypatch):
+    """No test may download ML weights: deterministic bag-of-words vectors.
+
+    Same text → same vector; overlapping texts → high cosine (keeps
+    duplicate/conflict tests meaningful); disjoint texts → near-orthogonal.
+    Per-test fakes still override this (they apply after autouse fixtures).
+    """
+    import re as _re
+
+    import numpy as _np
+
+    import embedding as embmod
+
+    _dim = 128
+    _word_re = _re.compile(r"[a-zçğıöşüâîû0-9]+")
+
+    def _vec(text):
+        v = _np.zeros(_dim, dtype="float32")
+        words = _word_re.findall(str(text or "").casefold()) or ["<empty>"]
+        for w in words:
+            v[abs(hash(w)) % _dim] += 1.0
+        n = float(_np.linalg.norm(v)) or 1.0
+        return (v / n).tobytes()
+
+    async def _embed_async(text="", *a, **k):
+        return _vec(text)
+
+    async def _embed_batch_async(texts=(), *a, **k):
+        return [_vec(t) for t in texts]
+
+    def _embed_sync(text="", *a, **k):
+        return _vec(text)
+
+    monkeypatch.setattr(embmod, "embed_async", _embed_async)
+    monkeypatch.setattr(embmod, "embed_batch_async", _embed_batch_async)
+    monkeypatch.setattr(embmod, "embed", _embed_sync)
+
+
+@pytest.fixture(autouse=True)
 def _isolated_db(tmp_path, monkeypatch):
     """Every test gets a fresh initialized DB (test-DB isolation rule).
 
