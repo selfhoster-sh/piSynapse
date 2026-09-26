@@ -13,6 +13,12 @@ load_dotenv()
 
 logger = logging.getLogger("piSynapse")
 
+# HuggingFace download timeout (seconds): model-weight fetches must fail fast
+# on flaky links instead of stalling chats indefinitely. The embedding layer
+# treats load failure as best-effort (keyword fallbacks take over) and retries
+# on a cooldown — see embedding.get_model.
+os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", "30")
+
 
 def get(key: str, default=None):
     """Dynamically read a config value.

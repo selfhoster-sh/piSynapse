@@ -15,17 +15,31 @@ logger = logging.getLogger("piSynapse")
 
 _model: TextEmbedding | None = None
 _model_lock = threading.Lock()
+_model_error_ts: float = 0.0
+_MODEL_RETRY_COOLDOWN = 600.0
 
 
 def get_model() -> TextEmbedding:
-    global _model
+    global _model, _model_error_ts
     if _model is None:
         with _model_lock:
             if _model is None:
-                warnings.filterwarnings("ignore", message=".*now uses mean pooling.*")
-                logger.info(f"⚡ Loading FastEmbed model '{MODEL_NAME}' on ONNX Runtime...")
-                _model = TextEmbedding(model_name=MODEL_NAME)
-                logger.info("✅ FastEmbed model loaded.")
+                import time as _time
+
+                # Circuit breaker: a failed download (offline/flaky link) must
+                # not stall every chat for minutes — fail fast for a cooldown
+                # window; callers already treat embedding failure as
+                # best-effort (keyword/chronological fallbacks take over).
+                if _time.time() - _model_error_ts < _MODEL_RETRY_COOLDOWN:
+                    raise RuntimeError("embedding model unavailable (cooldown)")
+                try:
+                    warnings.filterwarnings("ignore", message=".*now uses mean pooling.*")
+                    logger.info(f"⚡ Loading FastEmbed model '{MODEL_NAME}' on ONNX Runtime...")
+                    _model = TextEmbedding(model_name=MODEL_NAME)
+                    logger.info("✅ FastEmbed model loaded.")
+                except Exception:
+                    _model_error_ts = _time.time()
+                    raise
     return _model
 
 
