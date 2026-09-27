@@ -4138,6 +4138,13 @@ function logoutUser(){
   setApiKey('');
   setUsername('');
   try{ closeSettings(); }catch(e){}
+  // Land neutrally: drop the previous account's sessions and show welcome
+  // behind the login overlay — otherwise the UI looks still-logged-in.
+  try{
+    sessionList = []; currentSid = null;
+    renderSessions([], false);
+    showWelcome();
+  }catch(e){}
   showLogin();
 }
 
