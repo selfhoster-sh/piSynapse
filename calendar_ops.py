@@ -42,7 +42,7 @@ def _invalidate_today_cache() -> None:
 def _get_nextcloud_client():
     global _dav_client
     from config import NEXTCLOUD_PASSWORD, NEXTCLOUD_TIMEOUT, NEXTCLOUD_URL, NEXTCLOUD_USER
-    from utils import NC_CREDS
+    from utils import NC_CREDS, NC_SHARED_OK
 
     creds = NC_CREDS.get()
     if creds and creds.get("url") and creds.get("password"):
@@ -59,6 +59,8 @@ def _get_nextcloud_client():
             logger.error("Failed to create per-user CalDAV client: %s", e)
             raise
     if not NEXTCLOUD_URL or not NEXTCLOUD_PASSWORD:
+        return None
+    if not NC_SHARED_OK.get():
         return None
     if _dav_client is not None:
         return _dav_client
