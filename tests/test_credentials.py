@@ -69,7 +69,66 @@ def test_mail_factory_per_user(cuser):
     assert isinstance(mc, mailmod.GmailClient) and mc._user == "c@x.com"
 
 
+def test_shared_nextcloud_denied_for_non_admin(cdb, monkeypatch):
+    """Regression: a credential-less non-admin must NOT fall through to the
+    shared (admin) Nextcloud account — the invisibility hole, now closed.
+    """
+    import config
+    import nextcloud_notes as nn
+    from utils import NC_CREDS, NC_SHARED_OK
+
+    monkeypatch.setattr(config, "NEXTCLOUD_URL", "https://cloud.example")
+    monkeypatch.setattr(config, "NEXTCLOUD_PASSWORD", "secret")
+    t1 = NC_CREDS.set(None)
+    t2 = NC_SHARED_OK.set(False)
+    try:
+        assert nn._get_client() is None
+    finally:
+        NC_CREDS.reset(t1)
+        NC_SHARED_OK.reset(t2)
+
+
+def test_shared_nextcloud_allowed_for_admin(cdb, monkeypatch):
+    import config
+    import nextcloud_notes as nn
+    from utils import NC_CREDS, NC_SHARED_OK
+
+    monkeypatch.setattr(config, "NEXTCLOUD_URL", "https://cloud.example")
+    monkeypatch.setattr(config, "NEXTCLOUD_PASSWORD", "secret")
+    t1 = NC_CREDS.set(None)
+    t2 = NC_SHARED_OK.set(True)
+    try:
+        assert nn._get_client() is not None
+    finally:
+        NC_CREDS.reset(t1)
+        NC_SHARED_OK.reset(t2)
+
+
+def test_dispatcher_notes_never_serves_admin_data(cdb, monkeypatch):
+    import asyncio as _aio
+
+    import config
+    from tools.dispatcher import run_tool
+
+    monkeypatch.setattr(config, "NEXTCLOUD_URL", "https://cloud.example")
+    monkeypatch.setattr(config, "NEXTCLOUD_PASSWORD", "secret")
+    user, _ = _aio.run(cdb.create_user("pleb"))
+    result, _ = _aio.run(run_tool("list_notes", {}, context={"user_id": user["id"]}))
+    assert "credentials missing" in result or "not configured" in result.lower()
+
+
 def test_nc_factories_prefer_context_creds():
+    import nextcloud_notes as nn
+    from utils import NC_CREDS
+
+    creds = {"url": "https://me.example.com", "user": "me", "password": "pw"}
+    tok = NC_CREDS.set(creds)
+    try:
+        assert nn._get_client()._base == "https://me.example.com"
+        assert nn._get_client()._user == "me"
+    finally:
+        NC_CREDS.reset(tok)
+    assert NC_CREDS.get() is None
     import nextcloud_notes as nn
     from utils import NC_CREDS
 

@@ -334,7 +334,21 @@ def test_task_create_invalidates_todos_cache(monkeypatch):
     assert nt._todos_cache_ts == 0
 
 
-def test_note_write_invalidates_list_cache(monkeypatch):
+@pytest.fixture
+def _admin_nc_ctx():
+    """Declare the admin shared-account context for direct factory calls.
+
+    Production sets this per tool call in the dispatcher; tests bypassing
+    run_tool must state their security context explicitly (never default).
+    """
+    from utils import NC_SHARED_OK
+
+    tok = NC_SHARED_OK.set(True)
+    yield
+    NC_SHARED_OK.reset(tok)
+
+
+def test_note_write_invalidates_list_cache(monkeypatch, _admin_nc_ctx):
     from unittest.mock import patch
 
     import config

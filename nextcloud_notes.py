@@ -181,15 +181,21 @@ class NextcloudNotesClient:
 
 
 def _get_client() -> NextcloudNotesClient | None:
-    """Return singleton client, create if needed (or ephemeral per-user one)."""
+    """Return singleton client, create if needed (or ephemeral per-user one).
+
+    The shared .env account serves admins only (NC_SHARED_OK); everyone else
+    needs personal credentials, else None (callers report "not configured").
+    """
     global _notes_client
     from config import NEXTCLOUD_PASSWORD, NEXTCLOUD_URL
-    from utils import NC_CREDS
+    from utils import NC_CREDS, NC_SHARED_OK
 
     creds = NC_CREDS.get()
     if creds:
         return NextcloudNotesClient(creds=creds)
     if not NEXTCLOUD_URL or not NEXTCLOUD_PASSWORD:
+        return None
+    if not NC_SHARED_OK.get():
         return None
     if _notes_client is None:
         with _notes_lock:

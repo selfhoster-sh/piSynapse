@@ -24,6 +24,13 @@
 - `static/web.html` vs `static/app.html` differ by ONE line (a server-status span); both load the same vendor + `ui.js`. The MASTER/SLAVE split now lives in the `_NATIVE` runtime flag, not in the files. `index.html` is just the detecting loader.
 - Future cleanup: single shell is possible, but native loads `app.html` directly (capacitor config, frozen port track) — do not touch until that side moves.
 
+## 2026-09-27 — Invisibility hole closed: shared Nextcloud was served to all (user-found)
+
+- **Report (user):** testidk (unapproved non-admin) vs admin data — checked live DB with hash comparison (no plaintext): `user_credentials` EMPTY (no leak there), but the GLOBAL `.env` Nextcloud account had NO gate — any authenticated user without personal creds silently landed on the admin's notes/tasks/calendar (read+write). Mail was already gated; Nextcloud was not. Real hole, user found it.
+- **Fix:** `NC_SHARED_OK` contextvar (admin-only shared access) set per tool call next to `NC_CREDS`; all three factories (notes/tasks/calendar) deny shared use without it. Prompt contexts read DB maps only (unaffected); health uses raw status.php (unaffected).
+- **Collateral:** one existing test bypassed the dispatcher (patched singleton directly) — now declares its admin context via fixture (explicit > default).
+- **Test:** `tests/test_credentials.py` +3 (deny/allow/dispatcher-never-serves); full suite green; ruff clean.
+
 ## 2026-09-27 — Root cause found: embedding download stalls chats (fixed)
 
 - **The 504 explained:** every chat embeds via fastembed mpnet, never cached locally; over the degraded link the weight download stalls at 0% — setup phase silent >90s → VPS nginx 504 → connErr toast. Direct-litert probes bypassed the app, hiding it.

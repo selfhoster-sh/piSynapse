@@ -34,15 +34,17 @@ def _build_dav_client(url: str, username: str, password: str, timeout: int):
 
 
 def _get_dav_client():
-    """Return cached CalDAV client (or ephemeral per-user one)."""
+    """Return cached CalDAV client (ephemeral per-user one, else admin-shared)."""
     global _client
     from config import NEXTCLOUD_PASSWORD, NEXTCLOUD_TIMEOUT, NEXTCLOUD_URL, NEXTCLOUD_USER
-    from utils import NC_CREDS
+    from utils import NC_CREDS, NC_SHARED_OK
 
     creds = NC_CREDS.get()
     if creds and creds.get("url") and creds.get("password"):
         return _build_dav_client(creds["url"], creds.get("user", ""), creds["password"], NEXTCLOUD_TIMEOUT)
     if not NEXTCLOUD_URL or not NEXTCLOUD_PASSWORD:
+        return None
+    if not NC_SHARED_OK.get():
         return None
     if _client is None:
         with _client_lock:

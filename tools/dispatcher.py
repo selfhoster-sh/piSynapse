@@ -153,10 +153,14 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> tupl
     logger.info("Tool call: %s params=%s", name, _mask_params_for_log(params))
     # Per-user Nextcloud credentials for this call (None = shared account).
     # Set explicitly on every entry so no stale value ever leaks across calls.
-    from db import get_credential
-    from utils import NC_CREDS
+    # The shared account serves admins only — otherwise a credential-less
+    # non-admin would silently read the admin's Nextcloud (invisibility hole).
+    from db import get_credential, get_user
+    from utils import NC_CREDS, NC_SHARED_OK
 
     NC_CREDS.set(await get_credential(context.get("user_id"), "nextcloud"))
+    _nc_caller = await get_user(context.get("user_id")) if context.get("user_id") else None
+    NC_SHARED_OK.set(bool(_nc_caller is not None and _nc_caller.get("is_admin")))
 
     if name == "get_datetime":
         return f"Current: {datetime.now().strftime('%d %B %Y, %A, %H:%M')}", None

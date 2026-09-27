@@ -17,6 +17,10 @@ logger = logging.getLogger("piSynapse")
 # prefer it over the shared .env account. Task-contained by asyncio context
 # semantics; every run_tool entry sets it explicitly (creds or None).
 NC_CREDS: ContextVar[dict | None] = ContextVar("nc_creds", default=None)
+# Whether the shared (admin) Nextcloud account may serve this call. Set from
+# the caller's admin flag alongside NC_CREDS — without it, a non-admin with
+# no personal credentials would silently land on the admin's account.
+NC_SHARED_OK: ContextVar[bool] = ContextVar("nc_shared_ok", default=False)
 
 
 def _is_retryable(exc: BaseException) -> bool:
