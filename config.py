@@ -268,6 +268,30 @@ async def get_llm_model_options(backend: str | None = None) -> dict:
     return await asyncio.to_thread(_query_model_options_sync, target)
 
 
+def probe_backend(backend: str) -> tuple[bool, str]:
+    """Reachability check against a backend's model endpoint (sync, ≤5s).
+
+    Used as a PATCH pre-flight gate: switching LLM_BACKEND to a dead daemon
+    must fail loudly INSTEAD of persisting — otherwise every chat 404s.
+    Returns (ok, detail). Never raises.
+    """
+    import subprocess
+
+    backend = (backend or "").strip().lower()
+    url = f"{LITERT_BASE_URL}/v1/models" if backend == "litert" else f"{OLLAMA_BASE_URL}/api/tags"
+    try:
+        r = subprocess.run(
+            ["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "3", url],
+            capture_output=True, text=True, timeout=5,
+        )
+        code = (r.stdout or "").strip()
+        if r.returncode == 0 and code and code[0] in ("2", "3"):
+            return True, ""
+        return False, f"{backend} daemon not reachable at {url} (http {code or 'error'})"
+    except Exception:
+        return False, f"{backend} daemon not reachable at {url}"
+
+
 def _query_model_options_sync(backend: str) -> dict:
     """Blocking backend query — always call via get_llm_model_options()."""
     import time as _time

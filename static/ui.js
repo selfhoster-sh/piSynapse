@@ -1686,7 +1686,16 @@ async function api(method, path, body){
     if(key) setApiKey('');
     throw new Error('HTTP 401');
   }
-  if(!r.ok) throw new Error('HTTP '+r.status);
+  if(!r.ok){
+    // Prefer the server's detail message (e.g. "Cannot switch: ollama daemon
+    // not reachable...") over a bare status code.
+    let detail = '';
+    try{ const j = await r.json(); if(j && j.detail) detail = j.detail; }catch(e){}
+    const err = new Error(detail || ('HTTP ' + r.status));
+    err.status = r.status;
+    err.detail = detail;
+    throw err;
+  }
   return r.json();
 }
 
@@ -1701,7 +1710,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   try {
     config = await api('GET','/config');
   } catch(e){
-    if(e.message === 'HTTP 503'){
+    if(e.status === 503 || e.message === 'HTTP 503'){
       // Server is fail-closed but has no API_KEY configured (.env).
       if(!window._misconfWarned){
         window._misconfWarned = true;
@@ -1709,7 +1718,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
       }
       if(window._beacon) window._beacon({t:'init', step:'config-503'});
     }
-    if(e.message === 'HTTP 401'){
+    if(e.status === 401 || e.message === 'HTTP 401'){
       // API key needed — prompt handled inside api()
       try { config = await api('GET','/config'); } catch {}
     }
@@ -1798,7 +1807,7 @@ async function loadSessions(animate=true){
     renderSessions(sessionList, animate);
   }
   catch(e){
-    if(e.message==='HTTP 401'){ window._authPrompted=false; renderAuthNeeded(); }
+    if(e.status === 401 || e.message==='HTTP 401'){ window._authPrompted=false; renderAuthNeeded(); }
     // A transient refresh failure must not blank an already-populated sidebar:
     // wiping to "No chats yet" on a mid-stream hiccup is the classic flicker.
     else if(!sessionList.length) renderSessions([], animate);
@@ -3887,9 +3896,17 @@ async function saveSettings(){
       }
       if(_autoSync) setTimeout(_autoSync, 800);
     } catch {}
+    // Backend switch: keep the modal open and redraw it so the model list
+    // switches to the new engine (closing would force a manual reopen).
+    if(values.LLM_BACKEND){
+      await openSettings();
+      return;
+    }
     setTimeout(closeSettings, 800);
-  } catch {
-    toast(t('connErr'), true);
+  } catch (err) {
+    // Surface the server's exact reason (e.g. dead target daemon) — do not
+    // swallow it under a generic connection error.
+    toast((err && err.detail) ? err.detail : t('connErr'), true);
   }
 }
 

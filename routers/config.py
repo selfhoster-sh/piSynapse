@@ -249,6 +249,18 @@ async def update_settings(body: SettingsUpdate, request: Request):
     # Applying os.environ inside the loop would leave a partial update if a
     # later key raised HTTPException (os.environ changed, .env + module
     # attributes stale → three-way divergence).
+    if new_backend:
+        # Pre-flight: never persist a switch to a dead daemon — that bricks
+        # every chat call until switched back.
+        from config import probe_backend
+
+        ok, detail = await asyncio.to_thread(probe_backend, new_backend)
+        if not ok:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot switch: {detail}. Start the daemon first (e.g. `ollama serve` or piserve), or stay on {current_backend}.",
+            )
+
     if new_backend and "LLM_MODEL" not in validated:
         # Auto-map the current model to the new backend's registry by
         # separator-insensitive match (litert "gemma4-e2b" ↔ ollama
