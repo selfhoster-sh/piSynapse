@@ -292,6 +292,35 @@ def probe_backend(backend: str) -> tuple[bool, str]:
         return False, f"{backend} daemon not reachable at {url}"
 
 
+def start_backend(backend: str, wait_s: float = 25.0) -> tuple[bool, str]:
+    """Start an LLM backend daemon and wait until it answers. Never raises.
+
+    Only 'litert' (piserve unit) and 'ollama' (ollama unit) are allowed —
+    the unit name is a literal, not user input. Used when a switch request
+    meets a down daemon and the user confirmed auto-start.
+    """
+    import subprocess
+    import time as _time
+
+    units = {"litert": "piserve", "ollama": "ollama"}
+    backend = (backend or "").strip().lower()
+    if backend not in units:
+        return False, f"unknown backend: {backend}"
+    unit = units[backend]
+    try:
+        subprocess.run(["sudo", "-n", "systemctl", "start", f"{unit}.service"],
+                       capture_output=True, text=True, timeout=20)
+    except Exception:
+        return False, f"cannot start {unit}: sudo systemctl failed (start it manually)"
+    deadline = _time.time() + wait_s
+    while _time.time() < deadline:
+        ok, _ = probe_backend(backend)
+        if ok:
+            return True, ""
+        _time.sleep(1.0)
+    return False, f"{unit}.service started but no response within {int(wait_s)}s — check: journalctl -u {unit}"
+
+
 def _query_model_options_sync(backend: str) -> dict:
     """Blocking backend query — always call via get_llm_model_options()."""
     import time as _time
