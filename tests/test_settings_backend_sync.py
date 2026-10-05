@@ -26,6 +26,11 @@ class _FakeOptions:
 def _run_update(monkeypatch, tmp_path, values, options_fake, initial="LLM_BACKEND=litert\nLLM_MODEL=gemma4-e2b\n"):
     monkeypatch.setattr(rc, "ENV_PATH", tmp_path / ".env")
     monkeypatch.setattr(rc, "get_llm_model_options", options_fake)
+    # Pre-flight probe is a network call — default to reachable here; the
+    # gate's own behavior is covered by dedicated tests below.
+    import config as _cfg
+
+    monkeypatch.setattr(_cfg, "probe_backend", lambda b: (True, ""))
     (tmp_path / ".env").write_text(initial)
 
     from types import SimpleNamespace
@@ -35,6 +40,34 @@ def _run_update(monkeypatch, tmp_path, values, options_fake, initial="LLM_BACKEN
     result = asyncio.run(rc.update_settings(body, admin_request))
     content = (tmp_path / ".env").read_text()
     return result, content
+
+
+def test_backend_switch_rejected_when_daemon_down(monkeypatch, tmp_path):
+    """Pre-flight gate: no persistence when the new daemon is unreachable."""
+    monkeypatch.setenv("LLM_BACKEND", "litert")
+    monkeypatch.setenv("LLM_MODEL", "gemma4-e2b")
+    monkeypatch.setattr(rc, "ENV_PATH", tmp_path / ".env")
+    (tmp_path / ".env").write_text("LLM_BACKEND=litert\nLLM_MODEL=gemma4-e2b\n")
+    import config as _cfg
+
+    monkeypatch.setattr(_cfg, "probe_backend", lambda b: (False, "ollama daemon not reachable"))
+
+    from types import SimpleNamespace
+
+    admin_request = SimpleNamespace(state=SimpleNamespace(user_id="default", is_admin=True))
+    from fastapi import HTTPException
+
+    try:
+        asyncio.run(rc.update_settings(rc.SettingsUpdate(values={"LLM_BACKEND": "ollama"}), admin_request))
+        raise AssertionError("should have raised")
+    except HTTPException as e:
+        assert e.status_code == 400
+        assert "ollama" in e.detail.lower()
+    # Nothing mutated: .env and process env stay on the old backend.
+    assert "ollama" not in (tmp_path / ".env").read_text()
+    import os
+
+    assert os.environ["LLM_BACKEND"] == "litert"
 
 
 def test_backend_switch_automaps_model(monkeypatch, tmp_path):
