@@ -52,12 +52,26 @@ def test_rotate_replaces_key(users_db):
 
 def test_ensure_default_admin_binds_env_key(users_db, monkeypatch):
     monkeypatch.setenv("API_KEY", "owner-key")
+    # Fresh database (no rows anywhere): waits — no phantom admin, the first
+    # registration (installer/browser) becomes admin instead.
+    assert asyncio.run(dbmod.ensure_default_admin()) is None
+    assert asyncio.run(dbmod.count_users()) == 0
+    # Legacy upgrade (pre-multi-user data rows present): bootstraps.
+    asyncio.run(_plant_legacy_row())
     admin = asyncio.run(dbmod.ensure_default_admin())
     assert admin and admin["id"] == "default" and admin["is_admin"] is True
     assert asyncio.run(dbmod.get_user_by_key_hash(dbmod.hash_api_key("owner-key")))["id"] == "default"
     # Idempotent: second call is a no-op.
     assert asyncio.run(dbmod.ensure_default_admin()) is None
     assert asyncio.run(dbmod.count_users()) == 1
+
+
+async def _plant_legacy_row():
+    db = await dbmod.get_db()
+    await db.execute(
+        "INSERT INTO conversations (session_id, role, content, user_id) VALUES ('sx', 'user', 'hi', 'default')"
+    )
+    await db.commit()
 
 
 def test_ensure_default_admin_without_key_waits(users_db, monkeypatch):

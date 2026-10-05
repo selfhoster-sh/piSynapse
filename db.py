@@ -2802,9 +2802,14 @@ async def ensure_default_admin() -> dict | None:
     """Bootstrap the admin onto the pre-existing 'default' identity.
 
     - Users table non-empty → nothing to do (returns None).
-    - Empty + `.env` API_KEY set → create admin id 'default' bound to that
-      key's hash (the single-user owner's key keeps working, now as admin).
-    - Empty + no key → nothing (the first registration becomes admin).
+    - Empty + `.env` API_KEY set + LEGACY DATA ROWS (conversations/sessions/
+      memories from a pre-multi-user install) → create admin id 'default'
+      bound to that key's hash (the single-user owner's key keeps working,
+      now as admin).
+    - Empty + no key, or empty + key but a FRESH database (no rows anywhere)
+      → nothing (the first registration becomes admin — installer or browser).
+      This keeps fresh installs free of phantom admins and closes the
+      first-visitor race: ownership is explicit, never positional.
     Existing data rows already point at 'default': zero rewrites, and the
     invisibility invariant holds from the first multi-user row on.
     """
@@ -2816,6 +2821,17 @@ async def ensure_default_admin() -> dict | None:
 
     env_key = (_os.getenv("API_KEY") or "").strip()
     if not env_key:
+        return None
+    legacy = False
+    for _tbl in ("conversations", "sessions", "memories"):
+        try:
+            cur = await db.execute(f"SELECT 1 FROM {_tbl} LIMIT 1")
+            if await cur.fetchone() is not None:
+                legacy = True
+                break
+        except Exception:
+            continue
+    if not legacy:
         return None
     async with _write_lock():
         await db.execute(

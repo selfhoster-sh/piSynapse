@@ -1486,6 +1486,109 @@ WantedBy=multi-user.target
 """
 
 
+def _users_table_empty(db_path: str) -> bool:
+    """True when no users table/rows exist (stdlib sqlite3 — installer rule)."""
+    import sqlite3
+
+    try:
+        if not os.path.isfile(db_path):
+            return True
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        try:
+            cur = conn.execute(
+                "SELECT COUNT(*) FROM users"
+            )
+            return (cur.fetchone() or [0])[0] == 0
+        except Exception:
+            return True  # no users table yet = fresh
+        finally:
+            conn.close()
+    except Exception:
+        return True
+
+
+def step_owner() -> None:
+    """Create the owner admin account (first install only).
+
+    Deterministic ownership: the human drove the installer, so they become
+    admin here — no phantom bootstrap row, no first-visitor race. Later
+    accounts register in the browser. Batch mode skips (first browser
+    registration becomes admin instead).
+    """
+    header("Owner account (first admin)")
+    project_dir = Path(__file__).resolve().parent
+    env_now = _read_current_env()
+    db_path = str(project_dir / (env_now.get("DB_PATH", "") or "assistant.db"))
+    if not _users_table_empty(db_path):
+        info("Users already exist — skipping owner setup.")
+        return
+    if BATCH_MODE:
+        info("Non-interactive: skipping owner setup — first browser registration becomes admin.")
+        return
+    if not ask_yesno("Create the owner admin account now?", default=True):
+        info("Skipped — first browser registration becomes admin.")
+        return
+
+    name = ""
+    while not name:
+        name = ask("Owner display name")
+        if not name:
+            warn("Name must not be empty.")
+    password = ""
+    while len(password) < 8:
+        password = ask_secret("Owner password (min 8 chars)")
+        if len(password) < 8:
+            warn("Password must be at least 8 characters.")
+    city = ask("Default city for weather (empty = skip)", "")
+    mail: dict | None = None
+    midx = menu("Owner email (assistant reads/sends as you):", [
+        ("Skip", "Add later in the browser"),
+        ("Gmail", "Address + App Password"),
+        ("ProtonMail", "Address + Bridge password (Bridge must hold the account)"),
+    ], default=1)
+    if midx == 2:
+        mail = {"provider": "gmail",
+                "account": ask("Gmail address", ""),
+                "secret": ask_secret("Gmail App Password (16 chars, no spaces)").replace(" ", "").replace("-", "")}
+    elif midx == 3:
+        mail = {"provider": "proton",
+                "account": ask("ProtonMail address", ""),
+                "secret": ask_secret("ProtonBridge password")}
+    nc: dict | None = None
+    if ask_yesno("Add owner Nextcloud (notes/tasks/calendar)?", default=False):
+        nc = {"url": ask("Nextcloud URL (e.g. https://cloud.example.com)"),
+              "account": ask("Nextcloud username"),
+              "secret": ask_secret("Nextcloud app password")}
+
+    import json as _json
+    import subprocess as _sp
+
+    payload = {"name": name, "password": password, "city": city,
+               "mail": mail, "nc": nc}
+    try:
+        proc = _sp.run(
+            [venv_bin("python3"), str(project_dir / "provision_owner.py")],
+            input=_json.dumps(payload), capture_output=True, text=True,
+            timeout=300, cwd=str(project_dir),
+        )
+        result = _json.loads(proc.stdout or "{}")
+    except Exception as e:
+        warn(f"Owner setup failed ({e}) — register in the browser instead.")
+        return
+    if not result.get("ok"):
+        warn(f"Owner setup failed ({result.get('error', 'unknown')}) — register in the browser instead.")
+        return
+    for w in result.get("warnings", []):
+        warn(w)
+    STATE["owner"] = name
+    print(f"\n{green(LINE * 56)}")
+    print(green("  OWNER API KEY — copy it now, it is shown exactly once:"))
+    print(f"\n  {result['api_key']}\n")
+    print(green(LINE * 56))
+    info("Browser login uses name + password (no key needed there).")
+    info("Subsequent accounts register in the browser.")
+
+
 def step_systemd() -> None:
     if IS_WIN or sys.platform == "darwin":
         info("systemd is Linux-only — to auto-start on boot on this OS, see README.md")
@@ -1554,6 +1657,8 @@ def print_summary() -> None:
     if api_key:
         print(f"  {'API Key':12s}: saved to .env (mode 0600, never logged)")
         print("    Keep .env private; re-run the installer to rotate the key.")
+    if STATE.get("owner"):
+        print(f"  {'Owner':12s}: {STATE['owner']} (admin — browser login with name + password)")
 
     print("\n  Start piSynapse:")
     print(f"    {activate}")
@@ -1597,6 +1702,7 @@ def main() -> None:
     else:
         header("5 / 7  TTS voices — skipped")
     step_env()
+    step_owner()
     if not SKIP_SYSTEMD:
         step_systemd()
     else:
