@@ -19,6 +19,12 @@
 - **Multi-user invisibility rule:** one user's sessions, settings, mail and keys are invisible to every other user. Every user-scoped query needs its owner guard, every guard needs a both-directions test.
 - **Pre-push check:** before push, grep new docs/journal lines for secrets, passwords, IPs and credentials the same way code gets py_compile + pytest.
 
+## 2026-10-05 — Open issues carried forward (user confirmed)
+
+- **Post-refresh asks for login:** not resolved. Session cookie is set correctly (verified curl), UI uses /users/session for login — under investigation when bandwidth allows. Hypotheses: SW cache serving stale shell, wrong Secure attr assumption, or domain mismatch on the user's access URL.
+- **Model never loads today:** MPNet embedding weights cannot be downloaded over the current network (hung at %0 for hours), so chat requests that embed via SAVE message or intent classification churn until the duplicate window tripped and it stays stuck. Temporary fix when specifically desired: ask user later to point INTENTIONALLY at a cached smaller model (see below) or bring weights from a faster network.
+- **fastembed is now 0.8.1 (latest), requirements-lock updated.** New multilingual option `google/embeddinggemma-300m` exists (Gemma 3 based, 768-dim, 1.24 GB) — benchmarks promising but unrunnable on this link. MiniLM/MiniL2 viable but not currently trusted.
+
 ## 2026-09-09 — Later: web.html/app.html converged (unification candidate)
 
 - `static/web.html` vs `static/app.html` differ by ONE line (a server-status span); both load the same vendor + `ui.js`. The MASTER/SLAVE split now lives in the `_NATIVE` runtime flag, not in the files. `index.html` is just the detecting loader.
