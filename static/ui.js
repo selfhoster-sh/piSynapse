@@ -31,7 +31,7 @@ const STRINGS = {
     settings:'Ayarlar', settingsTitle:'Ayarlar', settingsSaved:'Ayarlar kaydedildi',
      settingsRestart:'Bazı ayarlar sunucu yeniden başlatıldığında tam etkili olur.',
     settingsCancel:'İptal', settingsSave:'Kaydet', settingsSearch:'Ayarlarda ara…', settingsDirty:'Kaydedilmemiş değişiklikler', settingsNoResult:'Aramana uyan ayar yok.',
-    navAppearance:'Görünüm', navAccount:'Hesap', navAssistant:'Asistan', navModel:'Model', navChat:'Sohbet', navVoice:'Ses', navServer:'Sunucu', navAdmin:'Yönetici', readonlyNote:'Bu ekrandaki sunucu ayarları salt görüntülenir — değişiklikleri yalnızca yöneticiler yapabilir.',
+    navAppearance:'Görünüm', navAccount:'Hesap', navAssistant:'Asistan', navModel:'Model', navChat:'Sohbet', navVoice:'Ses', navServer:'Sunucu', navAdmin:'Yönetici', readonlyNote:'Bu ekrandaki sunucu ayarları salt görüntülenir — değişiklikleri yalnızca yöneticiler yapabilir.', startBackendQ:'%s servisi başlatılsın mı?',
     modeLabel:'Tema', modeDark:'Koyu', modeLight:'Açık', modeAmoled:'AMOLED', accentLabel:'Vurgu rengi',
     adminReview:'İnceleme Kuyruğu', adminReviewDesc:'Kullanıcı geri bildirimlerinden gelen çelişkili yönlendirme önerileri. Onaylanan corpus\u2019a girer, reddedilen bir daha otomatik eklenmez.',
     adminReviewEmpty:'Bekleyen öneri yok.', adminApprove:'Onayla', adminReject:'Reddet',
@@ -122,7 +122,7 @@ const STRINGS = {
     settings:'Settings', settingsTitle:'Settings', settingsSaved:'Settings saved',
     settingsRestart:'Some settings take full effect only after server restart.',
     settingsCancel:'Cancel', settingsSave:'Save', settingsSearch:'Search settings…', settingsDirty:'Unsaved changes', settingsNoResult:'No settings match your search.',
-    navAppearance:'Appearance', navAccount:'Account', navAssistant:'Assistant', navModel:'Model', navChat:'Chat', navVoice:'Voice', navServer:'Server', navAdmin:'Admin', readonlyNote:'Server settings here are read-only — only admins can change them.',
+    navAppearance:'Appearance', navAccount:'Account', navAssistant:'Assistant', navModel:'Model', navChat:'Chat', navVoice:'Voice', navServer:'Server', navAdmin:'Admin', readonlyNote:'Server settings here are read-only — only admins can change them.', startBackendQ:'Start %s?',
     modeLabel:'Theme', modeDark:'Dark', modeLight:'Light', modeAmoled:'AMOLED', accentLabel:'Accent color',
     adminReview:'Review Queue', adminReviewDesc:'Contested routing suggestions from user feedback. Approved ones enter the corpus, rejected ones are never auto-added.',
     adminReviewEmpty:'No pending suggestions.', adminApprove:'Approve', adminReject:'Reject',
@@ -3596,26 +3596,22 @@ function adminSectionHtml(){
 }
 
 function _applyRoleLock(isAdmin){
-  // Non-admins view server settings read-only (web): assistant/model/voice
-  // pages render disabled; the local key field, logout and appearance stay
-  // interactive. Admins (and native) are unrestricted.
+  // Non-admins: personal keys stay editable (server-filtered view), but tell
+  // them why advanced options are absent — the gate is server-side, not here.
   const form = document.getElementById('settings-form');
   if(!form) return;
-  const lock = !isAdmin && !_NATIVE;
-  form.querySelectorAll('input, select, textarea, button').forEach(el=>{
-    if(el.id === 'si-ps_api_key') return;
-    if(el.classList.contains('info-btn')) return;
-    const oc = el.getAttribute('onclick') || '';
-    if(oc.includes('logoutUser') || oc.includes('toggleAdvanced') || oc.includes('toggleSettingInfo')) return;
-    if(el.classList.contains('sel-btn') || el.tagName !== 'BUTTON'){ el.disabled = lock; }
-  });
   let rn = document.getElementById('settings-readonly-note');
-  if(lock && !rn){
-    rn = document.createElement('div');
-    rn.id = 'settings-readonly-note'; rn.className = 'settings-readonly';
-    form.prepend(rn);
+  if(!isAdmin && !_NATIVE){
+    if(!rn){
+      rn = document.createElement('div');
+      rn.id = 'settings-readonly-note'; rn.className = 'settings-readonly';
+      form.prepend(rn);
+    }
+    rn.style.display = '';
+    rn.textContent = t('readonlyNote');
+  } else if(rn){
+    rn.style.display = 'none';
   }
-  if(rn){ rn.style.display = lock ? '' : 'none'; if(lock) rn.textContent = t('readonlyNote'); }
   _markSettingsClean();
 }
 
@@ -3643,7 +3639,9 @@ async function loadAdminPanel(){
     if(st) st.textContent = me.is_admin ? t('adminRole') : (me.is_approved ? t('adminApproved') : t('adminPending'));
   }
   if(!me || !me.is_admin){
-    // Non-admins get no admin page at all (not even an empty shell).
+    // Non-admins get no admin page at all (not even an empty shell). Their
+    // settings view is server-filtered to personal keys, which they CAN edit
+    // (PUT my-settings) — advanced options are hidden server-side anyway.
     stripAdminPage();
     _applyRoleLock(false);
     return;
@@ -3875,39 +3873,61 @@ async function saveSettings(){
   }
 
   try {
-    // Non-admins are view-only on web (fields render disabled; see
-    // _applyRoleLock). Guard the click path too — never rely on UI alone.
-    if(!_NATIVE && window._isAdmin === false){ toast(t('readonlyNote'), true); return; }
-    const result = await api('PATCH', '/config/settings', { values });
+    // Role-aware save: admins PATCH system settings; regular users PUT their
+    // personal keys only (their fetched view is already the personal subset).
+    const nonAdmin = (!_NATIVE && window._isAdmin === false);
+    const result = nonAdmin
+      ? await api('PUT', '/config/my-settings', { values })
+      : await api('PATCH', '/config/settings', { values });
     toast(t('settingsSaved'));
     _snapshotSettings();
     if (result.restart_required && result.restart_required.length > 0) {
       document.getElementById('settings-restart-notice').style.display = 'block';
     }
-    // Refresh config + settings data so TTS/STT engine changes take effect immediately
-    try {
-      config = await api('GET', '/config');
-      const s = await api('GET', '/config/settings');
-      if(s){
-        Object.assign(_settingsData, s);
-        _serverMode = (s.SYNC_MODE && s.SYNC_MODE.value) ? s.SYNC_MODE.value : _serverMode;
-        refreshServerStatus();
-        if(_serverMode==='only-server') _nativeChatRestore();
-      }
-      if(_autoSync) setTimeout(_autoSync, 800);
-    } catch {}
-    // Backend switch: keep the modal open and redraw it so the model list
-    // switches to the new engine (closing would force a manual reopen).
-    if(values.LLM_BACKEND){
-      await openSettings();
-      return;
-    }
-    setTimeout(closeSettings, 800);
   } catch (err) {
-    // Surface the server's exact reason (e.g. dead target daemon) — do not
-    // swallow it under a generic connection error.
+    // Daemon down on a backend switch: offer to start it, then retry.
+    if(err && err.status === 409 && values.LLM_BACKEND){
+      if(confirm(err.detail + "\n\n" + t('startBackendQ').replace('%s', values.LLM_BACKEND))){
+        try {
+          const result = await api('PATCH', '/config/settings', { values, start_backend: true });
+          toast(t('settingsSaved'));
+          _snapshotSettings();
+          if (result.restart_required && result.restart_required.length > 0) {
+            document.getElementById('settings-restart-notice').style.display = 'block';
+          }
+          await openSettings(); // redraw with the new engine's model list
+          return;
+        } catch (e2) {
+          toast(e2.detail || t('connErr'), true);
+          return;
+        }
+      }
+      return; // user declined — stay on the old backend, nothing changed
+    }
+    // Surface the server's exact reason (e.g. "Cannot switch: ollama daemon
+    // not reachable...") — do not swallow it under a generic connection error.
     toast((err && err.detail) ? err.detail : t('connErr'), true);
+    return;
   }
+  // Refresh config + settings data so TTS/STT engine changes take effect immediately
+  try {
+    config = await api('GET', '/config');
+    const s = await api('GET', '/config/settings');
+    if(s){
+      Object.assign(_settingsData, s);
+      _serverMode = (s.SYNC_MODE && s.SYNC_MODE.value) ? s.SYNC_MODE.value : _serverMode;
+      refreshServerStatus();
+      if(_serverMode==='only-server') _nativeChatRestore();
+    }
+    if(_autoSync) setTimeout(_autoSync, 800);
+  } catch {}
+  // Backend switch (live target): keep the modal open and redraw it so the
+  // model list switches to the new engine (closing forces a manual reopen).
+  if(values.LLM_BACKEND){
+    await openSettings();
+    return;
+  }
+  setTimeout(closeSettings, 800);
 }
 
 // ── Onboarding (first-run setup wizard) ─────────────────────────────────────────

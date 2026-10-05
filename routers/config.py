@@ -142,6 +142,9 @@ async def get_settings(request: Request = None):
 
 class SettingsUpdate(BaseModel):
     values: dict[str, str]
+    # When true, a down target backend is started (systemd) instead of
+    # only erroring — set by the client after the user confirms in the UI.
+    start_backend: bool = False
 
 
 @router.get("/my-settings")
@@ -251,15 +254,26 @@ async def update_settings(body: SettingsUpdate, request: Request):
     # attributes stale → three-way divergence).
     if new_backend:
         # Pre-flight: never persist a switch to a dead daemon — that bricks
-        # every chat call until switched back.
-        from config import probe_backend
+        # every chat call until switched back. Offer a one-tap fix instead.
+        from fastapi import HTTPException as _H
+        from config import probe_backend, start_backend
 
         ok, detail = await asyncio.to_thread(probe_backend, new_backend)
         if not ok:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Cannot switch: {detail}. Start the daemon first (e.g. `ollama serve` or piserve), or stay on {current_backend}.",
-            )
+            autostart = bool(getattr(body, "start_backend", False))
+            if not autostart:
+                # 409 + daemon name in the detail: UI asks "start it?" and
+                # re-sends with start_backend=true on confirmation.
+                raise _H(
+                    status_code=409,
+                    detail=f"{new_backend.capitalize()} is not running ({detail}). Start it now?",
+                )
+            start_ok, start_detail = await asyncio.to_thread(start_backend, new_backend)
+            if not start_ok:
+                raise _H(status_code=400, detail=f"Could not start {new_backend}: {start_detail}")
+            ok, detail = await asyncio.to_thread(probe_backend, new_backend)
+            if not ok:
+                raise _H(status_code=400, detail=f"{new_backend} started but still unreachable: {detail}")
 
     if new_backend and "LLM_MODEL" not in validated:
         # Auto-map the current model to the new backend's registry by
