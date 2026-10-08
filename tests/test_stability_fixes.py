@@ -325,7 +325,7 @@ def test_task_create_invalidates_todos_cache(monkeypatch):
             saved.append(todo)
 
     monkeypatch.setattr(nt, "_get_task_calendar", lambda: FakeCal())
-    monkeypatch.setattr(nt, "_todos_cache", (False, ["stale"]))
+    monkeypatch.setattr(nt, "_todos_cache", (False, "old-identity", ["stale"]))
     monkeypatch.setattr(nt, "_todos_cache_ts", 123.0)
 
     result = nt._create_task_sync("Buy milk", "", 0, "")

@@ -10,17 +10,23 @@ from datetime import date, datetime
 
 from icalendar import Todo
 
-from utils import retry, sanitize_external_text
+from utils import nc_cache_key, retry, sanitize_external_text
 
 logger = logging.getLogger("piSynapse")
 
-# Singleton — reuse client
+# Singleton — reuse client (shared admin account only; per-user clients are
+# built fresh per call in _get_dav_client)
 _client = None
-_task_calendar = None
-# 30s TTL cache of fetched todos, keyed by the include_completed flag used:
-# a pending-only fetch must never be served to show_completed=True (and vice
-# versa), so the cached flag must match the request.
-_todos_cache: tuple[bool, list] | None = None
+# Task calendar per Nextcloud identity (utils.nc_cache_key). The credential
+# gate in _get_task_calendar runs BEFORE this cache is consulted — a cached
+# hit must never bypass NC_CREDS/NC_SHARED_OK (reopens the 2026-09-27
+# invisibility hole otherwise).
+_task_calendars: dict[str, object] = {}
+# 30s TTL cache of fetched todos: (include_completed, nc_cache_key, todos).
+# The flag must match the request (a pending-only fetch must never serve
+# show_completed=True and vice versa) and the key must match the caller's
+# Nextcloud identity (2026-10-08 analysis — cross-user todo leak).
+_todos_cache: tuple[bool, str, list] | None = None
 _todos_cache_ts: float = 0
 # Tasks run in worker threads (asyncio.to_thread); the lock makes the lazy
 # singleton creation single-flight across concurrent requests.
@@ -54,14 +60,21 @@ def _get_dav_client():
 
 
 def _get_task_calendar():
-    """Find the first calendar that supports VTODO (tasks)."""
-    global _task_calendar
-    if _task_calendar is not None:
-        return _task_calendar
+    """Find the first calendar that supports VTODO (tasks).
 
+    Order matters: the credential gate (_get_dav_client) runs FIRST and the
+    cache is consulted only after it — returning a cached calendar without
+    re-checking NC_CREDS/NC_SHARED_OK would serve it to callers who lost (or
+    never had) access. Entries are keyed per identity (utils.nc_cache_key).
+    """
     client = _get_dav_client()
     if not client:
         return None
+
+    key = nc_cache_key()
+    cached = _task_calendars.get(key)
+    if cached is not None:
+        return cached
 
     try:
         principal = client.principal()
@@ -71,14 +84,14 @@ def _get_task_calendar():
             try:
                 components = cal.get_supported_components()
                 if "VTODO" in components:
-                    _task_calendar = cal
-                    return _task_calendar
+                    _task_calendars[key] = cal
+                    return cal
             except Exception:
                 continue
 
         if calendars:
-            _task_calendar = calendars[0]
-            return _task_calendar
+            _task_calendars[key] = calendars[0]
+            return calendars[0]
 
         return None
     except Exception as e:
@@ -196,7 +209,7 @@ def _create_task_sync(summary: str, due: str, priority: int, notes: str) -> tupl
 
 
 def _fetch_todos_cached(include_completed: bool) -> list:
-    """Fetch todos via the 30s cache (flag-aware, see module docstring above).
+    """Fetch todos via the 30s cache (flag- and identity-aware, see module docstring).
 
     A failed fetch raises (NOT swallowed): retry fires via @retry and the
     async wrapper reports a real error instead of "No tasks found."
@@ -204,10 +217,16 @@ def _fetch_todos_cached(include_completed: bool) -> list:
     global _todos_cache, _todos_cache_ts
     import time
     now = time.time()
-    if _todos_cache is None or _todos_cache[0] != include_completed or now - _todos_cache_ts > 30:
-        _todos_cache = (include_completed, _get_task_calendar().todos(include_completed=include_completed))
+    key = nc_cache_key()
+    if (_todos_cache is None or _todos_cache[0] != include_completed
+            or _todos_cache[1] != key or now - _todos_cache_ts > 30):
+        _todos_cache = (
+            include_completed,
+            key,
+            _get_task_calendar().todos(include_completed=include_completed),
+        )
         _todos_cache_ts = now
-    return _todos_cache[1]
+    return _todos_cache[2]
 
 
 @retry(attempts=2, delay=1.0)

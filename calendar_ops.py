@@ -7,12 +7,14 @@ import threading
 import time
 from datetime import date, datetime, timedelta
 
-from utils import retry, sanitize_external_text
+from utils import nc_cache_key, retry, sanitize_external_text
 
 logger = logging.getLogger("piSynapse")
 
 _dav_client = None
-_dav_calendar = None
+# Primary calendar per Nextcloud identity (utils.nc_cache_key) — a single
+# global would hand user A's calendar object to user B (2026-10-08 analysis).
+_primary_calendars: dict[str, object] = {}
 # Guard lazy singleton creation: calendar_ops runs in worker threads
 # (asyncio.to_thread), so two concurrent calls could both build a client /
 # fetch calendars. The lock makes creation single-flight.
@@ -22,10 +24,13 @@ _dav_lock = threading.Lock()
 # widget frequently while Nextcloud events change rarely; the cache is dropped
 # on every calendar write so the widget never goes stale for long.
 _TODAY_CACHE_TTL = 300.0  # seconds (~5 min)
-_today_cache: tuple[float, list[dict]] | None = None
+# Shape: (monotonic_ts, nc_cache_key, events) — identity-checked on read.
+_today_cache: tuple[float, str, list[dict]] | None = None
 
-# Short-lived cache for _find_events to avoid redundant CalDAV calls
-_find_events_cache: tuple[float, list] | None = None
+# Short-lived cache for _find_events to avoid redundant CalDAV calls.
+# Shape: (timestamp, nc_cache_key, events) — identity-checked on read so one
+# user's events are never served to another (2026-10-08 analysis).
+_find_events_cache: tuple[float, str, list] | None = None
 _FIND_EVENTS_CACHE_TTL = 5.0  # seconds
 
 _cache_lock = threading.Lock()
@@ -83,12 +88,14 @@ def _get_nextcloud_client():
 
 
 def _get_primary_calendar(client):
-    global _dav_calendar
-    if _dav_calendar is not None:
-        return _dav_calendar
+    key = nc_cache_key()
+    cached = _primary_calendars.get(key)
+    if cached is not None:
+        return cached
     with _dav_lock:
-        if _dav_calendar is not None:
-            return _dav_calendar
+        cached = _primary_calendars.get(key)
+        if cached is not None:
+            return cached
         try:
             principal = client.principal()
             calendars = principal.calendars()
@@ -97,8 +104,8 @@ def _get_primary_calendar(client):
             raise
         if not calendars:
             raise Exception("No calendar found on Nextcloud.")
-        _dav_calendar = calendars[0]
-        return _dav_calendar
+        _primary_calendars[key] = calendars[0]
+        return calendars[0]
 
 
 def _get_calendar():
@@ -137,9 +144,11 @@ def _find_events(search_window_days_back: int = 30, search_window_days_ahead: in
     """Return all events in the search window (cached for 5s to avoid redundant CalDAV calls)."""
     global _find_events_cache
     now = time.time()
+    key = nc_cache_key()
     with _cache_lock:
-        if _find_events_cache and (now - _find_events_cache[0]) < _FIND_EVENTS_CACHE_TTL:
-            return _find_events_cache[1]
+        if (_find_events_cache and _find_events_cache[1] == key
+                and (now - _find_events_cache[0]) < _FIND_EVENTS_CACHE_TTL):
+            return _find_events_cache[2]
     try:
         calendar = _get_calendar()
         events = calendar.date_search(
@@ -147,7 +156,7 @@ def _find_events(search_window_days_back: int = 30, search_window_days_ahead: in
             datetime.now() + timedelta(days=search_window_days_ahead),
         )
         with _cache_lock:
-            _find_events_cache = (now, events)
+            _find_events_cache = (now, key, events)
         return events
     except Exception as e:
         logger.error("Failed to search calendar events: %s", e)
@@ -300,9 +309,10 @@ def list_events(days_ahead: int = 7) -> tuple[str, list[dict]]:
 def list_events_today() -> list[dict]:
     """Structured today's events for the widget (TTL-cached, see ``_TODAY_CACHE_TTL``)."""
     global _today_cache
+    key = nc_cache_key()
     with _cache_lock:
-        if _today_cache is not None:
-            cached_at, cached = _today_cache
+        if _today_cache is not None and _today_cache[1] == key:
+            cached_at, _, cached = _today_cache
             if time.monotonic() - cached_at < _TODAY_CACHE_TTL:
                 return cached
     try:
@@ -324,7 +334,7 @@ def list_events_today() -> list[dict]:
             result.append({"time": ts, "title": s, "uid": uid})
         result = sorted(result, key=lambda x: x["time"])
         with _cache_lock:
-            _today_cache = (time.monotonic(), result)
+            _today_cache = (time.monotonic(), key, result)
         return result
     except Exception as e:
         logger.error("Failed to list today's events: %s", e)

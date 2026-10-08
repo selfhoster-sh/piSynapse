@@ -18,9 +18,38 @@ logger = logging.getLogger("piSynapse")
 # semantics; every run_tool entry sets it explicitly (creds or None).
 NC_CREDS: ContextVar[dict | None] = ContextVar("nc_creds", default=None)
 # Whether the shared (admin) Nextcloud account may serve this call. Set from
-# the caller's admin flag alongside NC_CREDS — without it, a non-admin with
+# the caller's admin flag alongside NC_SHARED_OK — without it, a non-admin with
 # no personal credentials would silently land on the admin's account.
 NC_SHARED_OK: ContextVar[bool] = ContextVar("nc_shared_ok", default=False)
+
+
+def nc_cache_key() -> str:
+    """Identity key for the process-global Nextcloud caches (calendar/tasks).
+
+    ``calendar_ops`` and ``nextcloud_tasks`` keep module-level caches
+    (primary calendar, events, todos), but the Nextcloud identity of a call
+    is request-scoped (``NC_CREDS`` / ``NC_SHARED_OK``). Every cache entry
+    must be keyed by this identity or one user's calendar/todos are served
+    to another (2026-10-08 analysis).
+
+    Mirrors the client-selection logic in ``_get_nextcloud_client`` /
+    ``_get_dav_client``: per-user creds -> ``u|...``, shared admin account
+    -> ``s|...``. ``"deny"`` marks calls with no usable identity — their
+    fetches fail before any cache write, so the key never populates and
+    nothing can ever be served to such a caller.
+    """
+    from config import NEXTCLOUD_URL, NEXTCLOUD_USER
+
+    creds = NC_CREDS.get()
+    if creds and creds.get("url") and creds.get("password"):
+        return "u|" + str(creds.get("url") or "") + "|" + str(creds.get("user") or "")
+    if NC_SHARED_OK.get():
+        # Shared admin account. The key stays distinct from "deny" even when
+        # NEXTCLOUD_URL is unset — the client gate refuses the fetch anyway,
+        # so the entry never populates, and a runtime config change cannot
+        # alias one identity onto another.
+        return "s|" + str(NEXTCLOUD_URL or "") + "|" + str(NEXTCLOUD_USER or "")
+    return "deny"
 
 
 def _is_retryable(exc: BaseException) -> bool:
