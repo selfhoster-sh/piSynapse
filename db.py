@@ -3102,12 +3102,13 @@ async def update_session_summary(session_id: str, summary: str, summarized_until
     ``expected_until`` enables a conditional write for the background fold
     race: two concurrent ``_update_summary`` tasks read the same boundary,
     the loser must not clobber the winner's wider summary. When given, the
-    write applies only if the stored boundary still equals it (rowcount 0 =
-    skipped). ``None`` keeps the unconditional legacy behavior.
+    write applies only if the stored boundary still equals it (changes() 0 =
+    skipped). ``None`` keeps the unconditional legacy behavior (still checks
+    the owner guard on the conflict path).
     """
     db = await get_db()
     if expected_until is None:
-        cur = await db.execute(
+        await db.execute(
             """INSERT INTO sessions (id, summary, summarized_until, user_id) VALUES (?, ?, ?, ?)
                ON CONFLICT(id) DO UPDATE SET summary = excluded.summary, summarized_until = excluded.summarized_until,
                last_active = CURRENT_TIMESTAMP
@@ -3115,15 +3116,19 @@ async def update_session_summary(session_id: str, summary: str, summarized_until
             (session_id, summary, summarized_until, user_id),
         )
     else:
-        cur = await db.execute(
+        await db.execute(
             """INSERT INTO sessions (id, summary, summarized_until, user_id) VALUES (?, ?, ?, ?)
                ON CONFLICT(id) DO UPDATE SET summary = excluded.summary, summarized_until = excluded.summarized_until,
                last_active = CURRENT_TIMESTAMP
                WHERE sessions.user_id = excluded.user_id AND sessions.summarized_until = ?""",
             (session_id, summary, summarized_until, user_id, expected_until),
         )
+    # Python >= 3.12 reports cursor.rowcount = -1 for every INSERT (upserts
+    # included), which made this function return False unconditionally;
+    # changes() is the portable source of truth for "did the write apply".
+    applied = (await (await db.execute("SELECT changes()")).fetchone())[0] > 0
     await _commit_with_retry(db)
-    return cur.rowcount > 0
+    return applied
 
 
 # -- Long-term Memories --

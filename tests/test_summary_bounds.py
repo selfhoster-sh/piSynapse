@@ -220,6 +220,25 @@ def test_conditional_summary_write(sum_db):
     assert meta == {"summary": "c", "summarized_until": 15}
 
 
+def test_summary_write_owner_guard(sum_db):
+    # Unconditional path: the upsert's conflict clause still requires the
+    # row to belong to user_id — a foreign session must not be written and
+    # must report False (rowcount/changes() semantics on Py3.12+).
+    asyncio.run(dbmod.update_session_summary("sx", "alice-sum", 10, user_id="alice"))
+    applied = asyncio.run(
+        dbmod.update_session_summary("sx", "bob-sum", 20, user_id="bob")
+    )
+    assert applied is False
+    assert asyncio.run(dbmod.get_session_meta("sx", user_id="alice")) == {
+        "summary": "alice-sum",
+        "summarized_until": 10,
+    }
+    # And a fresh session under bob's id inserts normally.
+    assert asyncio.run(
+        dbmod.update_session_summary("sx2", "bob-sum", 5, user_id="bob")
+    ) is True
+
+
 def test_concurrent_summary_writes_do_not_regress(sum_db, monkeypatch):
     import config as config_module
     import routers.chat as rc
