@@ -380,7 +380,7 @@ let _cachedWeatherSummary = null; let _cachedWeatherRaw = null; let _cachedEvent
 let _cachedWeatherKind = null; let _cachedWeatherTemp = null; let _cachedWeatherCond = null; let _cachedWeatherWmo = null;
 
 // ── Markdown, LaTeX & Copy (local parser) ─────────────────────────────────────
-function esc(s){ return String(s||'').replace(/&/g,'&').replace(/</g,'<').replace(/>/g,'>').replace(/"/g,'"').replace(/'/g,'\''); }
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
 // Minimal XSS sanitizer: native Sanitizer API (Baseline 2024) + textContent fallback
 // XSS sanitizer: DOMPurify (battle-tested, self-hosted) with native
