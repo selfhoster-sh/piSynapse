@@ -509,8 +509,15 @@ async def chat_with_ollama_stream(
             except Exception as e:
                 logger.warning(f"Think-mode retry failed: {e}")
 
+        # Leaked-call recovery runs ONLY on tool rounds (analysis A1). In
+        # pure-chat rounds (use_tools=False) a text-recovered call is by
+        # definition not something we offered the model; executing it
+        # would be a prompt-injection gadget — external content quoting
+        # "call:create_note{...}" through the model's reply. The terminal
+        # path below must still run for every round. Backend-agnostic:
+        # both engines share this post-parse path.
         if not tool_calls_acc:
-            leaked = parse_leaked_tool_call(full_text)
+            leaked = parse_leaked_tool_call(full_text) if use_tools else None
             if leaked:
                 logger.info(f"Recovered leaked tool call: {leaked['function']['name']}() — executing")
                 tool_calls_acc = [leaked]
@@ -526,8 +533,18 @@ async def chat_with_ollama_stream(
                     continue
 
                 if suppressing and full_text:
-                    logger.warning(f"No tool call found after suppression, yielding raw text: {full_text[:120]}...")
-                    yield {"token": strip_tool_leaks(full_text)}
+                    stripped = strip_tool_leaks(full_text)
+                    if stripped.strip():
+                        logger.warning(f"No tool call found after suppression, yielding raw text: {full_text[:120]}...")
+                        yield {"token": stripped}
+                    else:
+                        # Nothing survived stripping: the model emitted
+                        # nothing but tool-call patterns. Same contract as
+                        # the dedup path — friendly fallback, never an
+                        # empty bubble. (Restores the nudge-round behavior
+                        # the leaked-call recovery used to provide, without
+                        # executing anything.)
+                        yield {"token": _empty_answer_fallback()}
                 elif buf:
                     yield {"token": buf}
                 yield {"done": True, "memories_saved": memories_saved, "reasoning": clean_reasoning(full_reasoning)}
@@ -558,8 +575,11 @@ async def chat_with_ollama_stream(
         # memory — executing it would write to the wrong domain (seen:
         # create_task during a calendar turn). Reject with guidance so
         # the model self-corrects using the tools it was given.
+        # An empty toolset now yields an EMPTY set, not None: None meant
+        # "unrestricted", which silently allowed execution in pure-chat
+        # and no-tools rounds — exactly the leaked-call bypass (A1).
         allowed_names = ({t["function"]["name"] for t in filtered_tools}
-                         if use_tools and filtered_tools else None)
+                         if use_tools and filtered_tools else set())
         if non_confirm_calls:
             current_msgs.append({"role": "assistant", "content": "", "tool_calls": non_confirm_calls})
             for call in non_confirm_calls:
@@ -604,14 +624,15 @@ async def chat_with_ollama_stream(
                                     "attempt": sig_exec_counts.get(probe_sig, 0) + 1,
                                     "max": max_exec}}
                     continue
-                if allowed_names is not None and tn not in allowed_names:
+                if tn not in allowed_names:
+                    avail = ", ".join(sorted(allowed_names)) or "none this turn"
                     logger.warning(f"Tool {tn} hallucinated (not offered this turn) — rejected")
                     tool_msg = {
                         "role": "tool",
                         "tool_name": tn,
                         "content": (
                             f"[Rejected: '{tn}' is NOT available in this conversation turn. "
-                            f"Available tools: {', '.join(sorted(allowed_names))}. "
+                            f"Available tools: {avail}. "
                             "Use one of those, or if none fits, answer in plain text.]"
                         ),
                     }
@@ -650,9 +671,10 @@ async def chat_with_ollama_stream(
 
         for call in confirm_calls:
             tn = call.get("function", {}).get("name", "")
-            if allowed_names is not None and tn not in allowed_names:
+            if tn not in allowed_names:
+                avail = ", ".join(sorted(allowed_names)) or "none this turn"
                 logger.warning(f"Confirm tool {tn} hallucinated (not offered this turn) — rejected")
-                yield {"token": f"[Rejected: '{tn}' is NOT available this turn. Available: {', '.join(sorted(allowed_names))}. Answer in plain text.]"}
+                yield {"token": f"[Rejected: '{tn}' is NOT available this turn. Available: {avail}. Answer in plain text.]"}
                 yield {"done": True, "memories_saved": memories_saved, "reasoning": clean_reasoning(full_reasoning)}
                 return
             params = parse_tool_args(call["function"].get("arguments"))
