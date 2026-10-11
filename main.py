@@ -592,6 +592,28 @@ async def hardening_headers_middleware(request: Request, call_next):
     return response
 
 
+# ── Middleware: /static cache hygiene ─────────────────────────────────────────
+
+# Behavioral shell files revalidate on every load (no-cache + StaticFiles
+# ETag 304s keep it cheap) so an updated ui.js/web.html reaches browsers
+# immediately instead of riding a stale max-age. Fonts and icons are big
+# and rarely change: 7-day client cache.
+_STATIC_LONG_CACHE_EXTS = frozenset({"woff", "woff2", "png", "ico"})
+
+
+@app.middleware("http")
+async def static_cache_control_middleware(request: Request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    if path.startswith("/static/"):
+        ext = path.rsplit(".", 1)[-1].lower() if "." in path.rsplit("/", 1)[-1] else ""
+        if ext in _STATIC_LONG_CACHE_EXTS:
+            response.headers["Cache-Control"] = "public, max-age=604800"
+        else:
+            response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 # ── Middleware: API Key auth + Rate limiting + Body size ───────────────────────
 
 _MAX_BODY_BYTES = 4 * 1024 * 1024  # 4 MB

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pisynapse-v55';
+const CACHE_NAME = 'pisynapse-v56';
 // Browser scope: the SPA is served at /static/ (root / redirects there).
 // The native WebView never registers this service worker (JS gates on _NATIVE).
 const STATIC_ASSETS = [
