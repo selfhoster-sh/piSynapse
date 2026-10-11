@@ -318,10 +318,14 @@ Kapsam: `install.py`, `example.env`+template+`config.py` üçlüsü, gereksiniml
 
 **A-Y2. Port sabit `0.0.0.0:8765`, firewall adımı yok** — `install.py:1346,1377`;
 port `.env`'de yok. Portu `.env`'e al, default `127.0.0.1` + `ufw` önerisi sun.
+*(2026-10-11 durum: hâlâ AÇIK — host `0.0.0.0` sabit, port `.env` dışında. Hafta-5
+kurulum/kalite paketine işlendi; bkz. analiz-2026-10-08 B bölümü.)*
 
 **A-Y3. TRUSTED_HOSTS tekrar-çalıştırmada değiştirilemez** —
 `install.py:1255,1284-1290`; `preserved_keys` eski değeri sorulanın üstüne yazar.
 Sorulan anahtarları preserve listesinden çıkar.
+*(2026-10-11 durum: DÜZELTİLDİ — `install.py` preserved_keys notu "deliberately
+NOT preserved" diyor; adım yeniden soruyor. Satır referansları bayatladı.)*
 
 **A-Y4. STT `browser` şema dışı** — installer/example `whisper/gemma4/browser`
 sunar (`install.py:1235`), şema yalnız `gemma4/whisper` (`config.py:338`).
