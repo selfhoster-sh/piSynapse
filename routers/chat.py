@@ -382,7 +382,7 @@ async def chat_stream(req: ChatRequest, request: Request, background_tasks: Back
     _abort_events[req.session_id] = abort_event
 
     async def generate():
-        nonlocal reply_saved
+        nonlocal reply_saved, reply_parts
         stream_audit_ids: list[str] = []
         # Tunnel-tolerance fan-in: the model stream pumps into a queue while
         # this loop drains it. Idle gaps yield SSE comments (browsers skip
@@ -457,6 +457,10 @@ async def chat_stream(req: ChatRequest, request: Request, background_tasks: Back
                     # NOT terminal — the inner loop keeps generating after an
                     # in-flight retry (escalation/overflow/tool_leak). Returning
                     # here silently swallowed every post-retry token.
+                    # The discarded attempt's already-streamed tokens must not
+                    # reach the SAVED reply either: drop them so only the
+                    # final round's text persists (retry duplication bug).
+                    reply_parts = []
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                 elif "error" in event:
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"

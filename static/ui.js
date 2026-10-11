@@ -2227,6 +2227,12 @@ async function sendMsg(opts){
         } else if(data.gen_retry){
           if(currentSid !== sid) continue;
           if(!bubble) bubble=createStreamBubble();
+          // Retry duplication fix: the discarded attempt's tokens must not
+          // blend into the retried reply — reset the accumulated text and
+          // reasoning (and their DOM) so the regenerated answer starts clean.
+          fullText=''; fullReasoning='';
+          bubble.innerHTML='';
+          if(thinkBox){ const _tb=thinkBox.querySelector('.think-body'); if(_tb) _tb.innerHTML=''; }
           toolRow=showGenRetry(toolRow, data.gen_retry.reason);
         } else if(data.confirm){
           terminated=true; hideTyping(); showConfirmModal(data.confirm); setLoading(false); _pendingStream=null; return;
