@@ -1666,6 +1666,17 @@ async def save_message(session_id: str, role: str, content: str, images: list[st
             logger.warning(f"Embedding failed for save_message (non-fatal): {e}")
 
     async with _write_lock():
+        # Ownership guard: a session row owned by another user must not
+        # accept writes. Every read path filters by user_id, so the row
+        # would be an unreadable orphan that still pollutes FTS, storage
+        # and any future session-scoped maintenance. Fail-closed with the
+        # same no-op contract as the duplicate guard above: return None.
+        async with db.execute(
+            "SELECT 1 FROM sessions WHERE id = ? AND user_id <> ?",
+            (session_id, user_id),
+        ) as cur:
+            if await cur.fetchone() is not None:
+                return None
         cur = await db.execute(
             "INSERT INTO conversations (session_id, role, content, images, reasoning, embedding, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (session_id, role, content, images_json, reasoning, embedding_blob, user_id),
@@ -2426,6 +2437,21 @@ async def session_owned_by(session_id: str, user_id: str) -> bool:
     db = await get_db()
     async with db.execute(
         "SELECT 1 FROM sessions WHERE id = ? AND user_id = ?",
+        (session_id, user_id),
+    ) as cur:
+        return await cur.fetchone() is not None
+
+
+async def session_foreign(session_id: str, user_id: str) -> bool:
+    """True when the session row exists but belongs to a different user.
+
+    Distinct from ``not session_owned_by(...)``: a brand-new session id is
+    NOT foreign (the caller is about to create it); only an existing row
+    with a different owner is.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT 1 FROM sessions WHERE id = ? AND user_id <> ?",
         (session_id, user_id),
     ) as cur:
         return await cur.fetchone() is not None

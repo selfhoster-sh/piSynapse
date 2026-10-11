@@ -109,6 +109,11 @@ def _run_chat_stream(monkeypatch, tokens, message="notlarımı listele"):
 
     monkeypatch.setattr(rc, "chat_with_ollama_stream", fake_stream)
     monkeypatch.setattr(rc, "save_message", save_stub)
+    # Ownership pre-check double: this suite drives the endpoint without a
+    # DB fixture — the real session_foreign would touch the live database.
+    async def _not_foreign(session_id, user_id):
+        return False
+    monkeypatch.setattr(rc, "session_foreign", _not_foreign)
     monkeypatch.setattr(rc, "get_history", _empty)
     monkeypatch.setattr(rc, "_gather_memories", _empty)
     monkeypatch.setattr(rc, "retrieve_relevant_history", fake_retrieve)

@@ -35,6 +35,7 @@ from db import (
     link_audits_to_message,
     save_message,
     search_memories,
+    session_foreign,
     session_owned_by,
     update_session_name,
     update_session_summary,
@@ -334,6 +335,14 @@ async def chat_stream(req: ChatRequest, request: Request, background_tasks: Back
     if not _token_limiter.check(user_id, estimate_tokens(req.message) + _TPM_OUTPUT_ALLOWANCE)[0]:
         _busy_sessions.discard(req.session_id)
         raise HTTPException(status_code=429, detail="Token budget exceeded. Try again in a minute.")
+
+    # Ownership: a session id owned by another user answers exactly like a
+    # nonexistent one (404) — no existence oracle, same contract as the
+    # feedback paths. Runs before save_message so a foreign turn never
+    # burns model compute on a reply that could not be persisted anyway.
+    if await session_foreign(req.session_id, user_id):
+        _busy_sessions.discard(req.session_id)
+        raise HTTPException(status_code=404, detail="Session not found")
 
     try:
         await save_message(req.session_id, "user", req.message, images=req.images or None, user_id=user_id)
