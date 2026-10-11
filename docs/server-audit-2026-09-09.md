@@ -318,8 +318,10 @@ Kapsam: `install.py`, `example.env`+template+`config.py` üçlüsü, gereksiniml
 
 **A-Y2. Port sabit `0.0.0.0:8765`, firewall adımı yok** — `install.py:1346,1377`;
 port `.env`'de yok. Portu `.env`'e al, default `127.0.0.1` + `ufw` önerisi sun.
-*(2026-10-11 durum: hâlâ AÇIK — host `0.0.0.0` sabit, port `.env` dışında. Hafta-5
-kurulum/kalite paketine işlendi; bkz. analiz-2026-10-08 B bölümü.)*
+*(2026-10-11 karar: — TASARIM GEREĞİ, değişmeyecek. `0.0.0.0` bu ürün için
+DOĞRU varsayılan: Pi'ye kurulup aynı LAN'daki telefondan erişmek birincil
+kullanım; `127.0.0.1` bunu kırar. Hangi arayüze bağlanacağı kurulumcunun
+bilinçli tercihi olarak kalır. Port'u `.env`'e taşımak da gereksiz karmaşıklık.)*
 
 **A-Y3. TRUSTED_HOSTS tekrar-çalıştırmada değiştirilemez** —
 `install.py:1255,1284-1290`; `preserved_keys` eski değeri sorulanın üstüne yazar.
