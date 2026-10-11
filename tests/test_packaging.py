@@ -8,6 +8,7 @@ These guards keep the list honest.
 """
 import glob
 import os
+
 import tomllib
 
 ROOT = os.path.join(os.path.dirname(__file__), "..")

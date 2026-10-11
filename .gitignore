@@ -43,3 +43,8 @@ corpus_data/additions_embeddings.npy
 corpus_data/pending_review.json
 corpus_data/genuinely_ambiguous.json
 corpus_data/state.json
+
+# Coverage artifacts
+.coverage
+.coverage.*
+htmlcov/
