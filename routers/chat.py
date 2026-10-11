@@ -13,7 +13,7 @@ from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Query, Requ
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
-from auth import current_user
+from auth import current_user, require_admin
 from config import get
 
 # SSE keepalive between events (seconds). Slow middleboxes/tunnels drop
@@ -35,6 +35,7 @@ from db import (
     link_audits_to_message,
     save_message,
     search_memories,
+    session_owned_by,
     update_session_name,
     update_session_summary,
 )
@@ -460,14 +461,20 @@ async def chat_stream(req: ChatRequest, request: Request, background_tasks: Back
 
 
 @router.post("/abort/{session_id}")
-async def abort_generation(session_id: str):
+async def abort_generation(session_id: str, request: Request):
     _validate_session_id(session_id)
     event = _abort_events.get(session_id)
-    if event:
-        event.set()
-        logger.info("Abort requested for session %s", session_id)
-        return {"ok": True, "aborted": True}
-    return {"ok": True, "aborted": False}
+    if not event:
+        return {"ok": True, "aborted": False}
+    # Owner-only: a foreign session answers exactly like an idle one, so an
+    # attacker cannot use the endpoint as a liveness oracle. The stream
+    # handler saves the session row before creating the event, so any live
+    # event has an owner to check against.
+    if not await session_owned_by(session_id, _uid(request)):
+        return {"ok": True, "aborted": False}
+    event.set()
+    logger.info("Abort requested for session %s", session_id)
+    return {"ok": True, "aborted": True}
 
 
 @router.post("/execute", response_model=ChatResponse)
@@ -726,14 +733,16 @@ async def get_chat_history(session_id: str = Query(...), request: Request = None
 
 
 @router.post("/reload-corpus")
-async def reload_corpus():
+async def reload_corpus(request: Request):
     """Force the intent-routing corpus (base + additions.jsonl) to rebuild live.
 
     Normally the cache revalidates automatically via the additions file mtime on
     the next classification; this endpoint makes the refresh immediate and
     deterministic (e.g. after corpus_feeder.py --dry-run, or a --reset rebuild).
-    No service restart.
+    Admin only — every user shares one embedding corpus, so the rebuild must
+    not be triggerable by a normal authenticated session.
     """
+    require_admin(request)
     from llm.intent import reset_tool_embed_cache
     reset_tool_embed_cache()
     return {"ok": True, "reloaded": True}

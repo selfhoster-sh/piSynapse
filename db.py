@@ -2415,6 +2415,22 @@ async def get_session_meta(session_id: str, user_id: str = "default") -> dict:
     return {"summary": row[0] or "", "summarized_until": row[1] or 0}
 
 
+async def session_owned_by(session_id: str, user_id: str) -> bool:
+    """True when the session row belongs to user_id.
+
+    Used by the abort guard: a foreign session must be indistinguishable
+    from an idle one (no existence oracle). Sessions are created by
+    save_message before any generation starts, so a live abort event
+    always has an owner row to check against.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT 1 FROM sessions WHERE id = ? AND user_id = ?",
+        (session_id, user_id),
+    ) as cur:
+        return await cur.fetchone() is not None
+
+
 # -- Users (multi-user identity) --
 #
 # One row per human. API keys are stored as SHA-256 hashes only — the raw key
