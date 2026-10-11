@@ -169,6 +169,34 @@ class _TokenLimiter:
 _token_limiter = _TokenLimiter(tpm=RATE_LIMIT_TPM)
 
 
+async def _debug_beacon_key(request: Request) -> str:
+    """Extract the sendBeacon API key (_k) from a /debug body, size-gated.
+
+    sendBeacon cannot set headers, so the key rides in the JSON body. But
+    this read happens BEFORE the body-size limit further down the middleware
+    and BEFORE authentication: an unauthenticated caller must never be able
+    to make us buffer an attacker-sized payload. Real beacons are tiny and
+    always carry Content-Length — anything else (chunked, missing or
+    oversized Content-Length) is skipped and answered as keyless.
+    """
+    key = request.headers.get("x-api-key", "")
+    if key:
+        return key
+    try:
+        clen = request.headers.get("content-length", "")
+        if not clen.isdigit() or int(clen) > _DEBUG_MAX_BODY_BYTES:
+            return ""
+        body = await request.body()
+        if body:
+            import json as _json
+            data = _json.loads(body.decode())
+            k = data.get("_k", "") or data.get("k", "")
+            return k if isinstance(k, str) else ""
+    except Exception:
+        pass
+    return ""
+
+
 # Set when lifespan startup cannot initialize the database. The app keeps
 # serving so /health reports the condition instead of crash-looping blindly.
 DB_DEGRADED: str | None = None
@@ -588,7 +616,9 @@ async def security_middleware(request: Request, call_next):
     # --- Debug beacon: sendBeacon cannot set headers, so the key travels
     # in the JSON body as _k. The legacy ?k= query param was removed: keys
     # in URLs leak into logs/proxies (audit Y22).
-    # Always require auth for /debug — never leave it open. ---
+    # Always require auth for /debug — never leave it open. The body read
+    # is size-gated (see _debug_beacon_key): an unauthenticated caller
+    # cannot make us buffer an oversized payload before the 401.
     is_debug = path == "/debug"
     if is_debug:
         from db import count_users, resolve_user_by_key
@@ -599,17 +629,7 @@ async def security_middleware(request: Request, call_next):
             has_users = False
         if not API_KEY and not has_users:
             return JSONResponse(status_code=403, content={"detail": "Debug endpoint disabled: no credentials configured"})
-        key = request.headers.get("x-api-key", "")
-        if not key:
-            # Try JSON body (_k from sendBeacon)
-            try:
-                body = await request.body()
-                if body:
-                    import json as _json
-                    data = _json.loads(body.decode())
-                    key = data.get("_k", "") or data.get("k", "")
-            except Exception:
-                pass
+        key = await _debug_beacon_key(request)
         if await resolve_user_by_key(key) is None:
             return JSONResponse(status_code=401, content={"detail": "Invalid or missing API key"})
 
