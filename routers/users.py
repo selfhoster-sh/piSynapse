@@ -16,15 +16,23 @@ from auth import current_user as _authed_user_id
 from auth import require_admin as _require_admin
 
 
-def _set_session_cookie(response: Response, raw_token: str) -> None:
-    """Attach the session cookie: HttpOnly + Lax, Secure only behind HTTPS."""
+def _set_session_cookie(response: Response, raw_token: str, request: Request | None = None) -> None:
+    """Attach the session cookie: HttpOnly + Lax, Secure behind HTTPS.
+
+    Secure is derived from the actual request scheme when the server sees
+    TLS directly; SESSION_COOKIE_SECURE remains the override for
+    TLS-terminating proxies (FastAPI sees plain http behind Caddy/nginx).
+    Never secure-only over plain HTTP — the browser silently drops such
+    cookies and login would never survive a refresh.
+    """
     from config import SESSION_COOKIE_SECURE
     from db import SESSION_COOKIE_NAME, SESSION_TTL_DAYS
 
+    secure = SESSION_COOKIE_SECURE or (request is not None and request.url.scheme == "https")
     response.set_cookie(
         SESSION_COOKIE_NAME, raw_token,
         max_age=SESSION_TTL_DAYS * 86400, httponly=True, samesite="lax",
-        secure=SESSION_COOKIE_SECURE, path="/",
+        secure=secure, path="/",
     )
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -48,7 +56,7 @@ class PasswordRequest(BaseModel):
 
 
 @router.post("/register", status_code=201)
-async def register_user(req: RegisterRequest, response: Response):
+async def register_user(req: RegisterRequest, response: Response, request: Request):
     """Create a user + API key. First user becomes admin."""
     from config import get
 
@@ -69,7 +77,7 @@ async def register_user(req: RegisterRequest, response: Response):
         await set_password(user["id"], req.password)
     # Signup auto-login: the browser never needs the API key afterwards.
     _, raw_session = await create_session(user["id"], req.device or "browser")
-    _set_session_cookie(response, raw_session)
+    _set_session_cookie(response, raw_session, request)
     return {"user": user, "api_key": raw_key}
 
 
@@ -93,7 +101,7 @@ async def login_user(req: LoginRequest):
 
 
 @router.post("/session")
-async def open_session(req: LoginRequest, response: Response):
+async def open_session(req: LoginRequest, response: Response, request: Request):
     """Password login for browsers: session cookie, NO key material returned.
 
     Identical 401 for unknown name vs wrong password (no enumeration).
@@ -107,7 +115,7 @@ async def open_session(req: LoginRequest, response: Response):
     if not user or not ok:
         raise HTTPException(status_code=401, detail="Invalid name or password")
     _, raw = await create_session(user["id"], req.device or "browser")
-    _set_session_cookie(response, raw)
+    _set_session_cookie(response, raw, request)
     return {"user": await _public_user(user["id"])}
 
 

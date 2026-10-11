@@ -1765,8 +1765,21 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   startOnboarding();
   // Returning user without a key (e.g. after logout): offer login instead
   // of landing keyless into per-call auth prompts. Native excluded.
+  // Post-refresh login bug (week-2): password logins keep NO key in the
+  // browser — the HttpOnly session cookie is the credential by design —
+  // so the key check alone re-asked for login on EVERY refresh. A valid
+  // session cookie counts as logged in: verify it first, offer login only
+  // when it is really gone.
   if(!_NATIVE && localStorage.getItem('ps_onboarded') && !getApiKey()){
-    showLogin();
+    let authed = false;
+    try{
+      const r = await fetch(API + '/users/me', {headers: apiHeaders(), cache: 'no-store'});
+      if(r.ok){
+        authed = true;
+        try{ const d = await r.json(); if(d && d.user && d.user.name) setUsername(d.user.name); }catch(e){}
+      }
+    }catch(e){}
+    if(!authed) showLogin();
   }
   await loadSessions(); showWelcome(); startTicker(); startHealthPoll();
   refreshServerStatus();

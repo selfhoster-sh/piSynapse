@@ -37,9 +37,11 @@ self.addEventListener('fetch', event => {
   const url = new URL(request.url);
 
   // Never cache API calls or non-GET requests
+  // /users responses are auth-dependent (session cookie): a cached 200
+  // after logout (or a cached 401 after login) would corrupt boot auth.
   if (request.method !== 'GET' || url.pathname.startsWith('/chat') ||
       url.pathname.startsWith('/config') || url.pathname.startsWith('/widget') ||
-      url.pathname === '/health') {
+      url.pathname.startsWith('/users') || url.pathname === '/health') {
     return;
   }
 
