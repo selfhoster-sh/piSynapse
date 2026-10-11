@@ -95,7 +95,7 @@ async def run_verification(
         error: Error text when the tool failed (None when successful).
     """
     try:
-        verification_status = await _verify(tool_name, params, result, success, entity_id)
+        verification_status = await _verify(tool_name, params, result, success, entity_id, user_id)
         audit_id = await log_tool_call(
             tool_name,
             params,
@@ -117,6 +117,7 @@ async def _verify(
     result: str,
     success: bool,
     entity_id: str | int | None,
+    user_id: str | None = None,
 ) -> str | None:
     """Compute the verification status for a finished tool call.
 
@@ -125,6 +126,10 @@ async def _verify(
     authoritative; the content/summary fallback is used only when the ID is
     missing and is always marked ``verified_by_fallback``. For delete tools
     both paths check ABSENCE (the entity must no longer exist anywhere).
+
+    ``user_id`` scopes the content fallback: an unscoped match could verify
+    a write against ANOTHER user's identical content (multi-user
+    invisibility) — the fallback re-read must be the caller's own data.
     """
     if tool_name not in VERIFY_SCOPE:
         return None
@@ -134,7 +139,7 @@ async def _verify(
         if entity_id is not None and entity_id != "":
             confirmed = await _confirm_by_id(tool_name, entity_id, params)
             return "verified" if confirmed else "verification_failed"
-        matched = await _fallback_match(tool_name, params)
+        matched = await _fallback_match(tool_name, params, user_id)
         return "verified_by_fallback" if matched else "unverified"
     except Exception as e:
         logger.warning(f"Verification for tool '{tool_name}' failed: {e}")
@@ -206,7 +211,7 @@ async def _confirm_by_id(tool_name: str, entity_id: str | int, params: dict) -> 
     return False
 
 
-async def _fallback_match(tool_name: str, params: dict) -> bool:
+async def _fallback_match(tool_name: str, params: dict, user_id: str | None = None) -> bool:
     """Content/summary match used only when the ID is unavailable."""
     if tool_name == "create_task":
         from nextcloud_tasks import search_tasks
@@ -254,14 +259,16 @@ async def _fallback_match(tool_name: str, params: dict) -> bool:
         return not any(item.get("summary", "").strip().lower() == summary for item in items)
 
     if tool_name == "save_memory":
+        from config import DEFAULT_USER
         from db import get_db
 
         content = (params.get("content") or "").strip()
         if not content:
             return False
+        uid = user_id or DEFAULT_USER
         db = await get_db()
         async with db.execute(
-            "SELECT COUNT(*) FROM memories WHERE content = ?", (content,)
+            "SELECT COUNT(*) FROM memories WHERE content = ? AND user_id = ?", (content, uid)
         ) as cur:
             row = await cur.fetchone()
         return bool(row and row[0] > 0)

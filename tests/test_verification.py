@@ -390,3 +390,83 @@ class TestVerificationErrorSignal:
             )
         assert audit_id is None
         assert status == "verification_error"
+
+
+class TestFallbackUserScoping:
+    """The content fallback must never verify a write against ANOTHER user's
+    identical content (multi-user invisibility). Regression for the missing
+    user_id in _verify -> _fallback_match (save_memory query was unscoped)."""
+
+    async def test_cross_user_content_does_not_verify(self, mem_db):
+        db = await mem_db.get_db()
+        await db.execute(
+            "INSERT INTO memories (id, user_id, content) VALUES (1, 'alice', 'ortak metin')"
+        )
+        await db.commit()
+        # bob claims the same content: verification must NOT match alice's row.
+        import tool_verification as tv
+
+        bob_status = await tv._verify(
+            "save_memory", {"content": "ortak metin"}, "Memory saved.", True, None, "bob"
+        )
+        assert bob_status == "unverified"
+        # alice's own row still verifies by fallback.
+        alice_status = await tv._verify(
+            "save_memory", {"content": "ortak metin"}, "Memory saved.", True, None, "alice"
+        )
+        assert alice_status == "verified_by_fallback"
+
+
+class TestFallbackBranches:
+    """Content/summary fallback for the tool types an ID-only test never hit:
+    complete_task, delete_task, update/delete_calendar_event, notes trio, and
+    the empty-parameter guards that must refuse to verify."""
+
+    async def _fb(self, tool, params, user_id=None):
+        import tool_verification as tv
+
+        return await tv._fallback_match(tool, params, user_id)
+
+    async def test_complete_task_fallback(self):
+        with patch("nextcloud_tasks.list_tasks", new=AsyncMock(return_value=("", [{"uid": "t1", "completed": True}]))):
+            assert await self._fb("complete_task", {"uid": "t1"}) is True
+        with patch("nextcloud_tasks.list_tasks", new=AsyncMock(return_value=("", [{"uid": "t1", "completed": False}]))):
+            assert await self._fb("complete_task", {"uid": "t1"}) is False
+
+    async def test_delete_task_fallback_checks_absence(self):
+        with patch("nextcloud_tasks.list_tasks", new=AsyncMock(return_value=("", []))):
+            assert await self._fb("delete_task", {"uid": "t1"}) is True
+        with patch("nextcloud_tasks.list_tasks", new=AsyncMock(return_value=("", [{"uid": "t1"}]))):
+            assert await self._fb("delete_task", {"uid": "t1"}) is False
+
+    async def test_delete_calendar_event_fallback_checks_absence(self):
+        with patch("calendar_ops.list_events", return_value=("", [])):
+            assert await self._fb("delete_calendar_event", {"summary": "Toplantı"}) is True
+        with patch("calendar_ops.list_events", return_value=("", [{"summary": "Toplantı"}])):
+            assert await self._fb("delete_calendar_event", {"summary": "Toplantı"}) is False
+
+    async def test_create_note_fallback(self):
+        with patch("nextcloud_notes.list_notes", new=AsyncMock(return_value=("", [{"title": "Liste", "content": "süt"}]))):
+            assert await self._fb("create_note", {"title": "Liste"}) is True           # title match
+            assert await self._fb("create_note", {"title": "Yok", "content": "süt"}) is True  # content match
+            assert await self._fb("create_note", {"title": "Yok", "content": "yokk"}) is False
+            assert await self._fb("create_note", {"title": ""}) is False              # title is required
+
+    async def test_update_note_fallback(self):
+        with patch("nextcloud_notes.list_notes", new=AsyncMock(return_value=("", [{"title": "T", "content": "yeni"}]))):
+            assert await self._fb("update_note", {"content": "yeni"}) is True
+            assert await self._fb("update_note", {"title": "T"}) is True
+            assert await self._fb("update_note", {"content": "eski"}) is False
+
+    async def test_delete_note_fallback_checks_absence(self):
+        with patch("nextcloud_notes.list_notes", new=AsyncMock(return_value=("", [{"title": "X", "content": "y"}]))):
+            assert await self._fb("delete_note", {"content": "y"}) is False  # still present
+            assert await self._fb("delete_note", {"content": "z"}) is True   # nothing matches -> gone
+
+    async def test_empty_parameter_guards_refuse_to_verify(self):
+        assert await self._fb("create_task", {"summary": ""}) is False
+        assert await self._fb("complete_task", {"uid": ""}) is False
+        assert await self._fb("delete_task", {"uid": ""}) is False
+        assert await self._fb("delete_calendar_event", {"summary": ""}) is False
+        assert await self._fb("update_note", {}) is False
+        assert await self._fb("save_memory", {"content": ""}) is False
