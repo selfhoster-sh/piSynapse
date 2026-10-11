@@ -729,7 +729,15 @@ async def _llm_classify_call(system: str, user: str, max_tokens: int = 20) -> st
             payload["options"] = {"temperature": 0, "num_predict": max_tokens, "num_ctx": 512}
             payload["keep_alive"] = get("LLM_KEEP_ALIVE", "4h")
             url = f"{OLLAMA_BASE_URL}/api/chat"
-        resp = await client.post(url, json=payload)
+        # A2 (analysis): a 20-token classification call must never ride the
+        # shared client's 600s LLM_TIMEOUT — a stalled engine would freeze
+        # the setup phase of every chat for minutes. Hard budget; on timeout
+        # the existing except-path degrades to question/None. Applies to
+        # both backends (the wait_for wraps the shared post).
+        resp = await asyncio.wait_for(
+            client.post(url, json=payload),
+            timeout=float(get("INTENT_LLM_TIMEOUT", 10) or 10),
+        )
         resp.raise_for_status()
         rj = resp.json()
         if backend == "litert":

@@ -179,6 +179,10 @@ RATE_LIMIT_PUBLIC_RPM = _safe_int("RATE_LIMIT_PUBLIC_RPM", 120)
 # magnitude more compute than many short ones. Counting is an estimate
 # (~3 chars/token) — good enough as a cost/DoS guard, not billing-grade.
 RATE_LIMIT_TPM = _safe_int("RATE_LIMIT_TPM", 200000)
+# Hard budget for one-shot intent/classification LLM calls (analysis A2):
+# they ride the shared client whose LLM_TIMEOUT is 600s — a stalled engine
+# must not freeze the chat setup phase for minutes on a 20-token call.
+INTENT_LLM_TIMEOUT = _safe_int("INTENT_LLM_TIMEOUT", 10)
 # Only trust X-Forwarded-For when running behind a trusted reverse proxy.
 # Enabled by default: LAN users must not be able to spoof their IP to bypass rate limits.
 TRUST_X_FORWARDED_FOR = os.getenv("TRUST_X_FORWARDED_FOR", "").strip().lower() in ("1", "true", "yes", "on")
@@ -498,6 +502,7 @@ _NUMERIC_KEYS = {
     "RATE_LIMIT_SESSION_RPM": (int, 20),
     "RATE_LIMIT_PUBLIC_RPM": (int, 120),
     "RATE_LIMIT_TPM": (int, 200000),
+    "INTENT_LLM_TIMEOUT": (int, 10),
 }
 
 
