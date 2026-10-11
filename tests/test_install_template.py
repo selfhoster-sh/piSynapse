@@ -185,3 +185,12 @@ def test_env_written_atomically_at_0600():
     install_py = _read("install.py")
     assert "os.open(env_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)" in install_py
     assert "env_path.write_text(" not in install_py
+
+
+def test_no_predictable_tmp_for_privileged_unit_writes():
+    """Privileged systemd-unit writes must not stage through a predictable
+    /tmp file (CWE-377: pre-created symlink / swap race → root-owned unit)."""
+    install_py = _read("install.py")
+    assert 'Path("/tmp/piserve.service")' not in install_py
+    assert 'Path("/tmp/pisynapse.service")' not in install_py
+    assert '"sudo", "tee"' in install_py

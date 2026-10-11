@@ -855,9 +855,13 @@ def _create_piserve_service(server_py: Path) -> bool:
 
     unit = _render_piserve_unit(user, user_home, python, server_py)
     try:
-        tmp = Path("/tmp/piserve.service")
-        tmp.write_text(unit, encoding="utf-8")
-        subprocess.run(["sudo", "cp", str(tmp), "/etc/systemd/system/piserve.service"], check=True)
+        # Pipe the unit straight to root via `sudo tee` — no predictable
+        # /tmp file (an unprivileged user could pre-create it as a symlink or
+        # race to swap its content before the privileged cp; CWE-377).
+        subprocess.run(
+            ["sudo", "tee", "/etc/systemd/system/piserve.service"],
+            input=unit.encode("utf-8"), check=True, capture_output=True,
+        )
         subprocess.run(["sudo", "systemctl", "daemon-reload"], capture_output=True)
         subprocess.run(["sudo", "systemctl", "enable", "piserve"], capture_output=True)
         subprocess.run(["sudo", "systemctl", "start", "piserve"])
@@ -1617,9 +1621,12 @@ def step_systemd() -> None:
         unit = _render_pisynapse_unit(user, project_dir, uvicorn_path, wants_litert)
         service_path = Path("/etc/systemd/system/pisynapse.service")
         try:
-            tmp = Path("/tmp/pisynapse.service")
-            tmp.write_text(unit, encoding="utf-8")
-            subprocess.run(["sudo", "cp", str(tmp), str(service_path)], check=True)
+            # `sudo tee` instead of a predictable /tmp file + sudo cp (CWE-377
+            # insecure temp: pre-created symlink / swap race → root-owned unit).
+            subprocess.run(
+                ["sudo", "tee", str(service_path)],
+                input=unit.encode("utf-8"), check=True, capture_output=True,
+            )
             subprocess.run(["sudo", "systemctl", "daemon-reload"], capture_output=True)
             ok("systemd service created: pisynapse.service")
 
