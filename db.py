@@ -928,12 +928,13 @@ async def log_intent_audit(message: str, chosen_group: str | None,
     """Fire-and-forget intent ambiguity record. Never raises."""
     try:
         db = await get_db()
-        await db.execute(
-            "INSERT INTO intent_audit_log (message, chosen_group, best_sim, margin, source) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (message[:500], chosen_group, best_sim, margin, source),
-        )
-        await _commit_with_retry(db)
+        async with _write_lock():
+            await db.execute(
+                "INSERT INTO intent_audit_log (message, chosen_group, best_sim, margin, source) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (message[:500], chosen_group, best_sim, margin, source),
+            )
+            await _commit_with_retry(db)
     except Exception as e:
         logger.warning(f"Intent audit write failed (source={source}): {e}")
 
@@ -963,8 +964,9 @@ async def set_tool_correction(audit_id: int, expected_tool: str | None,
         if user_id is not None:
             sql += " AND user_id = ?"
             args = (*args, user_id)
-        cur = await db.execute(sql, args)
-        await _commit_with_retry(db)
+        async with _write_lock():
+            cur = await db.execute(sql, args)
+            await _commit_with_retry(db)
         return cur.rowcount > 0
     except Exception as e:
         logger.warning(f"Tool correction update failed for audit_id={audit_id}: {e}")
@@ -1011,8 +1013,9 @@ async def set_tool_confirmation(audit_id: int, user_id: str | None = None) -> bo
         if user_id is not None:
             sql += " AND user_id = ?"
             args = (*args, user_id)
-        cur = await db.execute(sql, args)
-        await _commit_with_retry(db)
+        async with _write_lock():
+            cur = await db.execute(sql, args)
+            await _commit_with_retry(db)
         return cur.rowcount > 0
     except Exception as e:
         logger.warning(f"Tool confirmation update failed for audit_id={audit_id}: {e}")
@@ -1069,15 +1072,16 @@ async def record_feedback_vote(audit_id: int, user_id: str, signal: str, group: 
         sig = normalize_signature(text)
         if not sig:
             return False
-        await db.execute(
-            """INSERT INTO feedback_votes (audit_id, user_id, signature, proposed_group, signal)
-               VALUES (?, ?, ?, ?, ?)
-               ON CONFLICT(audit_id, user_id) DO UPDATE SET
-                 signature = excluded.signature, proposed_group = excluded.proposed_group,
-                 signal = excluded.signal, created_at = CURRENT_TIMESTAMP""",
-            (audit_id, user_id, sig, group or "", signal),
-        )
-        await _commit_with_retry(db)
+        async with _write_lock():
+            await db.execute(
+                """INSERT INTO feedback_votes (audit_id, user_id, signature, proposed_group, signal)
+                   VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT(audit_id, user_id) DO UPDATE SET
+                     signature = excluded.signature, proposed_group = excluded.proposed_group,
+                     signal = excluded.signal, created_at = CURRENT_TIMESTAMP""",
+                (audit_id, user_id, sig, group or "", signal),
+            )
+            await _commit_with_retry(db)
         return True
     except Exception as e:
         logger.warning(f"Feedback vote record failed for audit_id={audit_id}: {e}")
@@ -1258,15 +1262,16 @@ async def record_pattern_decision(signature: str, group: str, status: str, decid
         return
     try:
         db = await get_db()
-        await db.execute(
-            """INSERT INTO pattern_approvals (signature, proposed_group, status, decided_by)
-               VALUES (?, ?, ?, ?)
-               ON CONFLICT(signature) DO UPDATE SET
-                 proposed_group = excluded.proposed_group, status = excluded.status,
-                 decided_by = excluded.decided_by, decided_at = CURRENT_TIMESTAMP""",
-            (signature, group or "", status, decided_by),
-        )
-        await _commit_with_retry(db)
+        async with _write_lock():
+            await db.execute(
+                """INSERT INTO pattern_approvals (signature, proposed_group, status, decided_by)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(signature) DO UPDATE SET
+                     proposed_group = excluded.proposed_group, status = excluded.status,
+                     decided_by = excluded.decided_by, decided_at = CURRENT_TIMESTAMP""",
+                (signature, group or "", status, decided_by),
+            )
+            await _commit_with_retry(db)
     except Exception as e:
         logger.warning(f"Pattern decision record failed: {e}")
 
@@ -1359,14 +1364,15 @@ async def upsert_message_feedback(message_id: int, value: str,
             row = await cur.fetchone()
         if not row or row[0] != "assistant":
             return False
-        await db.execute(
-            """INSERT INTO message_feedback (message_id, value, note, created_at, updated_at)
-               VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-               ON CONFLICT(message_id) DO UPDATE SET
-                 value = excluded.value, note = excluded.note, updated_at = CURRENT_TIMESTAMP""",
-            (message_id, value, note),
-        )
-        await _commit_with_retry(db)
+        async with _write_lock():
+            await db.execute(
+                """INSERT INTO message_feedback (message_id, value, note, created_at, updated_at)
+                   VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                   ON CONFLICT(message_id) DO UPDATE SET
+                     value = excluded.value, note = excluded.note, updated_at = CURRENT_TIMESTAMP""",
+                (message_id, value, note),
+            )
+            await _commit_with_retry(db)
         return True
     except Exception as e:
         logger.warning(f"Message feedback upsert failed for message_id={message_id}: {e}")
@@ -1386,11 +1392,12 @@ async def link_audits_to_message(conversation_id: int, audit_ids: list[int]):
     try:
         db = await get_db()
         ph = ",".join("?" * len(audit_ids))
-        cur = await db.execute(
-            f"UPDATE tool_audit_log SET conversation_id = ? WHERE id IN ({ph}) AND conversation_id IS NULL",
-            (conversation_id, *audit_ids),
-        )
-        await _commit_with_retry(db)
+        async with _write_lock():
+            cur = await db.execute(
+                f"UPDATE tool_audit_log SET conversation_id = ? WHERE id IN ({ph}) AND conversation_id IS NULL",
+                (conversation_id, *audit_ids),
+            )
+            await _commit_with_retry(db)
         return cur.rowcount
     except Exception as e:
         logger.warning(f"Audit->message link failed for conversation_id={conversation_id}: {e}")
@@ -1401,11 +1408,12 @@ async def purge_intent_audit(days: int = 30) -> int:
     """Delete intent audit rows older than `days`. Never raises; returns deleted count."""
     try:
         db = await get_db()
-        cur = await db.execute(
-            "DELETE FROM intent_audit_log WHERE created_at < datetime('now', ?)",
-            (f"-{days} days",),
-        )
-        await _commit_with_retry(db)
+        async with _write_lock():
+            cur = await db.execute(
+                "DELETE FROM intent_audit_log WHERE created_at < datetime('now', ?)",
+                (f"-{days} days",),
+            )
+            await _commit_with_retry(db)
         return cur.rowcount
     except Exception as e:
         logger.warning(f"Intent audit purge failed: {e}")
@@ -2459,13 +2467,14 @@ async def clear_calendar_map(session_id: str):
 
 async def update_session_name(session_id: str, name: str, user_id: str = "default"):
     db = await get_db()
-    await db.execute(
-        """INSERT INTO sessions (id, name, user_id) VALUES (?, ?, ?)
-           ON CONFLICT(id) DO UPDATE SET name = excluded.name, last_active = CURRENT_TIMESTAMP
-           WHERE sessions.user_id = excluded.user_id""",
-        (session_id, name, user_id),
-    )
-    await _commit_with_retry(db)
+    async with _write_lock():
+        await db.execute(
+            """INSERT INTO sessions (id, name, user_id) VALUES (?, ?, ?)
+               ON CONFLICT(id) DO UPDATE SET name = excluded.name, last_active = CURRENT_TIMESTAMP
+               WHERE sessions.user_id = excluded.user_id""",
+            (session_id, name, user_id),
+        )
+        await _commit_with_retry(db)
 
 
 async def get_all_sessions(user_id: str = "default") -> list[dict]:
@@ -2818,15 +2827,17 @@ async def resolve_session(raw_token: str) -> dict | None:
             return None
         now = _dt.utcnow()
         if exp <= now:
-            await db.execute("DELETE FROM user_sessions WHERE id = ?", (row[0],))
-            await _commit_with_retry(db)
+            async with _write_lock():
+                await db.execute("DELETE FROM user_sessions WHERE id = ?", (row[0],))
+                await _commit_with_retry(db)
             return None
         if (exp - now).days < SESSION_TOUCH_DAYS:
-            await db.execute(
-                "UPDATE user_sessions SET expires_at = datetime('now', ?), last_seen = CURRENT_TIMESTAMP WHERE id = ?",
-                (f"+{SESSION_TTL_DAYS} days", row[0]),
-            )
-            await _commit_with_retry(db)
+            async with _write_lock():
+                await db.execute(
+                    "UPDATE user_sessions SET expires_at = datetime('now', ?), last_seen = CURRENT_TIMESTAMP WHERE id = ?",
+                    (f"+{SESSION_TTL_DAYS} days", row[0]),
+                )
+                await _commit_with_retry(db)
         return await get_user(row[1])
     except Exception:
         return None
@@ -3223,27 +3234,28 @@ async def update_session_summary(session_id: str, summary: str, summarized_until
     the owner guard on the conflict path).
     """
     db = await get_db()
-    if expected_until is None:
-        await db.execute(
-            """INSERT INTO sessions (id, summary, summarized_until, user_id) VALUES (?, ?, ?, ?)
-               ON CONFLICT(id) DO UPDATE SET summary = excluded.summary, summarized_until = excluded.summarized_until,
-               last_active = CURRENT_TIMESTAMP
-               WHERE sessions.user_id = excluded.user_id""",
-            (session_id, summary, summarized_until, user_id),
-        )
-    else:
-        await db.execute(
-            """INSERT INTO sessions (id, summary, summarized_until, user_id) VALUES (?, ?, ?, ?)
-               ON CONFLICT(id) DO UPDATE SET summary = excluded.summary, summarized_until = excluded.summarized_until,
-               last_active = CURRENT_TIMESTAMP
-               WHERE sessions.user_id = excluded.user_id AND sessions.summarized_until = ?""",
-            (session_id, summary, summarized_until, user_id, expected_until),
-        )
-    # Python >= 3.12 reports cursor.rowcount = -1 for every INSERT (upserts
-    # included), which made this function return False unconditionally;
-    # changes() is the portable source of truth for "did the write apply".
-    applied = (await (await db.execute("SELECT changes()")).fetchone())[0] > 0
-    await _commit_with_retry(db)
+    async with _write_lock():
+        if expected_until is None:
+            await db.execute(
+                """INSERT INTO sessions (id, summary, summarized_until, user_id) VALUES (?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET summary = excluded.summary, summarized_until = excluded.summarized_until,
+                   last_active = CURRENT_TIMESTAMP
+                   WHERE sessions.user_id = excluded.user_id""",
+                (session_id, summary, summarized_until, user_id),
+            )
+        else:
+            await db.execute(
+                """INSERT INTO sessions (id, summary, summarized_until, user_id) VALUES (?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET summary = excluded.summary, summarized_until = excluded.summarized_until,
+                   last_active = CURRENT_TIMESTAMP
+                   WHERE sessions.user_id = excluded.user_id AND sessions.summarized_until = ?""",
+                (session_id, summary, summarized_until, user_id, expected_until),
+            )
+        # Python >= 3.12 reports cursor.rowcount = -1 for every INSERT (upserts
+        # included), which made this function return False unconditionally;
+        # changes() is the portable source of truth for "did the write apply".
+        applied = (await (await db.execute("SELECT changes()")).fetchone())[0] > 0
+        await _commit_with_retry(db)
     return applied
 
 
@@ -3273,19 +3285,21 @@ async def save_memory(content: str, category: str = "general",
 
         for mem_id, existing_embedding in existing:
             if cosine_similarity(new_embedding, existing_embedding) >= MEMORY_SIMILARITY_THRESHOLD:
-                await db.execute(
-                    """UPDATE memories SET last_accessed = CURRENT_TIMESTAMP,
-                       access_count = access_count + 1 WHERE id = ?""",
-                    (mem_id,),
-                )
-                await _commit_with_retry(db)
+                async with _write_lock():
+                    await db.execute(
+                        """UPDATE memories SET last_accessed = CURRENT_TIMESTAMP,
+                           access_count = access_count + 1 WHERE id = ?""",
+                        (mem_id,),
+                    )
+                    await _commit_with_retry(db)
                 return "Memory updated (similar content exists).", mem_id
 
-    cur = await db.execute(
-        "INSERT INTO memories (user_id, content, category, importance, embedding) VALUES (?, ?, ?, ?, ?)",
-        (user_id, content, category, importance, new_embedding),
-    )
-    await _commit_with_retry(db)
+    async with _write_lock():
+        cur = await db.execute(
+            "INSERT INTO memories (user_id, content, category, importance, embedding) VALUES (?, ?, ?, ?, ?)",
+            (user_id, content, category, importance, new_embedding),
+        )
+        await _commit_with_retry(db)
     rowid = cur.lastrowid
     return "Memory saved.", rowid
 
@@ -3415,8 +3429,9 @@ async def get_memories(user_id: str | None = None, limit: int = 10) -> list[dict
 
 async def delete_memory(user_id: str, memory_id: int):
     db = await get_db()
-    await db.execute("DELETE FROM memories WHERE id = ? AND user_id = ?", (memory_id, user_id))
-    await _commit_with_retry(db)
+    async with _write_lock():
+        await db.execute("DELETE FROM memories WHERE id = ? AND user_id = ?", (memory_id, user_id))
+        await _commit_with_retry(db)
 
 
 async def get_all_memories(user_id: str | None = None) -> list[dict]:
