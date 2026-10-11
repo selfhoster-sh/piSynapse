@@ -1924,11 +1924,11 @@ function renderSessions(list, animate=true){
       const item=e.target.closest('.sess-item');
       if(!item) return;
       clearTimeout(pressMap.get(item));
-      const t=setTimeout(()=>{
+      const tid=setTimeout(()=>{
         document.querySelectorAll('.sess-item.long-press').forEach(el=>{ if(el!==item) el.classList.remove('long-press'); });
         item.classList.add('long-press');
       }, 350);
-      pressMap.set(item,t);
+      pressMap.set(item,tid);
     }, {passive:true});
     el.addEventListener('touchend', (e)=>{ const it=e.target.closest('.sess-item'); if(it) clearTimeout(pressMap.get(it)); });
     el.addEventListener('touchmove', (e)=>{ const it=e.target.closest('.sess-item'); if(it) clearTimeout(pressMap.get(it)); });
@@ -3300,7 +3300,6 @@ function _renderSetting(key, entry, advanced) {
   // {value,label}. Normalize both to {value,label}[] here.
   let optsArr = entry.options;
   if (typeof optsArr === 'string') {
-    optsArr = '|'.repeat(0) + optsArr; // keep parity
     optsArr = optsArr.split('|').filter(Boolean).map(o => ({value:o, label:{tr:o, en:o}}));
   } else if (Array.isArray(optsArr)) {
     optsArr = optsArr.map(o => typeof o === 'string' ? {value:o, label:{tr:o, en:o}} : o);
