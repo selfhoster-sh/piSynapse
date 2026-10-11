@@ -1098,3 +1098,37 @@ def test_get_all_history_paging(ops_db):
     assert asyncio.run(_flat()) == [f"m{i}" for i in range(5)]
     assert asyncio.run(_flat(limit=2)) == ["m0", "m1"]
     assert asyncio.run(_flat(limit=2, offset=3)) == ["m3", "m4"]
+
+
+def test_rollup_holds_the_process_write_lock(audit_db, monkeypatch):
+    """Guard (2026-10-11): the rollup's BEGIN IMMEDIATE transaction must hold
+    _write_lock like every other write path. Without it, another writer's
+    statements join the open transaction on the SHARED connection and roll
+    back WITH it when a busy retry discards the day — or BEGIN IMMEDIATE
+    collides with the other path's implicit transaction and the generic
+    rollback kills ITS partial write."""
+    import contextlib
+
+    async def seed():
+        db = await dbmod.get_db()
+        await db.execute(
+            "INSERT INTO tool_audit_log (tool_name, params, success, duration_ms, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("get_datetime", "{}", 1, 10.0, "2020-01-02 03:04:05"),
+        )
+        await db.commit()
+
+    asyncio.run(seed())
+
+    acquisitions = []
+
+    @contextlib.asynccontextmanager
+    async def spy_lock():
+        acquisitions.append(1)
+        yield
+
+    monkeypatch.setattr(dbmod, "_write_lock", spy_lock)
+
+    n = asyncio.run(dbmod.rollup_tool_audit())
+    assert n == 1
+    assert acquisitions, "rollup must serialize its transaction via _write_lock"

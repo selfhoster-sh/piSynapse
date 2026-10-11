@@ -1513,60 +1513,68 @@ async def rollup_tool_audit(days: int = 14) -> int:
         days_summarized = 0
         for day in days_found:
             # Each day is atomic: summary INSERT + detail DELETE in one txn.
-            for attempt in range(_LOCKED_RETRIES + 1):
-                try:
-                    await db.execute("BEGIN IMMEDIATE")
-                    breakdown = {}
-                    cur2 = await db.execute(
-                        """SELECT tool_name, COUNT(*) FROM tool_audit_log
-                           WHERE is_summary = 0 AND created_at < datetime('now', ?)
-                             AND substr(created_at, 1, 10) = ?
-                           GROUP BY tool_name""",
-                        (cutoff, day),
-                    )
-                    for name, cnt in await cur2.fetchall():
-                        breakdown[name] = cnt
-
-                    # Archive first, delete second: a failed export raises and
-                    # rolls the day back, so detail rows are never discarded
-                    # without a CSV copy existing on disk.
-                    await export_tool_audit_day(day, cutoff)
-
-                    await db.execute(
-                        """INSERT INTO tool_audit_log
-                           (is_summary, day, total_calls, success_count, error_count, tool_breakdown, tool_name, success, created_at, expected_tool, corrected_at)
-                           SELECT 1, ?, COUNT(*), SUM(success), SUM(1 - success), ?, 'rollup', 1, ?, NULL, NULL
-                           FROM tool_audit_log
-                           WHERE is_summary = 0 AND created_at < datetime('now', ?)
-                             AND substr(created_at, 1, 10) = ?""",
-                        (day, json.dumps(breakdown), day, cutoff, day),
-                    )
-                    await db.execute(
-                        """DELETE FROM tool_audit_log
-                           WHERE is_summary = 0 AND created_at < datetime('now', ?)
-                             AND substr(created_at, 1, 10) = ?""",
-                        (cutoff, day),
-                    )
-                    await _commit_with_retry(db)
-                    days_summarized += 1
-                    break
-                except sqlite3.OperationalError as e:
+            # The process-wide write lock is held for the whole transaction:
+            # every other write path takes it, and without it another
+            # writer's statements would JOIN this open transaction on the
+            # shared connection — and roll back WITH it when a busy retry
+            # discards the day (or BEGIN IMMEDIATE would collide with the
+            # other path's implicit transaction and the generic rollback
+            # would kill ITS partial write).
+            async with _write_lock():
+                for attempt in range(_LOCKED_RETRIES + 1):
                     try:
-                        await db.rollback()
+                        await db.execute("BEGIN IMMEDIATE")
+                        breakdown = {}
+                        cur2 = await db.execute(
+                            """SELECT tool_name, COUNT(*) FROM tool_audit_log
+                               WHERE is_summary = 0 AND created_at < datetime('now', ?)
+                                 AND substr(created_at, 1, 10) = ?
+                               GROUP BY tool_name""",
+                            (cutoff, day),
+                        )
+                        for name, cnt in await cur2.fetchall():
+                            breakdown[name] = cnt
+
+                        # Archive first, delete second: a failed export raises and
+                        # rolls the day back, so detail rows are never discarded
+                        # without a CSV copy existing on disk.
+                        await export_tool_audit_day(day, cutoff)
+
+                        await db.execute(
+                            """INSERT INTO tool_audit_log
+                               (is_summary, day, total_calls, success_count, error_count, tool_breakdown, tool_name, success, created_at, expected_tool, corrected_at)
+                               SELECT 1, ?, COUNT(*), SUM(success), SUM(1 - success), ?, 'rollup', 1, ?, NULL, NULL
+                               FROM tool_audit_log
+                               WHERE is_summary = 0 AND created_at < datetime('now', ?)
+                                 AND substr(created_at, 1, 10) = ?""",
+                            (day, json.dumps(breakdown), day, cutoff, day),
+                        )
+                        await db.execute(
+                            """DELETE FROM tool_audit_log
+                               WHERE is_summary = 0 AND created_at < datetime('now', ?)
+                                 AND substr(created_at, 1, 10) = ?""",
+                            (cutoff, day),
+                        )
+                        await _commit_with_retry(db)
+                        days_summarized += 1
+                        break
+                    except sqlite3.OperationalError as e:
+                        try:
+                            await db.rollback()
+                        except Exception:
+                            pass
+                        if "locked" not in str(e).lower() and "busy" not in str(e).lower():
+                            raise
+                        if attempt >= _LOCKED_RETRIES:
+                            raise
+                        logger.warning(f"SQLite busy during rollup of {day}, retrying ({attempt + 1}/{_LOCKED_RETRIES})...")
+                        await asyncio.sleep(0.25 * (attempt + 1))
                     except Exception:
-                        pass
-                    if "locked" not in str(e).lower() and "busy" not in str(e).lower():
+                        try:
+                            await db.rollback()
+                        except Exception:
+                            pass
                         raise
-                    if attempt >= _LOCKED_RETRIES:
-                        raise
-                    logger.warning(f"SQLite busy during rollup of {day}, retrying ({attempt + 1}/{_LOCKED_RETRIES})...")
-                    await asyncio.sleep(0.25 * (attempt + 1))
-                except Exception:
-                    try:
-                        await db.rollback()
-                    except Exception:
-                        pass
-                    raise
 
         if days_summarized:
             logger.info(f"Tool audit rollup: {days_summarized} day(s) summarized")
