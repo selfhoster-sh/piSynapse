@@ -67,6 +67,16 @@ router = APIRouter(prefix="/chat", tags=["chat", "sessions", "memories"])
 # stream, so this race has no practical impact.
 _abort_events: dict[str, asyncio.Event] = {}
 
+# Sessions with an in-flight /stream turn. One active turn per session
+# (reject policy, per LangSmith/Zylos): two parallel turns would both read
+# the pre-existing history and interleave assistant writes, and the second
+# would overwrite the first's abort event.
+_busy_sessions: set[str] = set()
+
+# Output allowance reserved at TPM pre-check time (actual usage is debited
+# when the stream finishes). Bounds the turn before the model is invoked.
+_TPM_OUTPUT_ALLOWANCE = 16384
+
 # -- Session ID validation --
 # Allow: alphanumeric, hyphens, underscores. Max 64 chars.
 # Rejects injection attempts, excessively long IDs, and path-traversal patterns.
@@ -312,6 +322,19 @@ async def chat_stream(req: ChatRequest, request: Request, background_tasks: Back
     if not allowed:
         raise HTTPException(status_code=429, detail="Session rate limit exceeded. Try again later.")
 
+    # One active turn per session (reject policy). See _busy_sessions doc.
+    if req.session_id in _busy_sessions:
+        raise HTTPException(status_code=409, detail="A reply is already being generated for this session.")
+    _busy_sessions.add(req.session_id)
+
+    # Token budget pre-check (OWASP LLM10): bound the unbounded user input
+    # BEFORE it reaches the model. Actual usage (history + output) is debited
+    # when the stream finishes, so a burst cannot outrun the budget.
+    from main import _token_limiter, estimate_tokens
+    if not _token_limiter.check(user_id, estimate_tokens(req.message) + _TPM_OUTPUT_ALLOWANCE)[0]:
+        _busy_sessions.discard(req.session_id)
+        raise HTTPException(status_code=429, detail="Token budget exceeded. Try again in a minute.")
+
     try:
         await save_message(req.session_id, "user", req.message, images=req.images or None, user_id=user_id)
 
@@ -338,6 +361,9 @@ async def chat_stream(req: ChatRequest, request: Request, background_tasks: Back
             else:
                 intent, tool_group = await llm_resolve_with_evidence(req.message, history)
     except Exception as e:
+        # Setup failed before generate() ran, so its finally never fires —
+        # release the session turn slot here.
+        _busy_sessions.discard(req.session_id)
         logger.error("Chat stream setup error: %s\n%s", e, traceback.format_exc())
         raise HTTPException(status_code=500, detail="Something went wrong. Please try again.")
 
@@ -435,6 +461,17 @@ async def chat_stream(req: ChatRequest, request: Request, background_tasks: Back
             if not pump_task.done():
                 pump_task.cancel()
             _abort_events.pop(req.session_id, None)
+            # Release the one-turn-per-session slot.
+            _busy_sessions.discard(req.session_id)
+            # Debit actual token usage (input history + message + output).
+            # Estimate-only, guarded — never let accounting break the turn.
+            try:
+                from main import _token_limiter, estimate_tokens
+                out = estimate_tokens("".join(reply_parts))
+                hist = sum(estimate_tokens(str(m.get("content") or "")) for m in history) if isinstance(history, list) else 0
+                _token_limiter.debit(user_id, estimate_tokens(req.message) + hist + out)
+            except Exception:
+                pass
             if not reply_saved and reply_parts:
                 try:
                     partial = _clean_assistant_reply("".join(reply_parts))

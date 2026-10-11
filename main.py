@@ -27,6 +27,7 @@ from config import (
     RATE_LIMIT_PUBLIC_RPM,
     RATE_LIMIT_RPM,
     RATE_LIMIT_SESSION_RPM,
+    RATE_LIMIT_TPM,
     TRUST_X_FORWARDED_FOR,
     TRUSTED_HOSTS,
 )
@@ -99,6 +100,73 @@ _session_limiter = _RateLimiter(rpm=RATE_LIMIT_SESSION_RPM)
 # Exempt paths (health/static) get their own lenient bucket: still bounded
 # against L7 floods, far above any legitimate poller.
 _public_limiter = _RateLimiter(rpm=RATE_LIMIT_PUBLIC_RPM)
+
+
+def estimate_tokens(text: str) -> int:
+    """Rough token estimate (~3 chars/token).
+
+    Not billing-grade — a cost/DoS guard. UTF-8 byte length is used so
+    multibyte text (Turkish, CJK) is not undercounted the way a character
+    count would be.
+    """
+    if not text:
+        return 0
+    return max(1, len(text.encode("utf-8", errors="replace")) // 3)
+
+
+class _TokenLimiter:
+    """Sliding-window token budget per user (OWASP LLM10).
+
+    Mirrors the request limiter's per-user bucketing, but counts estimated
+    tokens instead of request timestamps. `check()` is called BEFORE a turn
+    is forwarded (input + a bounded output allowance); `debit()` records the
+    actual total once the turn finishes, so a burst cannot outrun the budget
+    across concurrent completions the way a pure pre-check would.
+    """
+
+    def __init__(self, tpm: int = 200000, max_buckets: int = 10000):
+        self.tpm = tpm
+        self.max_buckets = max_buckets
+        self._windows: dict[str, list[tuple[float, int]]] = defaultdict(list)
+        self._last_cleanup = time.time()
+
+    def _prune(self, bucket: list[tuple[float, int]], now: float) -> list[tuple[float, int]]:
+        cutoff = now - 60
+        bucket[:] = [(t, n) for t, n in bucket if t > cutoff]
+        return bucket
+
+    def check(self, who: str, tokens: int) -> tuple[bool, int]:
+        """Returns (allowed, remaining_tokens). Consumes nothing."""
+        now = time.time()
+        if now - self._last_cleanup > 60:
+            self._cleanup(now)
+        if len(self._windows) >= self.max_buckets and who not in self._windows:
+            return False, 0
+        bucket = self._prune(self._windows[who], now)
+        used = sum(n for _, n in bucket)
+        remaining = max(0, self.tpm - used)
+        if tokens > remaining:
+            return False, remaining
+        return True, remaining - tokens
+
+    def debit(self, who: str, tokens: int) -> None:
+        """Record tokens actually consumed (post-turn)."""
+        if tokens <= 0:
+            return
+        now = time.time()
+        bucket = self._windows[who]
+        bucket.append((now, tokens))
+        self._prune(bucket, now)
+
+    def _cleanup(self, now: float):
+        cutoff = now - 120
+        stale = [k for k, v in self._windows.items() if not v or v[-1][0] < cutoff]
+        for k in stale:
+            del self._windows[k]
+        self._last_cleanup = now
+
+
+_token_limiter = _TokenLimiter(tpm=RATE_LIMIT_TPM)
 
 
 # Set when lifespan startup cannot initialize the database. The app keeps

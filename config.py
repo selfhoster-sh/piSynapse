@@ -174,6 +174,11 @@ PERSONAL_KEYS = frozenset({
 RATE_LIMIT_RPM = _safe_int("RATE_LIMIT_RPM", 30)
 RATE_LIMIT_SESSION_RPM = _safe_int("RATE_LIMIT_SESSION_RPM", 20)
 RATE_LIMIT_PUBLIC_RPM = _safe_int("RATE_LIMIT_PUBLIC_RPM", 120)
+# Token budget per user per minute (OWASP LLM10 "Unbounded Consumption").
+# RPM alone cannot bound cost: one long-context request can burn orders of
+# magnitude more compute than many short ones. Counting is an estimate
+# (~3 chars/token) — good enough as a cost/DoS guard, not billing-grade.
+RATE_LIMIT_TPM = _safe_int("RATE_LIMIT_TPM", 200000)
 # Only trust X-Forwarded-For when running behind a trusted reverse proxy.
 # Enabled by default: LAN users must not be able to spoof their IP to bypass rate limits.
 TRUST_X_FORWARDED_FOR = os.getenv("TRUST_X_FORWARDED_FOR", "").strip().lower() in ("1", "true", "yes", "on")
@@ -492,6 +497,7 @@ _NUMERIC_KEYS = {
     "RATE_LIMIT_RPM": (int, 30),
     "RATE_LIMIT_SESSION_RPM": (int, 20),
     "RATE_LIMIT_PUBLIC_RPM": (int, 120),
+    "RATE_LIMIT_TPM": (int, 200000),
 }
 
 

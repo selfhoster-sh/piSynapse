@@ -119,8 +119,16 @@ def _run_chat_stream(monkeypatch, tokens, message="notlarımı listele"):
     monkeypatch.setattr(llm, "_classify_intent", fake_intent)
     monkeypatch.setattr(llm, "contextual_email_followup", lambda *a, **k: False)
 
+    from main import estimate_tokens as _real_estimate_tokens
+
     fake_main = types.SimpleNamespace(
         _session_limiter=types.SimpleNamespace(allow=lambda sid: (True, None)),
+        # Permissive TPM double: allow every turn, record nothing.
+        _token_limiter=types.SimpleNamespace(
+            check=lambda who, tokens: (True, 10**9),
+            debit=lambda who, tokens: None,
+        ),
+        estimate_tokens=_real_estimate_tokens,
     )
     monkeypatch.setitem(sys.modules, "main", fake_main)
 
