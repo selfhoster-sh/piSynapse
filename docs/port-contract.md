@@ -124,6 +124,6 @@ Counts regenerate mechanically — never hand-edit them:
   `test_settings_backend_sync`, `test_faz4/5`, `test_corpus_feeder`,
   `test_litert_serve`, `test_stability_fixes`.
 - Plus: migration-step, old-DB, concurrency and FTS-failure tests inside the
-  files above. Full suite green is the gate (**858 collected as of
+  files above. Full suite green is the gate (**900 collected as of
   2026-10-11** — regenerate with the command above before trusting the
   number).
