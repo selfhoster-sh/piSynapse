@@ -14,7 +14,6 @@ accumulators. The llm layer itself already resets its per-round buffers
 (buf/full_text at the top of each round) — no change needed there.
 """
 import asyncio
-import json
 import os
 import re
 import sys

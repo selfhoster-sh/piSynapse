@@ -13,7 +13,6 @@
   and via an every-boot repair for legacy stored rows.
 """
 import asyncio
-import os
 
 import aiosqlite
 import pytest

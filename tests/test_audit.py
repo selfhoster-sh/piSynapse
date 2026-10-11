@@ -1106,7 +1106,8 @@ def test_rollup_holds_the_process_write_lock(audit_db, monkeypatch):
     statements join the open transaction on the SHARED connection and roll
     back WITH it when a busy retry discards the day — or BEGIN IMMEDIATE
     collides with the other path's implicit transaction and the generic
-    rollback kills ITS partial write."""
+    rollback kills ITS partial write.
+    """
     import contextlib
 
     async def seed():

@@ -9,7 +9,6 @@ Content-Length (real beacons are tiny and always carry it); chunked or
 oversized requests are answered as keyless without reading the body.
 """
 import asyncio
-from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
