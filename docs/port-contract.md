@@ -106,9 +106,13 @@ language EN; the tr/en catalog stays first-class (no hardcoded user strings).
 
 ## 8. Acceptance tests (must pass on the port)
 
-- `tests/test_user_isolation.py` (9) — cross-user negative tests.
-- `tests/test_summary_bounds.py` (10) — cap/order/convergence/repair/cascade/race.
-- `tests/test_write_integrity.py` (5) — concurrency, atomicity, import-once.
+Counts regenerate mechanically — never hand-edit them:
+
+    python -m pytest --collect-only -q
+
+- `tests/test_user_isolation.py` (16) — cross-user negative tests.
+- `tests/test_summary_bounds.py` (11) — cap/order/convergence/repair/cascade/race.
+- `tests/test_write_integrity.py` (6) — concurrency, atomicity, import-once.
 - `tests/test_chat_parity.py` (4) + `tests/test_stream_abort.py` (2).
 - `tests/test_tool_escalation.py`, `test_chat/stream_loop_guards`,
   `test_retry`, `test_intent_*`, `test_tool_events`, `test_verification`,
@@ -120,4 +124,6 @@ language EN; the tr/en catalog stays first-class (no hardcoded user strings).
   `test_settings_backend_sync`, `test_faz4/5`, `test_corpus_feeder`,
   `test_litert_serve`, `test_stability_fixes`.
 - Plus: migration-step, old-DB, concurrency and FTS-failure tests inside the
-  files above. Full suite green is the gate (648 passed at freeze time).
+  files above. Full suite green is the gate (**858 collected as of
+  2026-10-11** — regenerate with the command above before trusting the
+  number).
