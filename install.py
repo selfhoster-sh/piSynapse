@@ -1441,9 +1441,15 @@ def step_env() -> None:
         if re.search(pattern, content, re.MULTILINE):
             content = re.sub(pattern, lambda _m: f"{k}={v}", content, flags=re.MULTILINE)
 
-    env_path.write_text(content.strip() + "\n", encoding="utf-8")
+    # Create the file at 0600 ATOMICALLY: write_text() would birth it
+    # world-readable (umask 0644) and only the later chmod would tighten it —
+    # a window where secrets (API_KEY, encryption key) sit readable. umask
+    # can only clear bits, so an explicit 0o600 open is an upper bound.
+    fd = os.open(env_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(content.strip() + "\n")
     try:
-        os.chmod(env_path, 0o600)
+        os.chmod(env_path, 0o600)  # a pre-existing .env may have looser perms
     except OSError:
         pass
     ok(".env created / updated")

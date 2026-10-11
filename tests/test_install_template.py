@@ -177,3 +177,11 @@ def test_session_and_creds_keys_present_everywhere():
     for key in ("SESSION_COOKIE_SECURE", "MAIL_CREDS_KEY"):
         assert f'"{key}"' in install_py  # preserved_keys (regen must not wipe)
         assert key in config_py  # module constant
+
+
+def test_env_written_atomically_at_0600():
+    """The .env holds secrets (API_KEY, encryption key): it must be created
+    at 0600 atomically, never birthed world-readable then chmod'd (TOCTOU)."""
+    install_py = _read("install.py")
+    assert "os.open(env_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)" in install_py
+    assert "env_path.write_text(" not in install_py
