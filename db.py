@@ -3375,17 +3375,21 @@ async def search_memories(query: str, user_id: str | None = None, limit: int = 5
             _backfill_task.cancel()
         _backfill_task = asyncio.create_task(_backfill())
 
-    # Update access stats for retrieved results
+    # Update access stats for retrieved results. The write AND its commit
+    # must hold the process write lock: an unconditional commit on the
+    # shared connection would commit another coroutine's partially-
+    # assembled transaction (D2/D4). Commit only when we actually wrote —
+    # a no-hit search has nothing of its own to flush.
     if result:
         ids = [m["id"] for m in result]
         placeholders = ",".join("?" * len(ids))
-        await db.execute(
-            f"""UPDATE memories SET last_accessed = CURRENT_TIMESTAMP,
-               access_count = access_count + 1 WHERE id IN ({placeholders})""",
-            ids,
-        )
-
-    await _commit_with_retry(db)
+        async with _write_lock():
+            await db.execute(
+                f"""UPDATE memories SET last_accessed = CURRENT_TIMESTAMP,
+                   access_count = access_count + 1 WHERE id IN ({placeholders})""",
+                ids,
+            )
+            await _commit_with_retry(db)
 
     return result
 
