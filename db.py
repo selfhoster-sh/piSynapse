@@ -200,6 +200,7 @@ MIGRATIONS: list[tuple[str, str, str]] = [
     ("tool_audit_log", "user_id", "TEXT"),
     ("users", "password_hash", "TEXT"),
     ("users", "is_approved", "INTEGER DEFAULT 0"),
+    ("sync_items", "origin", "TEXT NOT NULL DEFAULT ''"),
 ]
 
 
@@ -532,6 +533,7 @@ async def init_db():
             data       TEXT NOT NULL DEFAULT '{}',
             updated_at TEXT NOT NULL,
             deleted    INTEGER NOT NULL DEFAULT 0,
+            origin     TEXT NOT NULL DEFAULT '',
             UNIQUE(user_id, uuid)
         )
     """)
@@ -594,6 +596,9 @@ async def init_db():
     for _owner_tbl, _owner_col in (("conversations", "user_id"), ("sessions", "user_id"),
                                    ("memories", "user_id"), ("tool_audit_log", "user_id")):
         await db.execute(f"UPDATE {_owner_tbl} SET {_owner_col} = 'default' WHERE {_owner_col} IS NULL")
+    # Canonicalize stored sync timestamps (idempotent; see helper doc) so
+    # LWW and since-comparisons are valid on legacy rows too.
+    await _normalize_stored_sync_timestamps(db)
     doomed_cur = await db.execute(
         "SELECT id FROM conversations WHERE client_key IS NOT NULL AND id NOT IN "
         "(SELECT MIN(id) FROM conversations WHERE client_key IS NOT NULL "
@@ -2257,66 +2262,126 @@ async def clear_tasks_map(session_id: str):
 
 # -- Sync Items (two-way device sync) --
 
+def _normalize_sync_ts(raw) -> str | None:
+    """Canonical fixed-width ISO-8601 UTC ("YYYY-MM-DDTHH:MM:SS.ffffffZ").
+
+    Every comparison path (LWW ``WHERE excluded.updated_at > ...``, the
+    ``since`` pull filter) is a STRING compare — only safe when all values
+    share one format and width, where lexicographic order == chronological
+    order. Free-text client timestamps made that a lie (mixed offsets, no
+    microseconds: "…:00Z" vs "…:00.5Z" compares backwards). Unparseable
+    input returns None (the caller drops the item / ignores the filter).
+    """
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    s = raw.strip()
+    if s.endswith(("Z", "z")):
+        s = s[:-1] + "+00:00"
+    try:
+        import datetime as _dt
+
+        dt = _dt.datetime.fromisoformat(s)
+    except ValueError:
+        return None
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(_dt.timezone.utc).replace(tzinfo=None)
+    return dt.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
+
+
+async def _normalize_stored_sync_timestamps(db: aiosqlite.Connection) -> None:
+    """Every-boot repair: rewrite stored updated_at values to canonical form.
+
+    Idempotent — only rows whose value differs from its normalization are
+    rewritten, so post-migration boots touch nothing. Canonical rows make
+    the LWW and ``since`` string comparisons valid on legacy data too.
+    """
+    try:
+        cur = await db.execute("SELECT rowid, updated_at FROM sync_items")
+        rows = await cur.fetchall()
+    except Exception:
+        return  # table missing pre-migration — nothing to do
+    for rowid, ts in rows:
+        norm = _normalize_sync_ts(ts)
+        if norm is not None and norm != ts:
+            await db.execute(
+                "UPDATE sync_items SET updated_at = ? WHERE rowid = ?",
+                (norm, rowid),
+            )
+
+
 async def upsert_sync_items(user_id: str, items: list[dict]) -> int:
-    """Upsert remote sync items for a user. Each item: uuid|entity_type|data|updated_at|deleted.
-    Last-write-wins: a newer updated_at overwrites the stored row wholesale.
+    """Upsert remote sync items for a user. Each item: uuid|entity_type|data|updated_at|deleted|origin.
+    Last-write-wins: a STRICTLY newer updated_at overwrites the stored row
+    wholesale; an equal or older write is dropped (a delayed old push can
+    never clobber newer data). Timestamps are normalized to canonical
+    fixed-width UTC so the comparison is valid. Returns the number of rows
+    actually stored.
     """
     if not items:
         return 0
     db = await get_db()
     n = 0
 
-    async def _apply():
-        nonlocal n
+    async with _write_lock():
         for it in items:
             uuid = str(it.get("uuid") or "").strip()
             etype = str(it.get("entity_type") or "").strip() or "generic"
             data = it.get("data") or {}
             if not isinstance(data, str):
                 data = json.dumps(data, ensure_ascii=False, default=str)
-            ts = str(it.get("updated_at") or "")
+            ts = _normalize_sync_ts(it.get("updated_at"))
             deleted = 1 if it.get("deleted") else 0
-            if not uuid or not ts:
-                continue
+            origin = str(it.get("origin") or "").strip()
+            if not uuid or ts is None:
+                continue  # fail-closed: no key or unparseable timestamp
             await db.execute(
-                """INSERT INTO sync_items (uuid, user_id, entity_type, data, updated_at, deleted)
-                   VALUES (?, ?, ?, ?, ?, ?)
+                """INSERT INTO sync_items (uuid, user_id, entity_type, data, updated_at, deleted, origin)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(user_id, uuid) DO UPDATE SET
                        data = excluded.data,
                        entity_type = excluded.entity_type,
                        updated_at = excluded.updated_at,
-                       deleted = excluded.deleted""",
-                (uuid, user_id, etype, data, ts, deleted),
+                       deleted = excluded.deleted,
+                       origin = excluded.origin
+                   WHERE excluded.updated_at > sync_items.updated_at""",
+                (uuid, user_id, etype, data, ts, deleted, origin),
             )
-            n += 1
-
-    await _apply()
-    await _commit_with_retry(db)
+            # Py3.12: INSERT rowcount is -1 — read SELECT changes() instead.
+            # Counts 1 for a real insert/update, 0 for an LWW-dropped write.
+            ccur = await db.execute("SELECT changes()")
+            n += (await ccur.fetchone())[0]
+        await _commit_with_retry(db)
     return n
 
 
 async def get_sync_items(user_id: str, entity_type: str | None = None, since: str | None = None) -> list[dict]:
     """Return all sync items (or a subtype) for a user, optionally filtered by
-    `since` (ISO updated_at cutoff, exclusive). Includes tombstones (deleted=1).
+    `since` (ISO updated_at cutoff, exclusive — normalized to canonical UTC,
+    so client offsets are fine). Includes tombstones (deleted=1).
     """
     db = await get_db()
-    if entity_type and since:
-        sql = ("SELECT uuid, entity_type, data, updated_at, deleted FROM sync_items "
+    since_norm = _normalize_sync_ts(since) if since else None
+    if since and since_norm is None:
+        # Unparseable cutoff: return everything rather than a wrong subset —
+        # the client re-filters from the full set.
+        since_norm = None
+    if entity_type and since_norm:
+        sql = ("SELECT uuid, entity_type, data, updated_at, deleted, origin FROM sync_items "
                "WHERE user_id = ? AND entity_type = ? AND updated_at > ?")
-        params = (user_id, entity_type, since)
+        params = (user_id, entity_type, since_norm)
     elif entity_type:
-        sql = "SELECT uuid, entity_type, data, updated_at, deleted FROM sync_items WHERE user_id = ? AND entity_type = ?"
+        sql = "SELECT uuid, entity_type, data, updated_at, deleted, origin FROM sync_items WHERE user_id = ? AND entity_type = ?"
         params = (user_id, entity_type)
-    elif since:
-        sql = "SELECT uuid, entity_type, data, updated_at, deleted FROM sync_items WHERE user_id = ? AND updated_at > ?"
-        params = (user_id, since)
+    elif since_norm:
+        sql = "SELECT uuid, entity_type, data, updated_at, deleted, origin FROM sync_items WHERE user_id = ? AND updated_at > ?"
+        params = (user_id, since_norm)
     else:
-        sql = "SELECT uuid, entity_type, data, updated_at, deleted FROM sync_items WHERE user_id = ?"
+        sql = "SELECT uuid, entity_type, data, updated_at, deleted, origin FROM sync_items WHERE user_id = ?"
         params = (user_id,)
     async with db.execute(sql, params) as cur:
         rows = await cur.fetchall()
     out = []
-    for uuid, etype, data, ts, deleted in rows:
+    for uuid, etype, data, ts, deleted, origin in rows:
         parsed = {}
         if data:
             try:
@@ -2328,6 +2393,7 @@ async def get_sync_items(user_id: str, entity_type: str | None = None, since: st
             "entity_type": etype,
             "data": parsed,
             "updated_at": ts,
+            "origin": origin or "",
             "deleted": bool(deleted),
         })
     return out

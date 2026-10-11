@@ -26,7 +26,12 @@ def test_migration_backfill_grandfathers_existing_users(adb, tmp_path, monkeypat
 
     raw = sqlite3.connect(str(tmp_path / "adb.db"))
     raw.execute("ALTER TABLE users DROP COLUMN is_approved")
-    raw.execute(f"PRAGMA user_version = {len(dbmod.MIGRATIONS) - 1}")
+    # Pin the version by IDENTITY, not by an offset from the end: appending
+    # migrations (append-only framework) must not change which migration this
+    # test exercises.
+    _idx = next(i for i, (t, c, _d) in enumerate(dbmod.MIGRATIONS)
+                if (t, c) == ("users", "is_approved"))
+    raw.execute(f"PRAGMA user_version = {_idx}")
     raw.execute("INSERT INTO users (id, name, key_hash, is_admin) VALUES ('old', 'old', 'h', 0)")
     raw.commit()
     raw.close()

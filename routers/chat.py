@@ -969,6 +969,9 @@ class SyncItem(BaseModel):
     data: dict = Field(default_factory=dict)
     updated_at: str
     deleted: bool = False
+    # Device origin (sync-compatibility rule: updated_at + deleted + origin).
+    # Optional with default '' — older clients that don't send it keep working.
+    origin: str = ""
 
 
 class SyncItemsRequest(BaseModel):

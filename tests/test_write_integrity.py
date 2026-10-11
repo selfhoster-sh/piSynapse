@@ -192,10 +192,13 @@ def test_legacy_upgrade_applies_all_repairs(wdb):
             "INSERT INTO tool_audit_log (tool_name, success, conversation_id) "
             "VALUES ('list_notes', 1, 4)"
         )
-        # Rewind past exactly the 7 newest migrations (4 map user_id +
-        # audit user_id + users password_hash + users is_approved); keep this
-        # count in sync with MIGRATIONS or the upgrade path under test changes shape.
-        await db.execute(f"PRAGMA user_version = {len(dbmod.MIGRATIONS) - 7}")
+        # Rewind to just before the earliest migration whose effect was
+        # dropped above (the first map user_id). Pinned by IDENTITY, not an
+        # offset from the end: appending migrations must not silently change
+        # which upgrade window this test exercises.
+        _first = next(i for i, (t, c, _d) in enumerate(dbmod.MIGRATIONS)
+                      if (t, c) == ("email_session_map", "user_id"))
+        await db.execute(f"PRAGMA user_version = {_first}")
         await db.commit()
 
     asyncio.run(_downgrade())
