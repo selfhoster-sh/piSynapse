@@ -70,7 +70,7 @@ def test_sw_cache_name_bumped_and_wellformed():
     sw = open(os.path.join(ROOT, "static/sw.js"), encoding="utf-8").read()
     m = re.search(r"const CACHE_NAME = 'pisynapse-v(\d+)'", sw)
     assert m, "CACHE_NAME literal not found / malformed"
-    assert int(m.group(1)) >= 56, (
+    assert int(m.group(1)) >= 57, (
         "sw.js behavior changed without a CACHE_NAME bump — already-registered "
         "clients keep the old fetch handler until the version moves"
     )

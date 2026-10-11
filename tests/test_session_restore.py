@@ -46,13 +46,25 @@ def test_ui_boot_gate_verifies_session_before_showing_login():
     assert re.search(r"if\(!authed\) showLogin\(\);", block)
 
 
-def test_sw_never_caches_users_paths():
+def test_sw_caching_is_allowlisted():
+    """Week-2 final form: the SW caches ONLY same-origin shell assets.
+
+    The old deny list required every new API route to remember itself —
+    the exact failure mode that let auth-dependent /users responses go
+    stale. The allowlist makes forgetfulness impossible: anything not
+    explicitly shell never touches the cache.
+    """
     sw = _read("static/sw.js")
-    m = re.search(
-        r"request\.method !== 'GET' \|(.*?)\{\s*return;\s*\}", sw, re.S,
-    )
-    assert m, "never-cache condition not found in sw.js"
-    assert "'/users'" in m.group(1), "sw.js must exclude /users from caching"
+    # Same-origin gate.
+    assert "url.origin !== self.location.origin" in sw
+    # The allowlist members.
+    assert "url.pathname === '/'" in sw
+    assert "url.pathname === '/favicon.ico'" in sw
+    assert "url.pathname.startsWith('/static/')" in sw
+    assert "if (!cacheable) return;" in sw
+    # The deny-list pattern is gone for good.
+    assert "url.pathname.startsWith('/chat')" not in sw
+    assert "url.pathname.startsWith('/users')" not in sw
 
 
 # ── Behavioral: the cookie really authenticates ───────────────────────────────

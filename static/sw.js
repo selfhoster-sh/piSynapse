@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pisynapse-v56';
+const CACHE_NAME = 'pisynapse-v57';
 // Browser scope: the SPA is served at /static/ (root / redirects there).
 // The native WebView never registers this service worker (JS gates on _NATIVE).
 const STATIC_ASSETS = [
@@ -36,14 +36,17 @@ self.addEventListener('fetch', event => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Never cache API calls or non-GET requests
-  // /users responses are auth-dependent (session cookie): a cached 200
-  // after logout (or a cached 401 after login) would corrupt boot auth.
-  if (request.method !== 'GET' || url.pathname.startsWith('/chat') ||
-      url.pathname.startsWith('/config') || url.pathname.startsWith('/widget') ||
-      url.pathname.startsWith('/users') || url.pathname === '/health') {
-    return;
-  }
+  // ALLOWLIST (week-2): only same-origin shell assets are ever cached.
+  // Everything else — every current AND future API route — goes straight
+  // to the network, so a new endpoint can never be forgotten in a deny
+  // list. (The failure mode behind the staleness bug: /users was missing
+  // from the old never-cache list, and auth-dependent responses were
+  // served stale from the cache.)
+  if (request.method !== 'GET') return;
+  if (url.origin !== self.location.origin) return;
+  const cacheable = url.pathname === '/' || url.pathname === '/favicon.ico'
+    || url.pathname.startsWith('/static/');
+  if (!cacheable) return;
 
   // Documents: NETWORK-FIRST — the app must never render a stale HTML shell.
   // Cache only as an offline fallback.
