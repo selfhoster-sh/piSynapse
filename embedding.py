@@ -1,7 +1,9 @@
 """Text embeddings via FastEmbed (ONNX). Used by intent classifier and memory search."""
 import asyncio
 import logging
+import os
 import threading
+import time
 import warnings
 
 import numpy as np
@@ -14,33 +16,67 @@ from config import EMBED_MODEL as MODEL_NAME
 logger = logging.getLogger("piSynapse")
 
 _model: TextEmbedding | None = None
-_model_lock = threading.Lock()
+_model_lock = threading.Lock()          # protects state below, never the load
 _model_error_ts: float = 0.0
-_MODEL_RETRY_COOLDOWN = 600.0
+_model_retry_cooldown = 600.0
+_loading = False
+# Hard cap on download+load (2026-10-05 incident: a 0%-hung download raises
+# NO exception, so the old breaker never tripped and _model_lock was held
+# forever, pinning every embed caller behind it).
+_MODEL_LOAD_TIMEOUT = float(os.getenv("EMBED_LOAD_TIMEOUT", "120") or "120")
 
 
 def get_model() -> TextEmbedding:
-    global _model, _model_error_ts
-    if _model is None:
-        with _model_lock:
-            if _model is None:
-                import time as _time
+    global _model, _model_error_ts, _loading
+    if _model is not None:
+        return _model
+    with _model_lock:
+        if _model is not None:
+            return _model
+        # Circuit breaker: a failed download (offline/flaky link) must not
+        # stall every chat for minutes — fail fast for a cooldown window;
+        # callers already treat embedding failure as best-effort
+        # (keyword/chronological fallbacks take over).
+        if time.time() - _model_error_ts < _model_retry_cooldown:
+            raise RuntimeError("embedding model unavailable (cooldown)")
+        if _loading:
+            # A load is already running (possibly hung): joining it here
+            # would serialize every caller behind one download.
+            raise RuntimeError("embedding model load already in progress")
+        _loading = True
+    try:
+        warnings.filterwarnings("ignore", message=".*now uses mean pooling.*")
+        logger.info(f"⚡ Loading FastEmbed model '{MODEL_NAME}' on ONNX Runtime...")
+        result_box: list = []
+        load_errors: list = []
 
-                # Circuit breaker: a failed download (offline/flaky link) must
-                # not stall every chat for minutes — fail fast for a cooldown
-                # window; callers already treat embedding failure as
-                # best-effort (keyword/chronological fallbacks take over).
-                if _time.time() - _model_error_ts < _MODEL_RETRY_COOLDOWN:
-                    raise RuntimeError("embedding model unavailable (cooldown)")
-                try:
-                    warnings.filterwarnings("ignore", message=".*now uses mean pooling.*")
-                    logger.info(f"⚡ Loading FastEmbed model '{MODEL_NAME}' on ONNX Runtime...")
-                    _model = TextEmbedding(model_name=MODEL_NAME)
-                    logger.info("✅ FastEmbed model loaded.")
-                except Exception:
-                    _model_error_ts = _time.time()
-                    raise
-    return _model
+        def _load():
+            try:
+                result_box.append(TextEmbedding(model_name=MODEL_NAME))
+            except Exception as e:  # surfaced by the loader thread below
+                load_errors.append(e)
+
+        # The load runs in a daemon thread with a hard timeout: a hung
+        # download raises nothing, so the join must give up on its own.
+        # If it times out, the abandoned thread dies with the process.
+        t = threading.Thread(target=_load, daemon=True, name="fastembed-load")
+        t.start()
+        t.join(_MODEL_LOAD_TIMEOUT)
+        with _model_lock:
+            if result_box:
+                _model = result_box[0]
+                logger.info("✅ FastEmbed model loaded.")
+                return _model
+            _model_error_ts = time.time()
+            if load_errors:
+                raise load_errors[0]
+            raise RuntimeError(
+                f"embedding model load timed out after {_MODEL_LOAD_TIMEOUT:.0f}s "
+                "(hung download?) — cooldown started"
+            )
+    finally:
+        with _model_lock:
+            _loading = False
 
 
 def embed(text: str) -> bytes:
