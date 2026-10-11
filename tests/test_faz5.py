@@ -161,6 +161,13 @@ def test_widget_weather_unknown_city_returns_ok_false(monkeypatch):
     assert result["summary"] == ""
 
 
+def _widget_request(uid="w-tester"):
+    """Request double for the widget handlers (auth resolved by middleware)."""
+    from types import SimpleNamespace
+
+    return SimpleNamespace(state=SimpleNamespace(user_id=uid, is_admin=False))
+
+
 def test_widget_calendar_returns_events(monkeypatch):
     import calendar_ops
     from routers import widgets
@@ -169,7 +176,12 @@ def test_widget_calendar_returns_events(monkeypatch):
         calendar_ops, "list_events_today",
         lambda: [{"time": "09:00", "title": "Standup", "uid": "u1"}],
     )
-    result = asyncio.run(widgets.widget_calendar())
+    # NC binder double: this suite drives handlers without a DB fixture.
+    async def _noop_bind(_uid):
+        return None
+
+    monkeypatch.setattr("utils.bind_nc_context", _noop_bind)
+    result = asyncio.run(widgets.widget_calendar(_widget_request()))
     assert result["ok"] is True
     assert result["events"] == [{"time": "09:00", "title": "Standup", "uid": "u1"}]
 
@@ -182,7 +194,12 @@ def test_widget_calendar_error_returns_empty(monkeypatch):
         raise RuntimeError("down")
 
     monkeypatch.setattr(calendar_ops, "list_events_today", boom)
-    result = asyncio.run(widgets.widget_calendar())
+
+    async def _noop_bind(_uid):
+        return None
+
+    monkeypatch.setattr("utils.bind_nc_context", _noop_bind)
+    result = asyncio.run(widgets.widget_calendar(_widget_request()))
     assert result["ok"] is False
     assert result["events"] == []
 

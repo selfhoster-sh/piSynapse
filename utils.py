@@ -23,6 +23,24 @@ NC_CREDS: ContextVar[dict | None] = ContextVar("nc_creds", default=None)
 NC_SHARED_OK: ContextVar[bool] = ContextVar("nc_shared_ok", default=False)
 
 
+async def bind_nc_context(user_id: str | None) -> None:
+    """Bind the per-user Nextcloud credential context for THIS task.
+
+    One shared contract for every NC-reading path (tool dispatcher,
+    widgets, ...): the caller's own credentials, and the shared account
+    for admins only — a credential-less non-admin must never silently
+    fall through to the shared account (invisibility hole). Call it in
+    the async task that runs the NC calls (directly or via
+    ``asyncio.to_thread``, which propagates the context); ContextVars
+    do not cross tasks.
+    """
+    from db import get_credential, get_user
+
+    NC_CREDS.set(await get_credential(user_id, "nextcloud"))
+    caller = await get_user(user_id) if user_id else None
+    NC_SHARED_OK.set(bool(caller is not None and caller.get("is_admin")))
+
+
 def nc_cache_key() -> str:
     """Identity key for the process-global Nextcloud caches (calendar/tasks).
 

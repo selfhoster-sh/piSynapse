@@ -155,12 +155,10 @@ async def run_tool(name: str, params: dict, context: dict | None = None) -> tupl
     # Set explicitly on every entry so no stale value ever leaks across calls.
     # The shared account serves admins only — otherwise a credential-less
     # non-admin would silently read the admin's Nextcloud (invisibility hole).
-    from db import get_credential, get_user
-    from utils import NC_CREDS, NC_SHARED_OK
+    # bind_nc_context is the ONE shared binder (widgets use it too).
+    from utils import bind_nc_context
 
-    NC_CREDS.set(await get_credential(context.get("user_id"), "nextcloud"))
-    _nc_caller = await get_user(context.get("user_id")) if context.get("user_id") else None
-    NC_SHARED_OK.set(bool(_nc_caller is not None and _nc_caller.get("is_admin")))
+    await bind_nc_context(context.get("user_id"))
 
     if name == "get_datetime":
         return f"Current: {datetime.now().strftime('%d %B %Y, %A, %H:%M')}", None

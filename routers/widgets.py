@@ -5,7 +5,7 @@ Sidebar weather and calendar widgets.
 import asyncio
 import logging
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Request
 
 import config
 
@@ -35,11 +35,23 @@ async def widget_weather():
 
 
 @router.get("/widget/calendar")
-async def widget_calendar():
+async def widget_calendar(request: Request):
     try:
+        # Bind the caller's NC context (same contract as the tool
+        # dispatcher): the widget reads the CALLER's Nextcloud. Without
+        # this the credential gate answered "deny" for every widget call
+        # and the calendar widget was permanently empty (week-2 bug).
+        # to_thread propagates the context, so the sync calendar reader
+        # below sees the bound vars.
+        from auth import current_user
+        from utils import bind_nc_context
+
+        await bind_nc_context(current_user(request))
         from calendar_ops import list_events_today
         events = await asyncio.to_thread(list_events_today)
         return {"ok": True, "events": events}
+    except HTTPException:
+        raise  # auth failures must not masquerade as "Calendar unavailable"
     except Exception as e:
         logger.warning(f"Calendar widget error: {e}")
         return {"ok": False, "error": "Calendar unavailable", "events": []}
