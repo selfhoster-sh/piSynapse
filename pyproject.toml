@@ -13,6 +13,8 @@ dependencies = [
     "python-multipart>=0.0.6",
     "pydantic>=2.0",
     "aiosqlite>=0.19.0",
+    "bcrypt>=4.0.0",
+    "cryptography>=42.0.0",
     "httpx>=0.24.0",
     "python-dotenv>=1.0.0",
     "caldav>=1.3.0",
@@ -33,7 +35,11 @@ dev = [
 ]
 
 [tool.setuptools]
-py-modules = ["main", "config", "db", "embedding", "mail", "calendar_ops", "nextcloud_notes", "nextcloud_tasks", "weather", "prompt", "utils", "install"]
+# Every top-level module the app imports (auth/credstore/retrieval/title/
+# textnorm/messages/tool_verification were missing → `pip install .` built an
+# incomplete package that ImportError'd). Kept in sync by
+# tests/test_packaging.py.
+py-modules = ["main", "config", "db", "embedding", "mail", "calendar_ops", "nextcloud_notes", "nextcloud_tasks", "weather", "prompt", "utils", "install", "auth", "credstore", "retrieval", "textnorm", "messages", "title", "tool_verification", "corpus_feeder", "provision_owner", "reembed_all"]
 packages = ["llm", "routers", "tools"]
 
 [tool.pytest.ini_options]
