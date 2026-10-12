@@ -336,7 +336,7 @@ async def chat_with_ollama(
                 reply = _empty_answer_fallback()
             return {"reply": reply, "pending_action": None, "memories_saved": memories_saved, "thinking": thinking}
 
-        allowed_names = {t["function"]["name"] for t in filtered_tools} if use_tools and filtered_tools else None
+        allowed_names = {t["function"]["name"] for t in filtered_tools} if use_tools and filtered_tools else set()
         if non_confirm_calls:
             current_msgs.append({"role": "assistant", "content": message.get("content", ""), "tool_calls": non_confirm_calls})
             for call in non_confirm_calls:
@@ -367,14 +367,15 @@ async def chat_with_ollama(
                         tool_msg["tool_call_id"] = call["id"]
                     current_msgs.append(tool_msg)
                     continue
-                if allowed_names is not None and tn not in allowed_names:
+                if tn not in allowed_names:
+                    avail = ", ".join(sorted(allowed_names)) or "none this turn"
                     logger.warning(f"Tool {tn} hallucinated (not offered this turn) — rejected")
                     tool_msg = {
                         "role": "tool",
                         "tool_name": tn,
                         "content": (
                             f"[Rejected: '{tn}' is NOT available in this conversation turn. "
-                            f"Available tools: {', '.join(sorted(allowed_names))}. "
+                            f"Available tools: {avail}. "
                             "Use one of those, or if none fits, answer in plain text.]"
                         ),
                     }
@@ -407,9 +408,10 @@ async def chat_with_ollama(
 
         for call in confirm_calls:
             tn = call.get("function", {}).get("name", "")
-            if allowed_names is not None and tn not in allowed_names:
+            if tn not in allowed_names:
+                avail = ", ".join(sorted(allowed_names)) or "none this turn"
                 logger.warning(f"Confirm tool {tn} hallucinated (not offered) — rejected")
-                return {"reply": f"[Rejected: '{tn}' is NOT available this turn. Available: {', '.join(sorted(allowed_names))}. Answer in plain text.]", "pending_action": None, "memories_saved": memories_saved, "thinking": thinking}
+                return {"reply": f"[Rejected: '{tn}' is NOT available this turn. Available: {avail}. Answer in plain text.]", "pending_action": None, "memories_saved": memories_saved, "thinking": thinking}
             params = parse_tool_args(call["function"].get("arguments"))
             err = validate_confirm_params(tn, params)
             if err:
