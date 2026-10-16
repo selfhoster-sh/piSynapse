@@ -897,6 +897,36 @@ def _check_resources(model_id: str) -> None:
         warn(f"Only {mem_gb:.1f} GB RAM — 8 GB recommended even for e2b.")
 
 
+def _predownload_one(label: str, code: str) -> bool:
+    """Run one pre-download step with 2 attempts; surface WHY it failed.
+
+    The old code made a single silent attempt (capture_output swallowed the
+    cause) — a stalled download raises nothing for minutes and the user saw
+    only "failed", with no way to retry. Now the stderr tail is shown, one
+    retry follows a short pause, and the exact command to redo it later is
+    printed. A failed step never blocks the install (lazy download covers
+    first use).
+    """
+    py = venv_bin("python3")
+    for attempt in range(1, 3):
+        try:
+            r = subprocess.run([py, "-c", code], capture_output=True, text=True, timeout=1200)
+        except subprocess.TimeoutExpired:
+            warn(f"{label} pre-download timed out after 20 min (attempt {attempt}/2) — likely a stalled download.")
+            r = None
+        if r is not None and r.returncode == 0:
+            ok(f"{label} ready")
+            return True
+        if r is not None:
+            tail = r.stderr.strip().splitlines()[-1][:200] if (r.stderr and r.stderr.strip()) else f"exit {r.returncode}"
+            warn(f"{label} pre-download failed (attempt {attempt}/2): {tail}")
+        if attempt < 2:
+            time.sleep(3)
+    info(f"Not blocking the install — it downloads lazily on first use. "
+         f"Retry later with: {py} -c \"{code}\"")
+    return False
+
+
 def _predownload_ml_models() -> None:
     """Pre-download embedding (~470MB) + Whisper tiny (~75MB) into the venv.
 
@@ -906,29 +936,14 @@ def _predownload_ml_models() -> None:
     if not ask_yesno("Pre-download embedding + speech models now (~550 MB)?", True):
         info("Skipping — they download lazily on first use.")
         return
-    py = venv_bin("python3")
-    try:
-        r = subprocess.run(
-            [py, "-c", "from embedding import embed; print('embedding dim:', len(embed('warmup')) // 4)"],
-            capture_output=True, text=True, timeout=1200,
-        )
-    except subprocess.TimeoutExpired:
-        r = None
-    if r is None or r.returncode != 0:
-        warn("Embedding pre-download failed (lazy download on first use still works).")
-    else:
-        ok("Embedding model ready")
-    try:
-        r = subprocess.run(
-            [py, "-c", "from routers.media import _get_whisper; print('whisper backend:', _get_whisper()[1])"],
-            capture_output=True, text=True, timeout=1200,
-        )
-    except subprocess.TimeoutExpired:
-        r = None
-    if r is None or r.returncode != 0:
-        warn("Whisper pre-download failed (lazy download on first use still works).")
-    else:
-        ok("Whisper model ready")
+    _predownload_one(
+        "Embedding",
+        "from embedding import embed; print('embedding dim:', len(embed('warmup')) // 4)",
+    )
+    _predownload_one(
+        "Whisper",
+        "from routers.media import _get_whisper; print('whisper backend:', _get_whisper()[1])",
+    )
 
 
 def step_llm_backend() -> None:
