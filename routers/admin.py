@@ -108,3 +108,18 @@ async def audit_export_day(day: str, request: Request):
         raise HTTPException(status_code=404, detail="No export for that day")
     return FileResponse(path, media_type="text/csv; charset=utf-8",
                         filename=path.name)
+
+
+@router.get("/audit/verify/{day}")
+async def audit_verify_day(day: str, request: Request):
+    """Re-hash one day's archive against its manifest (integrity check).
+
+    Admin-only; strict day pattern. Returns {day, exists, ok, files:{...}} —
+    exists=False means no manifest (never archived, or a legacy CSV-only day).
+    """
+    from db import verify_audit_export
+
+    require_admin(request)
+    if not _DAY_RE.match(day):
+        raise HTTPException(status_code=404, detail="Unknown day")
+    return await verify_audit_export(day)

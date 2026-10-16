@@ -1059,7 +1059,7 @@ def test_auto_backup_creates_0600_and_prunes(ops_db, tmp_path):
     assert os.path.basename(dest) in remaining
 
 
-def test_audit_csv_pruning(ops_db, tmp_path, monkeypatch):
+def test_audit_export_pruning(ops_db, tmp_path, monkeypatch):
     import datetime as _dt
 
     monkeypatch.setattr(dbmod, "DB_PATH", str(tmp_path / "ops.db"))
@@ -1067,15 +1067,19 @@ def test_audit_csv_pruning(ops_db, tmp_path, monkeypatch):
     os.makedirs(outdir, exist_ok=True)
     old = (_dt.date.today() - _dt.timedelta(days=40)).isoformat()
     fresh = _dt.date.today().isoformat()
-    open(os.path.join(outdir, f"tool-audit-{old}.csv"), "w").close()
-    open(os.path.join(outdir, f"tool-audit-{fresh}.csv"), "w").close()
+    # A day is pruned as a whole artefact set (csv + ndjson.gz + manifest).
+    for suffix in (".csv", ".ndjson.gz", ".manifest.json"):
+        open(os.path.join(outdir, f"tool-audit-{old}{suffix}"), "w").close()
+        open(os.path.join(outdir, f"tool-audit-{fresh}{suffix}"), "w").close()
     open(os.path.join(outdir, "notes.txt"), "w").close()
     # audit_export_dir() resolves from DB_PATH's dirname
-    removed = asyncio.run(dbmod._prune_audit_csvs(30))
-    assert removed == 1
+    removed = asyncio.run(dbmod._prune_audit_exports(30))
+    assert removed == 3  # old day's csv + ndjson.gz + manifest
     left = set(os.listdir(outdir))
     assert f"tool-audit-{fresh}.csv" in left and "notes.txt" in left
-    assert f"tool-audit-{old}.csv" not in left
+    assert not any(name.startswith(f"tool-audit-{old}") for name in left)
+    # 0 = keep forever: nothing else goes, even with a huge window demand.
+    assert asyncio.run(dbmod._prune_audit_exports(0)) == 0
 
 
 def test_get_all_history_paging(ops_db):

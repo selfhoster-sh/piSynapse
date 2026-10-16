@@ -5,6 +5,7 @@ Single persistent connection with WAL mode for Pi-friendly I/O.
 
 import asyncio
 import csv
+import gzip
 import hashlib
 import hmac
 import json
@@ -772,8 +773,17 @@ async def auto_backup_db() -> str | None:
         return None
 
 
-async def _prune_audit_csvs(retention_days: int) -> int:
-    """Delete per-day audit CSVs older than the retention window. Returns count."""
+_AUDIT_EXPORT_SUFFIXES = (".csv", ".ndjson.gz", ".manifest.json")
+
+
+async def _prune_audit_exports(retention_days: int) -> int:
+    """Delete per-day audit export files older than the window. Returns count.
+
+    Prunes every artefact for a day together (csv + ndjson.gz + manifest) so a
+    day is never left half-archived. `retention_days <= 0` keeps everything
+    (the default: the archive is the only full-detail copy after the rollup,
+    so deleting it silently loses evidence).
+    """
     import datetime as _dt
 
     if retention_days <= 0:
@@ -786,7 +796,7 @@ async def _prune_audit_csvs(retention_days: int) -> int:
     except OSError:
         return 0
     for name in names:
-        m = re.fullmatch(r"tool-audit-(\d{4})-(\d{2})-(\d{2})\.csv", name)
+        m = re.fullmatch(r"tool-audit-(\d{4})-(\d{2})-(\d{2})(\.csv|\.ndjson\.gz|\.manifest\.json)", name)
         if not m:
             continue
         try:
@@ -798,7 +808,7 @@ async def _prune_audit_csvs(retention_days: int) -> int:
                 os.remove(os.path.join(outdir, name))
                 removed += 1
             except OSError as e:
-                logger.warning(f"Could not prune audit CSV {name}: {e}")
+                logger.warning(f"Could not prune audit export {name}: {e}")
     return removed
 
 
@@ -819,9 +829,12 @@ async def cleanup_expired_data() -> tuple[int, int]:
         if CONVERSATION_RETENTION_DAYS > 0:
             async with _write_lock():
                 removed_conv = await _retention_prune_conversations(db)
-            removed_csv = await _prune_audit_csvs(CONVERSATION_RETENTION_DAYS)
-            if removed_csv:
-                logger.info(f"Retention cleanup: {removed_csv} audit CSV(s) pruned")
+        # Archive pruning follows its own policy (default 0 = keep forever):
+        # the exported files are the only full-detail copy after a rollup.
+        from config import AUDIT_ARCHIVE_RETENTION_DAYS
+        removed_csv = await _prune_audit_exports(AUDIT_ARCHIVE_RETENTION_DAYS)
+        if removed_csv:
+            logger.info(f"Retention cleanup: {removed_csv} audit export file(s) pruned")
         if MEMORY_RETENTION_DAYS > 0:
             cur = await _write_with_retry(
                 db,
@@ -1448,12 +1461,30 @@ def audit_export_dir() -> str:
     return os.path.join(os.path.dirname(DB_PATH), "audit_exports")
 
 
+# Spreadsheet formula-injection guard (OWASP): a cell Excel/Sheets would
+# EXECUTE starts with one of these. '-' is deliberately NOT guarded — negative
+# numbers and dash-led messages must stay machine-readable, and our params
+# are JSON objects (they start with '{'), so the practical attack surface is
+# the free-text error column.
+_CSV_INJECTION_CHARS = ("=", "+", "@", "\t", "\r")
+
+
+def _csv_safe_cell(value) -> str:
+    """Stringify one CSV cell, neutralising spreadsheet formula injection."""
+    s = "" if value is None else str(value)
+    if s and s[0] in _CSV_INJECTION_CHARS:
+        return "'" + s
+    return s
+
+
 def _write_audit_csv(day: str, rows: list[tuple]) -> int:
     """Write `rows` to ``tool-audit-<day>.csv`` atomically (tmp + os.replace).
 
     Runs in a worker thread; overwrites the day's file (idempotent — a crash
     after the write but before the rollup commit just re-writes the same file).
     Raises on failure so the caller's rollback keeps the rows for the next try.
+    Rows arrive ORDER BY id (see export_tool_audit_day): same rows in, same
+    bytes out — a re-export is sha256-identical.
     """
     outdir = audit_export_dir()
     os.makedirs(outdir, exist_ok=True)
@@ -1463,17 +1494,94 @@ def _write_audit_csv(day: str, rows: list[tuple]) -> int:
         w = csv.writer(f)
         w.writerow(AUDIT_EXPORT_COLUMNS)
         for r in rows:
-            w.writerow(["" if v is None else v for v in r])
+            w.writerow([_csv_safe_cell(v) for v in r])
     os.replace(tmp, final)
     return len(rows)
 
 
+def _write_audit_ndjson(day: str, rows: list[tuple]) -> int:
+    """Write `rows` to ``tool-audit-<day>.ndjson.gz`` (atomic, deterministic).
+
+    One JSON object per line; key order fixed by AUDIT_EXPORT_COLUMNS (dicts
+    preserve insertion order — no sort_keys). gzip with mtime=0 and an empty
+    stored filename: the default gzip header embeds the clock, which would
+    make byte-identical rows produce different files. Deterministic bytes are
+    the point — the manifest's sha256 is only comparable across runs if two
+    exports of the same rows hash the same.
+    """
+    outdir = audit_export_dir()
+    os.makedirs(outdir, exist_ok=True)
+    final = os.path.join(outdir, f"tool-audit-{day}.ndjson.gz")
+    tmp = final + ".tmp"
+    with open(tmp, "wb") as raw:
+        with gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as gz:
+            for r in rows:
+                obj = {c: v for c, v in zip(AUDIT_EXPORT_COLUMNS, r)}
+                gz.write(json.dumps(obj, ensure_ascii=False).encode("utf-8") + b"\n")
+    os.replace(tmp, final)
+    return len(rows)
+
+
+def _file_sha256(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _write_audit_manifest(day: str, files: dict) -> None:
+    """Write ``tool-audit-<day>.manifest.json`` atomically (integrity record).
+
+    `files` maps filename -> {"sha256", "bytes"} of the archived artefacts.
+    Written LAST of the three: a day whose manifest exists is a day whose
+    archive completed — a crash before it leaves no manifest, which is the
+    detectable gap (industry pattern: manifest binds the export).
+    `generated_at` is envelope metadata, deliberately outside the determinism
+    guarantee that applies to the data files.
+    """
+    import datetime as _dt
+    outdir = audit_export_dir()
+    os.makedirs(outdir, exist_ok=True)
+    final = os.path.join(outdir, f"tool-audit-{day}.manifest.json")
+    tmp = final + ".tmp"
+    manifest = {
+        "format": "pisynapse-audit-export",
+        "version": 1,
+        "day": day,
+        "files": files,
+        "generated_at": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"),
+    }
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, ensure_ascii=False, indent=2, sort_keys=True)
+        f.write("\n")
+    os.replace(tmp, final)
+
+
+def _write_audit_exports(day: str, rows: list[tuple]) -> int:
+    """Archive one day: CSV + NDJSON.gz + manifest (worker thread). Returns n.
+
+    Any raise propagates so the rollup transaction rolls back — details are
+    never deleted without a complete archive on disk.
+    """
+    _write_audit_csv(day, rows)
+    _write_audit_ndjson(day, rows)
+    outdir = audit_export_dir()
+    files = {}
+    for name in (f"tool-audit-{day}.csv", f"tool-audit-{day}.ndjson.gz"):
+        p = os.path.join(outdir, name)
+        files[name] = {"sha256": _file_sha256(p), "bytes": os.path.getsize(p)}
+    _write_audit_manifest(day, files)
+    return len(rows)
+
+
 async def export_tool_audit_day(day: str, cutoff_sql: str) -> int:
-    """Fetch and export every detail row of `day` to CSV; returns row count.
+    """Fetch and archive every detail row of `day`; returns row count.
 
     Called INSIDE the rollup transaction: on success the caller proceeds to
     summarize + delete; on exception it rolls back, so nothing is discarded
-    until its archive exists.
+    until its archive exists. ORDER BY t.id fixes the row order — exports are
+    deterministic (byte-identical for identical rows, sha256-checkable).
     """
     cols = ", ".join(
         "c.session_id" if c == "session_id" else "t." + c
@@ -1485,13 +1593,46 @@ async def export_tool_audit_day(day: str, cutoff_sql: str) -> int:
             FROM tool_audit_log t
             LEFT JOIN conversations c ON c.id = t.conversation_id
             WHERE t.is_summary = 0 AND t.created_at < datetime('now', ?)
-              AND substr(t.created_at, 1, 10) = ?""",
+              AND substr(t.created_at, 1, 10) = ?
+            ORDER BY t.id""",
         (cutoff_sql, day),
     )
     rows = await cur.fetchall()
     if not rows:
         return 0
-    return await asyncio.to_thread(_write_audit_csv, day, rows)
+    return await asyncio.to_thread(_write_audit_exports, day, rows)
+
+
+async def verify_audit_export(day: str) -> dict:
+    """Re-hash one day's archived files against its manifest. Never raises.
+
+    Returns ``{"day", "exists", "ok", "files": {name: {sha256_ok, bytes_ok}}}``.
+    ``exists=False`` means no manifest — either the day was never archived or
+    it predates the manifest format (legacy CSV-only days). ``ok`` is True
+    only when every file listed in the manifest is present and matches.
+    """
+    out: dict = {"day": day, "exists": False, "ok": False, "files": {}}
+    try:
+        outdir = audit_export_dir()
+        manifest_path = os.path.join(outdir, f"tool-audit-{day}.manifest.json")
+        if not os.path.isfile(manifest_path):
+            return out
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            manifest = json.load(f)
+        out["exists"] = True
+        all_ok = True
+        for name, meta in (manifest.get("files") or {}).items():
+            p = os.path.join(outdir, name)
+            entry = {"sha256_ok": False, "bytes_ok": False}
+            if os.path.isfile(p):
+                entry["bytes_ok"] = os.path.getsize(p) == meta.get("bytes")
+                entry["sha256_ok"] = _file_sha256(p) == meta.get("sha256")
+            all_ok = all_ok and entry["sha256_ok"] and entry["bytes_ok"]
+            out["files"][name] = entry
+        out["ok"] = all_ok and bool(out["files"])
+    except Exception as e:
+        logger.warning(f"verify_audit_export({day}) failed: {e}")
+    return out
 
 
 def _build_day_stats(rows: list[tuple]) -> dict:
