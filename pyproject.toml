@@ -46,7 +46,16 @@ packages = ["llm", "routers", "tools"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-filterwarnings = ["ignore::DeprecationWarning"]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    # Upstream-only, not actionable yet: Starlette 1.x migrates TestClient
+    # from httpx to the new httpx2 package, and FastAPI 0.140 still imports
+    # the httpx path — the warning fires at import. Our RUNTIME uses httpx
+    # v1 (LLM/Nextcloud calls), so "install httpx2" does not apply; drop this
+    # filter once FastAPI ships httpx2 support. (StarletteDeprecationWarning
+    # subclasses UserWarning, so ignore::DeprecationWarning misses it.)
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated:UserWarning",
+]
 
 [tool.mypy]
 python_version = "3.10"
