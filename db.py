@@ -1923,6 +1923,76 @@ async def audit_error_alert(window_hours: int = 24) -> dict:
     return out
 
 
+def _error_cluster_key(error: str) -> str:
+    """Normalize one error message into a cluster key (digits/ids stripped).
+
+    "timeout after 12s" and "timeout after 40s" must count as ONE recurring
+    failure, not two — numbers (durations, ids, ports) are the noise between
+    copies of the same message. Capped at 80 chars: a cluster key is a label,
+    not the evidence (the CSV archive keeps the full text).
+    """
+    return re.sub(r"\d+", "#", (error or "").strip().lower())[:80]
+
+
+async def audit_failure_digest(days: int = 7) -> dict:
+    """Clustered summary of the last `days` days of tool failures + signals.
+
+    Reads DETAIL rows only (summaries keep counts but not error text — fine,
+    since the default 7d window sits inside the 14d detail retention). Surfaces
+    what the weekly flywheel digest needs: which tools fail, which normalized
+    error recurs, and how many corrections/confirmations/verification
+    failures the users produced. Never raises.
+    """
+    out: dict = {
+        "window_days": days, "total_calls": 0, "errors": 0,
+        "corrections": 0, "confirmations": 0, "verify_failed": 0,
+        "top_tools": [], "top_errors": [],
+    }
+    try:
+        db = await get_db()
+        cur = await db.execute(
+            """SELECT tool_name, success, error,
+                      expected_group IS NOT NULL,
+                      confirmed_at IS NOT NULL,
+                      verification_status = 'verification_failed'
+               FROM tool_audit_log
+               WHERE is_summary = 0 AND created_at >= datetime('now', ?)""",
+            (f"-{days} days",),
+        )
+        tool_stats: dict[str, dict] = {}
+        err_clusters: dict[str, int] = {}
+        total = errors = corrections = confirmations = vfail = 0
+        for tool_name, success, error, corrected, confirmed, v_failed in await cur.fetchall():
+            total += 1
+            ts = tool_stats.setdefault(tool_name, {"errors": 0, "total": 0})
+            ts["total"] += 1
+            if not success:
+                errors += 1
+                ts["errors"] += 1
+                key = _error_cluster_key(error or "unknown")
+                err_clusters[key] = err_clusters.get(key, 0) + 1
+            corrections += 1 if corrected else 0
+            confirmations += 1 if confirmed else 0
+            vfail += 1 if v_failed else 0
+        out.update({
+            "total_calls": total, "errors": errors,
+            "corrections": corrections, "confirmations": confirmations,
+            "verify_failed": vfail,
+        })
+        out["top_tools"] = sorted(
+            ({"tool": t, **s, "error_rate": round(s["errors"] / s["total"], 3)}
+             for t, s in tool_stats.items() if s["errors"]),
+            key=lambda d: (-d["errors"], d["tool"]),
+        )[:10]
+        out["top_errors"] = sorted(
+            ({"error": k, "count": n} for k, n in err_clusters.items()),
+            key=lambda d: (-d["count"], d["error"]),
+        )[:10]
+    except Exception as e:
+        logger.warning(f"audit_failure_digest failed: {e}")
+    return out
+
+
 async def periodic_rollup_loop(interval: float = ROLLUP_INTERVAL_SECONDS, sleep=asyncio.sleep):
     """Run rollup_tool_audit() once per `interval` until cancelled.
 

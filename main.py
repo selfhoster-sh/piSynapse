@@ -220,6 +220,90 @@ def _validate_cors_origins(origins: list[str]) -> None:
         raise RuntimeError("CORS_ORIGINS must not contain '*': allow_credentials=True forbids wildcards.")
 
 
+# ── Corpus feeder automation (data flywheel) ─────────────────────────────────
+
+_FEEDER_TIMEOUT_SECONDS = 15 * 60
+
+
+async def _run_feeder_subprocess() -> tuple[bool, str]:
+    """Spawn corpus_feeder.py as its own process. Returns (ok, output tail).
+
+    The feeder does heavy sync sqlite work, embedding batches and optional
+    LLM calls — running it in-process would block the event loop and a crash
+    would take the server with it. Its own process contains both risks; the
+    timeout kills a hung run (dead model server, stuck network). Output is
+    tailed (not streamed) so a chatty run can't bloat the logs.
+    """
+    import sys as _sys
+    from pathlib import Path as _Path
+
+    from config import DB_PATH as _DB_PATH
+
+    proc = await asyncio.create_subprocess_exec(
+        _sys.executable, str(_Path(__file__).resolve().parent / "corpus_feeder.py"),
+        "--db", _DB_PATH,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+    )
+    try:
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=_FEEDER_TIMEOUT_SECONDS)
+    except asyncio.TimeoutError:
+        try:
+            proc.kill()
+            await proc.wait()
+        except ProcessLookupError:
+            pass
+        return False, f"feeder timed out after {_FEEDER_TIMEOUT_SECONDS}s"
+    text = (out or b"").decode("utf-8", "replace")
+    return proc.returncode == 0, "\n".join(text.splitlines()[-15:])
+
+
+async def periodic_feeder_loop(interval_hours: float | None = None,
+                               run_feeder=None, sleep=asyncio.sleep):
+    """Run the corpus feeder once per `interval_hours` until cancelled.
+
+    Mirrors the never-raise discipline of the other background loops: any
+    failure logs and retries next cycle. Sleeps FIRST (like the rollup loop)
+    so startup never competes with a feed run. `interval_hours` resolves from
+    config FEEDER_AUTO_INTERVAL_HOURS at call time (0 = off → the lifespan
+    never starts this loop); `run_feeder`/`sleep` injectable for tests.
+    """
+    from config import FEEDER_AUTO_INTERVAL_HOURS
+    if interval_hours is None:
+        interval_hours = FEEDER_AUTO_INTERVAL_HOURS or 168
+    run = run_feeder or _run_feeder_subprocess
+    while True:
+        await sleep(interval_hours * 3600)
+        # Weekly review rhythm: surface failure clusters before the feed run
+        # (same cadence, one "sit down and look" moment — the digest is the
+        # human-readable half of the flywheel, the feed is the machine half).
+        try:
+            from db import audit_failure_digest
+            dg = await audit_failure_digest(days=7)
+            if dg["errors"]:
+                tools = ", ".join(f"{t['tool']}×{t['errors']}" for t in dg["top_tools"][:3])
+                errs = " | ".join(f"{e['error']}×{e['count']}" for e in dg["top_errors"][:3])
+                logger.info(
+                    f"Weekly tool-failure digest: {dg['errors']}/{dg['total_calls']} failed "
+                    f"(corrections {dg['corrections']}, confirmations {dg['confirmations']}). "
+                    f"Top tools: {tools}. Top errors: {errs}"
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.warning(f"Weekly failure digest failed: {e}")
+        try:
+            ok, tail = await run()
+            if ok:
+                logger.info(f"Corpus feeder cycle done:\n{tail}")
+            else:
+                logger.warning(f"Corpus feeder cycle reported failure:\n{tail}")
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.warning(f"Periodic corpus feeder failed, will retry next cycle: {e}")
+
+
 # ── Lifespan ──────────────────────────────────────────────────────────────────
 
 @asynccontextmanager
@@ -335,6 +419,15 @@ async def lifespan(app: FastAPI):
     # once inside init_db() but that covers only startup-time data.
     cleanup_task = asyncio.create_task(periodic_cleanup_loop())
 
+    # Corpus feeder (data flywheel): mines correction/confirmation signals
+    # into intent examples in a sandboxed subprocess (never in-process — the
+    # feeder's sync sqlite + embeddings would block the event loop). Starts
+    # sleeping first; disabled entirely when FEEDER_AUTO_INTERVAL_HOURS=0.
+    from config import FEEDER_AUTO_INTERVAL_HOURS
+    feeder_task = None
+    if FEEDER_AUTO_INTERVAL_HOURS > 0:
+        feeder_task = asyncio.create_task(periodic_feeder_loop())
+
     # Warm up active LLM model in background
     async def _warmup():
         try:
@@ -425,9 +518,12 @@ async def lifespan(app: FastAPI):
     yield
 
     # Cancel the background loops so the app can shut down cleanly.
-    for task in (rollup_task, cleanup_task, *background_tasks):
+    _loops = [rollup_task, cleanup_task]
+    if feeder_task is not None:
+        _loops.append(feeder_task)
+    for task in (*_loops, *background_tasks):
         task.cancel()
-    for task in (rollup_task, cleanup_task, *background_tasks):
+    for task in (*_loops, *background_tasks):
         try:
             await task
         except asyncio.CancelledError:

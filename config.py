@@ -225,6 +225,9 @@ AUDIT_ARCHIVE_RETENTION_DAYS = _safe_int("AUDIT_ARCHIVE_RETENTION_DAYS", 0)
 # Error-rate alert threshold (fraction 0..1) over the rolling 24h audit
 # window. 0 disables. Fires when total calls >= AUDIT_ALERT_MIN_CALLS.
 AUDIT_ERROR_RATE_ALERT = _safe_float("AUDIT_ERROR_RATE_ALERT", 0.2)
+# Corpus-feeder automation (data flywheel): spawn corpus_feeder.py as a
+# sandboxed subprocess every N hours. 0 = manual-only.
+FEEDER_AUTO_INTERVAL_HOURS = _safe_int("FEEDER_AUTO_INTERVAL_HOURS", 168)
 EMBED_MODEL = os.getenv("EMBED_MODEL", "sentence-transformers/paraphrase-multilingual-mpnet-base-v2")
 
 # -- Weather --
@@ -416,6 +419,8 @@ SETTINGS_SCHEMA: dict = {
         "desc": {"tr": "Günlük dışa aktarılan dosyalar (csv + ndjson.gz + manifest). Özet sıkıştırıldıktan sonra arşiv tek tam detay kopyasıdır; 0 = asla silinmez.", "en": "Per-day exported files (csv + ndjson.gz + manifest). After the rollup compresses a day, the archive is the only full-detail copy; 0 = never deleted."}},
     "AUDIT_ERROR_RATE_ALERT":      {"type": "float", "default": "0.2", "label": {"tr": "Hata Oranı Uyarı Eşiği (0=kapat)", "en": "Error-Rate Alert Threshold (0=off)"}, "min": 0.0, "max": 1.0, "step": 0.05,
         "desc": {"tr": "Son 24 saatte araç hata oranı bu değeri aşarsa (en az 10 çağrıda) log uyarısı ve panelde kırmızı bant görünür.", "en": "When the 24h tool error rate exceeds this fraction (min 10 calls), a log warning fires and a red banner appears on the dashboard."}},
+    "FEEDER_AUTO_INTERVAL_HOURS": {"type": "int", "default": "168", "label": {"tr": "Otomatik Corpus Besleme (Saat, 0=kapalı)", "en": "Auto Corpus Feeder (hours, 0=off)"}, "min": 0, "max": 720, "step": 1,
+        "desc": {"tr": "Kullanıcı düzeltme/onay sinyallerini toplayan corpus_feeder.py bu aralıkla ayrı bir süreçte otomatik çalışır (haftalık varsayılan).", "en": "corpus_feeder.py — which mines user correction/confirmation signals into intent examples — runs automatically in a separate process at this interval (weekly by default)."}},
     "SUMMARY_BATCH_SIZE": {"type": "int",   "default": "5",    "label": {"tr": "Özetleme Batch Boyutu",       "en": "Summary Batch Size"},     "min": 2, "max": 20, "step": 1},
     "SUMMARY_EARLY_TRIGGER": {"type": "int", "default": "6",   "label": {"tr": "Erken Özet Tetikleyici",      "en": "Early Summary Trigger"},    "min": 1, "max": 20, "step": 1},
     "LLM_BACKEND":        {"type": "select", "default": "litert", "label": {"tr": "LLM Motoru",                 "en": "LLM Engine"},
@@ -517,6 +522,7 @@ _NUMERIC_KEYS = {
     "AUDIT_RETENTION_DAYS": (int, 14),
     "AUDIT_ARCHIVE_RETENTION_DAYS": (int, 0),
     "AUDIT_ERROR_RATE_ALERT": (float, 0.2),
+    "FEEDER_AUTO_INTERVAL_HOURS": (int, 168),
     "MEDIA_MAX_MB": (int, 100),
     "RATE_LIMIT_RPM": (int, 30),
     "RATE_LIMIT_SESSION_RPM": (int, 20),

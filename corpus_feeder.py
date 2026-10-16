@@ -11,6 +11,7 @@ each run only processes new rows.
 """
 
 import argparse
+import hashlib
 import json
 import logging
 import os
@@ -87,6 +88,20 @@ def _append_jsonl(path: Path, record: dict):
     _ensure_data_dir()
     with open(path, "a") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def _deterministic_split(signature: str) -> str:
+    """Assign a stable train/eval split (~10% eval) from the signature.
+
+    Hash-based and deterministic per signature: re-runs and dedup never
+    reshuffle rows, so the eval holdout stays a FIXED, honest test set — the
+    data-flywheel rule "never train on your eval split" only means something
+    if the split cannot drift. Eval rows still count for dedup/conflict
+    checks inside the feeder; only LIVE intent routing excludes them
+    (llm/intent._additional_corpus skips split=="eval").
+    """
+    h = int(hashlib.sha256(signature.encode("utf-8")).hexdigest(), 16)
+    return "eval" if h % 10 == 0 else "train"
 
 
 def _write_jsonl(path: Path, records: list[dict]):
@@ -758,6 +773,7 @@ async def _process_audit_row(
                 "source": signal,
                 "lang": _detect_lang(text),
                 "audit_id": audit_id,
+                "split": _deterministic_split(sig),
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "resolution": "llm_confirmed",
                 "original_conflict": conflict,
@@ -789,6 +805,7 @@ async def _process_audit_row(
         "source": signal,
         "lang": _detect_lang(text),
         "audit_id": audit_id,
+        "split": _deterministic_split(sig),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     if not dry_run:

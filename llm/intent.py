@@ -439,6 +439,11 @@ def _additional_corpus() -> list[tuple[str | None, str]]:
             if not line:
                 continue
             rec = _json.loads(line)
+            if rec.get("split") == "eval":
+                # Held-out eval rows (corpus_feeder deterministic ~10%
+                # split) must NEVER steer live routing — they are the honest
+                # test set. Legacy rows without a split field stay train.
+                continue
             grp = rec.get("group")
             out.append((grp, rec.get("text", "")))
         return out
