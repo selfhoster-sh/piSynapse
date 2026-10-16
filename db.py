@@ -9,6 +9,7 @@ import hashlib
 import hmac
 import json
 import logging
+import math
 import os
 import re
 import secrets
@@ -201,6 +202,7 @@ MIGRATIONS: list[tuple[str, str, str]] = [
     ("users", "password_hash", "TEXT"),
     ("users", "is_approved", "INTEGER DEFAULT 0"),
     ("sync_items", "origin", "TEXT NOT NULL DEFAULT ''"),
+    ("tool_audit_log", "stats_json", "TEXT"),
 ]
 
 
@@ -387,7 +389,8 @@ async def init_db():
             verification_status TEXT,
             confirmed_at   DATETIME,
             conversation_id INTEGER,
-            user_id      TEXT
+            user_id      TEXT,
+            stats_json   TEXT
         )
     """)
 
@@ -1491,13 +1494,61 @@ async def export_tool_audit_day(day: str, cutoff_sql: str) -> int:
     return await asyncio.to_thread(_write_audit_csv, day, rows)
 
 
-async def rollup_tool_audit(days: int = 14) -> int:
+def _build_day_stats(rows: list[tuple]) -> dict:
+    """Aggregate detail rows into the per-day stats dict stored in `stats_json`.
+
+    `rows` are (tool_name, user_id, success, duration_ms, verification_status)
+    tuples — the same projection used by the rollup INSERT and by the
+    dashboard's live-day aggregation, so both paths always agree. NULL
+    durations are skipped; NULL user_ids count as "unknown"; NULL
+    verification_status means "not applicable" and is omitted (only
+    ID-verified tools record a status). p95 is nearest-rank
+    (ceil(0.95*n)-1). Deterministic and pure — no I/O, no time.
+    """
+    tools: dict[str, int] = {}
+    users: dict[str, dict[str, int]] = {}
+    durations: list[float] = []
+    verify: dict[str, int] = {}
+    success_total = 0
+    for tool_name, user_id, success, duration_ms, vstatus in rows:
+        tools[tool_name] = tools.get(tool_name, 0) + 1
+        u = user_id or "unknown"
+        bucket = users.setdefault(u, {"total": 0, "success": 0, "error": 0})
+        bucket["total"] += 1
+        if success:
+            success_total += 1
+            bucket["success"] += 1
+        else:
+            bucket["error"] += 1
+        if duration_ms is not None:
+            durations.append(float(duration_ms))
+        if vstatus:
+            verify[vstatus] = verify.get(vstatus, 0) + 1
+    dur: dict = {"n": len(durations)}
+    if durations:
+        ordered = sorted(durations)
+        dur["min"] = round(ordered[0], 1)
+        dur["max"] = round(ordered[-1], 1)
+        dur["avg"] = round(sum(ordered) / len(ordered), 1)
+        dur["p95"] = round(ordered[max(0, math.ceil(0.95 * len(ordered)) - 1)], 1)
+    return {
+        "tools": tools,
+        "users": users,
+        "dur_ms": dur,
+        "verify": verify,
+        "success": success_total,
+    }
+
+
+async def rollup_tool_audit(days: int | None = None) -> int:
     """Compress detail rows older than `days` into one daily summary row per day.
 
-    Retention policy: detail rows survive for `days` (default 14), then are
-    exported to ``audit_exports/`` as per-day CSV files (``tool-audit-YYYY-MM-DD.csv``,
-    one row per audited call, incl. the linked conversation), aggregated into a
-    per-day summary (total/success/error counts + per-tool breakdown) and the
+    Retention policy: detail rows survive for `days` (default: config
+    ``AUDIT_RETENTION_DAYS``, 14), then are exported to ``audit_exports/`` as
+    per-day CSV files (``tool-audit-YYYY-MM-DD.csv``, one row per audited call,
+    incl. the linked conversation), aggregated into a per-day summary
+    (total/success/error counts + per-tool breakdown + `stats_json`:
+    per-user counts, duration min/avg/max/p95, verification breakdown) and the
     detail rows are removed. Each day is processed inside its own ``BEGIN
     IMMEDIATE`` transaction so the export completion, the summary INSERT and the
     detail DELETE are all-or-nothing: a failed export rolls the day back and
@@ -1509,6 +1560,9 @@ async def rollup_tool_audit(days: int = 14) -> int:
     Returns the number of days rolled up.
     """
     import sqlite3
+    from config import AUDIT_RETENTION_DAYS
+    if days is None:
+        days = max(1, AUDIT_RETENTION_DAYS)
     try:
         db = await get_db()
         cutoff = f"-{days} days"
@@ -1537,16 +1591,17 @@ async def rollup_tool_audit(days: int = 14) -> int:
                 for attempt in range(_LOCKED_RETRIES + 1):
                     try:
                         await db.execute("BEGIN IMMEDIATE")
-                        breakdown = {}
                         cur2 = await db.execute(
-                            """SELECT tool_name, COUNT(*) FROM tool_audit_log
+                            """SELECT tool_name, user_id, success, duration_ms, verification_status
+                               FROM tool_audit_log
                                WHERE is_summary = 0 AND created_at < datetime('now', ?)
-                                 AND substr(created_at, 1, 10) = ?
-                               GROUP BY tool_name""",
+                                 AND substr(created_at, 1, 10) = ?""",
                             (cutoff, day),
                         )
-                        for name, cnt in await cur2.fetchall():
-                            breakdown[name] = cnt
+                        day_rows = await cur2.fetchall()
+                        stats = _build_day_stats(day_rows)
+                        total = len(day_rows)
+                        success_count = stats["success"]
 
                         # Archive first, delete second: a failed export raises and
                         # rolls the day back, so detail rows are never discarded
@@ -1555,12 +1610,13 @@ async def rollup_tool_audit(days: int = 14) -> int:
 
                         await db.execute(
                             """INSERT INTO tool_audit_log
-                               (is_summary, day, total_calls, success_count, error_count, tool_breakdown, tool_name, success, created_at, expected_tool, corrected_at)
-                               SELECT 1, ?, COUNT(*), SUM(success), SUM(1 - success), ?, 'rollup', 1, ?, NULL, NULL
-                               FROM tool_audit_log
-                               WHERE is_summary = 0 AND created_at < datetime('now', ?)
-                                 AND substr(created_at, 1, 10) = ?""",
-                            (day, json.dumps(breakdown), day, cutoff, day),
+                               (is_summary, day, total_calls, success_count, error_count,
+                                tool_breakdown, tool_name, success, created_at,
+                                expected_tool, corrected_at, stats_json)
+                               VALUES (1, ?, ?, ?, ?, ?, 'rollup', 1, ?, NULL, NULL, ?)""",
+                            (day, total, success_count, total - success_count,
+                             json.dumps(stats["tools"]), day,
+                             json.dumps(stats, separators=(",", ":"))),
                         )
                         await db.execute(
                             """DELETE FROM tool_audit_log
@@ -1599,6 +1655,132 @@ async def rollup_tool_audit(days: int = 14) -> int:
 
 ROLLUP_INTERVAL_SECONDS = 24 * 3600  # retention sweep runs once a day
 
+_AUDIT_ALERT_MIN_CALLS = 10  # below this a "100% error rate" is noise, not signal
+
+
+async def get_audit_overview(days: int | None = None) -> dict:
+    """Dashboard payload: per-day tool-audit stats for the last `days` days.
+
+    Merges rolled-up summary rows (is_summary=1, older than retention) with a
+    live aggregation of still-detailed rows, so the trend is continuous across
+    the retention boundary — a gap there would make the dashboard lie exactly
+    when the rollup runs. Newest day first. Each entry carries
+    ``source: "summary" | "detail"`` so the UI can label compressed days.
+    Never raises; returns ``{"days": [], ...}`` on failure.
+    """
+    from config import AUDIT_RETENTION_DAYS
+    if days is None:
+        days = max(1, AUDIT_RETENTION_DAYS)
+    out: dict = {"days": [], "retention_days": days, "window_days": days}
+    try:
+        db = await get_db()
+        cur = await db.execute(
+            """SELECT day, total_calls, success_count, error_count,
+                      tool_breakdown, stats_json
+               FROM tool_audit_log WHERE is_summary = 1
+               ORDER BY day DESC LIMIT ?""",
+            (days,),
+        )
+        merged: dict[str, dict] = {}
+        for day, total, succ, err, breakdown, stats_json in await cur.fetchall():
+            try:
+                stats = json.loads(stats_json) if stats_json else {}
+            except (ValueError, TypeError):
+                stats = {}
+            try:
+                tools = json.loads(breakdown) if breakdown else stats.get("tools", {})
+            except (ValueError, TypeError):
+                tools = stats.get("tools", {})
+            total = total or 0
+            merged[day] = {
+                "day": day, "total": total, "success": succ or 0,
+                "errors": err or 0,
+                "error_rate": round((err or 0) / total, 3) if total else 0.0,
+                "tools": tools, "users": stats.get("users", {}),
+                "dur_ms": stats.get("dur_ms", {}), "verify": stats.get("verify", {}),
+                "source": "summary",
+            }
+        # Live days (within the window, not yet rolled up): aggregate details
+        # with the SAME _build_day_stats the rollup uses, per day.
+        cur = await db.execute(
+            """SELECT substr(created_at, 1, 10) AS day, tool_name, user_id,
+                      success, duration_ms, verification_status
+               FROM tool_audit_log
+               WHERE is_summary = 0 AND created_at >= datetime('now', ?)
+               ORDER BY created_at""",
+            (f"-{days} days",),
+        )
+        by_day: dict[str, list] = {}
+        for day, tool_name, user_id, success, dur, vstatus in await cur.fetchall():
+            by_day.setdefault(day, []).append((tool_name, user_id, success, dur, vstatus))
+        for day, rows in by_day.items():
+            if day in merged:
+                continue  # already summarized (crash-residue); summary wins
+            stats = _build_day_stats(rows)
+            total = len(rows)
+            succ = stats["success"]
+            merged[day] = {
+                "day": day, "total": total, "success": succ,
+                "errors": total - succ,
+                "error_rate": round((total - succ) / total, 3) if total else 0.0,
+                "tools": stats["tools"], "users": stats["users"],
+                "dur_ms": stats["dur_ms"], "verify": stats["verify"],
+                "source": "detail",
+            }
+        out["days"] = sorted(merged.values(), key=lambda d: d["day"], reverse=True)
+    except Exception as e:
+        logger.warning(f"get_audit_overview failed: {e}")
+    return out
+
+
+async def audit_error_alert(window_hours: int = 24) -> dict:
+    """Rolling error-rate check across detail rows AND summary rows.
+
+    Summaries contribute their success_count/error_count: right after a sweep
+    a details-only window would read empty and the alarm would miss a
+    catastrophic day that just got rolled up. Whole summaries inside the
+    window count fully (a deliberate coarseness — an alarm, not an accounting).
+    Threshold: config ``AUDIT_ERROR_RATE_ALERT`` (0 = off); ignored below
+    ``_AUDIT_ALERT_MIN_CALLS`` total calls. Never raises.
+    """
+    from config import AUDIT_ERROR_RATE_ALERT
+    out = {
+        "window_hours": window_hours, "total": 0, "success": 0, "errors": 0,
+        "error_rate": 0.0, "threshold": AUDIT_ERROR_RATE_ALERT,
+        "min_calls": _AUDIT_ALERT_MIN_CALLS, "breached": False,
+    }
+    try:
+        db = await get_db()
+        cur = await db.execute(
+            """SELECT COUNT(*), COALESCE(SUM(success), 0)
+               FROM tool_audit_log
+               WHERE is_summary = 0 AND created_at >= datetime('now', ?)""",
+            (f"-{window_hours} hours",),
+        )
+        det_total, det_success = await cur.fetchone()
+        cur = await db.execute(
+            """SELECT COALESCE(SUM(total_calls), 0), COALESCE(SUM(success_count), 0)
+               FROM tool_audit_log
+               WHERE is_summary = 1 AND day >= date('now', ?)""",
+            (f"-{window_hours} hours",),
+        )
+        sum_total, sum_success = await cur.fetchone()
+        total = (det_total or 0) + (sum_total or 0)
+        success = (det_success or 0) + (sum_success or 0)
+        errors = max(0, total - success)
+        out.update({
+            "total": total, "success": success, "errors": errors,
+            "error_rate": round(errors / total, 3) if total else 0.0,
+        })
+        out["breached"] = bool(
+            AUDIT_ERROR_RATE_ALERT > 0
+            and total >= _AUDIT_ALERT_MIN_CALLS
+            and out["error_rate"] > AUDIT_ERROR_RATE_ALERT
+        )
+    except Exception as e:
+        logger.warning(f"audit_error_alert failed: {e}")
+    return out
+
 
 async def periodic_rollup_loop(interval: float = ROLLUP_INTERVAL_SECONDS, sleep=asyncio.sleep):
     """Run rollup_tool_audit() once per `interval` until cancelled.
@@ -1619,6 +1801,20 @@ async def periodic_rollup_loop(interval: float = ROLLUP_INTERVAL_SECONDS, sleep=
             raise
         except Exception as e:
             logger.warning(f"Periodic rollup failed, will retry next cycle: {e}")
+        # Health check rides the same cadence; never raises. A breach is a
+        # loud log line — the dashboard renders the same numbers live.
+        try:
+            alert = await audit_error_alert()
+            if alert["breached"]:
+                logger.warning(
+                    f"Tool error-rate alert: {alert['errors']}/{alert['total']} "
+                    f"calls failed in the last {alert['window_hours']}h "
+                    f"(rate {alert['error_rate']:.0%} > threshold {alert['threshold']:.0%})"
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.warning(f"Periodic audit alert check failed: {e}")
 
 
 CLEANUP_INTERVAL_SECONDS = 24 * 3600  # retention cleanup runs once a day

@@ -214,6 +214,13 @@ CONFLICT_COSINE = _safe_float("CONFLICT_COSINE", 0.50)
 # Data retention (days). 0 = disabled (keep forever).
 CONVERSATION_RETENTION_DAYS = _safe_int("CONVERSATION_RETENTION_DAYS", 0)
 MEMORY_RETENTION_DAYS = _safe_int("MEMORY_RETENTION_DAYS", 0)
+# Tool-audit DETAIL retention (days): how long per-call rows stay in the DB
+# before the daily rollup exports them to CSV and replaces them with one
+# summary row. Exported CSVs live independently (see AUDIT_ARCHIVE_*).
+AUDIT_RETENTION_DAYS = _safe_int("AUDIT_RETENTION_DAYS", 14)
+# Error-rate alert threshold (fraction 0..1) over the rolling 24h audit
+# window. 0 disables. Fires when total calls >= AUDIT_ALERT_MIN_CALLS.
+AUDIT_ERROR_RATE_ALERT = _safe_float("AUDIT_ERROR_RATE_ALERT", 0.2)
 EMBED_MODEL = os.getenv("EMBED_MODEL", "sentence-transformers/paraphrase-multilingual-mpnet-base-v2")
 
 # -- Weather --
@@ -399,6 +406,10 @@ SETTINGS_SCHEMA: dict = {
     "MEMORY_SIMILARITY_THRESHOLD": {"type": "float", "default": "0.68", "label": {"tr": "Bellek Benzerlik Eşiği", "en": "Memory Similarity Threshold"}, "min": 0.1, "max": 0.99, "step": 0.01},
     "CONVERSATION_RETENTION_DAYS": {"type": "int", "default": "0", "label": {"tr": "Sohbet Saklama (Gün, 0=kapalı)", "en": "Chat Retention (days, 0=off)"}, "min": 0, "max": 3650, "step": 1},
     "MEMORY_RETENTION_DAYS":       {"type": "int", "default": "0", "label": {"tr": "Bellek Saklama (Gün, 0=kapalı)", "en": "Memory Retention (days, 0=off)"}, "min": 0, "max": 3650, "step": 1},
+    "AUDIT_RETENTION_DAYS":        {"type": "int", "default": "14", "label": {"tr": "Araç Kaydı Detayı Saklama (Gün)", "en": "Tool Audit Detail Retention (days)"}, "min": 1, "max": 3650, "step": 1,
+        "desc": {"tr": "Tek tek araç çağrıları bu kadar gün veritabanında detay olarak kalır; sonrası günlük özet satırına sıkıştırılır ve CSV'ye dışa aktarılır. Panodaki trend bu pencereyi gösterir.", "en": "Per-call tool rows stay detailed in the DB for this many days; older ones are compressed into a daily summary row and exported to CSV. The dashboard trend window follows this value."}},
+    "AUDIT_ERROR_RATE_ALERT":      {"type": "float", "default": "0.2", "label": {"tr": "Hata Oranı Uyarı Eşiği (0=kapat)", "en": "Error-Rate Alert Threshold (0=off)"}, "min": 0.0, "max": 1.0, "step": 0.05,
+        "desc": {"tr": "Son 24 saatte araç hata oranı bu değeri aşarsa (en az 10 çağrıda) log uyarısı ve panelde kırmızı bant görünür.", "en": "When the 24h tool error rate exceeds this fraction (min 10 calls), a log warning fires and a red banner appears on the dashboard."}},
     "SUMMARY_BATCH_SIZE": {"type": "int",   "default": "5",    "label": {"tr": "Özetleme Batch Boyutu",       "en": "Summary Batch Size"},     "min": 2, "max": 20, "step": 1},
     "SUMMARY_EARLY_TRIGGER": {"type": "int", "default": "6",   "label": {"tr": "Erken Özet Tetikleyici",      "en": "Early Summary Trigger"},    "min": 1, "max": 20, "step": 1},
     "LLM_BACKEND":        {"type": "select", "default": "litert", "label": {"tr": "LLM Motoru",                 "en": "LLM Engine"},
@@ -497,6 +508,8 @@ _NUMERIC_KEYS = {
     "CONFLICT_COSINE": (float, 0.50),
     "CONVERSATION_RETENTION_DAYS": (int, 0),
     "MEMORY_RETENTION_DAYS": (int, 0),
+    "AUDIT_RETENTION_DAYS": (int, 14),
+    "AUDIT_ERROR_RATE_ALERT": (float, 0.2),
     "MEDIA_MAX_MB": (int, 100),
     "RATE_LIMIT_RPM": (int, 30),
     "RATE_LIMIT_SESSION_RPM": (int, 20),

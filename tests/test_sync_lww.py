@@ -79,7 +79,11 @@ def test_migration_adds_origin_to_old_db(tmp_path, monkeypatch):
         cur = await db.execute("PRAGMA user_version")
         return (await cur.fetchone())[0]
 
-    assert asyncio.run(_version()) == 23
+    # Assert against the migration list LENGTH, not a baked-in integer: the
+    # append-only MIGRATIONS framework grows by one with every new column, so
+    # a hard-coded number breaks every time (it did — pinned at 23 while the
+    # list already had 24 entries after adding tool_audit_log.stats_json).
+    assert asyncio.run(_version()) == len(dbmod.MIGRATIONS)
     asyncio.run(dbmod.close_db())
 
 

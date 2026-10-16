@@ -33,8 +33,13 @@ const STRINGS = {
     settingsCancel:'İptal', settingsSave:'Kaydet', settingsSearch:'Ayarlarda ara…', settingsDirty:'Kaydedilmemiş değişiklikler', settingsNoResult:'Aramana uyan ayar yok.',
     navAppearance:'Görünüm', navAccount:'Hesap', navAssistant:'Asistan', navModel:'Model', navChat:'Sohbet', navVoice:'Ses', navServer:'Sunucu', navAdmin:'Yönetici', readonlyNote:'Bu ekrandaki sunucu ayarları salt görüntülenir — değişiklikleri yalnızca yöneticiler yapabilir.', startBackendQ:'%s servisi başlatılsın mı?',
     modeLabel:'Tema', modeDark:'Koyu', modeLight:'Açık', modeAmoled:'AMOLED', accentLabel:'Vurgu rengi',
-    adminReview:'İnceleme Kuyruğu', adminReviewDesc:'Kullanıcı geri bildirimlerinden gelen çelişkili yönlendirme önerileri. Onaylanan corpus\u2019a girer, reddedilen bir daha otomatik eklenmez.',
+    adminReview:'İnceleme Kuyruğu', adminReviewDesc:'Kullanıcı geri bildirimlerinden gelen çelişkili yönlendirme önerileri. Onaylanan corpus’a girer, reddedilen bir daha otomatik eklenmez.',
     adminReviewEmpty:'Bekleyen öneri yok.', adminApprove:'Onayla', adminReject:'Reddet',
+    adminAudit:'Araç Kayıtları', adminAuditDesc:'Günlük araç çağrısı özeti — çağrı, hata oranı ve gecikme. Günlük özet + gün bazlı CSV arşivi.',
+    adminAuditEmpty:'Kayıt yok.', adminAuditExport:'CSV',
+    adminAuditDay:'Gün', adminAuditCalls:'Çağrı', adminAuditErr:'Hata', adminAuditLat:'Gecikme avg/p95 (ms)', adminAuditSrc:'Kaynak',
+    adminAuditSrcSummary:'özet', adminAuditSrcDetail:'detay',
+    adminAuditAlert:'Dikkat: son 24 saatte hata oranı {rate}% (eşik {th}%) — {err}/{total} çağrı başarısız.',
     adminUsers:'Kullanıcılar', adminApproved:'Onaylı', adminPending:'Onay bekliyor', adminRole:'Yönetici', adminDelete:'Sil', adminDeleteConfirm:'Bu hesabı ve tüm verilerini silmek istediğine emin misin?',
     themeLabel:'Tema Rengi', langLabel:'Dil',
     glassLabel:'Cam Efekti',
@@ -126,6 +131,11 @@ const STRINGS = {
     modeLabel:'Theme', modeDark:'Dark', modeLight:'Light', modeAmoled:'AMOLED', accentLabel:'Accent color',
     adminReview:'Review Queue', adminReviewDesc:'Contested routing suggestions from user feedback. Approved ones enter the corpus, rejected ones are never auto-added.',
     adminReviewEmpty:'No pending suggestions.', adminApprove:'Approve', adminReject:'Reject',
+    adminAudit:'Tool Audit', adminAuditDesc:'Daily tool-call summary — volume, error rate and latency. Rolled-up days plus a per-day CSV archive.',
+    adminAuditEmpty:'No records yet.', adminAuditExport:'CSV',
+    adminAuditDay:'Day', adminAuditCalls:'Calls', adminAuditErr:'Errors', adminAuditLat:'Latency avg/p95 (ms)', adminAuditSrc:'Source',
+    adminAuditSrcSummary:'summary', adminAuditSrcDetail:'detail',
+    adminAuditAlert:'Attention: 24h error rate {rate}% (threshold {th}%) — {err}/{total} calls failed.',
     adminUsers:'Users', adminApproved:'Approved', adminPending:'Pending approval', adminRole:'Admin', adminDelete:'Delete', adminDeleteConfirm:'Delete this account and all its data?',
     themeLabel:'Theme Color', langLabel:'Language',
     glassLabel:'Glass Effect',
@@ -3608,6 +3618,12 @@ function adminSectionHtml(){
             <div class="setting-desc">${esc(t('adminReviewDesc'))}</div>
             <div id="admin-review-list"></div>
           </div>
+          <div class="setting-item">
+            <div class="setting-label"><span>${esc(t('adminAudit'))}</span></div>
+            <div class="setting-desc">${esc(t('adminAuditDesc'))}</div>
+            <div id="admin-audit-alert"></div>
+            <div id="admin-audit-list"></div>
+          </div>
         </div>
       </div>
     </div>`;
@@ -3682,6 +3698,7 @@ async function loadAdminPanel(){
     }).join('');
   }catch(e){ /* admins without user-list access keep the rest working */ }
   await refreshReviewList();
+  loadAuditPanel();
 }
 
 async function refreshReviewList(){
@@ -3699,6 +3716,53 @@ async function refreshReviewList(){
       <button class="ob-btn ghost" style="font-size:11px;padding:5px 10px" onclick="decidePattern(${i},false)">${esc(t('adminReject'))}</button>
     </div>`;
   }).join('') : `<div style="color:var(--text3)">${esc(t('adminReviewEmpty'))}</div>`;
+}
+
+async function loadAuditPanel(){
+  const el = document.getElementById('admin-audit-list');
+  const al = document.getElementById('admin-audit-alert');
+  if(!el) return;
+  let d = null;
+  try{ d = await api('GET', '/admin/audit/overview'); }
+  catch(e){ el.innerHTML = `<div style="color:var(--danger)">${esc(t('connErr'))}</div>`; return; }
+  const a = d.alert || {};
+  if(al){
+    al.innerHTML = a.breached
+      ? `<div style="color:var(--danger);font-size:12px;padding:4px 0">${esc(
+          t('adminAuditAlert')
+            .replace('{rate}', Math.round((a.error_rate || 0) * 100))
+            .replace('{th}', Math.round((a.threshold || 0) * 100))
+            .replace('{err}', a.errors || 0)
+            .replace('{total}', a.total || 0))}</div>`
+      : '';
+  }
+  const days = d.days || [];
+  if(!days.length){ el.innerHTML = `<div style="color:var(--text3)">${esc(t('adminAuditEmpty'))}</div>`; return; }
+  const row = (dd)=>{
+    const dur = dd.dur_ms || {};
+    const lat = dur.n ? `${esc(String(dur.avg ?? '—'))} / ${esc(String(dur.p95 ?? '—'))}` : '—';
+    const src = dd.source === 'summary' ? t('adminAuditSrcSummary') : t('adminAuditSrcDetail');
+    // Export link only for rolled-up days (the archive exists only then);
+    // the session cookie authenticates the file GET like any other page.
+    const csv = dd.source === 'summary'
+      ? ` <a href="/admin/audit/export/${encodeURIComponent(dd.day)}" style="font-size:11px">${esc(t('adminAuditExport'))}</a>`
+      : '';
+    const errColor = dd.errors > 0 ? 'var(--danger)' : 'var(--text3)';
+    return `<div style="display:flex;gap:10px;padding:3px 0;border-top:1px solid var(--border);font-size:12px;align-items:center">
+      <span style="width:80px">${esc(dd.day)}</span>
+      <span style="width:50px;text-align:right">${dd.total}</span>
+      <span style="width:60px;text-align:right;color:${errColor}">${dd.errors}</span>
+      <span style="flex:1;color:var(--text3)">${lat}</span>
+      <span style="color:var(--text3)">${esc(src)}</span>${csv}
+    </div>`;
+  };
+  el.innerHTML = `<div style="display:flex;gap:10px;padding:3px 0;font-size:11px;color:var(--text3);font-weight:600">
+      <span style="width:80px">${esc(t('adminAuditDay'))}</span>
+      <span style="width:50px;text-align:right">${esc(t('adminAuditCalls'))}</span>
+      <span style="width:60px;text-align:right">${esc(t('adminAuditErr'))}</span>
+      <span style="flex:1">${esc(t('adminAuditLat'))}</span>
+      <span>${esc(t('adminAuditSrc'))}</span><span style="width:28px"></span>
+    </div>` + days.map(row).join('');
 }
 
 async function approveUser(i){
