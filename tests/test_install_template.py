@@ -196,3 +196,11 @@ def test_no_predictable_tmp_for_privileged_unit_writes():
     assert 'Path("/tmp/piserve.service")' not in install_py
     assert 'Path("/tmp/pisynapse.service")' not in install_py
     assert '"sudo", "tee"' in install_py
+
+
+def test_litert_log_is_created_owner_only():
+    """The litert server log may contain errors/secrets: create it 0600, not
+    the umask default — the non-systemd path has no UMask= to lean on."""
+    install_py = _read("install.py")
+    assert "os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)" in install_py
+    assert 'open(log_path, "ab")' not in install_py

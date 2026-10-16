@@ -103,3 +103,165 @@ def test_pisynapse_unit_without_litert_has_no_piserve_dep():
         "/home/user/piSynapse/venv/bin/uvicorn", wants_litert=False,
     )
     assert "piserve.service" not in unit
+
+
+def test_run_enforces_default_timeout(monkeypatch):
+    """Downloads must not hang forever: _run injects a hard timeout."""
+    seen = {}
+
+    class R:
+        returncode = 0
+
+    def fake_run(cmd, **kw):
+        seen.update(kw)
+        return R()
+
+    monkeypatch.setattr(inst.subprocess, "run", fake_run)
+    inst._run(["echo", "hi"])
+    assert seen.get("timeout") == inst._STEP_TIMEOUT
+
+
+def test_run_respects_explicit_timeout(monkeypatch):
+    seen = {}
+
+    class R:
+        returncode = 0
+
+    def fake_run(cmd, **kw):
+        seen.update(kw)
+        return R()
+
+    monkeypatch.setattr(inst.subprocess, "run", fake_run)
+    inst._run(["echo"], timeout=5)
+    assert seen["timeout"] == 5
+
+
+def test_sudo_prefix_dash_n_only_in_batch(monkeypatch):
+    monkeypatch.setattr(inst, "BATCH_MODE", True)
+    assert inst._sudo_prefix() == ["sudo", "-n"]
+    monkeypatch.setattr(inst, "BATCH_MODE", False)
+    assert inst._sudo_prefix() == ["sudo"]
+
+
+def test_check_sudo_batch_warns_when_unavailable(monkeypatch):
+    log = []
+
+    class R:
+        returncode = 1
+
+    monkeypatch.setattr(inst, "BATCH_MODE", True)
+    monkeypatch.setattr(inst.subprocess, "run", lambda *a, **k: R())
+    monkeypatch.setattr(inst, "warn", lambda m: log.append(m))
+    inst._check_sudo_batch()
+    assert any("passwordless sudo" in m for m in log)
+
+
+def test_check_sudo_batch_silent_when_interactive(monkeypatch):
+    log = []
+    monkeypatch.setattr(inst, "BATCH_MODE", False)
+    monkeypatch.setattr(inst, "warn", lambda m: log.append(m))
+    inst._check_sudo_batch()
+    assert log == []
+
+
+def test_generated_creds_key_is_valid_fernet():
+    from cryptography.fernet import Fernet
+    key = inst._generate_creds_key()
+    Fernet(key.encode("utf-8"))  # raises if not a valid Fernet key
+
+
+def test_creds_key_fallback_without_cryptography(monkeypatch):
+    from cryptography.fernet import Fernet
+    import builtins
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *a, **k):
+        if name == "cryptography" or name.startswith("cryptography."):
+            raise ImportError("simulated missing cryptography")
+        return real_import(name, *a, **k)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    key = inst._generate_creds_key()
+    Fernet(key.encode("utf-8"))  # the fallback key must still be Fernet-valid
+
+
+def test_report_missing_deps_all_present(monkeypatch):
+    log = []
+    monkeypatch.setattr(inst, "ok", lambda m: log.append(("ok", m)))
+    inst._report_missing_deps([])
+    assert log == [("ok", "All system dependencies satisfied")]
+
+
+def test_report_missing_deps_summarizes_and_can_abort(monkeypatch):
+    import types
+
+    log = []
+    monkeypatch.setattr(inst, "DISTRO", types.SimpleNamespace(pm="apt"))
+    monkeypatch.setattr(inst, "BATCH_MODE", False)
+    monkeypatch.setattr(inst, "warn", lambda m: log.append(("warn", m)))
+    monkeypatch.setattr(inst, "info", lambda m: log.append(("info", m)))
+    monkeypatch.setattr(inst, "error", lambda m: log.append(("error", m)))
+    monkeypatch.setattr(inst, "ask_yesno", lambda p, default=True: False)  # user says no
+
+    import pytest
+
+    with pytest.raises(SystemExit):
+        inst._report_missing_deps(["ffmpeg", "curl"])
+    warns = [m for k, m in log if k == "warn"]
+    infos = [m for k, m in log if k == "info"]
+    assert any("ffmpeg" in m and "curl" in m for m in warns)
+    assert any("sudo apt install ffmpeg curl" in m for m in infos)
+
+
+def test_report_missing_deps_continues_when_user_agrees(monkeypatch):
+    import types
+
+    monkeypatch.setattr(inst, "DISTRO", types.SimpleNamespace(pm="apt"))
+    monkeypatch.setattr(inst, "BATCH_MODE", False)
+    monkeypatch.setattr(inst, "warn", lambda m: None)
+    monkeypatch.setattr(inst, "info", lambda m: None)
+    monkeypatch.setattr(inst, "ask_yesno", lambda p, default=True: True)  # continue
+    inst._report_missing_deps(["ffmpeg"])  # must NOT exit
+
+
+def test_report_missing_deps_batch_never_prompts(monkeypatch):
+    monkeypatch.setattr(inst, "BATCH_MODE", True)
+    monkeypatch.setattr(inst, "warn", lambda m: None)
+    monkeypatch.setattr(inst, "info", lambda m: None)
+
+    def _boom(*a, **k):
+        raise AssertionError("batch must not prompt")
+
+    monkeypatch.setattr(inst, "ask_yesno", _boom)
+    inst._report_missing_deps(["curl"])  # no prompt, no exit
+
+
+def test_find_litert_bin_expands_glob_in_dir_component(tmp_path, monkeypatch):
+    """The '~/Library/Python/3.*/bin' candidate must actually match — the old
+    code globbed only the filename inside a literal '*' directory (dead code)."""
+    home = tmp_path / "home"
+    bindir = home / "Library" / "Python" / "3.12" / "bin"
+    bindir.mkdir(parents=True)
+    exe = bindir / "litert-lm"
+    exe.write_text("#!/bin/sh\n")
+    exe.chmod(0o755)
+
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(inst.shutil, "which", lambda name: None)
+    assert inst._find_litert_bin() == str(exe)
+
+
+def test_merge_env_extras_preserves_manual_keys():
+    content = "API_KEY=abc\nLLM_MODEL=x\n"
+    current = {"API_KEY": "abc", "CUSTOM_THING": "1", "ANOTHER": "2"}
+    out, extras = inst._merge_env_extras(content, current)
+    assert extras == {"CUSTOM_THING": "1", "ANOTHER": "2"}
+    assert "CUSTOM_THING=1" in out and "ANOTHER=2" in out
+    assert out.count("API_KEY=") == 1  # managed key not duplicated
+
+
+def test_merge_env_extras_no_manual_keys():
+    out, extras = inst._merge_env_extras("A=1\nB=2\n", {"A": "1", "B": "2"})
+    assert extras == {}
+    assert out == "A=1\nB=2\n"

@@ -14,6 +14,7 @@ Flow:
 """
 
 import getpass
+import glob
 import json
 import os
 import re
@@ -129,21 +130,50 @@ def _detect_distro() -> None:
         DISTRO.pm = "unknown"
 
 
+def _sudo_prefix() -> list[str]:
+    """`sudo` prefix for package installs.
+
+    In batch/non-interactive mode use `sudo -n`: a plain `sudo` would block
+    forever on a password prompt that nobody can answer (CI/automation) —
+    `-n` fails fast instead and the caller reports the missing privilege.
+    """
+    return ["sudo", "-n"] if BATCH_MODE else ["sudo"]
+
+
+def _check_sudo_batch() -> None:
+    """Batch mode: verify passwordless sudo works BEFORE we first need it.
+
+    Otherwise the first `sudo -n` fails mid-install with a confusing error;
+    a clear up-front warning lets the operator fix it (run as root, configure
+    NOPASSWD, or use the interactive installer).
+    """
+    if not BATCH_MODE:
+        return
+    try:
+        r = subprocess.run(["sudo", "-n", "true"], capture_output=True)
+    except Exception:
+        r = None
+    if r is None or r.returncode != 0:
+        warn("Batch mode: passwordless sudo unavailable — package steps will be skipped. "
+             "Run as root, configure NOPASSWD, or use the interactive installer.")
+
+
 def _pkg_install(*packages: str, extra_args: list[str] | None = None) -> bool:
     """Install packages using the detected package manager. Returns True on success."""
     args = extra_args or []
+    sudo = _sudo_prefix()
     if DISTRO.pm == "apt":
-        cmd = ["sudo", "apt-get", "install", "-y"] + args + list(packages)
+        cmd = sudo + ["apt-get", "install", "-y"] + args + list(packages)
     elif DISTRO.pm == "dnf":
-        cmd = ["sudo", "dnf", "install", "-y"] + args + list(packages)
+        cmd = sudo + ["dnf", "install", "-y"] + args + list(packages)
     elif DISTRO.pm == "yum":
-        cmd = ["sudo", "yum", "install", "-y"] + args + list(packages)
+        cmd = sudo + ["yum", "install", "-y"] + args + list(packages)
     elif DISTRO.pm == "pacman":
-        cmd = ["sudo", "pacman", "-S", "--noconfirm"] + args + list(packages)
+        cmd = sudo + ["pacman", "-S", "--noconfirm"] + args + list(packages)
     elif DISTRO.pm == "zypper":
-        cmd = ["sudo", "zypper", "--non-interactive", "install"] + args + list(packages)
+        cmd = sudo + ["zypper", "--non-interactive", "install"] + args + list(packages)
     elif DISTRO.pm == "apk":
-        cmd = ["sudo", "apk", "add"] + args + list(packages)
+        cmd = sudo + ["apk", "add"] + args + list(packages)
     elif DISTRO.pm == "brew":
         cmd = ["brew", "install"] + list(packages)
     else:
@@ -305,6 +335,7 @@ def step_python() -> None:
 
 def step_system_deps() -> None:
     header("2 / 7  System dependencies")
+    _check_sudo_batch()
     if DISTRO.pm != "unknown":
         info(f"Detected: {DISTRO.id or DISTRO.pm} ({DISTRO.pm})")
     missing: list[str] = []
@@ -355,6 +386,7 @@ def step_system_deps() -> None:
                     ok(f"{venv_pkg} installed")
                 else:
                     warn(f"Could not install {venv_pkg} — venv creation may fail")
+                    missing.append(venv_pkg)
 
     # build tools
     if not IS_WIN and sys.platform != "darwin":
@@ -362,9 +394,30 @@ def step_system_deps() -> None:
             be_pkg = _pkg_build_essential()
             if be_pkg and ask_yesno(f"Install build tools ({be_pkg}, recommended for pip packages)?"):
                 _pkg_install(be_pkg)
+            if not _build_tools_installed():
+                missing.append(be_pkg or "build-essential")
 
+    _report_missing_deps(missing)
+
+
+def _report_missing_deps(missing: list[str]) -> None:
+    """Summarize unmet system dependencies so the user knows what to fix (D1).
+
+    Previously a non-empty `missing` produced NOTHING — the user was left
+    wondering which deps failed. Now: a one-line summary, the exact install
+    command, what breaks without them, and a continue prompt (interactive).
+    """
     if not missing:
         ok("All system dependencies satisfied")
+        return
+    warn(f"{len(missing)} system dependency(ies) still missing: {', '.join(missing)}")
+    if DISTRO.pm not in ("unknown", "brew"):
+        info(f"Install them with: sudo {DISTRO.pm} install {' '.join(missing)}")
+    info("piSynapse starts without them, but the affected features won't work: "
+         "audio/voice needs ffmpeg, model downloads need curl, pip builds need build tools.")
+    if not BATCH_MODE and not ask_yesno("Continue the install anyway?", default=True):
+        error("Aborted — install the missing dependencies and re-run.")
+        sys.exit(1)
 
 
 def _venv_works() -> bool:
@@ -542,8 +595,17 @@ _LITERT_MODEL_REGISTRY: dict[str, tuple[str, str, str]] = {
 _OLLAMA_MODELS = ["gemma4:e2b", "gemma4:e4b"]
 
 
+_STEP_TIMEOUT = 900  # 15 min: model downloads are large but must not hang forever
+
+
 def _run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
-    """Run a subprocess with live output (for downloads/progress bars)."""
+    """Run a subprocess with live output (downloads/progress bars).
+
+    A hard timeout is enforced: on a dead/hung link these used to block
+    forever (no message, install frozen). subprocess.run kills the child on
+    timeout; callers turn the TimeoutExpired into a clear warning.
+    """
+    kwargs.setdefault("timeout", _STEP_TIMEOUT)
     return subprocess.run(cmd, **kwargs)
 
 
@@ -580,11 +642,14 @@ def _ensure_uv() -> str | None:
         os.path.expanduser("~/.local/bin/uv"),
         os.path.expanduser("~/Library/Python/*/bin/uv"),
     ):
-        hits = sorted(Path(os.path.dirname(candidate)).glob("uv")) if "*" in candidate else [Path(candidate)]
+        # glob.glob expands '*' in ANY path component; the old
+        # Path(dirname).glob(basename) only globbed the filename, so the
+        # "~/Library/Python/*/bin" pattern never matched (dead code).
+        hits = glob.glob(candidate) if "*" in candidate else [candidate]
         for hit in hits:
-            if hit.is_file() and os.access(hit, os.X_OK):
+            if os.path.isfile(hit) and os.access(hit, os.X_OK):
                 ok(f"uv found at {hit}")
-                return str(hit)
+                return hit
     warn("uv not found — will install litert-lm with pip instead")
     return None
 
@@ -600,10 +665,12 @@ def _find_litert_bin() -> str | None:
         os.path.abspath(os.path.join(VENV_DIR, "Scripts" if IS_WIN else "bin", "litert-lm")),
     ]
     for pattern in candidates:
-        hits = sorted(Path(os.path.dirname(pattern)).glob(os.path.basename(pattern))) if "*" in pattern else [Path(pattern)]
+        # Same fix as _ensure_uv: expand '*' in any component (glob.glob),
+        # not just the filename.
+        hits = glob.glob(pattern) if "*" in pattern else [pattern]
         for hit in hits:
-            if hit.is_file() and os.access(hit, os.X_OK):
-                return str(hit)
+            if os.path.isfile(hit) and os.access(hit, os.X_OK):
+                return hit
     return None
 
 
@@ -784,7 +851,10 @@ def _start_litert_server(litert_bin: str) -> bool:
             os.replace(log_path, log_path + ".1")
     except OSError as e:
         warn(f"Could not rotate {log_path}: {e}")
-    logf = open(log_path, "ab")
+    # Models/errors land in this log: create it 0600 (owner-only) instead of
+    # the umask default 0644 — the non-systemd path has no UMask= to lean on.
+    _logfd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    logf = os.fdopen(_logfd, "ab")
     try:
         subprocess.Popen(
             [_litert_python(), str(server_py)],
@@ -993,11 +1063,15 @@ def step_llm_backend() -> None:
             print()
             imported = False
             for attempt in (1, 2):
-                r = _run([
-                    litert_bin, "import",
-                    f"--from-huggingface-repo={hf_repo}",
-                    hf_file, import_id,
-                ])
+                try:
+                    r = _run([
+                        litert_bin, "import",
+                        f"--from-huggingface-repo={hf_repo}",
+                        hf_file, import_id,
+                    ])
+                except subprocess.TimeoutExpired:
+                    warn(f"Import attempt {attempt}/2 timed out after {_STEP_TIMEOUT // 60} min — dead/flaky link?")
+                    continue
                 if r.returncode == 0 and _litert_model_imported(import_id, litert_bin):
                     imported = True
                     break
@@ -1044,7 +1118,11 @@ def step_llm_backend() -> None:
         info(f"Pulling {model_id}...")
         pulled = False
         for attempt in (1, 2):
-            r = _run(["ollama", "pull", model_id])
+            try:
+                r = _run(["ollama", "pull", model_id])
+            except subprocess.TimeoutExpired:
+                warn(f"Pull attempt {attempt}/2 timed out after {_STEP_TIMEOUT // 60} min — dead/flaky link?")
+                continue
             if r.returncode == 0:
                 pulled = True
                 break
@@ -1320,6 +1398,34 @@ def _ensure_data_dirs() -> None:
             warn(f"Could not prepare directory {d}: {e}")
 
 
+def _merge_env_extras(content: str, current: dict[str, str]) -> tuple[str, dict[str, str]]:
+    """Append .env keys the template does NOT manage (hand-added by the operator)
+    so a re-run never drops them silently (D4). Returns (new_content, extras).
+    """
+    template_keys = set(re.findall(r"^([A-Za-z0-9_]+)=", content, re.MULTILINE))
+    extras = {k: v for k, v in current.items() if k not in template_keys}
+    if extras:
+        content = content.rstrip() + "\n\n# --- Preserved from a previous .env (not managed by the installer) ---\n"
+        content += "".join(f"{k}={v}\n" for k, v in extras.items())
+    return content, extras
+
+
+def _generate_creds_key() -> str:
+    """A Fernet-COMPATIBLE credential-encryption key (urlsafe-base64 of 32 bytes).
+
+    When `cryptography` isn't importable we still must emit a valid Fernet
+    key (base64url of 32 random bytes) — the old secrets.token_urlsafe(32)
+    fallback was the wrong shape and made credstore raise "Incorrect
+    padding", silently breaking every credential write.
+    """
+    try:
+        from cryptography.fernet import Fernet
+        return Fernet.generate_key().decode("utf-8")
+    except Exception:
+        import base64
+        return base64.urlsafe_b64encode(os.urandom(32)).decode("utf-8")
+
+
 def step_env() -> None:
     header("6 / 7  Environment configuration")
 
@@ -1337,11 +1443,7 @@ def step_env() -> None:
     # Per-user credential encryption key (reuse existing if present).
     creds_key = current.get("MAIL_CREDS_KEY", "")
     if not creds_key:
-        try:
-            from cryptography.fernet import Fernet
-            creds_key = Fernet.generate_key().decode("utf-8")
-        except Exception:
-            creds_key = secrets.token_urlsafe(32)
+        creds_key = _generate_creds_key()
         info("Generated credential-encryption key (saved to .env)")
 
     # Personal setup (name, city, mail, Nextcloud) moved to the browser
@@ -1459,6 +1561,10 @@ def step_env() -> None:
         pattern = rf"^{re.escape(k)}=.*$"
         if re.search(pattern, content, re.MULTILINE):
             content = re.sub(pattern, lambda _m: f"{k}={v}", content, flags=re.MULTILINE)
+
+    content, extras = _merge_env_extras(content, current)
+    if extras:
+        info(f"Preserved {len(extras)} custom .env key(s): {', '.join(sorted(extras))}")
 
     # Create the file at 0600 ATOMICALLY: write_text() would birth it
     # world-readable (umask 0644) and only the later chmod would tighten it —
