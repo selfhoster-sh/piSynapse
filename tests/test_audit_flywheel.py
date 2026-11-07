@@ -13,6 +13,7 @@ Closes the correction loop mined by corpus_feeder:
 
 import asyncio
 import json
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi import FastAPI
@@ -23,6 +24,12 @@ import corpus_feeder as cf
 import db as dbmod
 import llm.intent as intentmod
 import main as mainmod
+
+
+def _timestamp_days_ago(days: int = 0) -> str:
+    """Return a SQLite-compatible UTC timestamp relative to the current time."""
+    value = datetime.now(timezone.utc) - timedelta(days=days)
+    return value.strftime("%Y-%m-%dT%H:%M:%S")
 
 
 # ── deterministic split (pure) ────────────────────────────────────────────────
@@ -260,7 +267,7 @@ def test_feeder_loop_disabled_by_zero_config(monkeypatch):
     assert slept == [168 * 3600]
 
 
-# ── failure digest ────────────────────────────────────────────────────────────
+# ── failure digest ─────────────────────────────────────────────────────────────
 
 async def _seed_audit(*rows):
     db = await dbmod.get_db()
@@ -272,7 +279,7 @@ async def _seed_audit(*rows):
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (r["tool"], r.get("success", 1), r.get("error"),
              r.get("expected_group"), r.get("confirmed_at"),
-             r.get("verify"), r.get("created_at", "2026-10-16T00:00:00")),
+             r.get("verify"), r.get("created_at", _timestamp_days_ago(days=1))),
         )
     await db.commit()
 
@@ -307,12 +314,12 @@ def test_failure_digest_clusters_and_counts(monkeypatch):
 def test_failure_digest_respects_window_and_never_raises(monkeypatch):
     asyncio.run(_seed_audit(
         {"tool": "get_weather", "success": 0, "error": "old failure",
-         "created_at": "2026-01-01T00:00:00"},
+         "created_at": _timestamp_days_ago(days=30)},
         {"tool": "get_weather", "success": 0, "error": "fresh failure",
-         "created_at": "2099-01-01T00:00:00"},  # future-proof: inside window
+         "created_at": _timestamp_days_ago(days=1)},
     ))
     dg = asyncio.run(dbmod.audit_failure_digest(days=7))
-    assert dg["errors"] == 1  # the 2026-01-01 row is outside the window
+    assert dg["errors"] == 1  # the old row is outside the window
     assert dbmod._error_cluster_key("fresh failure") in \
         {e["error"] for e in dg["top_errors"]}
 
