@@ -7,6 +7,15 @@ import time
 import warnings
 
 import numpy as np
+
+# Persistent FastEmbed cache (the default /tmp cache wipes on reboot, forcing
+# a ~1.1 GB re-download every boot) + HF Xet disabled: the Xet download path is
+# what hung the loader thread in the 2026-11-09 incident (0% forever while
+# holding _model_lock; the timeout breaker below bounds it, but skipping Xet
+# avoids the hang itself). Both must be in effect before huggingface_hub use.
+os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
+CACHE_DIR = os.path.expanduser(os.environ.get("FASTEMBED_CACHE_DIR", "~/.cache/fastembed"))
+
 from fastembed import TextEmbedding
 
 # Single source of truth lives in config.py (Faz 2); this module must not
@@ -52,7 +61,7 @@ def get_model() -> TextEmbedding:
 
         def _load():
             try:
-                result_box.append(TextEmbedding(model_name=MODEL_NAME))
+                result_box.append(TextEmbedding(model_name=MODEL_NAME, cache_dir=CACHE_DIR))
             except Exception as e:  # surfaced by the loader thread below
                 load_errors.append(e)
 

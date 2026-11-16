@@ -40,7 +40,7 @@ def test_hung_download_times_out_and_arms_cooldown(monkeypatch):
     release = threading.Event()
     monkeypatch.setattr(
         embmod, "TextEmbedding",
-        lambda model_name=None: _HungTE(model_name, started=None, release=release),
+        lambda model_name=None, cache_dir=None: _HungTE(model_name, started=None, release=release),
     )
     monkeypatch.setattr(embmod, "_MODEL_LOAD_TIMEOUT", 0.3)
 
@@ -64,7 +64,7 @@ def test_concurrent_caller_fails_fast_while_loading(monkeypatch):
     release = threading.Event()
     monkeypatch.setattr(
         embmod, "TextEmbedding",
-        lambda model_name=None: _HungTE(model_name, started=started, release=release),
+        lambda model_name=None, cache_dir=None: _HungTE(model_name, started=started, release=release),
     )
     monkeypatch.setattr(embmod, "_MODEL_LOAD_TIMEOUT", 0.5)
 
@@ -110,7 +110,7 @@ def test_successful_load_returns_model_and_caches(monkeypatch):
 
 def test_load_exception_preserves_type_and_arms_cooldown(monkeypatch):
     class _BoomTE:
-        def __init__(self, model_name=None):
+        def __init__(self, model_name=None, cache_dir=None):
             raise OSError("network down")
 
     monkeypatch.setattr(embmod, "TextEmbedding", _BoomTE)
