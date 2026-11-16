@@ -4,6 +4,33 @@ All notable changes to piSynapse will be documented in this file.
 Format follows [Keep a Changelog](https://keepachangelog.com/). This project
 uses [Semantic Versioning](https://semver.org/).
 
+## [2.1.0] - 2026-11-16
+
+### Added
+- Audit observability: readable, tunable audit dashboard (flywheel pack A), archive-integrity checks (B), failure-digest clustering (C).
+- Installer owner provisioning: creates the first admin, bootstrap gates on fresh DB; backend switching pre-flight gate, daemon start offer (systemd start, 409 + start_backend flow) and settings refresh on switch.
+- CI hardening: pinned lock + Python 3.11/3.12 matrix + pip-audit; ruff clean.
+
+### Security
+- Identity-gated Nextcloud caches: cross-user leak closed (incl. the reopened 2026-09-27 hole); shared-Nextcloud access admin-only.
+- `/chat` hardening: `save_message` ownership guard, 404 for foreign sessions on `/chat/stream`, owner-scope `/chat/abort`, admin-gated `/reload-corpus`.
+- Leaked-call bypass closed for both engines; `/debug` beacon body size-gated before auth; TPM token budget + one-turn-per-session.
+- XSS: `esc()` was a no-op — HTML escaping restored (168 sinks).
+- Installer: `.env` written atomically at 0600 (no world-readable window); systemd units piped via `sudo tee` (no predictable /tmp, CWE-377).
+
+### Fixed
+- Embedding reliability: circuit breaker + HF download timeout + hard load timeout bound hung downloads; **persistent cache** (`FASTEMBED_CACHE_DIR`, default `~/.cache/fastembed`) so the model survives reboots, and **HF Xet downloads disabled** (the Xet path was the actual hang); test embeddings are deterministic BOW vectors (no weight downloads).
+- Test time-bomb: the flywheel fixed seed is now relative (suite green again: **1016 passed**).
+- Sync: origin column + true last-write-wins + canonical timestamps; DB lock discipline — every commit holds the write lock.
+- LLM: hard timeout on intent/classification calls; non-stream tool-loop parity (`allowed_names` empty set); `gen_retry` resets both accumulators (no retry duplication).
+- `update_session_summary` rowcount on Python 3.12; SW version bump + `/static` Cache-Control hygiene; calendar widget binds the caller's NC context; post-refresh login accepts a valid session cookie.
+- Installer robustness pack: model pre-download retries + the cause surfaced, pre-flight resource checks.
+- SSE keepalive comments on idle gaps (tunnel-tolerant streams); Playwright e2e boots self-contained — never the live database.
+
+### Docs
+- `NOTES.md` development journal restored in git (sanitized) after the undocumented 2026-10-25 history rewrite; **history-rewrite rule** adopted (any rewrite requires a prior dated journal entry).
+- Independent review 2026-10-25 (R1–R10, priorities) and the 2026-10-08 deep analysis (~200 findings, 6 reports) under `docs/`.
+
 ## [2.0.0] - 2026-09-09
 
 ### Added
