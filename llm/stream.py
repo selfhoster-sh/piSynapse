@@ -284,7 +284,7 @@ async def chat_with_ollama_stream(
     # content) are recoverable by extracting the call from the error message.
     # Allow several recoveries per turn (counter, not a one-shot flag): a single
     # turn can hit the parser more than once (round 1 + round 2 + finalize).
-    litert_parse_recovery_cap = 3
+    litert_parse_recovery_cap = get("LLM_MAX_TOOL_ITERATIONS", 5)
     litert_parse_recovery_count = 0
     mutation_executed = False
     continuation_noted = False
