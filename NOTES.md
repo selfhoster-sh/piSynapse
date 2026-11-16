@@ -37,6 +37,14 @@
 - **Conclusion:** solution #1 (counter-based recovery) is the **effective fix** for the LiteRT parser issue. Solution #3 (prompt hint) is ineffective but harmless. Solutions #4-#8 remain as future improvements (upgrade, client-side parsing, etc.) but are no longer urgent. The "teach me" experiment now works with Turkish content (slowly — 5 facts ≈ 55 s, but completes successfully).
 - **Updated recommendation:** solution #1 is sufficient for now. Deeper fixes (#5 client-side parsing, #4 upgrade) can be deferred to a dedicated session if latency or reliability becomes an issue.
 
+## 2026-11-16 (late) — Reverted non-native parse-recovery counter + prompt hint
+
+- **Decision (user):** the counter-based recovery (cap 3→5) and the TOOL CALL FORMAT prompt hint are non-native workarounds that risk the same long-term fragility as the original Ollama-era custom tool-calling mechanism (which broke constantly). Reverted to the original one-shot recovery (`litert_parse_recovered` bool) and the original "connection error" message. The prompt/description trim (pass 1, `d23a41d`) is kept — cosmetic and test-covered.
+- **Rationale:** prefer native errors until a LiteRT-side fix ships. The one-shot `parse_leaked_tool_call` recovery (pre-existing) remains; the counter extension is gone.
+- **Data preserved:** the root cause is confirmed (Turkish diacritics in tool args → doubled-brace output → LiteRT LLGuidance parser rejects). Solution #1 (counter) worked (5/5 saved) but is fragile. Solution #3 (prompt hint) was ineffective. Real fix still needs #4 (upgrade) or #5 (client-side parsing) — deferred to a dedicated session.
+- **User's question answered:** "toollarda Türkçe olan ne var ki?" → only `find_free_slots` description has Turkish trigger phrases ("boş saat", "uygun saat"). All other tool schemas are English. The Turkish content that triggers the parser comes from USER INPUT (personal facts, calendar titles, note content) passed as tool arguments — not from tool definitions.
+- **How the parser currently works (native):** LiteRT's constrained-decoding parser (LLGuidance) parses the model's tool-call output. On parse failure (doubled braces), the error message contains the full call text; `parse_leaked_tool_call` extracts it and routes it through normal execution — one-shot per turn. If it fails again, the turn errors out with "connection error". No client-side parsing bypass.
+
 ## 2026-11-16 (evening) — LiteRT tool-call parser fails on non-ASCII (Turkish) content; data + plan
 
 - **Symptom:** long messages + tool use → "⚠️ Sunucuyla bağlantı kurulamadı" (errConnLost). Server log: `litert stream error: INVALID_ARGUMENT: Failed to parse tool calls from code block: call:save_memory{{"category": "general", "content": "<Turkish text with diacritics>", "importance": 6.0}}` — doubled braces `{{...}}` rejected by LiteRT's LLGuidance parser mid-stream.
