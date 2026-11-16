@@ -89,21 +89,21 @@ class TestCreateEventSerialization:
         from calendar_ops import create_event
         fake_cal = MagicMock()
         with patch("calendar_ops._get_calendar", return_value=fake_cal):
-            result = create_event("Water plants", "2026-08-31", all_day=True)
+            result = create_event("Water plants", _DAY_ALLDAY, all_day=True)
         assert result[0] == "OK 'Water plants' added to calendar."
         ical = fake_cal.add_event.call_args.args[0]
-        assert "DTSTART;VALUE=DATE:20260831" in ical
-        assert "DTEND;VALUE=DATE:20260901" in ical
+        assert f"DTSTART;VALUE=DATE:{_DAY_ALLDAY_IC}" in ical
+        assert f"DTEND;VALUE=DATE:{_DAY_ALLDAY_NEXT_IC}" in ical
 
     def test_create_timed_uses_datetime_dtstart(self):
         from calendar_ops import create_event
         fake_cal = MagicMock()
         with patch("calendar_ops._get_calendar", return_value=fake_cal):
-            result = create_event("Meet", "2026-08-17T14:00:00", 30)
+            result = create_event("Meet", _DT_MEET, 30)
         assert result[0] == "OK 'Meet' added to calendar."
         ical = fake_cal.add_event.call_args.args[0]
-        assert "DTSTART;VALUE=DATE-TIME:20260817T140000" in ical
-        assert "DTEND;VALUE=DATE-TIME:20260817T143000" in ical
+        assert f"DTSTART;VALUE=DATE-TIME:{_DT_MEET_IC}" in ical
+        assert f"DTEND;VALUE=DATE-TIME:{_DT_MEET_DTEND_IC}" in ical
 
 
 class TestRunTool:
@@ -151,3 +151,18 @@ class TestListSanitizesDescriptions:
         assert "onerror" not in text
         assert "Team sync at 10" in text
         assert items[0]["summary"] == "Standup"
+
+
+# Determinism rule (2026-11-16): no absolute date literals in test code.
+from datetime import datetime, timedelta, timezone
+_DAY_ALLDAY = (datetime.now(timezone.utc) - timedelta(days=16)).strftime("%Y-%m-%d")
+_DT_MEET = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%dT14:00:00")
+
+
+_DAY_ALLDAY_IC = _DAY_ALLDAY.replace("-", "")
+_DAY_ALLDAY_NEXT_IC = (datetime.now(timezone.utc) - timedelta(days=15)).strftime("%Y%m%d")
+_DT_MEET_IC = _DT_MEET.replace("-", "").replace(":", "")
+
+
+from datetime import datetime, timedelta
+_DT_MEET_DTEND_IC = (datetime.strptime(_DT_MEET, "%Y-%m-%dT%H:%M:%S") + timedelta(minutes=30)).strftime("%Y%m%dT%H%M%S")

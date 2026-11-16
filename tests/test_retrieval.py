@@ -41,10 +41,10 @@ def test_merge_history_falls_back_when_nothing_retrieved():
 
 def test_retrieve_keeps_most_relevant_in_chronological_order(monkeypatch):
     candidates = [
-        {"role": "user", "content": "c1", "timestamp": "2026-08-01 10:00"},
-        {"role": "assistant", "content": "c2", "timestamp": "2026-08-01 11:00"},
-        {"role": "user", "content": "c3", "timestamp": "2026-08-01 12:00"},
-        {"role": "user", "content": "c4", "timestamp": "2026-08-01 09:00"},
+        {"role": "user", "content": "c1", "timestamp": _T10},
+        {"role": "assistant", "content": "c2", "timestamp": _T11},
+        {"role": "user", "content": "c3", "timestamp": _T12},
+        {"role": "user", "content": "c4", "timestamp": _T09},
     ]
     query_vec = _vec(1, 0, 0, 0)
     vecs = [_vec(0, 1, 0, 0), _vec(1, 0, 0, 0), _vec(0, 0, 1, 0), _vec(0.6, 0.8, 0, 0)]
@@ -69,8 +69,8 @@ def test_retrieve_keeps_most_relevant_in_chronological_order(monkeypatch):
 
 def test_retrieve_threshold_filters_low_similarity(monkeypatch):
     candidates = [
-        {"role": "user", "content": "c1", "timestamp": "2026-08-01 10:00"},
-        {"role": "user", "content": "c2", "timestamp": "2026-08-01 11:00"},
+        {"role": "user", "content": "c1", "timestamp": _T10},
+        {"role": "user", "content": "c2", "timestamp": _T11},
     ]
     query_vec = _vec(1, 0)
     vecs = [_vec(0, 1), _vec(1, 0)]
@@ -92,7 +92,7 @@ def test_retrieve_threshold_filters_low_similarity(monkeypatch):
 
 def test_retrieve_falls_back_when_embedding_fails(monkeypatch):
     async def fake_fetch(session_id, recent_window=8, user_id="default"):
-        return [{"role": "user", "content": "c1", "timestamp": "2026-08-01 10:00"}]
+        return [{"role": "user", "content": "c1", "timestamp": _T10}]
 
     async def raiser(texts):
         raise RuntimeError("onnx boom")
@@ -122,7 +122,7 @@ def test_retrieve_timeout_falls_back_when_budget_exceeded(monkeypatch):
         return []
 
     async def fake_fetch(session_id, recent_window=8, user_id="default"):
-        return [{"role": "user", "content": "c1", "timestamp": "2026-08-01 10:00"}]
+        return [{"role": "user", "content": "c1", "timestamp": _T10}]
 
     monkeypatch.setattr(retrieval, "_fetch_candidates", fake_fetch)
     monkeypatch.setattr(embedding, "embed_batch_async", slow_embed)
@@ -134,8 +134,8 @@ def test_retrieve_timeout_falls_back_when_budget_exceeded(monkeypatch):
 
 def test_retrieve_reuses_precomputed_query_embedding(monkeypatch):
     candidates = [
-        {"role": "user", "content": "c1", "timestamp": "2026-08-01 10:00"},
-        {"role": "user", "content": "c2", "timestamp": "2026-08-01 11:00"},
+        {"role": "user", "content": "c1", "timestamp": _T10},
+        {"role": "user", "content": "c2", "timestamp": _T11},
     ]
     query_vec = _vec(1, 0)
     vecs = [_vec(0, 1), _vec(1, 0)]
@@ -171,3 +171,14 @@ def test_merge_history_dedupes_verbatim_overlap():
     assert contents.count("m8") == 1
     assert "relevant old" in contents
     assert contents[-8:] == [f"m{i}" for i in range(2, 10)]
+
+
+
+# Determinism rule (2026-11-16): no absolute date literals in test code.
+from datetime import datetime, timedelta, timezone
+_BASE = datetime.now(timezone.utc) - timedelta(days=30)
+_T09 = _BASE.strftime("%Y-%m-%d") + " 09:00"
+_T10 = _BASE.strftime("%Y-%m-%d") + " 10:00"
+_T11 = _BASE.strftime("%Y-%m-%d") + " 11:00"
+_T12 = _BASE.strftime("%Y-%m-%d") + " 12:00"
+

@@ -81,6 +81,12 @@ async def _fake_base_corpus(groups=("weather",), text="weather"):
 # ── helpers ────────────────────────────────────────────────────────────────────
 import corpus_feeder as cf
 
+# Determinism rule (2026-11-16): no absolute date literals in test code.
+from datetime import datetime, timedelta, timezone
+
+_CONFIRMTS = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%dT12:00:00")
+
+
 
 def _seed_rows(conn_str: str, rows: list[dict]):
     conn = sqlite3.connect(conn_str)
@@ -126,7 +132,7 @@ class TestCorpusFeederPositive:
     def test_positive_addition(self, audit_db, corpus_data_dir, monkeypatch):
         _seed_conversation(audit_db, 1, "hava durumu nasıl")
         _seed_rows(audit_db, [{"tool_name": "get_weather", "conversation_id": 1,
-                               "confirmed_at": "2026-08-31T12:00:00"}])
+                               "confirmed_at": _CONFIRMTS}])
 
         monkeypatch.setattr(cf, "_load_base_corpus_embeddings",
                             _fake_base_corpus)
@@ -160,7 +166,7 @@ class TestCorpusFeederNegative:
     def test_negative_addition(self, audit_db, corpus_data_dir, monkeypatch):
         _seed_conversation(audit_db, 2, "notlarımı göster")
         _seed_rows(audit_db, [{"tool_name": "get_weather", "conversation_id": 2,
-                               "corrected_at": "2026-08-31T12:00:00",
+                               "corrected_at": _CONFIRMTS,
                                "expected_group": "notes",
                                "expected_tool": "list_notes"}])
 
@@ -188,7 +194,7 @@ class TestCorpusFeederConflict:
     def test_conflict_detected_and_llm_resolves(self, audit_db, corpus_data_dir, monkeypatch):
         _seed_conversation(audit_db, 3, "yarınki etkinliği sil")
         _seed_rows(audit_db, [{"tool_name": "create_task", "conversation_id": 3,
-                               "corrected_at": "2026-08-31T12:00:00",
+                               "corrected_at": _CONFIRMTS,
                                "expected_group": "calendar",
                                "expected_tool": "delete_calendar_event"}])
 
@@ -229,7 +235,7 @@ class TestCorpusFeederConflict:
     def test_conflict_llm_disagrees_genuinely_ambiguous(self, audit_db, corpus_data_dir, monkeypatch):
         _seed_conversation(audit_db, 4, "hava durumunu değiştir")
         _seed_rows(audit_db, [{"tool_name": "create_task", "conversation_id": 4,
-                               "corrected_at": "2026-08-31T12:00:00",
+                               "corrected_at": _CONFIRMTS,
                                "expected_group": "calendar",
                                "expected_tool": "update_calendar_event"}])
 
@@ -272,7 +278,7 @@ class TestCorpusFeederEmbeddingOnlyNew:
     def test_embeddings_only_for_new(self, audit_db, corpus_data_dir, monkeypatch):
         _seed_conversation(audit_db, 5, "bugün hava nasıl")
         _seed_rows(audit_db, [{"tool_name": "get_weather", "conversation_id": 5,
-                               "confirmed_at": "2026-08-31T12:00:00"}])
+                               "confirmed_at": _CONFIRMTS}])
 
         monkeypatch.setattr(cf, "_load_base_corpus_embeddings",
                             _fake_base_corpus)
@@ -310,7 +316,7 @@ class TestCorpusFeederDuplicate:
     def test_duplicate_skipped(self, audit_db, corpus_data_dir, monkeypatch):
         _seed_conversation(audit_db, 6, "what is the weather")
         _seed_rows(audit_db, [{"tool_name": "get_weather", "conversation_id": 6,
-                               "confirmed_at": "2026-08-31T12:00:00"}])
+                               "confirmed_at": _CONFIRMTS}])
 
         def fake_is_dup(text, bgroups, bmat, addrecs, addmat, dup_threshold=0.98, signature=None):
             return True  # pretend it's a duplicate
@@ -337,7 +343,7 @@ class TestCorpusFeederStateTracking:
     def test_state_prevents_reprocessing(self, audit_db, corpus_data_dir, monkeypatch):
         _seed_conversation(audit_db, 7, "saat kaç")
         _seed_rows(audit_db, [{"tool_name": "get_datetime", "conversation_id": 7,
-                               "confirmed_at": "2026-08-31T12:00:00"}])
+                               "confirmed_at": _CONFIRMTS}])
 
         # First run
         async def _fake_empty_base():
@@ -404,7 +410,7 @@ class TestBug1UserMessageResolution:
         conn.commit()
         conn.close()
         _seed_rows(audit_db, [{"tool_name": tool, "conversation_id": conversation_id,
-                               "confirmed_at": "2026-08-31T12:00:00"}])
+                               "confirmed_at": _CONFIRMTS}])
 
         monkeypatch.setattr(cf, "_load_base_corpus_embeddings", _fake_base_corpus)
         monkeypatch.setattr(cf, "_load_addition_embeddings", lambda: ([], None))
@@ -451,7 +457,7 @@ class TestBug1UserMessageResolution:
         conn.commit()
         conn.close()
         _seed_rows(audit_db, [{"tool_name": "get_weather", "conversation_id": 10,
-                               "confirmed_at": "2026-08-31T12:00:00"}])
+                               "confirmed_at": _CONFIRMTS}])
         monkeypatch.setattr(cf, "_load_base_corpus_embeddings", _fake_base_corpus)
         monkeypatch.setattr(cf, "_load_addition_embeddings", lambda: ([], None))
         monkeypatch.setattr(cf, "_is_duplicate", lambda *a, **kw: False)
@@ -537,7 +543,7 @@ class TestBug2Alignment:
 
         _seed_conversation(audit_db, 5, "notları listele")
         _seed_rows(audit_db, [{"tool_name": "list_notes", "conversation_id": 5,
-                               "confirmed_at": "2026-08-31T12:00:00"}])
+                               "confirmed_at": _CONFIRMTS}])
 
         monkeypatch.setattr(cf, "_load_base_corpus_embeddings", _fake_base_corpus)
         monkeypatch.setattr(cf, "_load_addition_embeddings", lambda: ([], None))
@@ -698,7 +704,7 @@ class TestBug5NoopCorrection:
         # list_notes -> group 'notes'; user "corrects" to 'notes' (same group)
         _seed_conversation(audit_db, 6, "notları göster")
         _seed_rows(audit_db, [{"tool_name": "list_notes", "conversation_id": 6,
-                               "corrected_at": "2026-08-31T12:00:00",
+                               "corrected_at": _CONFIRMTS,
                                "expected_group": "notes",
                                "expected_tool": "list_notes"}])
 
@@ -722,7 +728,7 @@ class TestBug5NoopCorrection:
         # get_weather -> 'weather'; user corrects to 'notes' (real signal)
         _seed_conversation(audit_db, 7, "notları göster")
         _seed_rows(audit_db, [{"tool_name": "get_weather", "conversation_id": 7,
-                               "corrected_at": "2026-08-31T12:00:00",
+                               "corrected_at": _CONFIRMTS,
                                "expected_group": "notes",
                                "expected_tool": "list_notes"}])
 
@@ -773,7 +779,7 @@ class TestContextDependentExamples:
         # BUG-7 repro: audit 232 = "devam edelim en son epostayı gönderiyordun"
         _seed_conversation(audit_db, 8, "devam edelim en son epostayı gönderiyordun")
         _seed_rows(audit_db, [{"tool_name": "send_email", "conversation_id": 8,
-                               "confirmed_at": "2026-08-31T12:00:00"}])
+                               "confirmed_at": _CONFIRMTS}])
 
         monkeypatch.setattr(cf, "_load_base_corpus_embeddings", _fake_base_corpus)
         monkeypatch.setattr(cf, "_load_addition_embeddings", lambda: ([], None))

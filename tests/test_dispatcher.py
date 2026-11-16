@@ -4,6 +4,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from tools.dispatcher import run_tool
 
+# Determinism rule (2026-11-16): no absolute date literals in test code.
+from datetime import datetime, timedelta, timezone
+
+_DT10 = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%dT10:00:00")
+_DAY_ALLDAY = (datetime.now(timezone.utc) - timedelta(days=15)).strftime("%Y-%m-%d")
+_DAY_FIND = (datetime.now(timezone.utc) - timedelta(days=60)).strftime("%Y-%m-%d")
+_DAY_DUE = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
+_START = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d") + " 10:00"
+
 
 class TestDatetime:
     async def test_get_datetime_formats_current_time(self):
@@ -35,17 +44,17 @@ class TestCalendarTools:
         assert "CLARIFY_REQUIRED" in result[0] and "start time" in result[0]
 
     async def test_create_missing_summary_clarifies(self):
-        result = await run_tool("create_calendar_event", {"start_time": "2026-08-17T10:00:00"})
+        result = await run_tool("create_calendar_event", {"start_time": _DT10})
         assert "CLARIFY_REQUIRED" in result[0] and "title" in result[0]
 
     async def test_create_calls_handler(self):
         with patch("calendar_ops.create_event", return_value=("Created.", "test-uid")) as ce:
             result = await run_tool(
                 "create_calendar_event",
-                {"summary": "Meet", "start_time": "2026-08-17T10:00:00", "duration_minutes": 30},
+                {"summary": "Meet", "start_time": _DT10, "duration_minutes": 30},
             )
         assert result[0] == "Created."
-        assert ce.call_args.args == ("Meet", "2026-08-17T10:00:00", 30)
+        assert ce.call_args.args == ("Meet", _DT10, 30)
         assert ce.call_args.kwargs == {"all_day": False, "rrule": None}
 
     async def test_create_all_day_passes_through(self):
@@ -53,10 +62,10 @@ class TestCalendarTools:
         with patch("calendar_ops.create_event", return_value=("Created.", "test-uid")) as ce:
             result = await run_tool(
                 "create_calendar_event",
-                {"summary": "Water plants", "start_time": "2026-08-31", "all_day": True},
+                {"summary": "Water plants", "start_time": _DAY_ALLDAY, "all_day": True},
             )
         assert result[0] == "Created."
-        assert ce.call_args.args == ("Water plants", "2026-08-31", 60)
+        assert ce.call_args.args == ("Water plants", _DAY_ALLDAY, 60)
         assert ce.call_args.kwargs == {"all_day": True, "rrule": None}
 
     async def test_create_invalid_duration_returns_error(self):
@@ -77,7 +86,7 @@ class TestCalendarTools:
         assert result[0] == "ERROR: Event name required."
 
     async def test_update_resolves_list_number_to_uid(self):
-        cached = [{"uid": "uid-real-1", "summary": "Meet", "start": "2026-08-17 10:00"}]
+        cached = [{"uid": "uid-real-1", "summary": "Meet", "start": _START}]
         with patch("calendar_ops.update_event", return_value="Updated.") as ue, \
              patch("prompt.get_calendar_context", new=AsyncMock(return_value=cached)):
             result = await run_tool(
@@ -132,10 +141,10 @@ class TestCalendarTools:
         with patch("calendar_ops.find_free_slots", return_value=("09:00 - 12:00", [{"start": "09:00", "end": "12:00"}])) as fs:
             result = await run_tool(
                 "find_free_slots",
-                {"date": "2026-09-05", "duration_minutes": 45},
+                {"date": _DAY_FIND, "duration_minutes": 45},
                 context={"session_id": "s1"},
             )
-        fs.assert_called_once_with("2026-09-05", 45, "09:00", "18:00")
+        fs.assert_called_once_with(_DAY_FIND, 45, "09:00", "18:00")
         assert result[0] == "09:00 - 12:00"
         assert result[1] is None
 
@@ -143,15 +152,15 @@ class TestCalendarTools:
         with patch("calendar_ops.find_free_slots", return_value=("10:00 - 11:00", [])) as fs:
             result = await run_tool(
                 "find_free_slots",
-                {"date": "2026-09-05", "duration_minutes": 60, "day_start": "08:00", "day_end": "17:00"},
+                {"date": _DAY_FIND, "duration_minutes": 60, "day_start": "08:00", "day_end": "17:00"},
             )
-        fs.assert_called_once_with("2026-09-05", 60, "08:00", "17:00")
+        fs.assert_called_once_with(_DAY_FIND, 60, "08:00", "17:00")
         assert result[0] == "10:00 - 11:00"
 
     async def test_find_free_slots_invalid_duration(self):
         result = await run_tool(
             "find_free_slots",
-            {"date": "2026-09-05", "duration_minutes": "abc"},
+            {"date": _DAY_FIND, "duration_minutes": "abc"},
         )
         assert result[0] == "ERROR: 'duration_minutes' must be a valid number, got: 'abc'"
 
@@ -456,8 +465,8 @@ class TestTasksTools:
 
     async def test_create_task_calls_handler(self):
         with patch("nextcloud_tasks.create_task", new=AsyncMock(return_value=("created", "test-uid"))) as ct:
-            result = await run_tool("create_task", {"summary": "Buy milk", "due": "2026-08-17", "priority": 2, "notes": "n"})
-        ct.assert_awaited_once_with(summary="Buy milk", due="2026-08-17", priority=2, notes="n")
+            result = await run_tool("create_task", {"summary": "Buy milk", "due": _DAY_DUE, "priority": 2, "notes": "n"})
+        ct.assert_awaited_once_with(summary="Buy milk", due=_DAY_DUE, priority=2, notes="n")
         assert result[0] == "created"
 
     async def test_create_task_invalid_priority(self):
@@ -683,7 +692,7 @@ class TestRecurrenceAndAddressValidation:
         with patch("calendar_ops.create_event", return_value=("Created.", "u1")) as ce:
             result = await run_tool(
                 "create_calendar_event",
-                {"summary": "Standup", "start_time": "2026-08-17T10:00:00",
+                {"summary": "Standup", "start_time": _DT10,
                  "rrule": "FREQ=WEEKLY;BYDAY=MO"},
             )
         assert result[0] == "Created."
@@ -693,7 +702,7 @@ class TestRecurrenceAndAddressValidation:
         with patch("calendar_ops.create_event") as ce:
             result = await run_tool(
                 "create_calendar_event",
-                {"summary": "Standup", "start_time": "2026-08-17T10:00:00",
+                {"summary": "Standup", "start_time": _DT10,
                  "rrule": "FREQ=DAILY\r\nSUMMARY:evil"},
             )
         assert "invalid recurrence" in result[0].lower()
@@ -703,7 +712,7 @@ class TestRecurrenceAndAddressValidation:
         with patch("calendar_ops.create_event") as ce:
             result = await run_tool(
                 "create_calendar_event",
-                {"summary": "Standup", "start_time": "2026-08-17T10:00:00",
+                {"summary": "Standup", "start_time": _DT10,
                  "rrule": "FREQ=DAILY;X-EVIL=1"},
             )
         assert "invalid recurrence" in result[0].lower()
@@ -729,3 +738,14 @@ class TestRecurrenceAndAddressValidation:
             )
         assert result[0].startswith("Email sent!")
         mc.send_message.assert_awaited_once()
+
+
+# ── determinism rule (2026-11-16): frozen clock for a clock-dependent tool ───
+def test_get_datetime_tool_format_is_deterministic_under_frozen_clock():
+    import asyncio
+    import time_machine
+    from datetime import datetime
+    from datetime import timezone
+    with time_machine.travel(datetime(2026, 8, 15, 12, 0, 0, tzinfo=timezone.utc), tick=False):
+        result, _ = asyncio.run(run_tool("get_datetime", {}))
+    assert result == "Current: 15 August 2026, Saturday, 12:00"

@@ -119,7 +119,7 @@ def test_confirm_update_calendar_event_with_preview(monkeypatch):
 
     monkeypatch.setattr(calendar_ops, "find_events_by_summary",
                         lambda summary, days_back=30, days_ahead=90: [
-                            {"summary": "Toplantı", "start": "2026-10-12 10:00"}])
+                            {"summary": "Toplantı", "start": _DT}])
     events = asyncio.run(_drain(
         [[_tc("update_calendar_event", '{"summary": "Toplantı", "new_summary": "X"}'),
           _fin("tool_calls"), "data: [DONE]"]],
@@ -140,3 +140,8 @@ def test_confirm_missing_params_returns_error(monkeypatch):
     assert "to" in tokens.lower() or "recipient" in tokens.lower() or tokens
     assert any(e.get("done") for e in events)
     assert _confirm_event(events) is None
+
+
+# Determinism rule (2026-11-16): no absolute date literals in test code.
+from datetime import datetime, timedelta, timezone
+_DT = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d") + " 10:00"

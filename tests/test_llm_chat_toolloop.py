@@ -145,10 +145,15 @@ def test_confirm_preview_for_update_calendar_event(monkeypatch):
 
     monkeypatch.setattr(calendar_ops, "find_events_by_summary",
                         lambda summary, days_back=30, days_ahead=90: [
-                            {"summary": "Toplantı", "start": "2026-10-12 10:00"}])
+                            {"summary": "Toplantı", "start": _DT}])
 
     result, _calls = _run(monkeypatch, [
         _tool_round(_tc("update_calendar_event", '{"summary": "Toplantı", "new_summary": "X"}')),
     ], tool_group="calendar", validate=lambda tool, params: None)
     assert result["pending_action"]["tool"] == "update_calendar_event"
     assert "Toplantı" in result["pending_action"].get("preview", "")
+
+
+# Determinism rule (2026-11-16): no absolute date literals in test code.
+from datetime import datetime, timedelta, timezone
+_DT = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d") + " 10:00"

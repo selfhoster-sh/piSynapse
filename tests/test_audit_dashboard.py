@@ -22,6 +22,13 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import config
+
+# Determinism rule (2026-11-16): no absolute date literals in test code.
+from datetime import datetime, timedelta, timezone
+
+_DAY = (datetime.now(timezone.utc) - timedelta(days=60)).strftime("%Y-%m-%d")
+_DAY_TS = f"{_DAY} 12:00:00"
+_SUMMARY_DAY = (datetime.now(timezone.utc) - timedelta(days=365)).strftime("%Y-%m-%d")
 import db as dbmod
 
 
@@ -108,7 +115,7 @@ def test_rollup_summary_carries_stats_json():
 
 async def _seed_rows(db):
     """One old day, 4 calls, mixed users/durations/verification."""
-    day = "2026-07-05 12:00:00"
+    day = _DAY_TS
     for tool, user, success, dur, vstatus in [
         ("get_time", "alice", 1, 10.0, "verified"),
         ("get_time", "bob", 1, 20.0, None),
@@ -168,7 +175,7 @@ def test_overview_merges_summary_and_live_days():
     )  # newest first
     by_day = {d["day"]: d for d in days}
     live_day = now[:10]
-    rolled_day = "2026-07-05"
+    rolled_day = _DAY
     assert rolled_day in by_day and live_day in by_day
     assert by_day[rolled_day]["source"] == "summary"
     assert by_day[rolled_day]["total"] == 4
@@ -187,7 +194,7 @@ def test_overview_legacy_summary_without_stats_json_parses():
         "INSERT INTO tool_audit_log "
         "(is_summary, day, total_calls, success_count, error_count, "
         " tool_breakdown, tool_name, success, created_at) "
-        "VALUES (1, '2026-01-01', 5, 3, 2, '{\"get_time\": 5}', 'rollup', 1, '2026-01-01')",
+        "VALUES (1, '" + _SUMMARY_DAY + "', 5, 3, 2, '{\"get_time\": 5}', 'rollup', 1, '" + _SUMMARY_DAY + "')",
     ))
     asyncio.run(db.commit())
     overview = asyncio.run(dbmod.get_audit_overview(days=3650))
@@ -311,20 +318,20 @@ def test_overview_endpoint_returns_days_alert_and_clamps_days():
 def test_export_endpoint_serves_csv_for_archived_day(tmp_path):
     outdir = dbmod.audit_export_dir()
     os.makedirs(outdir, exist_ok=True)
-    path = os.path.join(outdir, "tool-audit-2026-07-05.csv")
+    path = os.path.join(outdir, f"tool-audit-{_DAY}.csv")
     with open(path, "w", encoding="utf-8") as f:
         f.write("id,tool_name\n1,get_time\n")
 
-    resp = _client().get("/admin/audit/export/2026-07-05")
+    resp = _client().get(f"/admin/audit/export/{_DAY}")
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("text/csv")
-    assert "tool-audit-2026-07-05.csv" in resp.headers["content-disposition"]
+    assert f"tool-audit-{_DAY}.csv" in resp.headers["content-disposition"]
     assert resp.text == "id,tool_name\n1,get_time\n"
 
 
 def test_export_endpoint_404s_on_missing_or_malformed_day():
     client = _client()
-    assert client.get("/admin/audit/export/2026-07-05").status_code == 404
+    assert client.get(f"/admin/audit/export/{_DAY}").status_code == 404
     assert client.get("/admin/audit/export/not-a-day").status_code == 404
     assert client.get("/admin/audit/export/2026-13-99").status_code == 404
 
@@ -342,7 +349,7 @@ def test_export_endpoint_blocks_path_traversal():
 def test_export_endpoint_requires_admin(tmp_path):
     outdir = dbmod.audit_export_dir()
     os.makedirs(outdir, exist_ok=True)
-    with open(os.path.join(outdir, "tool-audit-2026-07-05.csv"), "w") as f:
+    with open(os.path.join(outdir, f"tool-audit-{_DAY}.csv"), "w") as f:
         f.write("x\n")
-    assert _client(authenticated=False).get("/admin/audit/export/2026-07-05").status_code == 401
-    assert _client(is_admin=False).get("/admin/audit/export/2026-07-05").status_code == 403
+    assert _client(authenticated=False).get(f"/admin/audit/export/{_DAY}").status_code == 401
+    assert _client(is_admin=False).get(f"/admin/audit/export/{_DAY}").status_code == 403

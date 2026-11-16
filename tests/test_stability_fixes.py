@@ -174,7 +174,7 @@ def test_rollup_uses_single_transaction_and_stays_idempotent(audit_db):
             await db.execute(
                 "INSERT INTO tool_audit_log (tool_name, params, success, created_at) "
                 "VALUES (?, ?, ?, ?)",
-                ("get_datetime", "{}", 1, f"2026-06-0{i+1} 12:00:00"),
+                ("get_datetime", "{}", 1, f"{[_D1, _D2, _D3][i]} 12:00:00"),
             )
         await db.commit()
 
@@ -186,7 +186,7 @@ def test_rollup_uses_single_transaction_and_stays_idempotent(audit_db):
     rows = asyncio.run(_fetch_all("SELECT is_summary, day FROM tool_audit_log"))
     summaries = [r for r in rows if r[0] == 1]
     assert len(summaries) == 3
-    assert {r[1] for r in summaries} == {"2026-06-01", "2026-06-02", "2026-06-03"}
+    assert {r[1] for r in summaries} == {_D1, _D2, _D3}
 
 
 # -- SSE per-read idle timeout (bulgu 12) --
@@ -428,3 +428,11 @@ def test_notes_404_maps_to_not_found(monkeypatch):
 
     client._request = fake_request
     assert client.update_note(99, title="x") is None
+
+
+# Determinism rule (2026-11-16): no absolute date literals in test code.
+from datetime import datetime, timedelta, timezone
+_BASE = datetime.now(timezone.utc) - timedelta(days=30)
+_D1 = _BASE.strftime("%Y-%m-%d")
+_D2 = (_BASE - timedelta(days=1)).strftime("%Y-%m-%d")
+_D3 = (_BASE - timedelta(days=2)).strftime("%Y-%m-%d")

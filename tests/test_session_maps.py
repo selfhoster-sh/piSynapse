@@ -51,7 +51,7 @@ def test_notes_map_user_scoped(mdb):
 
 def test_tasks_map_roundtrip_and_clear(mdb):
     tasks = [
-        {"uid": "t1", "summary": "Faturayı öde", "due": "2026-10-20", "priority": 1, "completed": False},
+        {"uid": "t1", "summary": "Faturayı öde", "due": _DUE, "priority": 1, "completed": False},
         {"uid": "t2", "summary": "Spor", "priority": 3, "completed": True},
     ]
     asyncio.run(dbmod.save_tasks_map("s1", tasks, user_id="u1"))
@@ -66,13 +66,13 @@ def test_tasks_map_roundtrip_and_clear(mdb):
 
 def test_calendar_map_roundtrip_and_clear(mdb):
     events = [
-        {"uid": "e1", "summary": "Toplantı", "start": "2026-10-12 10:00"},
-        {"uid": "e2", "summary": "Öğle", "start": "2026-10-12 12:00"},
+        {"uid": "e1", "summary": "Toplantı", "start": _START10},
+        {"uid": "e2", "summary": "Öğle", "start": _START12},
     ]
     asyncio.run(dbmod.save_calendar_map("s1", events, user_id="u1"))
     got = asyncio.run(dbmod.get_calendar_map("s1", user_id="u1"))
     assert [g["uid"] for g in got] == ["e1", "e2"]
-    assert got[0]["start"] == "2026-10-12 10:00"
+    assert got[0]["start"] == _START10
 
     asyncio.run(dbmod.clear_calendar_map("s1"))
     assert asyncio.run(dbmod.get_calendar_map("s1", user_id="u1")) == []
@@ -82,3 +82,11 @@ def test_calendar_map_empty_and_missing_session(mdb):
     assert asyncio.run(dbmod.get_calendar_map("", user_id="u1")) == []
     asyncio.run(dbmod.save_calendar_map("s1", [], user_id="u1"))  # no-op
     assert asyncio.run(dbmod.get_calendar_map("s1", user_id="u1")) == []
+
+
+# Determinism rule (2026-11-16): no absolute date literals in test code.
+from datetime import datetime, timedelta, timezone
+_BASE = datetime.now(timezone.utc) - timedelta(days=14)
+_DUE = _BASE.strftime("%Y-%m-%d")
+_START10 = _BASE.strftime("%Y-%m-%d") + " 10:00"
+_START12 = _BASE.strftime("%Y-%m-%d") + " 12:00"

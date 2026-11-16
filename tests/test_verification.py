@@ -73,29 +73,29 @@ class TestCreateTask:
 class TestCreateCalendarEvent:
     async def test_verified_by_uid(self):
         with patch("calendar_ops.list_events", return_value=("", [{"uid": "ev-1", "summary": "Dentist"}])):
-            status = await _verify("create_calendar_event", {"summary": "Dentist", "start_time": "2026-09-01T10:00:00"}, "OK", True, "ev-1")
+            status = await _verify("create_calendar_event", {"summary": "Dentist", "start_time": _DT}, "OK", True, "ev-1")
         assert status == "verified"
 
     async def test_uid_miss_reports_failed(self):
         with patch("calendar_ops.list_events", return_value=("", [{"uid": "OTHER", "summary": "Dentist"}])):
-            status = await _verify("create_calendar_event", {"summary": "Dentist", "start_time": "2026-09-01T10:00:00"}, "OK", True, "ev-1")
+            status = await _verify("create_calendar_event", {"summary": "Dentist", "start_time": _DT}, "OK", True, "ev-1")
         assert status == "verification_failed"
 
     async def test_duplicate_summary_discriminates_by_uid(self):
         with patch("calendar_ops.list_events", return_value=("", [{"uid": "A", "summary": "Meet"}])):
-            status_a = await _verify("create_calendar_event", {"summary": "Meet", "start_time": "2026-09-01T10:00:00"}, "OK", True, "A")
-            status_b = await _verify("create_calendar_event", {"summary": "Meet", "start_time": "2026-09-01T10:00:00"}, "OK", True, "B")
+            status_a = await _verify("create_calendar_event", {"summary": "Meet", "start_time": _DT}, "OK", True, "A")
+            status_b = await _verify("create_calendar_event", {"summary": "Meet", "start_time": _DT}, "OK", True, "B")
         assert status_a == "verified"
         assert status_b == "verification_failed"
 
     async def test_fallback_summary_match_when_uid_missing(self):
         with patch("calendar_ops.list_events", return_value=("", [{"uid": "ev-1", "summary": "Dentist"}])):
-            status = await _verify("create_calendar_event", {"summary": "Dentist", "start_time": "2026-09-01T10:00:00"}, "OK", True, None)
+            status = await _verify("create_calendar_event", {"summary": "Dentist", "start_time": _DT}, "OK", True, None)
         assert status == "verified_by_fallback"
 
     async def test_fallback_miss_is_unverified(self):
         with patch("calendar_ops.list_events", return_value=("No events.", [])):
-            status = await _verify("create_calendar_event", {"summary": "Dentist", "start_time": "2026-09-01T10:00:00"}, "OK", True, None)
+            status = await _verify("create_calendar_event", {"summary": "Dentist", "start_time": _DT}, "OK", True, None)
         assert status == "unverified"
 
 
@@ -470,3 +470,8 @@ class TestFallbackBranches:
         assert await self._fb("delete_calendar_event", {"summary": ""}) is False
         assert await self._fb("update_note", {}) is False
         assert await self._fb("save_memory", {"content": ""}) is False
+
+
+# Determinism rule (2026-11-16): no absolute date literals in test code.
+from datetime import datetime, timedelta, timezone
+_DT = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%dT10:00:00")

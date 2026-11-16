@@ -19,6 +19,23 @@ import pytest
 
 import db as dbmod
 
+# Determinism rule (2026-11-16): no absolute date literals in test code —
+# every timestamp derives from a runtime base day with preserved offsets.
+from datetime import datetime, timedelta, timezone
+
+_DAY = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y-%m-%d")
+
+
+def _iso(clock: str) -> str:
+    """ISO timestamp on the relative test day at the given clock time."""
+    return f"{_DAY}T{clock}"
+
+
+def _iso_space(clock: str) -> str:
+    """Legacy space-separated timestamp on the relative test day."""
+    return f"{_DAY} {clock}"
+
+
 
 @pytest.fixture
 def sync_db(tmp_path, monkeypatch):
@@ -90,24 +107,24 @@ def test_migration_adds_origin_to_old_db(tmp_path, monkeypatch):
 # ── LWW (D3a) ─────────────────────────────────────────────────────────────────
 
 def test_newer_write_wins(sync_db):
-    n1 = asyncio.run(dbmod.upsert_sync_items("u1", [_item("a", "2026-10-11T10:00:00Z", "old")]))
-    n2 = asyncio.run(dbmod.upsert_sync_items("u1", [_item("a", "2026-10-11T11:00:00Z", "new")]))
+    n1 = asyncio.run(dbmod.upsert_sync_items("u1", [_item("a", _iso("10:00:00Z"), "old")]))
+    n2 = asyncio.run(dbmod.upsert_sync_items("u1", [_item("a", _iso("11:00:00Z"), "new")]))
     assert (n1, n2) == (1, 1)
     items = asyncio.run(dbmod.get_sync_items("u1"))
     assert items[0]["data"]["v"] == "new"
 
 
 def test_older_write_dropped_and_not_counted(sync_db):
-    asyncio.run(dbmod.upsert_sync_items("u1", [_item("a", "2026-10-11T11:00:00Z", "new")]))
-    n = asyncio.run(dbmod.upsert_sync_items("u1", [_item("a", "2026-10-11T10:00:00Z", "stale")]))
+    asyncio.run(dbmod.upsert_sync_items("u1", [_item("a", _iso("11:00:00Z"), "new")]))
+    n = asyncio.run(dbmod.upsert_sync_items("u1", [_item("a", _iso("10:00:00Z"), "stale")]))
     assert n == 0  # the delayed old push was refused
     items = asyncio.run(dbmod.get_sync_items("u1"))
     assert items[0]["data"]["v"] == "new"
 
 
 def test_equal_timestamp_dropped(sync_db):
-    asyncio.run(dbmod.upsert_sync_items("u1", [_item("a", "2026-10-11T10:00:00Z", "first")]))
-    n = asyncio.run(dbmod.upsert_sync_items("u1", [_item("a", "2026-10-11T10:00:00Z", "second")]))
+    asyncio.run(dbmod.upsert_sync_items("u1", [_item("a", _iso("10:00:00Z"), "first")]))
+    n = asyncio.run(dbmod.upsert_sync_items("u1", [_item("a", _iso("10:00:00Z"), "second")]))
     assert n == 0
     items = asyncio.run(dbmod.get_sync_items("u1"))
     assert items[0]["data"]["v"] == "first"
@@ -115,20 +132,20 @@ def test_equal_timestamp_dropped(sync_db):
 
 def test_tombstone_respects_lww_both_directions(sync_db):
     # Newer tombstone wins over older live data.
-    asyncio.run(dbmod.upsert_sync_items("u1", [_item("a", "2026-10-11T10:00:00Z", "live")]))
-    asyncio.run(dbmod.upsert_sync_items("u1", [_item("a", "2026-10-11T12:00:00Z", "x", deleted=True)]))
+    asyncio.run(dbmod.upsert_sync_items("u1", [_item("a", _iso("10:00:00Z"), "live")]))
+    asyncio.run(dbmod.upsert_sync_items("u1", [_item("a", _iso("12:00:00Z"), "x", deleted=True)]))
     assert asyncio.run(dbmod.get_sync_items("u1"))[0]["deleted"] is True
     # A delayed OLD live write cannot resurrect it.
-    asyncio.run(dbmod.upsert_sync_items("u1", [_item("a", "2026-10-11T11:00:00Z", "zombie")]))
+    asyncio.run(dbmod.upsert_sync_items("u1", [_item("a", _iso("11:00:00Z"), "zombie")]))
     assert asyncio.run(dbmod.get_sync_items("u1"))[0]["deleted"] is True
 
 
 # ── Timestamp canonicalization (D3b) ─────────────────────────────────────────
 
 def test_offsets_normalized_to_canonical_utc(sync_db):
-    asyncio.run(dbmod.upsert_sync_items("u1", [_item("a", "2026-10-11T20:00:00+03:00")]))
+    asyncio.run(dbmod.upsert_sync_items("u1", [_item("a", _iso("20:00:00+03:00"))]))
     items = asyncio.run(dbmod.get_sync_items("u1"))
-    assert items[0]["updated_at"] == "2026-10-11T17:00:00.000000Z"
+    assert items[0]["updated_at"] == _iso("17:00:00.000000Z")
 
 
 def test_unparseable_timestamp_dropped_fail_closed(sync_db):
@@ -140,20 +157,20 @@ def test_unparseable_timestamp_dropped_fail_closed(sync_db):
 def test_mixed_formats_compare_chronologically(sync_db):
     # The exact lie the old free-text comparisons told: "…:00Z" vs "…:00.5Z".
     asyncio.run(dbmod.upsert_sync_items("u1", [
-        _item("a", "2026-10-11T10:00:00.500000Z", "half-second"),
-        _item("b", "2026-10-11T10:00:00Z", "whole-second"),
+        _item("a", _iso("10:00:00.500000Z"), "half-second"),
+        _item("b", _iso("10:00:00Z"), "whole-second"),
     ]))
-    pulled = asyncio.run(dbmod.get_sync_items("u1", since="2026-10-11T10:00:00Z"))
+    pulled = asyncio.run(dbmod.get_sync_items("u1", since=_iso("10:00:00Z")))
     assert [i["uuid"] for i in pulled] == ["a"]  # .5s > .0s, not the reverse
 
 
 def test_since_with_client_offset_normalizes(sync_db):
     asyncio.run(dbmod.upsert_sync_items("u1", [
-        _item("a", "2026-10-11T10:00:00Z"),
-        _item("b", "2026-10-11T12:00:00Z"),
+        _item("a", _iso("10:00:00Z")),
+        _item("b", _iso("12:00:00Z")),
     ]))
     # Client in +03:00 asking for everything after 13:00 local == 10:00 UTC.
-    pulled = asyncio.run(dbmod.get_sync_items("u1", since="2026-10-11T13:00:00+03:00"))
+    pulled = asyncio.run(dbmod.get_sync_items("u1", since=_iso("13:00:00+03:00")))
     assert [i["uuid"] for i in pulled] == ["b"]
 
 
@@ -162,11 +179,11 @@ def test_legacy_stored_rows_normalized_on_boot(sync_db):
         db = await dbmod.get_db()
         await db.execute(
             "INSERT INTO sync_items (uuid, user_id, entity_type, data, updated_at, deleted) "
-            "VALUES ('legacy', 'u1', 'task', '{}', '2026-10-11 09:00:00', 0)"
+            "VALUES ('legacy', 'u1', 'task', '{}', '" + _iso_space("09:00:00") + "', 0)"
         )
         await db.execute(
             "INSERT INTO sync_items (uuid, user_id, entity_type, data, updated_at, deleted) "
-            "VALUES ('canon', 'u1', 'task', '{}', '2026-10-11T09:30:00.000000Z', 0)"
+            "VALUES ('canon', 'u1', 'task', '{}', '" + _iso("09:30:00.000000Z") + "', 0)"
         )
         await db.commit()
 
@@ -175,17 +192,17 @@ def test_legacy_stored_rows_normalized_on_boot(sync_db):
     asyncio.run(dbmod.init_db())  # every-boot repair runs
     items = asyncio.run(dbmod.get_sync_items("u1"))
     by_uuid = {i["uuid"]: i["updated_at"] for i in items}
-    assert by_uuid["legacy"] == "2026-10-11T09:00:00.000000Z"  # canonicalized
-    assert by_uuid["canon"] == "2026-10-11T09:30:00.000000Z"  # untouched
+    assert by_uuid["legacy"] == _iso("09:00:00.000000Z")  # canonicalized
+    assert by_uuid["canon"] == _iso("09:30:00.000000Z")  # untouched
     # And now comparisons across the legacy row are valid:
-    pulled = asyncio.run(dbmod.get_sync_items("u1", since="2026-10-11T09:00:00.000000Z"))
+    pulled = asyncio.run(dbmod.get_sync_items("u1", since=_iso("09:00:00.000000Z")))
     assert {i["uuid"] for i in pulled} == {"canon"}
 
 
 # ── Origin + lock ─────────────────────────────────────────────────────────────
 
 def test_origin_round_trip(sync_db):
-    asyncio.run(dbmod.upsert_sync_items("u1", [_item("a", "2026-10-11T10:00:00Z", origin="phone-1")]))
+    asyncio.run(dbmod.upsert_sync_items("u1", [_item("a", _iso("10:00:00Z"), origin="phone-1")]))
     items = asyncio.run(dbmod.get_sync_items("u1"))
     assert items[0]["origin"] == "phone-1"
     # A phone can skip its own echoes on pull.
@@ -203,6 +220,6 @@ def test_upsert_holds_write_lock(sync_db, monkeypatch):
         yield
 
     monkeypatch.setattr(dbmod, "_write_lock", spy_lock)
-    n = asyncio.run(dbmod.upsert_sync_items("u1", [_item("a", "2026-10-11T10:00:00Z")]))
+    n = asyncio.run(dbmod.upsert_sync_items("u1", [_item("a", _iso("10:00:00Z"))]))
     assert n == 1
     assert acquisitions, "upsert_sync_items must serialize via _write_lock"

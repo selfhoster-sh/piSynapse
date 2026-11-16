@@ -18,6 +18,19 @@ def audit_db(tmp_path, monkeypatch):
     asyncio.run(dbmod.close_db())
 
 
+
+# Determinism rule (2026-11-16): no absolute date literals in test code.
+from datetime import datetime, timedelta, timezone
+
+_D1 = (datetime.now(timezone.utc) - timedelta(days=60)).date()
+_D2 = (datetime.now(timezone.utc) - timedelta(days=30)).date()
+_TS1 = f"{_D1} 12:00:00"
+_TS2 = f"{_D1} 13:00:00"
+_TS3 = f"{_D2} 09:00:00"
+_TS_OLD = (datetime.now(timezone.utc) - timedelta(days=90)).strftime("%Y-%m-%d %H:%M:%S")
+_TS_ENTRY = (datetime.now(timezone.utc) - timedelta(days=45)).strftime("%Y-%m-%d %H:%M:%S")
+
+
 async def _fetch_all(sql, params=()):
     db = await dbmod.get_db()
     cur = await db.execute(sql, params)
@@ -115,17 +128,17 @@ def test_rollup_compresses_old_rows_into_daily_summary(audit_db):
             await db.execute(
                 "INSERT INTO tool_audit_log (tool_name, params, success, duration_ms, created_at) "
                 "VALUES (?, ?, ?, ?, ?)",
-                ("get_datetime", "{}", 1, 10.0, "2026-07-05 12:00:00"),
+                ("get_datetime", "{}", 1, 10.0, _TS1),
             )
         await db.execute(
             "INSERT INTO tool_audit_log (tool_name, params, success, duration_ms, error, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?)",
-            ("send_email", "{}", 0, 5.0, "ERROR", "2026-07-05 13:00:00"),
+            ("send_email", "{}", 0, 5.0, "ERROR", _TS2),
         )
         await db.execute(
             "INSERT INTO tool_audit_log (tool_name, params, success, duration_ms, created_at) "
             "VALUES (?, ?, ?, ?, ?)",
-            ("get_datetime", "{}", 1, 8.0, "2026-08-15 09:00:00"),
+            ("get_datetime", "{}", 1, 8.0, _TS3),
         )
         await db.commit()
 
@@ -144,9 +157,9 @@ def test_rollup_compresses_old_rows_into_daily_summary(audit_db):
     summaries = [r for r in rows if r[0] == 1]
     assert len(summaries) == 2
     days = {s[1] for s in summaries}
-    assert days == {"2026-07-05", "2026-08-15"}
+    assert days == {str(_D1), str(_D2)}
     # Check 2026-07-05 summary
-    s1 = next(s for s in summaries if s[1] == "2026-07-05")
+    s1 = next(s for s in summaries if s[1] == str(_D1))
     assert s1[2] == 4  # total_calls
     assert s1[3] == 3  # success_count
     assert s1[4] == 1  # error_count
@@ -155,7 +168,7 @@ def test_rollup_compresses_old_rows_into_daily_summary(audit_db):
     assert breakdown["send_email"] == 1
 
     # Check 2026-08-15 summary
-    s2 = next(s for s in summaries if s[1] == "2026-08-15")
+    s2 = next(s for s in summaries if s[1] == str(_D2))
     assert s2[2] == 1  # total_calls
     assert s2[3] == 1  # success_count
     assert s2[4] == 0  # error_count
@@ -163,7 +176,7 @@ def test_rollup_compresses_old_rows_into_daily_summary(audit_db):
     assert breakdown2["get_datetime"] == 1
 
     # No detail rows should remain for rolled-up days
-    for day in ["2026-07-05", "2026-08-15"]:
+    for day in [str(_D1), str(_D2)]:
         remaining_detail = asyncio.run(_fetch_all(
             "SELECT COUNT(*) FROM tool_audit_log WHERE is_summary = 0 AND day = ?",
             (day,),
@@ -176,7 +189,7 @@ def test_rollup_idempotent(audit_db):
         db = await dbmod.get_db()
         await db.execute(
             "INSERT INTO tool_audit_log (tool_name, params, success, created_at) VALUES (?, ?, ?, ?)",
-            ("get_datetime", "{}", 1, "2026-07-01 10:00:00"),
+            ("get_datetime", "{}", 1, _TS_OLD),
         )
         await db.commit()
 
@@ -347,7 +360,7 @@ async def _create_audit_entry():
     await db.execute(
         "INSERT INTO tool_audit_log (tool_name, params, success, duration_ms, created_at, user_id) "
         "VALUES (?, ?, ?, ?, ?, ?)",
-        ("get_datetime", "{}", 1, 10.0, "2026-08-28 10:00:00", "default"),
+        ("get_datetime", "{}", 1, 10.0, _TS_ENTRY, "default"),
     )
     await db.commit()
     rows = await _fetch_all("SELECT id FROM tool_audit_log WHERE tool_name = 'get_datetime'")

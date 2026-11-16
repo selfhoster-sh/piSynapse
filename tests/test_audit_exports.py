@@ -31,6 +31,11 @@ from fastapi.testclient import TestClient
 import config
 import db as dbmod
 
+# Determinism rule (2026-11-16): no absolute date literals in test code.
+from datetime import datetime, timedelta, timezone
+
+_DAY = (datetime.now(timezone.utc) - timedelta(days=60)).strftime("%Y-%m-%d")
+
 
 def _client(authenticated=True, is_admin=True):
     from routers.admin import router
@@ -48,7 +53,7 @@ def _client(authenticated=True, is_admin=True):
     return TestClient(app)
 
 
-async def _seed_old_day(day="2026-07-05", n=3):
+async def _seed_old_day(day=_DAY, n=3):
     db = await dbmod.get_db()
     for i in range(n):
         await db.execute(
@@ -75,7 +80,7 @@ def test_rollup_writes_csv_ndjson_and_manifest():
     assert asyncio.run(dbmod.rollup_tool_audit()) == 1
 
     out = _outdir()
-    day = "2026-07-05"
+    day = _DAY
     csv_p = os.path.join(out, f"tool-audit-{day}.csv")
     ndjson_p = os.path.join(out, f"tool-audit-{day}.ndjson.gz")
     manifest_p = os.path.join(out, f"tool-audit-{day}.manifest.json")
@@ -99,15 +104,15 @@ def _export_rows():
     # 20 values matching AUDIT_EXPORT_COLUMNS order.
     return [
         (1, "get_time", "{}", 1, 10.0, None, 0, None, None, None, None,
-         None, "2026-07-05 12:00:00", None, None, None, None, None, None, "s1"),
+         None, f"{_DAY} 12:00:00", None, None, None, None, None, None, "s1"),
         (2, "send_email", "{}", 0, 99.9, "boom", 0, None, None, None, None,
-         None, "2026-07-05 12:00:01", None, None, None, None, None, None, "s1"),
+         None, f"{_DAY} 12:00:01", None, None, None, None, None, None, "s1"),
     ]
 
 
 def test_exports_are_byte_deterministic():
     rows = _export_rows()
-    day = "2026-07-05"
+    day = _DAY
     dbmod._write_audit_exports(day, rows)
     first = {
         name: _sha(os.path.join(_outdir(), name))
@@ -122,7 +127,7 @@ def test_exports_are_byte_deterministic():
 
 
 def test_ndjson_lines_parse_to_column_dicts():
-    day = "2026-07-05"
+    day = _DAY
     dbmod._write_audit_exports(day, _export_rows())
     p = os.path.join(_outdir(), f"tool-audit-{day}.ndjson.gz")
     with gzip.open(p, "rt", encoding="utf-8") as f:
@@ -135,12 +140,12 @@ def test_ndjson_lines_parse_to_column_dicts():
 # ── CSV formula-injection guard ──────────────────────────────────────────────
 
 def test_csv_formula_injection_guarded_but_numbers_survive():
-    day = "2026-07-05"
+    day = _DAY
     rows = [
         # error column carries an executable formula (the realistic vector:
         # free-text tool errors); duration is negative-ish to prove '-' stays.
         (1, "get_time", '{"x": "=SUM(A1)"}', 0, -5.0, "=cmd|'/c calc'!A0", 0,
-         None, None, None, None, None, "2026-07-05 12:00:00", None, None,
+         None, None, None, None, None, f"{_DAY} 12:00:00", None, None,
          None, None, None, None, None),
     ]
     dbmod._write_audit_csv(day, rows)
@@ -157,7 +162,7 @@ def test_csv_formula_injection_guarded_but_numbers_survive():
 def test_verify_detects_intact_and_tampered_archives():
     asyncio.run(_seed_old_day())
     asyncio.run(dbmod.rollup_tool_audit())
-    day = "2026-07-05"
+    day = _DAY
 
     ok = asyncio.run(dbmod.verify_audit_export(day))
     assert ok["exists"] and ok["ok"]
@@ -175,14 +180,14 @@ def test_verify_detects_intact_and_tampered_archives():
 
 def test_verify_handles_missing_and_corrupt_manifest():
     # Never-archived day.
-    r = asyncio.run(dbmod.verify_audit_export("2026-07-05"))
-    assert r == {"day": "2026-07-05", "exists": False, "ok": False, "files": {}}
+    r = asyncio.run(dbmod.verify_audit_export(_DAY))
+    assert r == {"day": _DAY, "exists": False, "ok": False, "files": {}}
     # Corrupt manifest: never raises, reports not-ok.
     out = _outdir()
     os.makedirs(out, exist_ok=True)
-    with open(os.path.join(out, "tool-audit-2026-07-05.manifest.json"), "w") as f:
+    with open(os.path.join(out, f"tool-audit-{_DAY}.manifest.json"), "w") as f:
         f.write("{not json")
-    r = asyncio.run(dbmod.verify_audit_export("2026-07-05"))
+    r = asyncio.run(dbmod.verify_audit_export(_DAY))
     assert r["exists"] is False and r["ok"] is False
 
 
@@ -209,16 +214,18 @@ def test_cleanup_prunes_archive_with_its_own_policy(monkeypatch):
 
 def test_verify_endpoint_auth_and_day_gate():
     client = _client()
-    assert client.get("/admin/audit/verify/2026-07-05").status_code == 200
+    assert client.get(f"/admin/audit/verify/{_DAY}").status_code == 200
     assert client.get("/admin/audit/verify/not-a-day").status_code == 404
-    assert _client(authenticated=False).get("/admin/audit/verify/2026-07-05").status_code == 401
-    assert _client(is_admin=False).get("/admin/audit/verify/2026-07-05").status_code == 403
+    assert _client(authenticated=False).get(f"/admin/audit/verify/{_DAY}").status_code == 401
+    assert _client(is_admin=False).get(f"/admin/audit/verify/{_DAY}").status_code == 403
 
 
 def test_verify_endpoint_returns_manifest_check():
     asyncio.run(_seed_old_day())
     asyncio.run(dbmod.rollup_tool_audit())
-    body = _client().get("/admin/audit/verify/2026-07-05").json()
+    body = _client().get(f"/admin/audit/verify/{_DAY}").json()
     assert body["ok"] is True and body["exists"] is True
     assert set(body["files"]) == {
-        "tool-audit-2026-07-05.csv", "tool-audit-2026-07-05.ndjson.gz"}
+        f"tool-audit-{_DAY}.csv", f"tool-audit-{_DAY}.ndjson.gz"}
+
+
