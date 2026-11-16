@@ -48,6 +48,10 @@ piSynapse is designed to work **100% locally**. All external service integration
 
 When you disable all external integrations, **zero data leaves your device**. No telemetry, no analytics, no phone-home.
 
+### "Collective learning" — on-device only
+
+The name is aspirational, not a sharing channel. "Collective learning" mines **your own** tool-success patterns from your own conversations (quorum tallies in `pattern_approvals`, contradiction review in the admin queue) to improve intent routing — everything is computed locally on the device that holds the data. No pattern, vote, or conversation ever leaves your machine; there is no cross-user or cross-device aggregation, and no opt-in to enable because there is nothing to opt into. If you see the term anywhere in the codebase (`corpus_feeder`, `tools/definitions`, `routers/admin`), it refers to this local-only loop.
+
 ---
 
 ## Features

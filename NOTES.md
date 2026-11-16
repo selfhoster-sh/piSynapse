@@ -30,7 +30,7 @@
 - **Pushed `7db28dc..3536280`** (NOTES.md restore, history-rewrite rule, R1 fix, embedding fix) — first push since 2026-10-25.
 - **Pi realignment (user):** the Pi's `piSynapse` main was the pre-rewrite lineage frozen at 2026-10-05 with the EVREN integration uncommitted on top. The EVREN work is preserved verbatim on branch `experiment/evren-lora` (`b1fb322`); `main` reset to `3536280`; `.env` → `LLM_BACKEND=litert`, `LLM_MODEL=gemma4-e2b`, EVREN keys archived in `backups/env-evren-20261116`. Safety: `backups/piSynapse-pi-allrefs-20261116.bundle` + DB tar before the reset.
 - **Scope rule (user):** the product line is gemma4-native ONLY; EVREN and LoRa are Pi-side experiments and must not enter it. The LoRa bridge stays in `/home/user/pisynapse-lora` (serial device absent today; it runs only when plugged in).
-- **Verified on the Pi after realignment:** FastEmbed loads from the persistent cache (~3 s, dim 768, zero network); LiteRT `gemma4-e2b` answers `POST /chat/` natively — warm latency **25-27 s** (CPU inference + NUM_CTX 8192; A/B with 4096 ≈ **same 26-27 s** → context size is not the driver, 8192 kept; the old 10-12 s tuning goal remains open and is now the main UX gap).
+- **Verified on the Pi after realignment:** FastEmbed loads from the persistent cache (~3 s, dim 768, zero network); LiteRT `gemma4-e2b` answers `POST /chat/` natively — warm latency **25-27 s** (CPU inference + NUM_CTX 8192; A/B with 4096 ≈ **same 26-27 s** → context size is not the driver, 8192 kept; the old 10-12 s tuning goal remains open and is now the main UX gap). **Latency diagnostic (2026-11-16):** time-to-first-token ≈ **24.3 s**, total ≈ 25.6 s for a 4-token reply ("Pazartesi") → the bottleneck is prompt **prefill** (~24 s), not generation (~1.3 s). Driver = system-prompt size (persona + language rule + tool defs + memory + summary injection), not NUM_CTX or model size. Tuning target: trim the injected context; NUM_CTX reductions alone won't help.
 
 ## 2026-11-16 — Journal restored after the undocumented 2026-10-25 history rewrite
 
@@ -39,6 +39,8 @@
 - **Precedent:** the 2026-08-30 rewrite re-added the journal as a single clean version (`fa3bb6c`, "per-history rewrite"); the 2026-10-25 run skipped that step.
 - **Legitimate part of the same run:** the intended sanitize pass (names → `Ada`, `/home/<user>`, deployment host → `example.com`) — kept; the rewritten sanitized tree is the current `main`.
 - **Restore (2026-11-16):** `NOTES.md` re-added as the sanitized tracked journal, generated from `NOTES.local.md` with those three replacements; `NOTES.local.md` stays untracked. Pre-rewrite history is NOT restored — only the file.
+- **R10 verified (2026-11-16):** the 54 `print()` calls are all CLI/installer/batch-script output — install.py 36, corpus_feeder.py 15, provision_owner.py 2, test fixture 2, main.py 1 (inside a docstring). Zero in the server runtime; logging is already the server convention. R10 is satisfied as-is; no code change.
+
 - **Rule adopted (user, same day):** the open question above ("no rewrite without a prior dated entry") was adopted by the user on 2026-11-16 — see the History rewrite rule in READ FIRST. No more silent rewrites.
 
 ## 2026-10-25 — External review (read-only): RED suite + product/on-ramp gaps
