@@ -151,7 +151,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "list_emails",
-            "description": "Recent emails (sender, subject, date, preview), numbered 1., 2., ... Use for 'what's in my inbox', 'messages from X', 'new/unread email'. For a specific subject/sender/topic use search_emails. Refer to emails by list number only.",
+            "description": "Recent emails (sender, subject, date, preview), numbered 1., 2., ... general overview of a mail folder. Use for 'what's in my inbox', 'messages from X', 'new/unread email'. For a specific subject/sender/topic use search_emails instead. Refer to emails by list number only.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -198,7 +198,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "search_emails",
-            "description": "Find emails by subject, sender, or topic anywhere in the mailbox; numbered matches with previews. Use when the user names a specific mail/person/topic. For a general inbox overview use list_emails. Refer to results by list number only.",
+            "description": "Find specific emails by subject, sender, or topic anywhere in the mailbox; numbered matches with previews. Use when the user names a specific mail/person/topic. For a general inbox overview use list_emails. Refer to results by list number only.",
             "parameters": {
                 "type": "object",
                 "properties": {
