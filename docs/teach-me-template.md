@@ -62,5 +62,16 @@ Kurallar:
 - `importance` depolanır ama retrieval **benzerliğe** göre sıralanır; importance bilgilendirme amaçlıdır.
 - Kayıtlar kullanıcıya özeldir (`user_id` ile izole); çok kullanıcılı kurulumda başkası göremez.
 
+
+## Bilinen sınırlama (2026-11-16)
+
+LiteRT'in constrained-decoding parser'ı tool argümanlarında Türkçe diyakritik (İ, Ö, ğ, ü, …) görünce parse hatası verir (doubled-brace `{{...}}`). Bu bir LLM yeteneksizliği değil, LiteRT-LM'in parser sınırlamasıdır — model doğru niyet ve argümanları üretir, parser serileştirmeyi reddeder.
+
+**Geçici çözüm (kod değişikliği yok):**
+- ASCII ile yaz (transliterate): "Memleketim Malatya, universite icin Izmir Bergama ogrenci yurdunda kaliyorum."
+- Veya UI hafıza panelini kullan (LLM turu yok → parser devreye girmez, anında kaydolur).
+
+**Planlanan profesyonel çözüm** (journal 2026-11-16 evening girdisi): parser recovery'yi one-shot'tan counter'a çevir (çözüm #1), UI'da açık hata mesajı (#2), prompt format hint (#3), LiteRT-LM sürüm yükseltme (#4), client-side parsing (#5). Sıra: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8.
+
 ## Gizlilik
 Hafıza kayıtları yerel `assistant.db`'de tutulur — git/journal'a girmez, hiçbir yere gönderilmez (Open-Meteo/Nominatim hariç hiçbir entegrasyon hafızaya erişmez). Silmek için UI'dan veya `DELETE FROM memories WHERE ...` ile.
