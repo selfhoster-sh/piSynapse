@@ -29,7 +29,7 @@
 - **Pushed `7db28dc..3536280`** (NOTES.md restore, history-rewrite rule, R1 fix, embedding fix) — first push since 2026-10-25.
 - **Pi realignment (user):** the Pi's `piSynapse` main was the pre-rewrite lineage frozen at 2026-10-05 with the EVREN integration uncommitted on top. The EVREN work is preserved verbatim on branch `experiment/evren-lora` (`b1fb322`); `main` reset to `3536280`; `.env` → `LLM_BACKEND=litert`, `LLM_MODEL=gemma4-e2b`, EVREN keys archived in `backups/env-evren-20261116`. Safety: `backups/piSynapse-pi-allrefs-20261116.bundle` + DB tar before the reset.
 - **Scope rule (user):** the product line is gemma4-native ONLY; EVREN and LoRa are Pi-side experiments and must not enter it. The LoRa bridge stays in `/home/user/pisynapse-lora` (serial device absent today; it runs only when plugged in).
-- **Verified on the Pi after realignment:** FastEmbed loads from the persistent cache (~3 s, dim 768, zero network); LiteRT `gemma4-e2b` answers `POST /chat/` natively — warm latency **25-27 s** (CPU inference + NUM_CTX 8192; the journal's old 10-12 s tuning goal remains open and is now the main UX gap).
+- **Verified on the Pi after realignment:** FastEmbed loads from the persistent cache (~3 s, dim 768, zero network); LiteRT `gemma4-e2b` answers `POST /chat/` natively — warm latency **25-27 s** (CPU inference + NUM_CTX 8192; A/B with 4096 ≈ **same 26-27 s** → context size is not the driver, 8192 kept; the old 10-12 s tuning goal remains open and is now the main UX gap).
 
 ## 2026-11-16 — Journal restored after the undocumented 2026-10-25 history rewrite
 
@@ -619,7 +619,7 @@ Researched the current install flow against the Command Line Interface Guideline
 
 - **Phase 8:** `docs/port-contract.md` freezes post-fix behavior for the Kotlin port: session/user_id scope, fold formula + caps + conditional write + repair, parity loop, trim/normalize rules, intent layers + resume anchoring, memory/retrieval budgets, canonical mpnet model, SSE shapes (incl. aborted terminal), LANGUAGE_RULE verbatim, summary injection text, inference seam (`conversation_cache_max`), and the acceptance test list.
 - **Session totals (user delegated overnight, no confirmation asks):** Phase 0–8 complete, 30 commits, full suite **563 → 648 passed** (+85 tests), zero failures. Working tree holds only the restored frozen Android files (untouched since recovery).
-- **Still awaiting the user (NOT done):** (1) secret rotation — Gmail app-password, Nextcloud password, API key; (2) systemd regen + orphan `/home/user/litert_serve` removal — needs backup + explicit approval; (3) backup encryption decision (gpg/age?); (4) LAN lockdown — port to 127.0.0.1 + ufw. Details in the fix-plan's user-actions section.
+- **Still awaiting the user (NOT done):** (1) secret rotation — Gmail app-password, Nextcloud password, API key; (2) systemd regen + ~~orphan `/home/user/litert_serve` removal~~ (no orphan exists, verified 2026-11-16 — only the in-repo `litert_serve/` remains, serving piserve) — needs backup + explicit approval; (3) backup encryption decision (gpg/age?); (4) ~~LAN lockdown — port to 127.0.0.1 + ufw~~ (superseded 2026-10-11 by the A-Y2 by-design decision: installer binds 0.0.0.0 deliberately so phones on the LAN can reach the box; revisit under R2 as TLS + SESSION_COOKIE_SECURE instead). Details in the fix-plan's user-actions section.
 - **Suggested next:** pick up the port (A: Kotlin faithful port vs B: embedded Python — decision still open) against `docs/port-contract.md`.
 
 ## 2026-09-09 — Incident: uncommitted Android tree wiped by `reset --hard`, recovered from laptop
@@ -2426,7 +2426,7 @@ user. One of the options above should be implemented for a real fix.
 | 🟡 Medium | **Frontend modularization** — split monolithic index.html when next touched |
 | 🟢 Low | **litert-lm version pin & watch** — track upstream changes (FC parser/template behavior shifts between versions) |
 | 🟡 Medium | **HTTPS/microphone** — Caddy self-signed or NPM solution |
-| 🟡 Medium | **Performance** — NUM_CTX raised to 8192 (done); latency tuning round (13-15s → 10-12s) still open; **Cache/KV optimization** (embedding cache, KV-cache reuse, prompt caching) — noted 2026-08-28 per review, future pass |
+| 🟡 Medium | **Performance** — NUM_CTX raised to 8192 (done); ~~latency tuning round (13-15s → 10-12s) still open~~ (re-measured 2026-11-16: warm **25-27 s** with gemma4-e2b on Pi 5 CPU; A/B with NUM_CTX 4096 ≈ same 26-27 s → context size is not the driver, 8192 kept; the 10-12 s goal stands and is now the main UX gap); **Cache/KV optimization** (~~embedding cache~~ done 2026-11-16: persistent `FASTEMBED_CACHE_DIR` cache + HF Xet disabled, `3536280`; KV-cache reuse + prompt caching future) — noted 2026-08-28 per review |
 | 🟢 Low | Redis cache for session management (optional) |
 | 🟢 Low | Observability: Prometheus metrics, structured logging |
 | 🟢 Low | Multi-user authentication (JWT) |
