@@ -28,6 +28,7 @@ from config import (
     RATE_LIMIT_RPM,
     RATE_LIMIT_SESSION_RPM,
     RATE_LIMIT_TPM,
+    SESSION_COOKIE_SECURE,
     TRUST_X_FORWARDED_FOR,
     TRUSTED_HOSTS,
 )
@@ -321,6 +322,13 @@ async def lifespan(app: FastAPI):
             "TRUSTED_HOSTS is not set — accepting this machine's local "
             f"hostnames/IPs only ({len(_LOCAL_TRUSTED_HOSTS)} auto-accepted). "
             "Set TRUSTED_HOSTS in .env (e.g. your LAN IP) to restrict for production."
+        )
+
+    if TRUSTED_HOSTS and not SESSION_COOKIE_SECURE:
+        logger.warning(
+            "TRUSTED_HOSTS is configured but SESSION_COOKIE_SECURE is off — "
+            "auth cookies are sent over plain HTTP. Set SESSION_COOKIE_SECURE=true "
+            "in .env when serving behind a TLS proxy (see docs/https-setup.md)."
         )
 
     global DB_DEGRADED
