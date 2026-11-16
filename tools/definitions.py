@@ -69,7 +69,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "create_calendar_event",
-            "description": "Add a new event to the user's calendar. Call this when the user asks to schedule something OR asks to be reminded at a specific time/date (e.g. 'remind me at 9am on Thursday', 'yarın hatırlat'). When only a day/date is given with NO specific time, create an ALL-DAY event: all_day=true with start_time as just the date (Y-m-d) — never invent an hour. If the user asks to place it in a free slot, list that day's events first and pick an hour where nothing overlaps, then create with that time.",
+            "description": "Add a new event. Call when the user schedules something or asks to be reminded at a time/date. With only a day (no time), create an ALL-DAY event (all_day=true, start_time=date only). For a free slot, list that day's events first, then create with a non-overlapping time.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -134,7 +134,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "find_free_slots",
-            "description": "Find free time slots on a given day for scheduling. Call this when the user asks 'when am I free', 'find a slot', 'boş saat', 'uygun saat' or wants to place an event in a free slot. Returns numbered list of available slots.",
+            "description": "Find free time slots on a given day. Call when the user asks 'when am I free', 'find a slot', 'boş saat', 'uygun saat', or wants to place an event in a free slot. Returns numbered available slots.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -151,7 +151,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "list_emails",
-            "description": "Give a general overview of a mail folder: recent emails (sender, subject, date, preview), numbered 1., 2., ... Use for 'what's in my inbox', 'any messages from X', 'new/unread email'. When the user asks about a SPECIFIC mail by subject, sender, or topic, use search_emails instead. Refer to emails only by list number.",
+            "description": "Recent emails (sender, subject, date, preview), numbered 1., 2., ... Use for 'what's in my inbox', 'messages from X', 'new/unread email'. For a specific subject/sender/topic use search_emails. Refer to emails by list number only.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -198,7 +198,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "search_emails",
-            "description": "Find specific emails about a given subject, sender, or topic anywhere in the mailbox; returns numbered matches with previews. Use when the user names a particular mail, person, or topic ('the Netdata email', 'mails about the invoice'). For a general inbox overview use list_emails. Refer to results only by list number.",
+            "description": "Find emails by subject, sender, or topic anywhere in the mailbox; numbered matches with previews. Use when the user names a specific mail/person/topic. For a general inbox overview use list_emails. Refer to results by list number only.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -313,7 +313,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "search_notes",
-            "description": "Search the user's notes by title or content. Use this when the user asks about something they might have noted down. Uses server-side search when available (Nextcloud Notes v1.0.2+).",
+            "description": "Search notes by title or content. Use when the user asks about something they may have noted down. Uses server-side search when available (Nextcloud Notes v1.0.2+).",
             "parameters": {
                 "type": "object",
                 "properties": {
