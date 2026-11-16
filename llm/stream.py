@@ -280,12 +280,7 @@ async def chat_with_ollama_stream(
     overflow_retried = False
     final_nudge_used = False
     tools_escalated = False
-    # LiteRT server-side parse failures (doubled-brace tool calls on non-ASCII
-    # content) are recoverable by extracting the call from the error message.
-    # Allow several recoveries per turn (counter, not a one-shot flag): a single
-    # turn can hit the parser more than once (round 1 + round 2 + finalize).
-    litert_parse_recovery_cap = get("LLM_MAX_TOOL_ITERATIONS", 5)
-    litert_parse_recovery_count = 0
+    litert_parse_recovered = False
     mutation_executed = False
     continuation_noted = False
 
@@ -416,24 +411,18 @@ async def chat_with_ollama_stream(
             # The full call is inside the error message — recover it and route
             # through the normal execution path instead of failing the turn.
             if ("Failed to parse tool calls from code block" in err_str
-                    and litert_parse_recovery_count < litert_parse_recovery_cap):
+                    and not litert_parse_recovered):
                 leaked = parse_leaked_tool_call(err_str.split("code block:", 1)[-1])
                 if leaked:
-                    litert_parse_recovery_count += 1
-                    logger.info("Recovered litert server-side parse failure (#%d): %s()",
-                                litert_parse_recovery_count,
+                    litert_parse_recovered = True
+                    logger.info("Recovered litert server-side parse failure: %s()",
                                 leaked["function"]["name"])
                     tool_calls_acc = [leaked]
                     done_reason = "stop"
                 else:
                     logger.error("Stream error (%s): %s", backend, e)
-                    yield {"error": "Tool call could not be parsed (LiteRT). Retry or use the memory panel."}
+                    yield {"error": f"{backend} connection error"}
                     return
-            elif ("Failed to parse tool calls from code block" in err_str):
-                logger.error("Stream error (%s): litert parse recovery cap (%d) exhausted: %s",
-                             backend, litert_parse_recovery_cap, e)
-                yield {"error": "Tool call could not be parsed (LiteRT). Retry or use the memory panel."}
-                return
             elif _is_context_overflow(e) and not overflow_retried and current_msgs:
                 overflow_retried = True
                 _shrink_tool_responses(current_msgs)
