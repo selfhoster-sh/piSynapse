@@ -265,3 +265,78 @@ def test_merge_env_extras_no_manual_keys():
     out, extras = inst._merge_env_extras("A=1\nB=2\n", {"A": "1", "B": "2"})
     assert extras == {}
     assert out == "A=1\nB=2\n"
+
+
+# ── pure decision functions (R3, 2026-11-16) ────────────────────────────────
+
+def test_fill_template_substitutes_and_preserves_literal_braces():
+    # User-supplied values containing braces must not be re-interpreted
+    # (unlike str.format, which would raise or mangle them).
+    out = inst._fill_template("key={KEY} val={VAL}", {"KEY": "k", "VAL": "{literal}"})
+    assert out == "key=k val={literal}"
+    # Unknown placeholders are left untouched.
+    assert inst._fill_template("x={MISSING}", {}) == "x={MISSING}"
+
+
+def test_read_current_env_parses_and_ignores_comments(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text(
+        "# comment\n\nAPI_KEY=secret\nEMPTY=\nBADLINE\nFOO=bar=baz\n", encoding="utf-8"
+    )
+    assert inst._read_current_env() == {"API_KEY": "secret", "EMPTY": "", "FOO": "bar=baz"}
+
+
+def test_read_current_env_missing_file_returns_empty(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    assert inst._read_current_env() == {}
+
+
+def test_detect_shell_and_activation_cmd_consistent(monkeypatch):
+    monkeypatch.setattr(inst, "IS_WIN", False)
+    for shell_name, env_val in (("bash", "/bin/bash"), ("zsh", "/usr/bin/zsh"),
+                                ("fish", "/usr/bin/fish")):
+        monkeypatch.setenv("SHELL", env_val)
+        assert inst.detect_shell() == shell_name
+        cmd = inst.activation_cmd(shell_name)
+        assert shell_name.split("s")[0] in cmd or "activate" in cmd
+    monkeypatch.setenv("SHELL", "")
+    assert inst.detect_shell() == "unknown"
+    assert "activate" in inst.activation_cmd("unknown")
+
+
+def test_model_dash_id_replaces_colon_with_dash(monkeypatch):
+    monkeypatch.setattr(inst, "STATE", {"model": "gemma4:e2b"})
+    assert inst._model_dash_id() == "gemma4-e2b"
+    monkeypatch.setattr(inst, "STATE", {"model": "gemma4-e4b"})
+    assert inst._model_dash_id() == "gemma4-e4b"
+    monkeypatch.setattr(inst, "STATE", {})
+    assert inst._model_dash_id() == "gemma4-e2b"  # default
+
+
+def test_venv_bin_points_at_venv_layout(monkeypatch):
+    monkeypatch.setattr(inst, "IS_WIN", False)
+    monkeypatch.setattr(inst, "VENV_DIR", "/opt/venv")
+    assert inst.venv_bin("python") == "/opt/venv/bin/python"
+
+
+def test_users_table_empty_reflects_db_state(tmp_path, monkeypatch):
+    import sqlite3
+    db = tmp_path / "assistant.db"
+    monkeypatch.setattr(inst, "_users_table_empty", inst._users_table_empty)
+    # No DB file yet → treated as empty (fresh install path).
+    # Call the real helper against a temp DB by monkeypatching its db_path arg usage.
+    # _users_table_empty takes db_path; exercise both empty and populated.
+    conn = sqlite3.connect(str(db))
+    conn.execute("CREATE TABLE users (id TEXT PRIMARY KEY)")
+    conn.commit()
+    conn.close()
+    assert inst._users_table_empty(str(db)) is True
+    conn = sqlite3.connect(str(db))
+    conn.execute("INSERT INTO users (id) VALUES ('u1')")
+    conn.commit()
+    conn.close()
+    assert inst._users_table_empty(str(db)) is False
+    # Missing table / missing file → empty (no crash), so a fresh install proceeds.
+    missing = tmp_path / "nope.db"
+    assert inst._users_table_empty(str(missing)) is True
+
