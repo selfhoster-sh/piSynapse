@@ -13,6 +13,7 @@
 - Docker RAM-freeing rule (2026-08-26 incident): stopping containers breaks DEPENDENT long-running containers via cached DNS (nextcloud lost postgres IP -> 500s ~35 min). After any stop/start cycle restart affected high-level containers too and verify health endpoints.
 - Journal policy: entries are strictly reverse chronological (newest first), record project-relevant facts only — no meta/authority commentary or approval-status notes. Applies to every future edit.
 - Currency rule: before relying on a statement in this file, verify it against the code. Found-stale statements get struck through with a dated reason (invalid/unnecessary/done/fixed) — never silently deleted.
+- **History rewrite rule (user, 2026-11-16):** any history rewrite (filter-repo, amend of pushed commits, pruning journal-only commits) requires a dated journal entry BEFORE it runs — recording the exact command, the replace expressions, and every dropped ref/path/commit. No silent rewrites. Trigger: the undocumented 2026-10-25 run dropped the journal from all history and pruned 42 `main` commits with zero record anywhere.
 - Test coverage used to be ~7% (calendar_ops.py, mail.py, llm/, tools/ dispatcher untested). A dedicated hardening pass has been running since August; suite size is tracked in the entries below.
 - **Sanitization rule:** this file may be published. Never write personal data, identity clues, deployment addresses (hostnames, IPs, ports), or accounts into it. Keep every narrative in English; Turkish inline tokens are allowed only as product corpus / i18n test data.
 - **Test-DB isolation rule (2026-09-09 incident):** tests must NEVER touch the live `assistant.db` — app/lifespan tests use tmp-path DBs only. A full-suite run once wrote a test admin row into the live DB; it was deleted and the offending test isolated.
@@ -28,7 +29,7 @@
 - **Precedent:** the 2026-08-30 rewrite re-added the journal as a single clean version (`fa3bb6c`, "per-history rewrite"); the 2026-10-25 run skipped that step.
 - **Legitimate part of the same run:** the intended sanitize pass (names → `Ada`, `/home/<user>`, deployment host → `example.com`) — kept; the rewritten sanitized tree is the current `main`.
 - **Restore (2026-11-16):** `NOTES.md` re-added as the sanitized tracked journal, generated from `NOTES.local.md` with those three replacements; `NOTES.local.md` stays untracked. Pre-rewrite history is NOT restored — only the file.
-- **Open rule question:** adopt a hard rule "no history rewrite (and no journal-only commit pruning) without a dated entry recording the command, replace expressions and dropped refs BEFORE it runs"? Not adopted yet — recorded so the next session decides explicitly instead of silently.
+- **Rule adopted (user, same day):** the open question above ("no rewrite without a prior dated entry") was adopted by the user on 2026-11-16 — see the History rewrite rule in READ FIRST. No more silent rewrites.
 
 ## 2026-10-25 — External review (read-only): RED suite + product/on-ramp gaps
 
