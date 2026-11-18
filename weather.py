@@ -139,7 +139,10 @@ async def get_weather(city: str = "") -> str:
         data = await _weather_data(city)
         if data is None:
             return f"ERROR: City not found: {city}"
-        return format_weather_summary(data)
+        summary = format_weather_summary(data)
+        # Prefix with explicit city reminder so small models reference the
+        # correct city instead of hallucinating.
+        return f"Weather data for {data.get('city', city)}: {summary}. Report this exact city."
     except Exception as e:
         logger.error(f"Weather API error: {e}")
         return "ERROR: unable to fetch weather data"
