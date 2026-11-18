@@ -46,7 +46,11 @@ DEFAULT_CONFIG = {
     "enable_ynnpack": False,
     # Number of session-keyed conversations kept alive across requests (LRU).
     # 0 = stateless (every request builds and closes its own conversation).
-    "conversation_cache_max": 0,
+    # 2 = reuse the KV cache for follow-up turns in the same session (~2.5x
+    # faster TTFB on a Pi 5). Trade-off: cached conversation holds the system
+    # prompt + history from the first turn; a session switch or retry can desync.
+    # Disable (0) if you see stale-context answers.
+    "conversation_cache_max": 2,
     # Must match the app's LITERT_BASE_URL port (config.LITERT_PORT).
     "host": "127.0.0.1",
     "port": 9379,

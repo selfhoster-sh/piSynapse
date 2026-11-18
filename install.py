@@ -797,6 +797,11 @@ def _write_piserve_config() -> bool:
         "enable_ynnpack": False,
         "host": "127.0.0.1",
         "port": LITERT_PORT,
+        # Reuse the KV cache for follow-up turns in the same session (~2.5x
+        # faster TTFB on a Pi 5). Trade-off: cached conversation holds the
+        # system prompt + history from the first turn; disable (0) if you see
+        # stale-context answers.
+        "conversation_cache_max": 2,
     }
     cfg_path = _piserve_config_path()
     try:
