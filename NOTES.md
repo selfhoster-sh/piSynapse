@@ -45,6 +45,16 @@
 - **User's question answered:** "toollarda Türkçe olan ne var ki?" → only `find_free_slots` description has Turkish trigger phrases ("boş saat", "uygun saat"). All other tool schemas are English. The Turkish content that triggers the parser comes from USER INPUT (personal facts, calendar titles, note content) passed as tool arguments — not from tool definitions.
 - **How the parser currently works (native):** LiteRT's constrained-decoding parser (LLGuidance) parses the model's tool-call output. On parse failure (doubled braces), the error message contains the full call text; `parse_leaked_tool_call` extracts it and routes it through normal execution — one-shot per turn. If it fails again, the turn errors out with "connection error". No client-side parsing bypass.
 
+## 2026-11-18 (later still) — Latency pass 2: max_num_tokens 4096 + MTP + warmup (1.6x speedup)
+
+- **Root cause found:** Gemma 4 E2B's native max context is 4096 tokens, but we set `max_num_tokens=8192`. This forced the MTP drafter to be re-targeted from magic number 32003 → 8192, adding overhead. Reducing to 4096 gave **1.6x speedup**: cold TTFB 32s → 20s, warm 13s → 8s.
+- **MTP activated:** switched from deprecated `enable_speculative_decoding` bool to new `speculative_decoding_config=SpeculativeDecodingConfig(mode=ON)`. Model file confirmed to contain MTP drafter weights (mtp_drafter signature, 275 tensors).
+- **Config knobs enabled:** `use_ringbuffers_local_attention=True`, `thread_count=4`, `cache_dir=None` (default). `enable_ynnpack=True` tested but failed (IsTensorSupported errors on Gemma 4 tensors) → reverted to False.
+- **Engine warmup added:** dummy inference on startup (~3s) pre-compiles XNNPACK kernels → first real request ~2s faster.
+- **piserve assessment:** still essential (litert-lm serve CLI lacks max_num_tokens, conversation caching, tool calling, thinking config). No replacement viable. Improvements made: warmup, new MTP API, 4096 context.
+- **Final numbers:** cold TTFB ~20s, warm ~8s (was 32s/13s). Google's official: 99 tok/s prefill / 9 tok/s decode (we're closer now but still behind on decode).
+- **Remaining latency work:** prompt trim (system 1526→1000 tok, tools 3007→2000 tok), num_ctx A/B with cache, GPU backend test.
+
 ## 2026-11-18 (later) — Conversation cache fixed + enabled by default (~2.5x follow-up speedup)
 
 - **Root cause found:** piserve's conversation cache (`conversation_cache_max`) was broken — newly-created conversations were closed in the `finally` block even when cached (`if reused is None: conv.close()`), so the next request failed with "Conversation is closed." Fix: `if reused is None and not can_reuse: conv.close()` (commit `37d2877`).
