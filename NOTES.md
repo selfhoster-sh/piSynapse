@@ -45,6 +45,15 @@
 - **User's question answered:** "toollarda Türkçe olan ne var ki?" → only `find_free_slots` description has Turkish trigger phrases ("boş saat", "uygun saat"). All other tool schemas are English. The Turkish content that triggers the parser comes from USER INPUT (personal facts, calendar titles, note content) passed as tool arguments — not from tool definitions.
 - **How the parser currently works (native):** LiteRT's constrained-decoding parser (LLGuidance) parses the model's tool-call output. On parse failure (doubled braces), the error message contains the full call text; `parse_leaked_tool_call` extracts it and routes it through normal execution — one-shot per turn. If it fails again, the turn errors out with "connection error". No client-side parsing bypass.
 
+## 2026-11-17 — LiteRT 0.19.2 upgrade tested: parser NOT fixed; counter-based recovery is the effective workaround
+
+- **Upgrade (2026-11-17):** litert-lm 0.16.1 → 0.19.2 via `uv tool upgrade`. piserve restarted, health 200, model loaded. No API breakage (imports OK, py_compile OK).
+- **Test result (0.19.2):** single-fact Turkish diacritics → success (memories_saved: 1, no parse errors). But multi-fact Turkish request (5 facts) → **still fails** on the 2nd recovery. Upgrade did NOT fix the parser. The doubled-brace `{{...}}` issue persists on non-ASCII content in 0.19.2.
+- **Counter re-applied (cap 5):** reverted (6069e9c) then re-applied (dc8c18b) after confirming the upgrade didn't fix it. Tested with Turkish multi-fact (5 facts) → **memories_saved: 5, 4 recoveries logged, no errors**. Full success.
+- **Final state:** counter-based recovery (cap=5) is the effective workaround. Solution #3 (prompt hint) is ineffective (doubled braces persist). Solutions #4-#8 deferred. Native fix requires solution #5 (client-side parsing) or a future LiteRT-LM version.
+- **Decision (user):** "native olmayan yapı daha kırılgan olabilir" — user initially wanted revert, but after seeing the upgrade (native attempt) also failed, accepted the counter as the pragmatic workaround. The counter is stateless per-turn (no chase-fix cycle risk). Native errors still surface when cap (5) is exhausted.
+- **Retrieval verified:** memory system works — 9 'default' memories, retrieval returns results (sim 0.46+). "Beni tanı" test successful.
+
 ## 2026-11-16 (evening) — LiteRT tool-call parser fails on non-ASCII (Turkish) content; data + plan
 
 - **Symptom:** long messages + tool use → "⚠️ Sunucuyla bağlantı kurulamadı" (errConnLost). Server log: `litert stream error: INVALID_ARGUMENT: Failed to parse tool calls from code block: call:save_memory{{"category": "general", "content": "<Turkish text with diacritics>", "importance": 6.0}}` — doubled braces `{{...}}` rejected by LiteRT's LLGuidance parser mid-stream.
