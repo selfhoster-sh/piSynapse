@@ -45,6 +45,11 @@
 - **User's question answered:** "toollarda Türkçe olan ne var ki?" → only `find_free_slots` description has Turkish trigger phrases ("boş saat", "uygun saat"). All other tool schemas are English. The Turkish content that triggers the parser comes from USER INPUT (personal facts, calendar titles, note content) passed as tool arguments — not from tool definitions.
 - **How the parser currently works (native):** LiteRT's constrained-decoding parser (LLGuidance) parses the model's tool-call output. On parse failure (doubled braces), the error message contains the full call text; `parse_leaked_tool_call` extracts it and routes it through normal execution — one-shot per turn. If it fails again, the turn errors out with "connection error". No client-side parsing bypass.
 
+## 2026-11-18 — Determinism window-edge tests + overflow misclassification fix
+
+- **Determinism edge tests added** (tests/test_audit_flywheel.py): `test_failure_digest_window_edge_inside` (6d → inside 7d window) and `test_failure_digest_window_edge_outside` (8d → outside). Both use relative timestamps (SQL-side `datetime('now')` clock). 16 flywheel tests pass.
+- **Overflow misclassification fixed:** `_is_context_overflow()` no longer matches bare "invalid_argument" (which caught LiteRT parse failures). Now explicitly excludes "failed to parse tool calls" and matches only overflow-specific phrases ("too long", "context length", "context window", "exceeding the maximum", "token ids are"). New test case pins the parse-failure exclusion. Suite 1026 passed.
+
 ## 2026-11-17 — LiteRT 0.19.2 upgrade tested: parser NOT fixed; counter-based recovery is the effective workaround
 
 - **Upgrade (2026-11-17):** litert-lm 0.16.1 → 0.19.2 via `uv tool upgrade`. piserve restarted, health 200, model loaded. No API breakage (imports OK, py_compile OK).
