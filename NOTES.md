@@ -45,6 +45,12 @@
 - **User's question answered:** "toollarda Türkçe olan ne var ki?" → only `find_free_slots` description has Turkish trigger phrases ("boş saat", "uygun saat"). All other tool schemas are English. The Turkish content that triggers the parser comes from USER INPUT (personal facts, calendar titles, note content) passed as tool arguments — not from tool definitions.
 - **How the parser currently works (native):** LiteRT's constrained-decoding parser (LLGuidance) parses the model's tool-call output. On parse failure (doubled braces), the error message contains the full call text; `parse_leaked_tool_call` extracts it and routes it through normal execution — one-shot per turn. If it fails again, the turn errors out with "connection error". No client-side parsing bypass.
 
+## 2026-11-18 (note) — Prompt tone: avoid excessive "critical/strict rule" language
+
+- User observation: model responses feel "suppressed" / unclear (not crisp). Research indicates that overusing strong directive language ("CRITICAL", "MUST", "NEVER", "ALWAYS", "STRICT RULE") in prompts can trigger this in small models — the model becomes overly cautious/hedging instead of direct.
+- Lesson: prefer firm but natural phrasing; avoid stacking too many "critical rule" blocks. This is a prompt-design insight, not a code change.
+- Applies to: prompt.py (system prompt), tools/definitions.py (tool descriptions), group prompts.
+
 ## 2026-11-18 (later) — Root cause of Akşehir hallucination found
 
 - **Root cause:** `user_settings` table had `('default', 'DEFAULT_CITY', 'Akşehir')` (set 2026-09-09). `effective_setting()` checks user_settings FIRST, overriding .env's `DEFAULT_CITY=bergama`. So the model's system prompt said "Default city: Akşehir" even though .env said bergama.
