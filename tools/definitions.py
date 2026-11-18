@@ -69,7 +69,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "create_calendar_event",
-            "description": "Add a calendar event. Day only (no time) → all-day (all_day=true, start_time=date). For free slot, list events first then create non-overlapping.",
+            "description": "Add a calendar event (supports reminders). Day only (no time) → all-day (all_day=true, start_time=date). For free slot, list events first then create non-overlapping.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -151,7 +151,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "list_emails",
-            "description": "Recent emails (sender, subject, date, preview), numbered. General inbox overview. For specific topic use search_emails.",
+            "description": "Recent emails (sender, subject, date, preview), numbered. general overview of a mail folder. Use for inbox/messages from X/new email. For specific topic use search_emails instead.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -198,7 +198,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "search_emails",
-            "description": "Find emails by subject/sender/topic. Numbered matches with previews. Use when user names specific mail/person/topic.",
+            "description": "Find specific emails by subject/sender/topic. Numbered matches with previews. Use when user names specific mail/person/topic. For general overview use list_emails.",
             "parameters": {
                 "type": "object",
                 "properties": {
