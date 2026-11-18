@@ -45,6 +45,14 @@
 - **User's question answered:** "toollarda Türkçe olan ne var ki?" → only `find_free_slots` description has Turkish trigger phrases ("boş saat", "uygun saat"). All other tool schemas are English. The Turkish content that triggers the parser comes from USER INPUT (personal facts, calendar titles, note content) passed as tool arguments — not from tool definitions.
 - **How the parser currently works (native):** LiteRT's constrained-decoding parser (LLGuidance) parses the model's tool-call output. On parse failure (doubled braces), the error message contains the full call text; `parse_leaked_tool_call` extracts it and routes it through normal execution — one-shot per turn. If it fails again, the turn errors out with "connection error". No client-side parsing bypass.
 
+## 2026-11-18 (pass 3) — Prompt trim + embedding model assessment
+
+- **Prompt trim:** system prompt 16 rules → 14 condensed rules (18082 → 15273 chars, ~4520 → ~3818 tok, -15%). Tool descriptions trimmed (21745 → 21028 chars, -3%). Total prefill reduction ~880 tokens.
+- **Benchmark (pass 3):** cold TTFB ~13-18s (was ~20s, further improvement from prompt trim + cache warming). Warm follow-up ~13s (cache eviction from 3 sequential sessions; max=2).
+- **YNNPACK:** confirmed NOT compatible with Gemma 4 E2B (IsTensorSupported errors on tensor types). No model variant fixes this — it's a LiteRT framework limitation. Documented and abandoned.
+- **Embedding model assessment:** `sentence-transformers/paraphrase-multilingual-mpnet-base-v2` (278M, 768-dim). Retrieval latency on Pi: 5-9ms (fast once loaded). NOT a significant bottleneck. User requested no changes — just detection. Noted for future reference.
+- **Remaining latency work:** GPU backend test (VideoCore VII), num_ctx A/B with cache, deeper prompt compression.
+
 ## 2026-11-18 (later still) — Latency pass 2: max_num_tokens 4096 + MTP + warmup (1.6x speedup)
 
 - **Root cause found:** Gemma 4 E2B's native max context is 4096 tokens, but we set `max_num_tokens=8192`. This forced the MTP drafter to be re-targeted from magic number 32003 → 8192, adding overhead. Reducing to 4096 gave **1.6x speedup**: cold TTFB 32s → 20s, warm 13s → 8s.
