@@ -791,7 +791,7 @@ def _write_piserve_config() -> bool:
         "model_id": model_id,
         "model_path": os.path.expanduser(f"~/.litert-lm/models/{model_id}/model.litertlm"),
         # Must match config.DEFAULT_LLM_NUM_CTX (single source of truth).
-        "max_num_tokens": 8192,
+        "max_num_tokens": 4096,
         "speculative_decoding": True,
         "use_ringbuffers_local_attention": True,
         "enable_ynnpack": False,

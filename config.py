@@ -94,7 +94,7 @@ LITERT_BASE_URL = os.getenv("LITERT_BASE_URL", "http://localhost:9379")
 LLM_MODEL = os.getenv("LLM_MODEL", "gemma4-e2b")
 # Single source of truth for LLM window defaults: SETTINGS_SCHEMA, _NUMERIC_KEYS,
 # install.py's .env template and every inline fallback must match these values.
-DEFAULT_LLM_NUM_CTX = 8192
+DEFAULT_LLM_NUM_CTX = 4096
 DEFAULT_LLM_MAX_OUTPUT_TOKENS = 4096
 LLM_NUM_CTX = _safe_int("LLM_NUM_CTX", DEFAULT_LLM_NUM_CTX)
 LLM_NUM_BATCH = _safe_int("LLM_NUM_BATCH", 256)
