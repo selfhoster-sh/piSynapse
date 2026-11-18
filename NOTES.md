@@ -45,6 +45,13 @@
 - **User's question answered:** "toollarda Türkçe olan ne var ki?" → only `find_free_slots` description has Turkish trigger phrases ("boş saat", "uygun saat"). All other tool schemas are English. The Turkish content that triggers the parser comes from USER INPUT (personal facts, calendar titles, note content) passed as tool arguments — not from tool definitions.
 - **How the parser currently works (native):** LiteRT's constrained-decoding parser (LLGuidance) parses the model's tool-call output. On parse failure (doubled braces), the error message contains the full call text; `parse_leaked_tool_call` extracts it and routes it through normal execution — one-shot per turn. If it fails again, the turn errors out with "connection error". No client-side parsing bypass.
 
+## 2026-11-18 (later) — Root cause of Akşehir hallucination found
+
+- **Root cause:** `user_settings` table had `('default', 'DEFAULT_CITY', 'Akşehir')` (set 2026-09-09). `effective_setting()` checks user_settings FIRST, overriding .env's `DEFAULT_CITY=bergama`. So the model's system prompt said "Default city: Akşehir" even though .env said bergama.
+- **Fix:** Updated user_settings to `DEFAULT_CITY='bergama'`. Weather now correctly reports Bergama.
+- **Lesson:** Prompt changes were NOT the cause. The original prompt worked fine. The issue was stale user data in the database.
+- **Reverted:** prompt.py and tools/definitions.py restored to original (pre-trim) state for stability. max_num_tokens reverted to 8192 (original). Conversation cache remains enabled (max=2).
+
 ## 2026-11-18 (pass 5) — Ollama/llama.cpp "backdoor" investigation
 
 - **Hypothesis:** Switch to Ollama (llama.cpp) for faster inference (~28 tok/s reported).
