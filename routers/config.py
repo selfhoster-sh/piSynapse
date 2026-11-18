@@ -299,12 +299,37 @@ async def update_settings(body: SettingsUpdate, request: Request):
         except Exception as e:
             logger.warning(f"Backend switch: model auto-map failed ({e}) — keeping {old_model!r}")
 
+    # Capture old values for personal keys BEFORE overwriting os.environ,
+    # so we can propagate the change to user_settings only for users who
+    # were still using the system default (not those who explicitly chose
+    # a different value).
+    from config import PERSONAL_KEYS
+    old_personal_values = {k: os.getenv(k, "") for k in validated if k in PERSONAL_KEYS}
+
     for key, value in validated.items():
         os.environ[key] = value
 
     # Persist to .env on a worker thread: flock(LOCK_EX) + file I/O are
     # blocking and would stall the event loop while waiting on a lock.
     await asyncio.to_thread(_write_env_file, validated)
+
+    # If an admin updates a system setting that is also a personal key,
+    # propagate the new value to user_settings rows whose stored value still
+    # matches the OLD system default. Users who explicitly chose a different
+    # value keep theirs. This prevents stale per-user values (e.g. an old
+    # city) from silently overriding the admin's change.
+    personal_updated = {k: v for k, v in validated.items() if k in PERSONAL_KEYS}
+    if personal_updated:
+        from db import get_db
+        db = await get_db()
+        for key, value in personal_updated.items():
+            old_val = old_personal_values.get(key, "")
+            await db.execute(
+                "UPDATE user_settings SET value = ?, updated_at = datetime('now') "
+                "WHERE key = ? AND value = ?",
+                (value, key, old_val),
+            )
+        await db.commit()
 
     # Sync numeric config values into running process (avoids restart)
     from config import sync_config
