@@ -47,7 +47,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "get_weather",
-            "description": "Get current weather for a city. If no city specified, use the user's default city.",
+            "description": "Get the current weather for a city.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -69,7 +69,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "create_calendar_event",
-            "description": "Add a calendar event (supports reminders). Day only (no time) → all-day (all_day=true, start_time=date). For free slot, list events first then create non-overlapping.",
+            "description": "Add a new event. Call when the user schedules something or asks to be reminded at a time/date. With only a day (no time), create an ALL-DAY event (all_day=true, start_time=date only). For a free slot, list that day's events first, then create with a non-overlapping time.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -87,7 +87,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "list_calendar_events",
-            "description": "List upcoming calendar events (date, time, title, preview). Use for schedule questions.",
+            "description": "List upcoming calendar events with date, time, title, and description preview. Call this when the user asks about their schedule.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -134,7 +134,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "find_free_slots",
-            "description": "Find free time slots on a given day. Returns numbered slots. Use for 'when am I free' or free-slot placement.",
+            "description": "Find free time slots on a given day. Call when the user asks 'when am I free', 'find a slot', 'boş saat', 'uygun saat', or wants to place an event in a free slot. Returns numbered available slots.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -151,7 +151,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "list_emails",
-            "description": "Recent emails (sender, subject, date, preview), numbered. general overview of a mail folder. Use for inbox/messages from X/new email. For specific topic use search_emails instead.",
+            "description": "Recent emails (sender, subject, date, preview), numbered 1., 2., ... general overview of a mail folder. Use for 'what's in my inbox', 'messages from X', 'new/unread email'. For a specific subject/sender/topic use search_emails instead. Refer to emails by list number only.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -166,7 +166,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "read_email",
-            "description": "Read full email content by list number.",
+            "description": "Read one email's full content by its list number from list_emails/search_emails results.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -198,7 +198,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "search_emails",
-            "description": "Find specific emails by subject/sender/topic. Numbered matches with previews. Use when user names specific mail/person/topic. For general overview use list_emails.",
+            "description": "Find specific emails by subject, sender, or topic anywhere in the mailbox; numbered matches with previews. Use when the user names a specific mail/person/topic. For a general inbox overview use list_emails. Refer to results by list number only.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -259,7 +259,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "list_notes",
-            "description": "List notes (title, category, tags, preview). Call first when user mentions notes.",
+            "description": "List notes as a numbered list (title, category, tags, preview). Call first when the user mentions notes.",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -313,7 +313,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "search_notes",
-            "description": "Search notes by title/content. Uses server-side search when available.",
+            "description": "Search notes by title or content. Use when the user asks about something they may have noted down. Uses server-side search when available (Nextcloud Notes v1.0.2+).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -346,7 +346,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "list_tasks",
-            "description": "List tasks (title, due date, priority, preview). Use for to-do questions.",
+            "description": "List tasks (numbered: title, due date, priority, preview). Use for task/to-do questions.",
             "parameters": {
                 "type": "object",
                 "properties": {
