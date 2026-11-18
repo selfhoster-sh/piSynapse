@@ -606,6 +606,21 @@ def main():
     engine = _create_engine(cfg)
     _cfg = cfg
 
+    # Warm up the engine on startup so the first real request doesn't pay
+    # the kernel-compilation / cache-warming penalty.  Best-effort: a
+    # failure here must not prevent the server from starting.
+    try:
+        LOG.info("warming up engine...")
+        warmup_conv = engine.create_conversation(
+            messages=None,
+            automatic_tool_calling=False,
+        )
+        warmup_conv.send_message("Merhaba", max_output_tokens=4)
+        warmup_conv.close()
+        LOG.info("engine warm-up complete")
+    except Exception as e:
+        LOG.warning("engine warm-up failed (non-fatal): %s", e)
+
     Handler.engine = engine
     Handler.model_id = cfg["model_id"]
 
