@@ -45,6 +45,21 @@
 - **User's question answered:** "toollarda Türkçe olan ne var ki?" → only `find_free_slots` description has Turkish trigger phrases ("boş saat", "uygun saat"). All other tool schemas are English. The Turkish content that triggers the parser comes from USER INPUT (personal facts, calendar titles, note content) passed as tool arguments — not from tool definitions.
 - **How the parser currently works (native):** LiteRT's constrained-decoding parser (LLGuidance) parses the model's tool-call output. On parse failure (doubled braces), the error message contains the full call text; `parse_leaked_tool_call` extracts it and routes it through normal execution — one-shot per turn. If it fails again, the turn errors out with "connection error". No client-side parsing bypass.
 
+## 2026-11-18 (pass 5) — Ollama/llama.cpp "backdoor" investigation
+
+- **Hypothesis:** Switch to Ollama (llama.cpp) for faster inference (~28 tok/s reported).
+- **Tested:** Ollama with gemma4:e2b (7.2 GB, Q4_K_M) on Pi 5.
+- **Results:**
+  - Small prompt (22 tok): prefill 39 tok/s, decode 8.1 tok/s, total 2.6s
+  - Large prompt (2834 tok): prefill **38.2 tok/s**, decode 5.9 tok/s, total **77.7s**
+- **Comparison with LiteRT (current):**
+  - LiteRT prefill: **62 tok/s** (chunked prefill_1024 + prefill_128)
+  - LiteRT decode: ~2.5 tok/s
+  - LiteRT cold total: ~13-18s (for ~3818 tok system prompt)
+- **Conclusion:** Ollama is **slower** for our use case. LiteRT's chunked prefill is 1.6x faster (62 vs 38 tok/s), and the total cold time is 4-6x faster (13-18s vs 78s). The Ollama model is also 3x larger (7.2 GB vs 2.5 GB), using more memory bandwidth. **LiteRT remains the best backend for Pi 5.**
+- **Root cause of the "28 tok/s" claim:** Those benchmarks use short prompts and measure decode only. For real-world use with long system prompts, LiteRT's prefill optimization dominates.
+- **No further backend options remain.** Hailo-10H NPU is the only path to significant improvement.
+
 ## 2026-11-18 (pass 4) — GPU backend test (VideoCore VII)
 
 - **GPU backend (WebGPU):** engine created in 5.6s, but inference took **63.6s** for "Merhaba" (vs ~13-18s on CPU). VideoCore VII GPU is NOT suitable for Gemma 4 E2B. WebGPU backend is not optimized for Pi's GPU. **Abandoned.**
