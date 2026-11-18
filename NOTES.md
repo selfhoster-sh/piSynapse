@@ -45,6 +45,12 @@
 - **User's question answered:** "toollarda Türkçe olan ne var ki?" → only `find_free_slots` description has Turkish trigger phrases ("boş saat", "uygun saat"). All other tool schemas are English. The Turkish content that triggers the parser comes from USER INPUT (personal facts, calendar titles, note content) passed as tool arguments — not from tool definitions.
 - **How the parser currently works (native):** LiteRT's constrained-decoding parser (LLGuidance) parses the model's tool-call output. On parse failure (doubled braces), the error message contains the full call text; `parse_leaked_tool_call` extracts it and routes it through normal execution — one-shot per turn. If it fails again, the turn errors out with "connection error". No client-side parsing bypass.
 
+## 2026-11-18 (pass 4) — GPU backend test (VideoCore VII)
+
+- **GPU backend (WebGPU):** engine created in 5.6s, but inference took **63.6s** for "Merhaba" (vs ~13-18s on CPU). VideoCore VII GPU is NOT suitable for Gemma 4 E2B. WebGPU backend is not optimized for Pi's GPU. **Abandoned.**
+- **Conclusion:** CPU (XNNPACK) remains the best backend on Pi 5. No further backend options available (NPU = Hailo-10H, not yet supported in LiteRT-LM).
+- **Latency pass summary (passes 1-4):** cold TTFB ~32s → ~13-18s (1.8-2.5x improvement). Main wins: max_num_tokens 8192→4096, MTP activation, ringbuffers, prompt trim. Remaining: deeper prompt compression, num_ctx tuning.
+
 ## 2026-11-18 (pass 3) — Prompt trim + embedding model assessment
 
 - **Prompt trim:** system prompt 16 rules → 14 condensed rules (18082 → 15273 chars, ~4520 → ~3818 tok, -15%). Tool descriptions trimmed (21745 → 21028 chars, -3%). Total prefill reduction ~880 tokens.
