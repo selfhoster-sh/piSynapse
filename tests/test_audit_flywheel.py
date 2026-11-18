@@ -332,6 +332,35 @@ def test_failure_digest_respects_window_and_never_raises(monkeypatch):
     assert dg2["total_calls"] == 0 and dg2["top_errors"] == []  # degrades, no raise
 
 
+# ── determinism rule (2026-11-18): window edges, relative to SQL 'now' ───────
+# The digest window is `created_at >= datetime('now', -{days} days)` — SQL-side
+# clock, so the clock is frozen by generating relative timestamps (not by
+# time-machine, which only freezes the Python clock). 6d is just inside the
+# 7-day window, 8d just outside — both stay deterministic as the wall clock
+# advances.
+
+def test_failure_digest_window_edge_inside():
+    asyncio.run(_seed_audit(
+        {"tool": "get_weather", "success": 0, "error": "edge-inside",
+         "created_at": _timestamp_days_ago(days=6)},
+    ))
+    dg = asyncio.run(dbmod.audit_failure_digest(days=7))
+    assert dg["errors"] == 1
+    assert dbmod._error_cluster_key("edge-inside") in \
+        {e["error"] for e in dg["top_errors"]}
+
+
+def test_failure_digest_window_edge_outside():
+    asyncio.run(_seed_audit(
+        {"tool": "get_weather", "success": 0, "error": "edge-outside",
+         "created_at": _timestamp_days_ago(days=8)},
+    ))
+    dg = asyncio.run(dbmod.audit_failure_digest(days=7))
+    assert dg["errors"] == 0
+    assert dbmod._error_cluster_key("edge-outside") not in \
+        {e["error"] for e in dg["top_errors"]}
+
+
 # ── overview endpoint carries the digest ──────────────────────────────────────
 
 def _client():
