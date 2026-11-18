@@ -45,6 +45,13 @@
 - **User's question answered:** "toollarda Türkçe olan ne var ki?" → only `find_free_slots` description has Turkish trigger phrases ("boş saat", "uygun saat"). All other tool schemas are English. The Turkish content that triggers the parser comes from USER INPUT (personal facts, calendar titles, note content) passed as tool arguments — not from tool definitions.
 - **How the parser currently works (native):** LiteRT's constrained-decoding parser (LLGuidance) parses the model's tool-call output. On parse failure (doubled braces), the error message contains the full call text; `parse_leaked_tool_call` extracts it and routes it through normal execution — one-shot per turn. If it fails again, the turn errors out with "connection error". No client-side parsing bypass.
 
+## 2026-11-18 (later) — Conversation cache fixed + enabled by default (~2.5x follow-up speedup)
+
+- **Root cause found:** piserve's conversation cache (`conversation_cache_max`) was broken — newly-created conversations were closed in the `finally` block even when cached (`if reused is None: conv.close()`), so the next request failed with "Conversation is closed." Fix: `if reused is None and not can_reuse: conv.close()` (commit `37d2877`).
+- **Result:** follow-up TTFB dropped from ~32 s to ~13 s (2.5x). Turn 1 (cold) still ~32 s (full prefill). Tool-calling works with caching (tested: action + follow-up, both correct).
+- **Enabled by default:** `conversation_cache_max: 2` in `litert_serve/server.py` DEFAULT_CONFIG and install.py `_write_piserve_config`. Trade-off: cached conversation holds system prompt + history from turn 1; session switching or retries can desync. Disable (set to 0) if stale-context answers appear.
+- **Latency pass 2 (prompt trim):** trimmed system prompt + 5 tool descriptions (~400 tokens) showed no measurable improvement (24.75→25.73 s). Prefill remains the driver (62 tok/s on Pi 5 CPU). Deeper cuts (system prompt rules, full tool-schema compression) need live A/B with tool-calling accuracy validation — deferred to a dedicated session.
+
 ## 2026-11-18 — Determinism window-edge tests + overflow misclassification fix
 
 - **Determinism edge tests added** (tests/test_audit_flywheel.py): `test_failure_digest_window_edge_inside` (6d → inside 7d window) and `test_failure_digest_window_edge_outside` (8d → outside). Both use relative timestamps (SQL-side `datetime('now')` clock). 16 flywheel tests pass.
