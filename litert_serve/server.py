@@ -40,7 +40,7 @@ DEFAULT_CONFIG = {
     "model_id": "gemma4-e2b",
     # '~' is expanded at load time — never commit an absolute home path here.
     "model_path": "~/.litert-lm/models/gemma4-e2b/model.litertlm",
-    "max_num_tokens": 4096,
+    "max_num_tokens": 8192,
     "speculative_decoding": True,
     "use_ringbuffers_local_attention": True,
     "enable_ynnpack": False,
