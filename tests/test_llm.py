@@ -582,6 +582,8 @@ def test_is_context_overflow():
     assert _is_context_overflow(RuntimeError("INVALID_ARGUMENT: Input token ids are too long. Exceeding the maximum number of tokens allowed: 5056 >= 6144"))
     assert _is_context_overflow(RuntimeError("context length exceeded"))
     assert not _is_context_overflow(RuntimeError("connection refused"))
+    # LiteRT parse failures must NOT be misclassified as overflow (2026-11-18):
+    assert not _is_context_overflow(RuntimeError("INVALID_ARGUMENT: Failed to parse tool calls from code block: call:save_memory{{\"content\": \"x\"}}"))
 
 
 def test_shrink_tool_responses_truncates():

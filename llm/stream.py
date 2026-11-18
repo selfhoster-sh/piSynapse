@@ -153,7 +153,14 @@ def _merge_tool_calls(acc: list, tc: list) -> list:
 
 def _is_context_overflow(err: Exception) -> bool:
     msg = str(err).lower()
-    return any(k in msg for k in ("token", "too long", "context", "invalid_argument"))
+    # LiteRT parse failures ("Failed to parse tool calls from code block")
+    # are NOT context overflows — they are grammar/parser errors on the
+    # model's tool-call syntax. Misclassifying them as overflow triggers the
+    # shrink+retry path, which cannot fix a parse error and just wastes a round.
+    if "failed to parse tool calls" in msg:
+        return False
+    return any(k in msg for k in ("too long", "context length", "context window",
+                                  "exceeding the maximum", "token ids are"))
 
 
 def _shrink_tool_responses(current_msgs: list[dict]) -> None:
