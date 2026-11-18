@@ -14,14 +14,14 @@
 """
 import asyncio
 
+# Determinism rule (2026-11-16): no absolute date literals in test code —
+# every timestamp derives from a runtime base day with preserved offsets.
+from datetime import datetime, timedelta, timezone
+
 import aiosqlite
 import pytest
 
 import db as dbmod
-
-# Determinism rule (2026-11-16): no absolute date literals in test code —
-# every timestamp derives from a runtime base day with preserved offsets.
-from datetime import datetime, timedelta, timezone
 
 _DAY = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y-%m-%d")
 

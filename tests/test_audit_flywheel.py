@@ -112,6 +112,7 @@ def corpus_data_dir(tmp_path, monkeypatch):
 def test_feeder_addition_records_split(audit_db, corpus_data_dir, monkeypatch):
     """A positive addition must carry the deterministic split field."""
     import sqlite3
+
     import numpy as np
 
     conn = sqlite3.connect(audit_db)
@@ -248,7 +249,8 @@ def test_feeder_loop_reports_failed_subprocess_without_raising(monkeypatch):
 
 def test_feeder_loop_disabled_by_zero_config(monkeypatch):
     """FEEDER_AUTO_INTERVAL_HOURS=0 must keep the loop from starting in lifespan;
-    the loop itself defaults to weekly when interval_hours is None."""
+    the loop itself defaults to weekly when interval_hours is None.
+    """
     monkeypatch.setattr(config, "FEEDER_AUTO_INTERVAL_HOURS", 0)
     slept = []
 

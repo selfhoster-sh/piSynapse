@@ -432,6 +432,7 @@ def test_notes_404_maps_to_not_found(monkeypatch):
 
 # Determinism rule (2026-11-16): no absolute date literals in test code.
 from datetime import datetime, timedelta, timezone
+
 _BASE = datetime.now(timezone.utc) - timedelta(days=30)
 _D1 = _BASE.strftime("%Y-%m-%d")
 _D2 = (_BASE - timedelta(days=1)).strftime("%Y-%m-%d")

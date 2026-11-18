@@ -144,4 +144,5 @@ def test_confirm_missing_params_returns_error(monkeypatch):
 
 # Determinism rule (2026-11-16): no absolute date literals in test code.
 from datetime import datetime, timedelta, timezone
+
 _DT = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d") + " 10:00"

@@ -17,14 +17,14 @@ import asyncio
 import json
 import os
 
+# Determinism rule (2026-11-16): no absolute date literals in test code.
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import config
-
-# Determinism rule (2026-11-16): no absolute date literals in test code.
-from datetime import datetime, timedelta, timezone
 
 _DAY = (datetime.now(timezone.utc) - timedelta(days=60)).strftime("%Y-%m-%d")
 _DAY_TS = f"{_DAY} 12:00:00"

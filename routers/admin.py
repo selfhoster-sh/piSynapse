@@ -80,8 +80,8 @@ async def audit_overview(request: Request, days: int = 14):
     `days` is clamped to [1, 3650]; the default follows config
     AUDIT_RETENTION_DAYS so the trend window matches the retention policy.
     """
-    from db import get_audit_overview, audit_error_alert, audit_failure_digest
     from config import AUDIT_RETENTION_DAYS
+    from db import audit_error_alert, audit_failure_digest, get_audit_overview
 
     require_admin(request)
     days = max(1, min(3650, days if days else AUDIT_RETENTION_DAYS))

@@ -79,10 +79,10 @@ async def _fake_base_corpus(groups=("weather",), text="weather"):
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────
-import corpus_feeder as cf
-
 # Determinism rule (2026-11-16): no absolute date literals in test code.
 from datetime import datetime, timedelta, timezone
+
+import corpus_feeder as cf
 
 _CONFIRMTS = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%dT12:00:00")
 

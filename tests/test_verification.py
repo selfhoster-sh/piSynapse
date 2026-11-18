@@ -395,7 +395,8 @@ class TestVerificationErrorSignal:
 class TestFallbackUserScoping:
     """The content fallback must never verify a write against ANOTHER user's
     identical content (multi-user invisibility). Regression for the missing
-    user_id in _verify -> _fallback_match (save_memory query was unscoped)."""
+    user_id in _verify -> _fallback_match (save_memory query was unscoped).
+    """
 
     async def test_cross_user_content_does_not_verify(self, mem_db):
         db = await mem_db.get_db()
@@ -420,7 +421,8 @@ class TestFallbackUserScoping:
 class TestFallbackBranches:
     """Content/summary fallback for the tool types an ID-only test never hit:
     complete_task, delete_task, update/delete_calendar_event, notes trio, and
-    the empty-parameter guards that must refuse to verify."""
+    the empty-parameter guards that must refuse to verify.
+    """
 
     async def _fb(self, tool, params, user_id=None):
         import tool_verification as tv
@@ -474,4 +476,5 @@ class TestFallbackBranches:
 
 # Determinism rule (2026-11-16): no absolute date literals in test code.
 from datetime import datetime, timedelta, timezone
+
 _DT = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%dT10:00:00")

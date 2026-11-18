@@ -155,6 +155,7 @@ class TestListSanitizesDescriptions:
 
 # Determinism rule (2026-11-16): no absolute date literals in test code.
 from datetime import datetime, timedelta, timezone
+
 _DAY_ALLDAY = (datetime.now(timezone.utc) - timedelta(days=16)).strftime("%Y-%m-%d")
 _DT_MEET = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%dT14:00:00")
 
@@ -165,4 +166,5 @@ _DT_MEET_IC = _DT_MEET.replace("-", "").replace(":", "")
 
 
 from datetime import datetime, timedelta
+
 _DT_MEET_DTEND_IC = (datetime.strptime(_DT_MEET, "%Y-%m-%dT%H:%M:%S") + timedelta(minutes=30)).strftime("%Y%m%dT%H%M%S")

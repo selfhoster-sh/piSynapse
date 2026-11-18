@@ -24,15 +24,14 @@ import hashlib
 import json
 import os
 
-import pytest
+# Determinism rule (2026-11-16): no absolute date literals in test code.
+from datetime import datetime, timedelta, timezone
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import config
 import db as dbmod
-
-# Determinism rule (2026-11-16): no absolute date literals in test code.
-from datetime import datetime, timedelta, timezone
 
 _DAY = (datetime.now(timezone.utc) - timedelta(days=60)).strftime("%Y-%m-%d")
 

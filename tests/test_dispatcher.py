@@ -1,11 +1,10 @@
 """Tests for tools/dispatcher.py tool dispatch logic."""
 
+# Determinism rule (2026-11-16): no absolute date literals in test code.
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from tools.dispatcher import run_tool
-
-# Determinism rule (2026-11-16): no absolute date literals in test code.
-from datetime import datetime, timedelta, timezone
 
 _DT10 = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%dT10:00:00")
 _DAY_ALLDAY = (datetime.now(timezone.utc) - timedelta(days=15)).strftime("%Y-%m-%d")
@@ -743,9 +742,9 @@ class TestRecurrenceAndAddressValidation:
 # ── determinism rule (2026-11-16): frozen clock for a clock-dependent tool ───
 def test_get_datetime_tool_format_is_deterministic_under_frozen_clock():
     import asyncio
+    from datetime import datetime, timezone
+
     import time_machine
-    from datetime import datetime
-    from datetime import timezone
     with time_machine.travel(datetime(2026, 8, 15, 12, 0, 0, tzinfo=timezone.utc), tick=False):
         result, _ = asyncio.run(run_tool("get_datetime", {}))
     assert result == "Current: 15 August 2026, Saturday, 12:00"

@@ -9,8 +9,6 @@ is refused instead of executed.
 """
 import asyncio
 
-import pytest
-
 import config
 import llm.chat as llm_chat
 
@@ -156,4 +154,5 @@ def test_confirm_preview_for_update_calendar_event(monkeypatch):
 
 # Determinism rule (2026-11-16): no absolute date literals in test code.
 from datetime import datetime, timedelta, timezone
+
 _DT = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d") + " 10:00"

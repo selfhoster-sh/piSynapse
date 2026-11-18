@@ -1617,7 +1617,7 @@ async def verify_audit_export(day: str) -> dict:
         manifest_path = os.path.join(outdir, f"tool-audit-{day}.manifest.json")
         if not os.path.isfile(manifest_path):
             return out
-        with open(manifest_path, "r", encoding="utf-8") as f:
+        with open(manifest_path, encoding="utf-8") as f:
             manifest = json.load(f)
         out["exists"] = True
         all_ok = True
@@ -1701,6 +1701,7 @@ async def rollup_tool_audit(days: int | None = None) -> int:
     Returns the number of days rolled up.
     """
     import sqlite3
+
     from config import AUDIT_RETENTION_DAYS
     if days is None:
         days = max(1, AUDIT_RETENTION_DAYS)

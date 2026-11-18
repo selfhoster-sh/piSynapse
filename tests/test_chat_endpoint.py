@@ -108,7 +108,7 @@ def test_empty_after_sanitize_not_saved(monkeypatch):
 
 
 def test_resume_resolver_promotes_question_to_action(monkeypatch):
-    saved = _install_fakes(monkeypatch, followup=True, resume="notes")
+    _install_fakes(monkeypatch, followup=True, resume="notes")
     resp = _call(_req("devam edelim"))
     assert resp.reply == "Merhaba!"  # ran to completion
 

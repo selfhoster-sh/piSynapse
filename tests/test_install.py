@@ -171,8 +171,9 @@ def test_generated_creds_key_is_valid_fernet():
 
 
 def test_creds_key_fallback_without_cryptography(monkeypatch):
-    from cryptography.fernet import Fernet
     import builtins
+
+    from cryptography.fernet import Fernet
 
     real_import = builtins.__import__
 
@@ -239,7 +240,8 @@ def test_report_missing_deps_batch_never_prompts(monkeypatch):
 
 def test_find_litert_bin_expands_glob_in_dir_component(tmp_path, monkeypatch):
     """The '~/Library/Python/3.*/bin' candidate must actually match — the old
-    code globbed only the filename inside a literal '*' directory (dead code)."""
+    code globbed only the filename inside a literal '*' directory (dead code).
+    """
     home = tmp_path / "home"
     bindir = home / "Library" / "Python" / "3.12" / "bin"
     bindir.mkdir(parents=True)

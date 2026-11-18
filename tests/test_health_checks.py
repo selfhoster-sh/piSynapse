@@ -7,10 +7,10 @@ favicon/sw.js FileResponses; /debug beacon ingest (valid + bad payload).
 import asyncio
 
 import pytest
+from fastapi.responses import FileResponse
 
 import db as dbmod
 import main as mainmod
-from fastapi.responses import FileResponse
 
 
 @pytest.fixture
@@ -101,8 +101,9 @@ def test_check_nextcloud_disabled_when_unconfigured(monkeypatch):
 
 
 def test_check_nextcloud_ok(monkeypatch):
-    import config
     import httpx
+
+    import config
 
     monkeypatch.setattr(config, "NEXTCLOUD_URL", "https://cloud.example")
     monkeypatch.setattr(httpx, "AsyncClient", _fake_client_class(code=200))
@@ -110,8 +111,9 @@ def test_check_nextcloud_ok(monkeypatch):
 
 
 def test_check_nextcloud_error(monkeypatch):
-    import config
     import httpx
+
+    import config
 
     monkeypatch.setattr(config, "NEXTCLOUD_URL", "https://cloud.example")
     monkeypatch.setattr(httpx, "AsyncClient", _fake_client_class(code=500))
@@ -119,8 +121,9 @@ def test_check_nextcloud_error(monkeypatch):
 
 
 def test_check_nextcloud_unreachable(monkeypatch):
-    import config
     import httpx
+
+    import config
 
     monkeypatch.setattr(config, "NEXTCLOUD_URL", "https://cloud.example")
     monkeypatch.setattr(httpx, "AsyncClient", _fake_client_class(boom=TimeoutError("slow")))

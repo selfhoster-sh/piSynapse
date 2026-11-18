@@ -86,6 +86,7 @@ def test_calendar_map_empty_and_missing_session(mdb):
 
 # Determinism rule (2026-11-16): no absolute date literals in test code.
 from datetime import datetime, timedelta, timezone
+
 _BASE = datetime.now(timezone.utc) - timedelta(days=14)
 _DUE = _BASE.strftime("%Y-%m-%d")
 _START10 = _BASE.strftime("%Y-%m-%d") + " 10:00"

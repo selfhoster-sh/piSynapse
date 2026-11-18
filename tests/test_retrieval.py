@@ -176,6 +176,7 @@ def test_merge_history_dedupes_verbatim_overlap():
 
 # Determinism rule (2026-11-16): no absolute date literals in test code.
 from datetime import datetime, timedelta, timezone
+
 _BASE = datetime.now(timezone.utc) - timedelta(days=30)
 _T09 = _BASE.strftime("%Y-%m-%d") + " 09:00"
 _T10 = _BASE.strftime("%Y-%m-%d") + " 10:00"
