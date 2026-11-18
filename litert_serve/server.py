@@ -478,7 +478,10 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     self._chat_once(conv, current, max_output, thinking)
             finally:
-                if reused is None:
+                # Only close conversations we are NOT caching — a cached
+                # conversation must stay open for reuse (closing it makes the
+                # next request fail with "Conversation is closed").
+                if reused is None and not can_reuse:
                     conv.close()
 
     def _chat_once(self, conv, current, max_output, thinking):
