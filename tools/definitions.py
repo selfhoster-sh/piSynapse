@@ -47,7 +47,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "get_weather",
-            "description": "Get the current weather for a city.",
+            "description": "Get current weather for a city. If no city specified, use the user's default city.",
             "parameters": {
                 "type": "object",
                 "properties": {
