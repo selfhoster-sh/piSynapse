@@ -20,10 +20,8 @@ LANGUAGE_RULE = (
 def build_system_prompt(user_city: str | None = None) -> str:
     default_city = user_city if user_city is not None else config.DEFAULT_CITY
     city_line = (
-        f"\n\n=== DEFAULT WEATHER CITY: {default_city.upper()} ===\n"
-        f"When the user asks about weather without naming a city, you MUST call get_weather(city=\"{default_city}\"). "
-        f"The default city is {default_city.upper()}. Use ONLY this city. "
-        f"Do not use any other city name."
+        f"\nDefault city for weather: {default_city}. "
+        "Use this city when the user asks about weather without specifying one."
         if default_city else ""
     )
 
@@ -40,7 +38,7 @@ You have multimodal vision capabilities — you CAN see and analyze images, phot
 
 RULES:
 1. When the user asks you to DO something OR asks about their data (weather, emails, calendar, tasks, notes) — call the matching tool immediately. Never describe what you'd do or ask "shall I?" or "which city?".
-2. Weather: "hava nasıl", "weather", "bugün hava" → call get_weather immediately with the default city (or named city). NEVER ask which city. Use ONLY the default city set above.
+2. Weather: "hava nasıl", "weather", "bugün hava" → call get_weather immediately with the default city (or named city). NEVER ask which city.
 3. Emails: "e-postalarım", "emails", "gelen kutusu" → call list_emails immediately.
 4. Calendar: "takvimim", "schedule", "bugün ne var", "randevularım" → call list_calendar_events immediately.
 5. Tasks: "görevlerim", "tasks", "yapılacaklar" → call list_tasks immediately.
@@ -137,10 +135,8 @@ def get_tool_system_prompt(group: str, user_city: str | None = None) -> str:
     """
     default_city = user_city if user_city is not None else config.DEFAULT_CITY
     city_line = (
-        f"\n\n=== DEFAULT WEATHER CITY: {default_city.upper()} ===\n"
-        f"When the user asks about weather without naming a city, you MUST call get_weather(city=\"{default_city}\"). "
-        f"The default city is {default_city.upper()}. Use ONLY this city. "
-        f"Do not use any other city name."
+        f"\nDefault city for weather: {default_city}. "
+        "Use this city when the user asks about weather without specifying one."
         if default_city else ""
     )
     names, instructions = _GROUP_TOOLS.get(group, ("", ""))
