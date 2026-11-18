@@ -43,7 +43,7 @@ DEFAULT_CONFIG = {
     "max_num_tokens": 8192,
     "speculative_decoding": True,
     "use_ringbuffers_local_attention": True,
-    "enable_ynnpack": True,
+    "enable_ynnpack": False,
     "thread_count": 4,
     "cache_dir": None,
     # Number of session-keyed conversations kept alive across requests (LRU).
