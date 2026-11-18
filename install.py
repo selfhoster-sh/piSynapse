@@ -793,8 +793,10 @@ def _write_piserve_config() -> bool:
         # Must match config.DEFAULT_LLM_NUM_CTX (single source of truth).
         "max_num_tokens": 8192,
         "speculative_decoding": True,
-        "use_ringbuffers_local_attention": False,
-        "enable_ynnpack": False,
+        "use_ringbuffers_local_attention": True,
+        "enable_ynnpack": True,
+        "thread_count": 4,
+        "cache_dir": None,
         "host": "127.0.0.1",
         "port": LITERT_PORT,
         # Reuse the KV cache for follow-up turns in the same session (~2.5x

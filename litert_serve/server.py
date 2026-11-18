@@ -42,8 +42,10 @@ DEFAULT_CONFIG = {
     "model_path": "~/.litert-lm/models/gemma4-e2b/model.litertlm",
     "max_num_tokens": 8192,
     "speculative_decoding": True,
-    "use_ringbuffers_local_attention": False,
-    "enable_ynnpack": False,
+    "use_ringbuffers_local_attention": True,
+    "enable_ynnpack": True,
+    "thread_count": 4,
+    "cache_dir": None,
     # Number of session-keyed conversations kept alive across requests (LRU).
     # 0 = stateless (every request builds and closes its own conversation).
     # 2 = reuse the KV cache for follow-up turns in the same session (~2.5x
@@ -140,16 +142,25 @@ def _convert_content(msg: dict) -> dict:
 def _create_engine(cfg: dict) -> Engine:
     """Create a new Engine from config dict."""
     LOG.info(
-        "creating engine: model=%s max_num_tokens=%d speculative_decoding=%s ringbuffers=%s ynnpack=%s",
+        "creating engine: model=%s max_num_tokens=%d speculative_decoding=%s ringbuffers=%s ynnpack=%s threads=%s cache_dir=%s",
         cfg["model_path"], cfg["max_num_tokens"], cfg["speculative_decoding"],
         cfg["use_ringbuffers_local_attention"], cfg["enable_ynnpack"],
+        cfg.get("thread_count"), cfg.get("cache_dir"),
     )
+    import os
+    cache_dir = cfg.get("cache_dir")
+    if cache_dir:
+        cache_dir = os.path.expanduser(cache_dir)
+        os.makedirs(cache_dir, exist_ok=True)
     return Engine(
         model_path=cfg["model_path"],
+        backend=Backend.CPU(thread_count=cfg.get("thread_count")),
         max_num_tokens=cfg["max_num_tokens"],
         enable_speculative_decoding=bool(cfg["speculative_decoding"]),
         use_ringbuffers_local_attention=bool(cfg["use_ringbuffers_local_attention"]),
         enable_ynnpack=bool(cfg["enable_ynnpack"]),
+        cache_dir=cache_dir,
+        enable_benchmark=False,
         vision_backend=Backend.CPU(),
         audio_backend=Backend.CPU(),
     )
