@@ -152,11 +152,17 @@ def _create_engine(cfg: dict) -> Engine:
     if cache_dir:
         cache_dir = os.path.expanduser(cache_dir)
         os.makedirs(cache_dir, exist_ok=True)
+    from litert_lm import interfaces
+    spec_config = None
+    if cfg.get("speculative_decoding", True):
+        spec_config = interfaces.SpeculativeDecodingConfig(
+            mode=interfaces.SpeculativeDecodingMode.ON
+        )
     return Engine(
         model_path=cfg["model_path"],
         backend=Backend.CPU(thread_count=cfg.get("thread_count")),
         max_num_tokens=cfg["max_num_tokens"],
-        enable_speculative_decoding=bool(cfg["speculative_decoding"]),
+        speculative_decoding_config=spec_config,
         use_ringbuffers_local_attention=bool(cfg["use_ringbuffers_local_attention"]),
         enable_ynnpack=bool(cfg["enable_ynnpack"]),
         cache_dir=cache_dir,
